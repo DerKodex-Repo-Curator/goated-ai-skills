@@ -29,7 +29,6 @@ Human-facing docs come first. AI-facing guides are separate artifacts used only 
 Hard: None.
 
 Soft:
-- session-start-progressive-disclosure for unfamiliar target projects
 - grill-with-docs when audience, purpose, scope, terminology, product behavior, or documentation ownership is unclear
 - write-a-spec when requirements, acceptance criteria, or feature intent are not settled
 - doc-sync when documentation changes may leave catalogs, standards, guidance, or other docs stale
@@ -43,7 +42,7 @@ Fallback: If companion skills, docs, source access, or review tools are unavaila
 1. Confirm the documentation contract:
    - Identify whether the task is a new doc, substantial revision, AI-facing guide, or drift-only check.
    - Route drift-only work to `doc-sync`; route unsettled product intent to `write-a-spec`; route unclear audience or scope to `grill-with-docs`.
-   - Do not load `documentation-cleanup` unless the task also has an evidenced
+   - Load `documentation-cleanup` only when the task also has an evidenced
      structural hygiene need.
    - State the intended doc type, audience, scope, owner if known, and readiness claim being pursued.
    - Ask only for product intent or preference that cannot be discovered from local evidence.
@@ -70,7 +69,7 @@ Fallback: If companion skills, docs, source access, or review tools are unavaila
    - Write durable Markdown in the project's style unless another existing convention clearly applies.
    - Link or name source evidence enough for a future maintainer to verify major claims.
    - Mark assumptions, gaps, outdated areas, missing screenshots, unverified commands, or product questions explicitly.
-   - Do not paste raw transcripts, private notes, credentials, real user data, or sensitive context into tracked docs.
+   - Keep credentials, secrets, raw transcripts, private notes, client or real user data, ignored scratch content, and sensitive context out of tracked docs.
 
 6. Verify the documentation:
    - Re-read edited docs and nearby headings for flow, accuracy, audience fit, stale wording, broken local links, and unsupported claims.
@@ -105,16 +104,11 @@ If subagents are unavailable, run the same checks sequentially with a narrower c
 
 ## Guardrails
 
-- Do not write planned documentation before gathering source evidence.
-- Do not use `documentation-writer` for drift-only checks; route those to `doc-sync`.
-- Do not turn human manuals into agent scratchpads. Keep AI-facing guidance separate by default.
-- Do not name AI-facing guides as context sources when the project already uses context docs for durable language, source maps, or routing.
-- Do not create documentation webpages, static sites, publishing workflows, hosting guidance, generated navigation, or deployment steps unless a separate approved scope explicitly asks for them.
-- Do not invent product behavior, support promises, commands, SLAs, architecture, permissions, or troubleshooting steps.
-- Do not hide mismatches between source behavior and intended behavior by documenting the mismatch away; surface the conflict and route to the right planning or implementation workflow.
-- Do not paste credentials, secrets, private notes, raw transcripts, client data, sensitive personal context, real user data, or ignored scratch content into durable docs.
-- Do not claim docs are complete, current, source-grounded, synced, or ready when relevant sources or checks were skipped.
-- Do not require this source repo's root files, issue files, `.local/` notes, or chat history after installation. The skill may rely only on its own files and target-project evidence.
+- Keep human manuals free of agent scratchpad content, and name AI-facing guides as guides rather than context sources when the project already uses context docs for durable language, source maps, or routing.
+- Create documentation webpages, static sites, publishing workflows, hosting guidance, generated navigation, or deployment steps only when a separate approved scope explicitly asks for them.
+- Document only product behavior, support promises, commands, SLAs, architecture, permissions, and troubleshooting steps that source evidence supports.
+- Surface mismatches between source behavior and intended behavior and route them to the right planning or implementation workflow instead of documenting them away.
+- Claim docs are complete, current, source-grounded, synced, or ready only when the relevant sources and checks were covered.
 
 ## References
 

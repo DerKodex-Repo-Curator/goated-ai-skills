@@ -11,7 +11,7 @@ metadata:
 
 Create a source-grounded architecture blueprint before implementation begins. Use this skill to turn clarified product or project intent into planned modules, interfaces, dependency seams, data ownership, test surfaces, and implementation slice order.
 
-This skill is design-only. It prevents avoidable architecture drift by planning for deep modules up front, but it does not implement code, write tests, slice delivery tickets, create specs, or own RFC/ADR capture. Route those follow-ups to companion skills.
+This skill is design-only. It plans for deep modules up front and routes implementation, tests, ticket slicing, specs, and RFC/ADR capture to companion skills.
 
 ## Inputs
 
@@ -26,13 +26,9 @@ This skill is design-only. It prevents avoidable architecture drift by planning 
 Hard: None.
 
 Soft:
-- session-start-progressive-disclosure for unfamiliar architecture planning
 - grill-with-docs before durable blueprints when brief, scope, constraints, or language is unclear
 - write-a-spec when product scope or acceptance criteria are not architecture-ready
-- context-matrix-map when docs/agents/context-matrix.md exists or discovery is broad
-- project-context-calibration when root CONTEXT.md or language affects architecture terms
-- project-standards-calibration when standards affect module layout, testing, persistence, or artifact locations
-- architecture-design-map when current architecture must be described before planning additions or changes
+- architecture-design-map when current architecture must be described first
 - review-codebase-architecture when existing-code repair or refactor ranking is the real task
 - spec-to-tickets when the accepted blueprint should become delivery tickets
 - tdd when a blueprint slice moves into implementation and behavior proof
@@ -41,7 +37,7 @@ Soft:
 Fallback: If companion skills or durable docs are unavailable, inspect minimal evidence, require an explicit clarified brief, keep confidence lower, and separate blueprint facts from assumptions.
 ## Architecture Language
 
-Use project terms for concrete names. Keep these hot-path terms inline because they shape blueprint quality:
+Use project terms for concrete names. These terms shape blueprint quality:
 
 - **Module / interface**: plan behavior ownership plus the caller/test contract, not speculative file trees.
 - **Deep vs shallow module**: prefer small meaningful interfaces that hide cohesive behavior over wrappers that leak coordination to callers.
@@ -96,8 +92,7 @@ Use project terms for concrete names. Keep these hot-path terms inline because t
    - Include source evidence for important module, interface, dependency, data, and test-surface claims.
    - Separate settled decisions, assumptions, open questions, and deferred alternatives.
    - Include RFC or ADR triggers when the architecture crosses public interfaces, data ownership, service/package boundaries, deployment topology, security posture, migration strategy, or multiple viable interface designs.
-   - Recommend the single next workflow or action.
-   - Emit that recommendation as one next-step signal without reconstructing later implementation, review, documentation, and completion gates.
+   - Recommend the single next workflow or action as one next-step signal, without reconstructing later implementation, review, documentation, and completion gates.
    - Use `verification-before-completion` before claiming a durable blueprint is complete, evidence-backed, or ready for downstream slicing; for small inline advice or exploratory designs, verify only the claim being made and state uncertainty.
 
 ## Output Contract
@@ -151,24 +146,19 @@ For inline output, include the same core pieces without forcing a durable file p
 Main owns mode, intent gate, architecture judgment, location, blueprint, and
 communication. Delegate only bounded evidence traces, one constrained
 alternative, or checks for overdesign, false seams, missing evidence, and weak
-test surfaces.
-
-Return inspected paths and commands, exact evidence, assumptions,
-contradictions, confidence, residual uncertainty, status, and blueprint inputs,
-not implementation or final edits. Resolve concerns or missing context before
-choosing; narrow or stop on `BLOCKED`. Without delegation, run sequentially.
+test surfaces. Delegates return inspected paths and commands, exact evidence,
+assumptions, contradictions, confidence, residual uncertainty, status, and
+blueprint inputs, not implementation or final edits; resolve concerns or
+missing context before choosing, narrow or stop on `BLOCKED`, and run
+sequentially without delegation.
 
 ## Guardrails
 
-- Do not write a durable blueprint from fuzzy intent. Require a clarified brief, spec or legacy PRD, ticket or remote issue, or `grill-with-docs` result.
-- Do not implement production code, write tests, generate migrations, run formatters, slice delivery tickets, or mutate architecture as part of this skill.
-- Do not turn the blueprint into a speculative file tree. Mention paths only when grounded by project evidence or accepted conventions.
-- Do not create interfaces, ports, adapters, or dependency injection just in case. Require a real seam, dependency category, test strategy, or caller-leverage reason.
-- Do not duplicate `write-a-spec`, `spec-to-tickets`, `writing-plans`, `tdd`, `architecture-design-map`, or `review-codebase-architecture`; emit one appropriate next-step signal when their job starts.
-- Do not default to Mermaid or require a diagram when prose or a table is the smaller useful design artifact.
-- Do not hide uncertainty. Mark inferred, stale, missing, weak, or conflicting evidence clearly.
-- Do not include private notes, ignored local scratch files, credentials, client data, sensitive personal context, secrets, or real user data in tracked blueprints.
-- Do not require this source repo's root docs after installation. The skill may rely only on its own installed files and target-project evidence.
+- Stay design-only: leave production code, tests, migrations, formatters, ticket slicing, and architecture changes to the routed skills.
+- Mention file paths only when grounded by project evidence or accepted conventions.
+- Emit one next-step signal when the work becomes the job of `write-a-spec`, `spec-to-tickets`, `writing-plans`, `tdd`, `architecture-design-map`, or `review-codebase-architecture`.
+- Mark inferred, stale, missing, weak, or conflicting evidence clearly.
+- Keep credentials, private notes, and real user or client data out of tracked blueprints.
 
 ## References
 

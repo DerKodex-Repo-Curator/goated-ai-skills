@@ -13,5 +13,6 @@ They should be portable by default, avoid assuming one instruction-file conventi
 - `project-standards-calibration` - records documented standards, inferred conventions, user-confirmed preferences, and unresolved questions.
 - `agent-instructions-integrator` - routes agent instruction artifacts to installed skills and durable project artifacts.
 - `handoff` - writes compact continuity notes for future agents or sessions.
+- `retrospective` - proposes environment improvements from a session's mistakes and friction.
 - `framework-agnostic-skill-creator` - creates GOATED skills from clarified intent and ports existing workflows into GOATED shape.
 - `wayfinder` - advances a visible decision frontier across sessions and hands settled evidence to a named planning destination without executing production work.

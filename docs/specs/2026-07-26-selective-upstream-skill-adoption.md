@@ -143,18 +143,18 @@ Every new or changed skill must:
 
 ## Acceptance Criteria
 
-- [ ] AC1: The skill creator and its evaluation reference contain
+- [x] AC1: The skill creator and its evaluation reference contain
       behavior-changing load, determinism, completion, pruning, and
       progressive-disclosure checks without duplicating shared policy.
-- [ ] AC2: Diagnosis fixtures prove exact-symptom reproduction is minimized
+- [x] AC2: Diagnosis fixtures prove exact-symptom reproduction is minimized
       before hypothesis ranking while unsafe or intermittent cases retain
       honest fallbacks.
-- [ ] AC3: Ticket-slicing fixtures distinguish ordinary vertical work from
+- [x] AC3: Ticket-slicing fixtures distinguish ordinary vertical work from
       expand-migrate-contract refactors and report the ready frontier.
-- [ ] AC4: `resolving-merge-conflicts` is implemented, registered, documented,
+- [x] AC4: `resolving-merge-conflicts` is implemented, registered, documented,
       self-contained, and pressure-tested for compatible intent, incompatible
       intent, unsafe continuation, and lifecycle authorization.
-- [ ] AC5: `source-grounded-research` is implemented, registered, documented,
+- [x] AC5: `source-grounded-research` is implemented, registered, documented,
       self-contained, and tested for read-only output, optional durable
       capture, stale or conflicting sources, and single-agent fallback.
 - [x] AC6: A maintainer-reviewed invocation-topology report identifies real
@@ -169,15 +169,15 @@ Every new or changed skill must:
 - [ ] AC9: Any accepted `domain-modeling` skill owns only active terminology and
       consequential decision capture, with narrow writes and no broad
       onboarding scan.
-- [ ] AC10: Repository validation, focused tests, V1/V2 context comparison,
+- [x] AC10: Repository validation, focused tests, V1/V2 context comparison,
       public-boundary scans, Markdown/link review, and diff checks pass for
       every completed implementation slice.
-- [ ] AC11: Ticket 013's validator refactor is not mixed into these behavior
+- [x] AC11: Ticket 013's validator refactor is not mixed into these behavior
       changes; overlapping validator work is sequenced explicitly.
 
 ## Constraints
 
-- `AGENT.md` permits new skill folders only for an approved implementation
+- `AGENTS.md` permits new skill folders only for an approved implementation
   ticket. The tickets derived from this approved spec provide that contract.
 - Ticket 013 was completed separately as the behavior-preserving validator
   refactor. Adoption tickets could depend on validator behavior but did not
@@ -268,7 +268,7 @@ a separate maintainer go decision after the overlap evidence is reviewed.
 
 ## Sources
 
-- `AGENT.md` — source-repo, new-skill, public-boundary, and progressive
+- `AGENTS.md` — source-repo, new-skill, public-boundary, and progressive
   disclosure rules.
 - `CONTEXT.md` — GOATED product model and source/installed/target boundaries.
 - `docs/specs/2026-07-25-goated-ai-skills-v2.md` — accepted V2 control-plane,

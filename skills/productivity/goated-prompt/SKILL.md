@@ -32,7 +32,6 @@ Hard: None.
 
 Soft:
 - using-goated-ai-skills when the request should route through the installed GOATED stack
-- grill-me for lightweight intent, audience, tradeoff, or success-criteria clarification
 - grill-with-docs when unresolved project intent or conflicting evidence materially blocks a useful prompt
 - write-a-spec when the prompt should ask for a scoped spec before implementation
 - writing-plans when an approved issue or task needs exact implementation steps
@@ -119,16 +118,12 @@ success-criteria review.
 
 ## Guardrails
 
-- Do not ask unnecessary clarifying questions when a strong prompt can be produced with explicit assumptions.
-- Do not hide uncertainty; put assumptions or required source checks into the prompt.
-- Do not turn every request into a full spec. Match prompt weight to task size and risk.
-- Preserve essential requirements and constraints regardless of prompt length; multiple files or public visibility alone do not justify a larger workflow.
-- Do not replace `using-goated-ai-skills`, `grill-with-docs`, `write-a-spec`, `writing-plans`, `framework-agnostic-skill-creator`, or implementation workflows. Route to them when they are the better owner.
-- Do not recommend specific current model names unless the user provides them or current official docs were checked.
+- Match prompt weight to task size and risk; a full spec prompt is the exception, and multiple files or public visibility alone do not justify a larger workflow.
+- Preserve essential requirements and constraints regardless of prompt length.
+- Route to `using-goated-ai-skills`, `grill-with-docs`, `write-a-spec`, `writing-plans`, `framework-agnostic-skill-creator`, or an implementation workflow when it is the better owner.
+- Name a specific current model only when the user provides it or current official docs were checked.
 - Do not include private paths, credentials, client data, proprietary excerpts, raw private notes, source clone URLs, ignored scratch content, or sensitive personal context in reusable prompts.
-- Do not present one framework's command syntax, file mention syntax, plugin behavior, or automation as universal.
-- Do not put route metadata or explanation before the finished prompt.
-- Do not require this source repo's root files, issue files, `.local/`, or hidden chat history after installation.
+- Treat one framework's command syntax, file mention syntax, plugin behavior, or automation as framework-specific, not universal.
 
 ## References
 

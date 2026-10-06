@@ -14,7 +14,7 @@ Context docs are optional project conventions, not universal requirements. Many 
 ## How To Use Context Evidence In The Grill
 
 - Prefer discovered project language over invented terminology.
-- When the user uses a vague or overloaded term, propose a precise term and ask one question to confirm or correct it.
+- When the user uses a vague or overloaded term, propose a precise term and ask the user to confirm or correct it.
 - When source evidence conflicts, surface the contradiction and ask which source should change.
 - Use concrete scenarios to test boundaries between concepts:
   - lifecycle: "What happens before, during, and after this state?"
@@ -27,7 +27,14 @@ Context docs are optional project conventions, not universal requirements. Many 
 
 ## Candidate Durable Updates
 
-During the grill, list candidate durable updates instead of writing context docs by default. Possible candidates include:
+When one term settles and current consent covers the project write, record it at once in the project's existing context or glossary doc, in that doc's own format. Where the doc has no format for terms, use:
+
+```markdown
+**<Term>**: <one or two sentences saying what it is, free of implementation detail>
+_Avoid_: <synonyms the project should stop using>
+```
+
+Record only terms specific to this project, one term per write. Everything else stays a candidate durable update listed in the working brief. Possible candidates include:
 
 - project boundaries or non-boundaries;
 - canonical terms, aliases to avoid, or resolved ambiguities;
@@ -36,7 +43,7 @@ During the grill, list candidate durable updates instead of writing context docs
 - reusable architecture vocabulary;
 - gaps where docs, code, tests, and user intent disagree.
 
-Route target-project `CONTEXT.md` creation or curation to `project-context-calibration` when that skill is available. If it is unavailable, continue the grill with lower confidence and report candidate context updates in the working brief. Only write context docs during the grill when the user explicitly asks for that or the target project's established workflow requires immediate capture.
+Route creation of a context doc, or curation broader than one settled term, to `project-context-calibration` when that skill is available. If it is unavailable, continue the grill with lower confidence and report candidate context updates in the working brief. Create a new context doc during the grill only when the user asks for one.
 
 ## Optional Structures
 

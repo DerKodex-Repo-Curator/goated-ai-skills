@@ -9,6 +9,7 @@
 - [Changing Tests To Match Broken Behavior](#anti-pattern-changing-tests-to-match-broken-behavior)
 - [Over-Mocking Owned Code](#anti-pattern-over-mocking-owned-code)
 - [Testing Mocks Instead Of Behavior](#anti-pattern-testing-mocks-instead-of-behavior)
+- [Tautological Assertions](#anti-pattern-tautological-assertions)
 - [Test-Only Production APIs](#anti-pattern-test-only-production-apis)
 - [Incomplete Fakes Or Mocks](#anti-pattern-incomplete-fakes-or-mocks)
 - [Manual-Only Proof](#anti-pattern-manual-only-proof)
@@ -141,6 +142,25 @@ Better:
 - Assert on observable behavior: returned result, rendered affordance, emitted command, persisted state through a public interface, or safe recorded external effect.
 - Use fakes to support the behavior test, not to replace the behavior being tested.
 - If the mock has no behavior-relevant assertion, remove it or move it to the real external seam.
+
+## Anti-Pattern: Tautological Assertions
+
+Symptoms:
+
+- The expected value is computed the same way the code computes it.
+- A snapshot or fixture was generated from the current output and accepted unread.
+- A constant is asserted equal to itself, or the test copies the implementation's formula.
+
+Why it hurts:
+
+- The test passes by construction and can never disagree with the code.
+- A wrong implementation and its mirrored expectation fail or pass together.
+
+Better:
+
+- Take the expected value from an independent source: a known-good literal, a worked example, or the spec.
+- Read a generated snapshot against the requirement before accepting it.
+- If no independent expectation exists, treat that as a missing requirement and ask.
 
 ## Anti-Pattern: Test-Only Production APIs
 

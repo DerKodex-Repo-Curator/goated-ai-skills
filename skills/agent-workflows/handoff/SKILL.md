@@ -15,37 +15,30 @@ Use this skill at the end of onboarding, delivery, review, planning, or interrup
 
 ## Inputs
 
-- User request or reason for handoff.
-- Optional next-session focus from the user.
-- Target-project root path.
-- Target project name when provided by the user.
-- Current task, spec or legacy PRD, ticket or remote issue, or ADR paths.
-- Relevant `docs/agents/` artifacts, if present.
-- Local git status, changed files, commits, or diff summary when relevant.
+- Reason for the handoff and any next-session focus from the user.
+- Target-project root and name.
+- Paths to the current task, spec, ticket or remote issue, ADRs, and relevant `docs/agents/` artifacts.
+- Git status, changed files, commits, or diff summary when relevant.
 - Verification commands run, skipped, failed, or still needed.
-- Known blockers, risks, assumptions, and recommended next skills.
-- Existing handoff path when updating a prior handoff.
+- Known blockers, risks, assumptions, and any existing handoff being updated.
 
 ## Dependencies
 
 Hard: None.
 
 Soft:
-- session-start-progressive-disclosure when a future agent needs re-orientation
-- context-matrix-map when a target project has docs/agents/context-matrix.md
-- project-context-calibration when language or boundaries affected the work
-- project-standards-calibration when standards affected the work
-- verification-before-completion before complete/checked/future-session handoff claims
+- session-start-progressive-disclosure when the future agent needs re-orientation
+- verification-before-completion before complete or checked handoff claims
 
 Fallback: If companion skills or durable artifacts are unavailable, write compact note with explicit gaps and lower confidence.
 
 ## Workflow
 
-1. Confirm the handoff scope:
+1. Confirm a handoff is the right tool, then its scope:
+   - A handoff is a lossy summary of the session, so check the cheaper options first. Continue in this session when the next phase needs this one's reasoning and there is room for it. Start fresh without a handoff when nothing here matters to what comes next. Delegate when the next task is scoped tightly enough to run unattended. Write a handoff when the work must travel to another session, tool, directory, or person, or is interrupted or resumable.
    - Identify whether the handoff is for target-project onboarding, target-project delivery, review, planning, or an interrupted session.
    - If the user provides a next-session focus, tailor the handoff around what that future session needs first.
-   - Confirm the target-project root.
-   - Keep the handoff focused on resuming the current work, not documenting the whole project.
+   - Confirm the target-project root, and keep the handoff focused on resuming the current work.
 
 2. Choose storage:
    - For resumable work, default to
@@ -70,7 +63,7 @@ Fallback: If companion skills or durable artifacts are unavailable, write compac
    - Link or list the relevant spec or legacy PRD, ticket or remote issue, ADR, context matrix, standards profile, code files, tests, docs, commits, or commands.
    - Summarize only the current state needed to resume.
    - Reference diffs, commits, PRs, and commit messages by path, command, hash, or link instead of pasting them.
-   - Do not include private scratch content unless it is necessary to resume and safe to store in a temporary handoff.
+   - Include private scratch content only when it is necessary to resume and safe to store in a temporary handoff.
 
 4. Capture current state:
    - What has been completed.
@@ -92,8 +85,7 @@ Fallback: If companion skills or durable artifacts are unavailable, write compac
    - A short resume plan with the next one to three actions.
 
 7. Finalize and report:
-   - Re-read the handoff for concision and source references.
-   - Confirm it does not duplicate long artifacts.
+   - Re-read the handoff for concision and source references, and confirm it does not duplicate long artifacts.
    - Use `verification-before-completion` before claiming the handoff is complete, checked, or ready for a future session.
    - Report the absolute handoff path and the most important next step.
 
@@ -161,29 +153,14 @@ After writing the handoff, report:
 
 ## Delegation
 
-Main owns the handoff scope, final summary, privacy judgment, and user communication.
-
-Delegate only bounded evidence gathering: summarize changed files, collect verification commands/outcomes, find spec/ticket/ADR/docs paths, or resolve the project root, slug, or existing handoff path.
-
-Require paths inspected, commands run, evidence sources, assumptions/uncertainty, and concise reference findings rather than pasted handoff prose. If subagents are unavailable, gather the same evidence sequentially with a narrower context budget.
+Main owns the handoff scope, final summary, and privacy judgment. Delegate only bounded evidence gathering: changed files, verification commands and outcomes, artifact paths, or the project root and existing handoff path. Require paths inspected, commands run, assumptions, and reference findings rather than handoff prose; without delegation, gather the same evidence sequentially.
 
 ## Guardrails
 
-- Do not write project-local continuity state until `.local/` ignore behavior
-  is verified.
-- Prefer `.local/goated/handoffs/` for resumable project work and OS temp when
-  project-local state is inappropriate or unsafe.
-- Always report the absolute handoff path so the next session can locate
-  project-local or OS-temp state; temporary files may be cleaned automatically.
-- Do not treat temporary handoffs as durable records or secret storage.
-- Write tracked handoffs only when the user explicitly requests a tracked artifact.
-- Do not duplicate specs or legacy PRDs, ticket or remote-issue files, ADRs, diffs, commit messages, long logs, or conversation transcripts.
-- Do not treat a handoff as a replacement for root `CONTEXT.md`, `docs/agents/context-matrix.md`, `docs/agents/project-standards.md`, a spec or legacy PRD, a ticket or remote issue, or an ADR.
-- Do not include credentials, secrets, client data, sensitive personal context, or unsafe private scratch notes in any handoff.
-- Do not claim verification passed unless the check was actually run or already evidenced.
-- Keep the note short enough that a future agent can read it first.
-- Prefer references and resume actions over narrative history.
-
-## References
-
-This skill is self-contained after installation.
+- Verify `.local/` ignore behavior before writing project-local continuity state; use OS temp when project-local state is inappropriate or unsafe.
+- Always report the absolute handoff path; temporary files may be cleaned automatically.
+- Temporary handoffs are not durable records or secret storage. Keep credentials, client data, and sensitive personal context out of every handoff.
+- Write a tracked handoff only when the user explicitly requests one, and keep it public-safe.
+- Reference specs, tickets, ADRs, diffs, commits, and logs instead of copying them; a handoff does not replace them.
+- State a check as passed only when it was run or already evidenced.
+- Keep the note short enough to read first: references and resume actions over narrative history.

@@ -244,6 +244,14 @@ contract.
   OS temp as the fallback.
 - **Pipeline role**: Optional closeout for onboarding or delivery.
 
+#### `retrospective`
+
+- **Purpose**: Proposes changes to the agent's environment so a session's mistakes and friction do not recur.
+- **Use when**: You want a retrospective on a work session, or recurring agent mistakes turned into checks, standards, or instruction changes.
+- **Typical input**: The session record, user corrections, failed checks, and the project's check and instruction files.
+- **Typical output**: Proposals ordered by severity, each tied to a moment in the session. It edits nothing itself.
+- **Pipeline role**: Optional review after delivery; accepted proposals route to standards calibration, instruction integration, or normal implementation.
+
 #### `framework-agnostic-skill-creator`
 
 - **Purpose**: Creates or ports skills into GOATED's portable skill shape.
@@ -426,6 +434,14 @@ contract.
 - **Typical output**: Commit message text first. Commands appear only when the
   user explicitly asks for them.
 - **Pipeline role**: Delivery closeout after verification and doc sync.
+
+#### `pr-description`
+
+- **Purpose**: Drafts a pull request description from the actual change and its evidence.
+- **Use when**: You want to draft or revise a pull request or merge request description.
+- **Typical input**: Commits and diff against the merge base, any project pull request template, and verification evidence.
+- **Typical output**: Description text first: summary, before-and-after evidence, and merge risk. It never opens or edits a pull request.
+- **Pipeline role**: Delivery closeout alongside the commit message.
 
 #### `architecture-design-map`
 

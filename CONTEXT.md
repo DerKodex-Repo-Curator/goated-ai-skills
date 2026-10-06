@@ -119,6 +119,16 @@ maintainer-accepted integrated stack.
   question against a question-specific source hierarchy, with claim-scoped
   provenance, freshness, confidence, and uncertainty; durable Markdown capture
   is optional and reuses an existing project-owned convention.
+- **Frontier round** - one numbered round of clarification questions covering
+  every open decision whose prerequisites are already settled, each with a
+  recommended default. Questions that depend on an answer still open in the
+  round wait for a later round.
+- **Proof surface** - the highest existing interface where a spec's acceptance
+  criteria can be observed; an optional spec field that later test design
+  reuses.
+- **Retrospective** - a proposal-only review of a work session that turns
+  observed agent mistakes and friction into proposed changes to the project's
+  checks, standards, instruction files, tooling, or information access.
 - **Local/session artifact** - ignored, private, or temporary context, such as
   `.local/goated/`, `.local/scratch/`, OS temp
   `goated-handoffs/<project-name>/`, `.scratch/`, `tmp/`, or `temp/`.

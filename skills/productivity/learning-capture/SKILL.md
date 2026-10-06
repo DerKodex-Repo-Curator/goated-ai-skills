@@ -31,10 +31,6 @@ for that retrieval surface.
 Hard: None.
 
 Soft:
-- `grill-me` when the lesson, subject, audience, or capture threshold is unclear
-- `grill-with-docs` when project evidence must shape the lesson
-- `doc-sync` when captured lessons reveal documentation drift in a target project
-- `verification-before-completion` before claiming notes were written, updated, skipped correctly, or are ready to rely on
 - `knowledge-retrieval` for scoped read-only search before separate capture
 
 Fallback: Use provided context, label assumptions, and ask before writing when
@@ -150,20 +146,13 @@ candidate card, or schema/privacy review.
 
 - Do not write or update notes before candidate review and approval coverage
   under the active shared mode.
-- Do not request approval again when active batch or standing consent still
-  covers the reviewed destination and write reach.
 - Do not reuse consent after a material destination, scope, sensitivity, or
   action-reach change.
-- Do not capture unsupported hunches as knowledge.
 - Do not capture secrets or sensitive/private source material.
 - Do not put personal notes in public project files without explicit approval.
-- Do not treat old notes as current truth without checking `updated`, `status`, `confidence`, `source_type`, and freshness caveats.
-- Do not let `status` imply factual certainty; use `confidence` for truth confidence.
-- Do not create one giant chronological journal or a topic file containing many unrelated lessons.
-- Do not create a persistent capture log.
-- Do not expand into broad retrieval, vault crawling, sync, databases, or
-  knowledge-tool automation.
-- Do not require this source repo's root files, issue files, `.local/`, or hidden chat history after installation.
+- Check `updated`, `status`, `confidence`, `source_type`, and freshness caveats before treating an old note as current truth.
+- Keep to note capture and nurture; leave broad retrieval, vault crawling,
+  sync, databases, and knowledge-tool automation out of scope.
 
 Before a completion claim, verify each written note is atomic,
 evidence-bounded, non-sensitive, destination-resolved, deduplicated, and

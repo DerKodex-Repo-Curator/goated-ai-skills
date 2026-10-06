@@ -13,9 +13,8 @@ Select one proportionate route for the task, reuse shared evidence and consent,
 and revise only the affected route parts at controlled checkpoints.
 
 Use this router when work begins, an existing work envelope needs refreshing,
-or a material route signal appears. Do not load it again merely because one
-selected skill finished. For an obvious tiny request, apply the lightweight
-path silently.
+or a material route signal appears. A finished skill alone is not a reason to
+reload it. For an obvious tiny request, apply the lightweight path silently.
 
 ## Inputs
 
@@ -37,8 +36,7 @@ Soft:
 - `wayfinder` when uncertainty is branching and exceeds one focused session
 
 Fallback: Without the shared policy or registry, use the compact profile, gate,
-approval, evidence, and checkpoint rules in this file. Never depend on the
-GOATED source repository or hidden session files.
+approval, evidence, and checkpoint rules in this file.
 
 ## Workflow
 
@@ -120,7 +118,7 @@ GOATED source repository or hidden session files.
    - Skills return internal deltas: result, evidence, changes, risks, route
      signals, and skipped checks. They do not reconstruct the downstream route
      or produce competing task closeouts.
-   - Do not narrate routine routing. Report only decisions, blockers, approval
+   - Keep routine routing internal. Report only decisions, blockers, approval
      needs, material scope or risk changes, or useful long-work progress.
 
 7. **Re-evaluate only when allowed.**
@@ -143,34 +141,23 @@ GOATED source repository or hidden session files.
 ## Output Contract
 
 Return one compact envelope update using Step 2's core fields. Add only
-decision-relevant route changes, approval needs, evidence, or residual risk.
-Keep routine routing internal; explain changes when they affect user decisions.
-Standalone use returns the same route and closeout without shared files.
+decision-relevant route changes, approval needs, evidence, or residual risk,
+and explain a change when it affects a user decision. Standalone use returns
+the same route and closeout without shared files.
 
 ## Delegation
 
-The main agent owns the envelope, routing, consent interpretation, integration,
-and user communication. Delegate only bounded work with non-overlapping
-ownership. Require inspected paths, commands, evidence, assumptions,
-uncertainty, status, and envelope deltas; review them before use.
-
-Remain single-agent-compatible when delegation is unavailable.
+The main agent owns the envelope, routing, consent interpretation, and
+integration. Delegate only bounded work with non-overlapping ownership. Require
+inspected paths, commands, evidence, assumptions, status, and envelope deltas,
+and review them before use. Without delegation, run the route sequentially.
 
 ## Guardrails
 
-- Do not override user or project instructions with routing defaults.
-- Do not add model, provider, cost, resource-tier, or Factory metrics.
-- Do not treat the envelope as a mandatory tracked artifact.
-- Do not repeat approvals, discovery, tests, or closeouts when fresh coverage
-  already exists.
-- Do not let one specialist silently select the remaining pipeline.
-- Do not weaken proof, privacy, security, or scope control for lightweight work.
+- Keep the envelope free of model, provider, cost, resource-tier, or Factory
+  metrics.
+- Lightweight work keeps the same proof, privacy, security, and scope control.
 - Do not expose restricted data, credentials, private notes, or user content in
   tracked state or public output.
-- Do not require unavailable skills; use the closest safe direct procedure and
-  state the missing capability or residual risk.
-
-## References
-
-No external reference is required. Integrated installations may supply shared
-policy and registry metadata; this file retains the standalone fallback.
+- When a selected skill is unavailable, use the closest safe direct procedure
+  and state the missing capability or residual risk.

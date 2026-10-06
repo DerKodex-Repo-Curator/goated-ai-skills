@@ -91,6 +91,7 @@ Use these as evaluation questions, not as required GOATED vocabulary:
 | Sequence pressure | Do visible later steps tempt the agent to declare the current phase complete too early? | Sharpen the current completion criterion first; split only when observed pressure remains. |
 | Positive steering | Does a prohibition make the unwanted behavior more salient without naming the replacement? | State the positive target behavior first; retain a prohibition only when it is a necessary guardrail and pair it with the replacement action. |
 | Leading concept | Can a familiar compact concept replace repeated explanation without hiding a project-specific rule? | Use it when it improves retrieval or execution; explain unfamiliar meaning locally and do not require the label across GOATED. |
+| Environment as source | Does this sentence restate something one command, config file, or directory listing would show? | Point to the lookup instead of copying it; keep only what the environment cannot show, such as the unwritten convention or the reason behind a choice. |
 
 Apply the lenses sentence by sentence and branch by branch. They are useful
 only when they change an authoring decision; do not add a vocabulary report to

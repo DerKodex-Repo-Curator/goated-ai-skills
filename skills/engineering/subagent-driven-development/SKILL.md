@@ -11,9 +11,9 @@ metadata:
 
 Use fresh implementer and reviewer agents for implementation tasks without losing main-agent ownership.
 
-This skill is for scoped implementation work that has a plan, a clear task split, and reviewable evidence. It helps the main agent coordinate delegated work, inspect what came back, resolve conflicts, and make honest final claims. Subagents can accelerate work, but they do not own the product decision, integration judgment, or user communication.
+This skill is for scoped implementation work that has a plan, a clear task split, and reviewable evidence. The main agent coordinates delegated work, inspects what came back, resolves conflicts, and makes honest final claims; it keeps the product decision, integration judgment, and user communication.
 
-Keep the GOATED quality bar visible during delegation: prefer vertical behavior slices, tests through public interfaces, and deep modules with small meaningful interfaces. Do not create shallow pass-through abstractions or horizontal layer batches just because they are easy to delegate.
+Keep the GOATED quality bar visible during delegation: prefer vertical behavior slices, tests through public interfaces, and deep modules with small meaningful interfaces. Ease of delegation does not justify shallow pass-through abstractions or horizontal layer batches.
 
 ## Inputs
 
@@ -32,12 +32,12 @@ Soft:
 - grill-with-docs when behavior, scope, intent, language, or review constraints are unclear
 - prototype when risky implementation choices need disposable evidence before delegation
 - design-codebase-architecture when module, interface, dependency, or architecture strategy is unsettled
-- tdd when delegated work changes behavior, public interfaces, regressions, or testable workflows
-- code-refinement after delegated implementation only when explicitly requested or concrete refinement debt is observed
+- tdd when delegated work changes behavior, public interfaces, or regressions
+- code-refinement after delegated implementation only for an explicit request or observed refinement debt
 - standards-and-spec-review for spec fit, acceptance coverage, and project standards after delegated work
 - code-security-review when delegated work touches trust boundaries, auth, permissions, user data, persistence, execution, or unsafe config
 - doc-sync after delegated behavior, interface, architecture, standard, config, test, or doc changes
-- verification-before-completion before complete/correct/passing/review-ready/lifecycle-ready delegated-work claims
+- verification-before-completion before complete/correct/passing/review-ready/lifecycle-ready claims
 
 Fallback: If subagents, companion skills, commands, or review tools are unavailable, run implementation and review phases sequentially, mark unavailable evidence, and avoid unsupported completion claims.
 
@@ -117,15 +117,11 @@ resolve `DONE_WITH_CONCERNS`; supply `NEEDS_CONTEXT`; narrow, replan, or stop on
 
 ## Guardrails
 
-- Do not delegate implementation before the task, allowed write scope, expected evidence, and review path are clear.
-- Do not dispatch parallel implementers to overlapping files, shared interfaces, or dependent tasks unless the dependency is already settled.
 - Do not let implementers decide broad architecture, product scope, public contracts, migrations, or security posture unless the task explicitly delegates that decision and review covers it.
-- Do not accept `DONE` as proof. Inspect or reproduce important evidence before relying on delegated work.
-- Do not skip spec review, quality review, final review, or `verification-before-completion` because a subagent sounded confident.
+- Treat `DONE` as a claim, not proof: inspect or reproduce important evidence before relying on delegated work.
+- Run spec review, quality review, final review, and `verification-before-completion` however confident a subagent report sounds.
 - Do not require commits, branches, worktrees, issue movement, PRs, task-tool syntax, model names, or framework-specific commands unless the target project or user requires them.
-- Do not copy source-repo instructions, local research paths, hidden chat history, or private scratch notes into installed-skill requirements.
-- Do not include private names, credentials, client data, sensitive personal context, ignored scratch content, or real user data in prompts or reports.
-- Do not make this skill depend on this source repo's root `AGENTS.md`, `README.md`, `CONTEXT.md`, issue files, `.local/`, or upstream inspiration after installation.
+- Keep credentials, private names, and real user or client data out of subagent prompts and reports.
 
 ## References
 

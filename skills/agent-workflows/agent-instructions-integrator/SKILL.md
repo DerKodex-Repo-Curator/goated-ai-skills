@@ -17,12 +17,10 @@ docs; context, source-map, and standards artifacts do not need to exist.
 
 ## Inputs
 
-- User request and chosen agent framework, if already known.
-- Target-project root path.
+- User request, target-project root path, and chosen agent framework, if already known.
 - Installed GOATED skill location, registry, or framework-specific skill discovery path, if known.
 - Existing target-project agent instruction files, command files, skill registries, or framework config.
-- Existing root `CONTEXT.md`, if present.
-- Existing `docs/agents/context-matrix.md` and `docs/agents/project-standards.md`, if present.
+- Existing root `CONTEXT.md`, `docs/agents/context-matrix.md`, and `docs/agents/project-standards.md`, if present.
 - Framework docs or user-provided framework conventions, when local evidence is insufficient.
 
 ## Dependencies
@@ -33,9 +31,6 @@ Soft:
 - using-goated-ai-skills for installed-stack entrypoint or task-surface routing
 - goated-prompt for prompt-crafting, reusable prompt, or GOATED-aware routing
 - session-start-progressive-disclosure for unfamiliar target projects
-- context-matrix-map when routing should reference docs/agents/context-matrix.md
-- project-context-calibration when routing should reference root CONTEXT.md
-- project-standards-calibration when routing should reference docs/agents/project-standards.md
 - verification-before-completion before complete/checked/ready adapter claims
 
 Fallback: If companion skills or target-project artifacts are unavailable, create a minimal framework router and state unverified gaps.
@@ -45,7 +40,7 @@ Fallback: If companion skills or target-project artifacts are unavailable, creat
 1. Confirm target-project boundary:
    - Identify the project root from the user's request, current directory, or repository metadata.
    - Keep this source library, installed skill folders, and target-project instruction artifacts distinct.
-   - Do not edit anything until the target project and intended framework are clear enough.
+   - Edit only once the target project and intended framework are clear enough.
 
 2. Detect or accept the chosen framework before editing:
    - Prefer an explicit user choice when provided.
@@ -67,7 +62,7 @@ Fallback: If companion skills or target-project artifacts are unavailable, creat
    - If the file contains conflicting guidance, surface the conflict before deciding how to merge it.
 
 5. Route to installed skills:
-   - Discover installed skills and the distribution root through the host's skill catalog, configuration, or installation metadata. Use registry names, supported variables, or paths relative to a verified root; do not embed machine-specific absolute paths in reusable instructions.
+   - Discover installed skills and the distribution root through the host's skill catalog, configuration, or installation metadata. In reusable instructions, use registry names, supported variables, or paths relative to a verified root, never machine-specific absolute paths.
    - If only a skill root is known, inspect nearby installation directories for a distribution containing `stack/AGENTS.md` and `stack/goated-stack.yaml`. Keep discovery bounded; if it remains unavailable, state the gap and use standalone skill instructions within the authorized scope.
    - In integrated mode, apply one installed shared policy: merge its contents into active instructions or explicitly direct the agent to read it once when GOATED applies. Verify that the framework can perform the selected load; an ordinary link is not an import. If it cannot, merge the necessary policy instead.
    - Use installed `using-goated-ai-skills` when the route is uncertain or needs revision. A clear specialist request may go directly to that skill; unfamiliar context can justify `session-start-progressive-disclosure`.
@@ -124,25 +119,12 @@ If no safe artifact can be selected, do not edit. Return the same report shape w
 
 ## Delegation
 
-Main owns framework selection, edit strategy, final patch, and user communication.
-
-Delegate only bounded evidence scans: find framework instruction artifacts, check `docs/agents/`, summarize one candidate instruction file, or identify installed skill registry paths from local config.
-
-Require paths inspected, commands run, framework signals, assumptions/confidence, and recommended artifact candidates rather than direct edits. If subagents are unavailable, run the same scans sequentially with a narrower context budget.
+Main owns framework selection, edit strategy, final patch, and user communication. Delegate only bounded evidence scans: find framework instruction artifacts, check `docs/agents/`, summarize one candidate instruction file, or identify installed skill registry paths from local config. Require paths inspected, commands run, framework signals, assumptions/confidence, and recommended artifact candidates rather than direct edits; without subagents, run the same scans sequentially with a narrower context budget.
 
 ## Guardrails
 
-- Do not assume `AGENT.md`, `AGENTS.md`, `CLAUDE.md`, or any one filename is universal.
-- Do not paste the full GOATED onboarding or delivery workflow into every target project.
-- Do not copy full `SKILL.md` bodies into target-project instructions.
-- Do not edit instructions before detecting or confirming the chosen framework.
-- Do not overwrite existing project-specific rules, safety notes, or framework syntax.
-- Do not route to target-project artifacts that do not exist without marking them missing or planned.
-- Do not imply that optional context, source-map, or standards artifacts are
-  missing requirements when the onboarding budget intentionally omitted them.
-- Do not include private notes, ignored local scratch files, credentials, client data, or sensitive personal context unless the user explicitly requests a private artifact.
-- Prefer a small router that points to installed skills and durable target-project artifacts.
-
-## References
-
-No external references are required. This skill is self-contained after installation.
+- Select the instruction artifact from framework evidence; `AGENT.md`, `AGENTS.md`, `CLAUDE.md`, or any one filename is not universal.
+- Keep the adapter a small router that points to installed skills and durable target-project artifacts; `SKILL.md` bodies and the full GOATED onboarding or delivery workflow stay in the installed stack.
+- Do not overwrite existing project-specific rules, safety notes, or framework syntax; add or update a named routing section instead.
+- Mark any routed target-project artifact that does not exist as missing or planned, and present context, source-map, or standards artifacts the onboarding budget intentionally omitted as optional, not as missing requirements.
+- Keep credentials, client data, and private or ignored notes out of the instruction artifact unless the user explicitly requests a private artifact.

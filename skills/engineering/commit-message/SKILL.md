@@ -30,12 +30,7 @@ commits, pushes, tags, or publishes.
 Hard: None.
 
 Soft:
-- session-start-progressive-disclosure for unfamiliar target projects
-- standards-and-spec-review when spec fit or standards remain unresolved
-- code-security-review when trust boundaries, auth, user data, persistence, execution, or security config changed
-- doc-sync when behavior, interfaces, docs, standards, configuration, or tests may drift
 - verification-before-completion before commit wording claims completion, passing checks, synced docs, or review readiness
-- handoff when unfinished work or residual risk needs future continuity
 
 Fallback: If companion skills, git metadata, specs, or verification evidence are unavailable, inspect minimal local evidence, state lower confidence, and avoid invented intent/checks.
 
@@ -119,14 +114,9 @@ committing.
 ## Guardrails
 
 - Do not run `git add`, `git commit`, push, tag, create branches, amend commits, rewrite history, publish releases, or open pull requests.
-- Do not add staging, commit, push, or command suggestions unless the user explicitly asks for them.
-- Do not silently collapse unrelated work into one tidy commit. Split obvious clusters or call out the risk.
 - Draft from the inspected diff or patch, not the originating issue alone.
 - When commands are explicitly requested, do not emit unsafe paths, quoting, or shell-specific continuations.
-- Do not claim tests, CI, reviews, doc sync, security review, or standards review passed unless there is evidence.
-- Do not hide skipped checks, failures, or unrelated work.
-- Do not include private notes, ignored scratch content, credentials, secrets, sensitive personal context, client data, or real user data in commit text.
-- Do not require this source repo's root docs after installation. The skill may rely only on its own instructions and target-project evidence.
+- Keep skipped checks, failures, and unrelated work visible; claim tests, CI, reviews, doc sync, security review, or standards review passed only with evidence.
 
 ## References
 

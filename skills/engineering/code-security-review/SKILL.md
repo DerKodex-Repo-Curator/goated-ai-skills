@@ -22,9 +22,9 @@ database/storage policy, untrusted parsing, shell or code execution, network
 egress, dependency/install behavior, deployment security, or privileged
 configuration.
 
-Do not load it for presentation-only, wording-only, or local logic changes with
-no credible trust path or sensitive surface. Record a skip only when its reason
-is material to the route; do not add ceremonial security reports.
+Skip it for presentation-only, wording-only, or local logic changes with no
+credible trust path or sensitive surface. Record a skip only when its reason is
+material to the route, without a ceremonial security report.
 
 ## Inputs
 
@@ -40,10 +40,7 @@ is material to the route; do not add ceremonial security reports.
 Hard: None.
 
 Soft:
-- session-start-progressive-disclosure for unfamiliar target projects
 - standards-and-spec-review when issue, changed files, or intended behavior are unclear
-- tdd when security-relevant behavior changed and needs regression proof
-- project-standards-calibration when security, dependency, logging, privacy, or config standards affect review
 - doc-sync when security assumptions, public behavior, config, or threat-model docs may drift
 - verification-before-completion for complex, high-risk, delegated,
   multi-surface, or explicitly audited security closeout
@@ -60,14 +57,14 @@ Fallback: If companion skills, git history, security docs, dependency metadata, 
    - Identify the fixed point. Prefer an explicit user-provided base, PR metadata, branch upstream, merge-base with the likely trunk branch, or the issue-start commit.
    - List changed files before reviewing. In git projects, use an equivalent of `git status --short`, `git diff --name-status <fixed-point>...HEAD`, and working-tree diff commands as appropriate for the requested scope.
    - Identify the originating issue, standards/spec review, PRD, ticket, or explicit request when it helps determine intended behavior.
-   - Use non-mutating commands by default. Do not format, generate, migrate, rewrite, auto-fix, or upgrade dependencies during the review unless the user separately asks for implementation.
+   - Use non-mutating commands by default.
 
 2. Build an evidence path before judging:
    - For each security-relevant change, TRACE a concrete path from reachable trigger or entry point to trust boundary to sensitive asset or dangerous sink.
    - A finding needs a reachable trigger, crossed trust boundary, missing or broken guard, affected asset or sink, and impact.
    - Read [Security Review Checklist](references/security-review-checklist.md) when the scope spans multiple surfaces or you need entry point, trust-boundary, asset, sink, risk-class, or severity examples.
    - Use the checklist as coverage guidance, not as proof.
-   - Do not proceed from a vague concern to a finding. If no path can be traced, keep it as residual risk or a validation note.
+   - If no path can be traced, keep the concern as residual risk or a validation note, not a finding.
 
 3. Review high-risk classes:
    - ANALYZE access control, injection and parser paths, web or client exposure, data handling, persistence and policy, execution and platform behavior, dependency or supply-chain changes, and security-relevant reliability.
@@ -78,7 +75,7 @@ Fallback: If companion skills, git history, security docs, dependency metadata, 
    - Report only findings with strong static evidence, roughly 80% confidence or higher.
    - Strong evidence means the review can name the reachable trigger, affected path, missing or broken guard, impacted asset, and why existing framework or project behavior does not neutralize the issue.
    - Cross-check framework defaults, type safety, existing middleware, validation, ownership checks, policies, transaction behavior, test fixtures, and deployment config before reporting.
-   - If a pattern is suspicious but exploitability depends on missing facts, do not promote it to a finding. Record the missing validation under residual risk.
+   - If a pattern is suspicious but exploitability depends on missing facts, record the missing validation under residual risk instead of promoting it to a finding.
    - If validation needs runtime access, production-like config, captured logs, request traces, or human interaction, ask for that artifact or permission for a safe validation environment instead of guessing.
    - If static evidence proves a dangerous flaw but one external fact could change severity, report it at the lower defensible severity and include `[CONTEXT NEEDED]` with the exact validation needed.
    - Remove duplicate findings. When multiple paths share one root cause, report one finding with representative evidence and affected paths.
@@ -89,11 +86,11 @@ Fallback: If companion skills, git history, security docs, dependency metadata, 
    - Omit `LOW` findings unless the user asked for broad scanning or the issue is directly tied to a significant reviewed path.
 
 6. Report and route next work:
-   - Keep this review separate from standards/spec review. Do not report style, naming, test coverage, architecture, or unrequested-scope concerns unless they directly create exploitable risk.
+   - Keep this review separate from standards/spec review: report style, naming, test coverage, architecture, or unrequested-scope concerns only when they directly create exploitable risk.
    - Include precise affected paths and line references when possible.
    - Include CWE or OWASP labels only when they fit confidently.
    - If web access is available and the label matters for reviewer clarity, verify the label against the optional references below.
-   - If no exact label is known, use a plain vulnerability category instead of inventing an ID.
+   - If no exact label is known, use a plain vulnerability category instead of inventing a CWE, OWASP, or CVE ID.
    - Recommend concrete remediation that matches the project architecture and framework defaults.
    - State assumptions, skipped checks, unavailable evidence, and residual risk.
    - Recommend implementation fixes for findings, `doc-sync` for changed security assumptions or public docs, and a fuller audit only when the reviewed scope leaves material unexamined risk.
@@ -125,30 +122,25 @@ completion summary.
 
 Main owns scope, trust-boundary judgment, classification, false-positive
 control, and communication. Delegate only bounded surface mapping, one concrete
-trust path, candidate validation, or policy/default research.
-
-Return paths and commands, line-level evidence where possible, assumptions,
+trust path, candidate validation, or policy/default research. Delegates return
+paths and commands, line-level evidence where possible, assumptions,
 confidence, residual risk, status, and candidate severity, impact, fix, and
-false-positive notes. Resolve concerns or missing context before reporting;
-narrow or stop on `BLOCKED`. Without delegation, review sequentially.
+false-positive notes; resolve concerns or missing context before reporting,
+narrow or stop on `BLOCKED`, and review sequentially without delegation.
 
 ## Guardrails
 
 - Do not claim full security audit coverage, penetration-test coverage, compliance signoff, or absence of vulnerabilities.
-- Do not report speculative vulnerabilities. Without a concrete trigger, boundary, missing guard, affected asset, and impact, record residual risk instead.
-- Do not mix standards/spec findings into this review. Route missed requirements, unrequested scope, style, naming, and local convention issues to `standards-and-spec-review`.
-- Do not rely solely on automated scanners, grep hits, dependency warnings, or pattern matching. Treat tools as triage; verify the execution path before reporting.
+- Route missed requirements, unrequested scope, style, naming, and local convention issues to `standards-and-spec-review`.
+- Treat automated scanners, grep hits, dependency warnings, and pattern matches as triage; verify the execution path before reporting.
 - Do not run mutating commands such as formatters, generators, migrations, dependency upgrades, auto-fixers, exploit scripts against live systems, or destructive proof-of-concept actions unless the user explicitly asks for implementation and approves the risk.
 - Do not copy secrets, tokens, private user data, customer data, or sensitive logs into the report. Identify the path and exposure class without repeating the secret.
-- Do not invent CWE, OWASP, or CVE labels. Use `Category` when an exact identifier is not necessary or not known.
-- Do not treat missing project security docs, absent tests, or no dependency audit tooling as findings by themselves. Report them as residual risk unless they create a proven exploitable path.
-- Do not broaden into architecture redesign, dependency modernization, doc-sync, commit writing, or handoff unless the user separately requests that work.
-- Do not include private notes, ignored local scratch files, credentials, client data, sensitive personal context, or real user data in review output.
-- Do not require this source repo's root docs after installation. The skill may rely only on its own folder files and target-project evidence.
+- Report missing project security docs, absent tests, or absent dependency audit tooling as residual risk unless they create a proven exploitable path.
+- Take on architecture redesign, dependency modernization, doc-sync, commit writing, or handoff only when the user separately requests that work.
 
 ## References
 
-This skill is self-contained after installation. The local checklist is packaged with the skill; external references are optional lookup aids, not runtime dependencies.
+External references are optional lookup aids, not runtime dependencies.
 
 - Local support file, read at the workflow gate above: [Security Review Checklist](references/security-review-checklist.md).
 - [MITRE CWE List](https://cwe.mitre.org/data/index.html) - use for CWE IDs and weakness definitions when an exact CWE label matters.

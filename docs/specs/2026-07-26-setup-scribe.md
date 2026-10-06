@@ -2,7 +2,7 @@
 
 ## Status
 
-Ticket Ready
+Delivered. Ticket 014 is archived at `tickets/archive/014-add-setup-scribe.md`.
 
 ## Mode
 

@@ -14,15 +14,12 @@ hard project rules, observed conventions, user preferences, and open questions.
 
 Activate it only when the onboarding artifact budget includes a standards
 profile because agents would otherwise rediscover or misapply important norms.
-Do not create one as a universal onboarding requirement.
+Onboarding without that need proceeds without one.
 
 ## Inputs
 
-- User request or onboarding goal.
-- Target-project root path.
-- Existing `docs/agents/context-matrix.md`, if present.
-- Existing root `CONTEXT.md`, if present.
-- Existing `docs/agents/project-standards.md`, if refreshing.
+- User request or onboarding goal, and the target-project root path.
+- Existing `docs/agents/project-standards.md` when refreshing, plus `docs/agents/context-matrix.md` and root `CONTEXT.md`, if present.
 - Project docs, agent instructions, ADRs, contributor guides, issue or PRD templates, and review guidance.
 - Build, lint, format, typecheck, test, CI, dependency, schema, and editor configuration files.
 - Representative source files and tests when needed to infer local conventions.
@@ -34,9 +31,7 @@ Do not create one as a universal onboarding requirement.
 Hard: None.
 
 Soft:
-- session-start-progressive-disclosure for new or unfamiliar project calibration
 - context-matrix-map when docs/agents/context-matrix.md exists or is needed
-- project-context-calibration when root CONTEXT.md or project language affects standards
 - verification-before-completion before complete/checked/future-agent claims
 
 Fallback: If companion skills are unavailable, inspect minimal project files and state lower confidence.
@@ -68,13 +63,13 @@ Fallback: If companion skills are unavailable, inspect minimal project files and
    - Record the exact provenance and a freshness marker such as a commit,
      modification date, retrieval date, or current-working-tree observation.
    - Capture confidence and uncertainty when examples conflict or the sample is
-     thin. Do not let undated observations harden into permanent rules.
+     thin; an undated observation stays provisional, never a permanent rule.
 
 5. Classify enforcement level:
    - **tooling-enforced**: enforced or checked by formatter, linter, typechecker, compiler, schema, tests, CI, hooks, or generated checks.
    - **review-enforced**: documented or strongly expected, but dependent on human or agent review.
    - **preference-only**: user-confirmed or locally preferred behavior with little or no project evidence.
-   - Do not mark a rule tooling-enforced unless the tool or command is identified.
+   - Mark a rule tooling-enforced only when a specific tool, command, config, check, or test supports it.
 
 6. Ask only about non-discoverable preferences:
    - Ask after the documented standards, tooling, and inferred convention evidence pass, not before.
@@ -88,8 +83,7 @@ Fallback: If companion skills are unavailable, inspect minimal project files and
      - `No durable preference`: follow documented standards, tooling, and inferred conventions case by case.
    - Store a selected code-style posture under `User-Confirmed Preferences` with `preference-only` enforcement. If the user chooses `No durable preference`, record that opt-out as a `preference-only` preference so future agents do not keep re-asking.
    - If the user skips the code-style question or cannot answer, record an unresolved question instead of assuming a posture.
-   - Do not store programming level or stack familiarity as a durable label; use it only as conversational context if it helps the user choose a posture.
-   - Do not ask about facts that can be discovered from project files or commands.
+   - Use programming level or stack familiarity only as conversational context for choosing a posture, never as a stored durable label.
 
 7. Write or incrementally refresh the standards profile:
    - Use `docs/agents/project-standards.md` unless the user requested another tracked path.
@@ -101,7 +95,7 @@ Fallback: If companion skills are unavailable, inspect minimal project files and
    - Date the update and list the main evidence paths and commands used.
 
 8. Stop when future agents can apply standards:
-   - Do not turn the profile into a full architecture map, context matrix, security review, or onboarding tutorial.
+   - Leave architecture mapping, context-matrix content, security review, and onboarding tutorial material out of the profile.
    - Defer missing context-map work to `context-matrix-map`.
    - Defer code-quality findings from a specific diff to `standards-and-spec-review` or `code-security-review`.
    - Use `verification-before-completion` before claiming the standards profile is complete, checked, or ready for future agents.
@@ -172,27 +166,15 @@ When the optional code-style posture is captured, the `User-Confirmed Preference
 
 Main owns project boundaries, classification, questions, the final artifact, and
 communication. Delegate only bounded scans of documented, tool-enforced, or
-inferred standards. Return exact sources, commands, assumptions, confidence,
-and candidate enforcement. Without delegation, scan sequentially. Never
-promote unevidenced summaries into standards.
+inferred standards that return exact sources, commands, assumptions,
+confidence, and candidate enforcement. Without delegation, scan sequentially;
+never promote unevidenced summaries into standards.
 
 ## Guardrails
 
-- Do not ask the user about discoverable facts.
-- Do not create this artifact without a demonstrated standards problem or
-  rebuild an accurate profile from a blank template.
-- Do not record an inferred convention without provenance, freshness, and
-  confidence.
-- Do not ask preference questions before inspecting available project evidence.
-- Do not ask a code-style posture question when project docs, tooling, or strong inferred conventions already settle the style; record that evidence instead.
-- Do not treat common ecosystem habits as project standards without local evidence.
-- Do not merge documented standards, inferred conventions, and user preferences into one undifferentiated list.
-- Do not mark a standard tooling-enforced unless a specific tool, command, config, check, or test evidence supports it.
-- Do not let a `preference-only` code-style posture override documented standards, formatter or linter behavior, contributor docs, existing style guides, stronger project instructions, or tooling-enforced checks.
-- Do not include ignored local scratch files, private notes, credentials, client data, or sensitive personal context unless the user explicitly requests a private artifact.
-- Do not turn this profile into a broad architecture essay, exhaustive command catalog, style lecture, or review of a specific diff.
+- Treat common ecosystem habits as project standards only with local evidence.
+- Keep documented standards, inferred conventions, and user preferences in separate sections.
+- Documented standards, formatter or linter behavior, contributor docs, existing style guides, stronger project instructions, and tooling-enforced checks override a `preference-only` code-style posture.
+- Keep credentials, client data, and private or ignored notes out of the standards profile unless the user explicitly requests a private artifact.
+- Keep the profile to applicable standards, not a broad architecture essay, exhaustive command catalog, style lecture, or review of a specific diff.
 - Prefer "unknown", "not found in this pass", or an unresolved question over guessing.
-
-## References
-
-No external references are required. This skill is self-contained after installation.

@@ -39,8 +39,6 @@ Soft:
   established external-doc lookup-note convention should capture them
 - `learning-capture` for a separately requested reusable lesson rather than a
   research record
-- `verification-before-completion` when the research supports a complex,
-  high-risk, audited, or long-lived claim
 
 Fallback: Use user-provided sources and any ordinary authorized retrieval
 capability available. Without external access, return the framed question,
@@ -150,27 +148,25 @@ Return:
 - source-access or capability limits that materially constrain the answer.
 
 For durable mode, also return the selected convention and written path. Omit
-empty classification sections. Do not require a tracked artifact for a
-complete read-only result.
+empty classification sections. A read-only result is complete without a
+tracked artifact.
 
 ## Delegation
 
 The main agent owns the question, hierarchy, source acceptance, synthesis,
 sensitivity, capture decision, and communication. Delegate only bounded,
 independent claim or source-family investigations with the exact question,
-scope, currency threshold, and return fields.
-
-Require source locators, dates, applicable scope, findings, confidence,
-uncertainty, skipped sources, and access limits. Review and reconcile all
-returns before use. When delegation is unavailable, inspect the same source
-families sequentially and preserve the same evidence standard; background
-agents are never required.
+scope, currency threshold, and return fields. Returns carry source locators,
+dates, applicable scope, findings, confidence, uncertainty, skipped sources,
+and access limits; reconcile them before use, and without delegation inspect
+the same source families sequentially to the same evidence standard.
 
 ## Guardrails
 
 - Prefer links and original summaries. Quote only the minimum needed for an
   exact claim; do not copy documentation, articles, proprietary code, datasets,
-  or long excerpts into output or tracked notes.
+  or long excerpts into output or tracked notes. Accessible content is not
+  permission to reproduce it.
 - Use only public or explicitly authorized sources. Do not bypass
   authentication, paywalls, access controls, robots restrictions, terms, or
   licensing limits.
@@ -180,14 +176,13 @@ agents are never required.
 - Treat credential use or movement into private or restricted sources as a
   sensitivity and action-reach change requiring fresh scope and any applicable
   security review.
-- Do not treat accessible content as permission to reproduce it.
-- Do not perform local knowledge retrieval or note nurturing as an implicit
-  side effect of external research.
-- Do not invent citations, dates, versions, authority, consensus, or freshness.
-- Do not make a browser, search provider, MCP server, crawler, cache, database,
-  refresh daemon, or subagent a runtime dependency.
-- Do not require this source repo's root files, tickets, `.local/`, upstream
-  sources, or hidden chat history after installation.
+- Keep local knowledge retrieval and note nurturing out of external research
+  unless separately requested.
+- Report only citations, dates, versions, authority, consensus, and freshness
+  that inspected sources support.
+- Work with whatever authorized retrieval capability is available; no specific
+  browser, search provider, MCP server, crawler, cache, database, refresh
+  daemon, or subagent is required.
 
 ## References
 

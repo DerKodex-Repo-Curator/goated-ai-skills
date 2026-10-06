@@ -32,7 +32,6 @@ migration execution, publication, and deployment stay outside the map.
 Hard: None.
 
 Soft:
-- `using-goated-ai-skills` to select Wayfinder proportionately
 - `grill-with-docs` for decisions grounded in project docs or source
 - `grill-me` for conversation-grounded decisions
 - `prototype` when a disposable artifact can distinguish live options
@@ -83,16 +82,16 @@ evidence and human gates instead of inventing answers.
    - Keep suspected but still-imprecise questions in `Not Yet Specified`.
    - Keep work beyond the destination in `Out Of Scope`; it never graduates
      merely because it becomes clearer.
-   - Record blockers as links or stable identifiers. Do not copy the
-     authoritative detail into the map.
+   - Record blockers as links or stable identifiers; the authoritative detail
+     stays at its source.
 
 5. **Classify each decision independently.**
    - Choose one type: `grilling`, `research`, `prototype`, or `prerequisite`.
    - Choose `HITL` when resolution requires a human decision, live reaction,
      credential, access grant, external approval, or other human-only input.
      Otherwise choose `AFK`.
-   - Do not infer mode from type. Research can be HITL; a prototype can be AFK;
-     a prerequisite can use either mode.
+   - Choose mode independently of type: research can be HITL; a prototype can
+     be AFK; a prerequisite can use either mode.
    - A prerequisite is allowed only when it is necessary to make a decision
      possible, remains bounded to that need, and has approval for its reach.
 
@@ -125,8 +124,8 @@ evidence and human gates instead of inventing answers.
    - `completed`: the named destination exists and the map links it.
    - `dropped`: the effort will not continue; record the reason and replacement
      when one exists.
-   - Do not invent a universal transition graph. Apply the state whose evidence
-     is true and preserve the information needed to review or resume it.
+   - Apply the state whose evidence is true, with no fixed transition graph,
+     and preserve the information needed to review or resume it.
 
 9. **Hand off without restarting discovery.**
    - Pass the destination workflow links to settled decisions, current
@@ -164,25 +163,17 @@ sources, commands or actions run, evidence links, assumptions, uncertainty,
 status, and recommendation. A delegate must not resolve a HITL decision for the
 human, expand action reach, mutate the destination, or execute production work.
 
-If delegation is unavailable, perform the same bounded work sequentially. Do
-not require subagents or pretend local concurrency claims are enforced.
+If delegation is unavailable, perform the same bounded work sequentially.
 
 ## Guardrails
 
-- Never select Wayfinder because work is merely large.
 - Never create chart artifacts before the five-part proposal is approved.
-- Never pre-slice fog into speculative decision tickets.
 - Never let a map note, user urgency, available code access, or an almost-ready
   implementation override the no-production-execution boundary.
 - Never disguise destination delivery as a prerequisite.
-- Never treat `destination-ready` as `completed`.
 - Never let an agent answer the human side of a HITL decision.
-- Never duplicate full decisions, evidence, specs, or architecture detail into
-  the map.
-- Never require a remote tracker, subagents, fixed context size, branch model,
-  or runtime concurrency enforcement.
-- Never require this source repo, its root docs, its tickets, or the upstream
-  inspiration after installation.
+- Run without a remote tracker, subagents, fixed context size, branch model, or
+  runtime concurrency enforcement when the project lacks them.
 
 ## References
 

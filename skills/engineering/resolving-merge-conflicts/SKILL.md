@@ -161,37 +161,32 @@ decisions, failed required checks, or authorization uncertainty remain.
 
 ## Delegation
 
-Main owns operation detection, scope, consent, semantic decisions, integration,
-Git lifecycle actions, and user communication.
-
-Delegate only non-overlapping intent tracing, conflict inspection, or scoped
-check discovery. Return paths, commits, evidence, intent, assumptions,
-uncertainty, commands, and findings. The main agent reviews every result before
-editing or acting. Without delegation, perform the same passes sequentially.
+Main owns operation detection, scope, consent, semantic decisions, and Git
+lifecycle actions. Delegate only non-overlapping intent tracing, conflict
+inspection, or scoped check discovery. Require paths, commits, evidence,
+intent, assumptions, and commands, and review every result before editing or
+acting. Without delegation, perform the same passes sequentially.
 
 ## Guardrails
 
-- Do not use whole-file ours/theirs selection as a substitute for intent
-  analysis.
-- Do not equate Git stage labels with feature ownership, especially in a
-  rebase.
-- Do not guess from conflict markers, timestamps, branch names, or whichever
-  side currently passes one test.
-- Do not invent compromise behavior when intents are incompatible.
-- Do not discard unrelated working-tree or index changes.
+- Resolve from intent evidence. Whole-file ours/theirs selection, Git stage
+  labels, conflict-marker position, timestamps, branch names, and whichever
+  side passes one test are not evidence of intent.
+- When intents are incompatible, surface the decision instead of inventing a
+  compromise behavior.
+- Preserve unrelated working-tree and index changes.
 - Do not run destructive cleanup, reset, checkout, restore, skip, abort,
   continue, commit, push, force, hook, or installer actions without applicable
   authority and exact targets.
-- Do not claim success from marker removal alone.
-- Do not require the GOATED source repository, its root files, registry,
-  fixtures, or private session state after installation.
+- Marker removal alone is not success; scoped proof is.
 
 ## References
 
 - [Pressure Scenarios](references/pressure-scenarios.md) - read for skill
   evaluation or when pressure makes semantic or lifecycle shortcuts likely.
 - Public inspiration:
-  [mattpocock/skills resolving-merge-conflicts](https://github.com/mattpocock/skills/tree/main/skills/engineering/resolving-merge-conflicts).
+  [mattpocock/skills resolving-merge-conflicts](https://github.com/mattpocock/skills/tree/321658273cb1d20b76026717d027d505790106d4/skills/engineering/resolving-merge-conflicts)
+  (pinned; the upstream skill was later removed).
   This port preserves intent tracing and scoped checks while replacing
   always-resolve and automatic-lifecycle behavior with evidence, safe-stop, and
   authorization gates.

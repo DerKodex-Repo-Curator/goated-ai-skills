@@ -24,7 +24,7 @@ guidance as one vertical slice.
 
 ## Recommended First Reads
 
-- `AGENT.md` — Git, approval, skill, and public-boundary rules.
+- `AGENTS.md` — Git, approval, skill, and public-boundary rules.
 - `docs/specs/2026-07-26-selective-upstream-skill-adoption.md` — R4 and AC4.
 - `skills/agent-workflows/framework-agnostic-skill-creator/SKILL.md` — creation
   workflow.

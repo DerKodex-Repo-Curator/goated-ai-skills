@@ -36,11 +36,8 @@ Hard: None.
 
 Soft:
 - an integrated shared-evidence bundle when available
-- `context-matrix-map` when an existing context matrix can route source reads
 - `learning-capture` for a separately requested and approved capture or nurture
   follow-up
-- `verification-before-completion` when a downstream claim needs stronger
-  freshness or sufficiency proof
 
 Fallback: Search ordinary scoped files by path, filename, headings, metadata,
 and bounded text. Missing Obsidian, connectors, semantic search, databases, or
@@ -113,7 +110,7 @@ limits and uncertainty instead of blocking or substituting external research.
      `applicable_scope`, `finding`, `provenance`, `freshness`, `confidence`,
      `uncertainty`, and `validity` when useful.
    - When contradiction invalidates an entry, retain it with `invalidated_by`.
-   - Do not claim a source is current or authoritative unless its content,
+   - Claim a source is current or authoritative only when its content,
      metadata, project role, or executable behavior supports that judgment.
 
 7. Return the answer and audit:
@@ -159,12 +156,11 @@ Return a compact retrieval result:
 ## Delegation
 
 Main owns the question, search boundary, ranking judgment, conflict resolution,
-shared-evidence delta, and user communication.
-
-Delegate only bounded read-only searches or source assessments. Require paths,
-search terms, findings, classification, authority/freshness evidence,
-uncertainty, skipped scope, and no-mutation confirmation. Otherwise perform the
-same stages sequentially.
+shared-evidence delta, and user communication. Delegate only bounded read-only
+searches or source assessments, and require paths, search terms, findings,
+classification, authority/freshness evidence, uncertainty, skipped scope, and
+no-mutation confirmation. Without delegation, perform the same stages
+sequentially.
 
 ## Guardrails
 
@@ -172,14 +168,8 @@ same stages sequentially.
   knowledge files.
 - Do not create an index, cache, database, embedding store, source ledger, or
   retrieval log.
-- Do not crawl an entire vault or project when progressive scoped search is
-  sufficient.
-- Do not treat recency, keyword similarity, confidence, or note maturity as a
-  substitute for authority and applicable scope.
-- Do not hide conflicts, discard stale history, or synthesize unsupported
-  consensus.
-- Do not require Obsidian, semantic search, a database, a connector, or this
-  source repo's root files.
+- Rank by authority and applicable scope; recency, keyword similarity,
+  confidence, and note maturity do not substitute for them.
 - Do not perform external web research. Route a current external question to
   `source-grounded-research` when available; otherwise report that external
   investigation is outside this skill.

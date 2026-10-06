@@ -12,9 +12,8 @@ metadata:
 Collect the smallest fresh evidence needed to orient unfamiliar, cross-area,
 stale, or boundary-uncertain work.
 
-Do not activate this full skill for a fresh, obvious tiny task. The shared
-router owns proportional orientation and can initialize a lightweight envelope
-silently.
+Leave a fresh, obvious tiny task to the shared router, which owns proportional
+orientation and can initialize a lightweight envelope silently.
 
 ## Inputs
 
@@ -49,7 +48,7 @@ expected source is unavailable.
    - Read the current goal, scope, profile, checkpoint, proof strategy, and next
      action when an envelope exists.
    - Reuse evidence whose locator, applicable scope, freshness, and confidence
-     support this task. Do not reread it merely because a new skill started.
+     support this task; a new skill starting is no reason to reread it.
    - Emit `evidence-stale` when a source changed, contradicts an entry, or is too
      shallow for the intended claim.
 
@@ -77,8 +76,8 @@ expected source is unavailable.
    - Return the task-surface result, sources inspected, new or refreshed
      evidence, assumptions, uncertainty, and any `scope-changed` or
      `evidence-stale` signal.
-   - Let the main router apply signals at a defined checkpoint. Do not select a
-     long downstream pipeline.
+   - Let the main router apply signals at a defined checkpoint; recommend the
+     next action, not a long downstream pipeline.
    - Keep routine orientation internal. Surface a report only for a conflict,
      blocker, missing decision, material scope or risk change, or when the user
      explicitly asks for orientation.
@@ -104,31 +103,24 @@ When a visible report is justified, keep it compact:
 ```
 
 Standalone invocation uses the same focused discovery and returns this compact
-local result without requiring shared policy, registry, or source-repo files.
+local result without shared policy or a registry.
 
 ## Delegation
 
 The main agent owns classification, boundary judgment, evidence acceptance, and
-communication. Delegate only bounded source discovery with paths, commands,
-findings, freshness, assumptions, and uncertainty. Review returned evidence
-before adding it to the envelope.
-
-Remain single-agent-compatible when delegation is unavailable.
+communication. Delegate only bounded source discovery that returns paths,
+commands, findings, freshness, assumptions, and uncertainty; review it before
+adding it to the envelope. Without delegation, run the same discovery
+sequentially.
 
 ## Guardrails
 
-- Do not load private or ignored notes unless the user names them or the active
+- Load private or ignored notes only when the user names them or the active
   task requires them.
-- Do not bulk-read source trees, documentation, or skill references just in
-  case.
-- Do not infer that a target project adopted GOATED artifacts merely because
-  the installed stack supports them.
-- Do not treat one instruction filename or framework convention as universal.
-- Do not turn orientation into architecture review, standards audit, security
-  review, planning, or handoff.
-- Do not narrate routine routing or duplicate a task closeout.
-
-## References
-
-No external reference is required. This skill is self-contained after
-installation.
+- Treat GOATED artifacts as adopted only when the target project shows them;
+  installed-stack support is not evidence.
+- Follow the instruction files and framework conventions this project actually
+  uses; no single filename or convention is universal.
+- Keep orientation separate from architecture review, standards audit, security
+  review, planning, and handoff.
+- Return the envelope delta, not a duplicate task closeout.

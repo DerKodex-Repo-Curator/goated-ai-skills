@@ -24,7 +24,7 @@ where it changes skill-authoring judgment or evaluation.
 
 ## Recommended First Reads
 
-- `AGENT.md` — source-repo and public-boundary rules.
+- `AGENTS.md` — source-repo and public-boundary rules.
 - `docs/specs/2026-07-26-selective-upstream-skill-adoption.md` — approved
   contract, especially R1.
 - `skills/agent-workflows/framework-agnostic-skill-creator/SKILL.md` — current

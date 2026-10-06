@@ -13,7 +13,7 @@ Create descriptive, source-grounded architecture and design maps for target proj
 
 This skill has two common modes. The primary mode is a detailed architecture/design map for a project, subsystem, flow, runtime topology, or durable target-project artifact. The lightweight mode is quick inline zoom-out for orienting around unfamiliar code by going up one layer to surrounding modules, callers, importers, and project vocabulary.
 
-This skill maps architecture that exists in code or is explicitly documented. It does not plan new architecture, improve architecture, rank refactor opportunities, design interfaces, or produce before/after refactor proposals.
+This skill maps architecture that exists in code or is explicitly documented; it is descriptive, not a plan or refactor proposal.
 
 ## Inputs
 
@@ -28,12 +28,8 @@ This skill maps architecture that exists in code or is explicitly documented. It
 Hard: None.
 
 Soft:
-- session-start-progressive-disclosure for unfamiliar target-project mapping
-- context-matrix-map when docs/agents/context-matrix.md exists or discovery is broad
-- project-context-calibration when root CONTEXT.md or project language affects architecture terms
-- project-standards-calibration when standards affect artifact location or diagram style
 - grill-with-docs when source evidence conflicts or map scope needs a product decision
-- doc-sync after durable architecture-map artifacts
+- doc-sync for follow-up documentation drift after durable architecture-map artifacts
 - verification-before-completion before complete/evidence-backed/downstream-ready map claims
 
 Fallback: If companion skills or durable docs are unavailable, inspect minimal project evidence and state lower confidence.
@@ -59,7 +55,7 @@ Use target-project terms first. Use generic labels only when source evidence sup
 2. Choose durable artifact versus inline response:
    - Write `docs/agents/architecture-map.md` by default for target-project onboarding, repeated work, broad architecture documentation, or user-requested persistence.
    - Answer inline for quick one-off map requests, narrow explanations, or exploratory questions where a durable artifact would add ceremony; inline responses may still be detailed when the requested scope needs it.
-   - For quick inline zoom-out, do not create or update a durable architecture-map artifact unless the user explicitly asks for persistence.
+   - For quick inline zoom-out, create or update a durable architecture-map artifact only when the user explicitly asks for persistence.
    - When refreshing an existing architecture map, read it first and preserve accurate sourced facts.
 
 3. Gather source evidence before diagramming:
@@ -160,22 +156,14 @@ Main owns scope, source-of-truth judgment, synthesis, edits, and communication.
 Delegate only bounded source discovery, one flow trace, runtime-unit inventory,
 or source-to-diagram check. Return paths, commands, exact evidence, candidate
 nodes and relationships, assumptions, confidence, uncertainty, and stale-map
-risk—not final conclusions. Without delegation, scan sequentially.
+risk, not final conclusions; without delegation, scan sequentially.
 
 ## Guardrails
 
-- Do not diagram before gathering relevant source evidence.
-- Do not default to Mermaid or make a diagram mandatory when prose, bullets, or a table communicates the relationship more clearly.
-- Do not create decorative, aspirational, speculative, or marketing-style diagrams unsupported by project evidence.
-- Do not plan new architecture, improve architecture, rank refactor opportunities, design interfaces, or produce before/after refactor proposals.
-- Do not treat folder layout alone as architecture; verify with docs, imports, entrypoints, routes, runtime config, tests, or other project evidence.
-- During quick inline zoom-out, do not turn orientation into refactor recommendations, architecture planning, implementation advice, or claims based only on folder names.
-- During quick inline zoom-out, do not claim callers, importers, entrypoints, tests, or project terms exist unless they were inspected or clearly labeled as unverified.
-- Do not hide uncertainty. Mark inferred, stale, missing, or conflicting evidence clearly.
-- Do not claim a relationship exists because it would be sensible; show evidence or label it as an assumption.
-- Do not include private notes, ignored local scratch files, credentials, client data, sensitive personal context, secrets, or real user data in tracked architecture maps.
-- Do not require the original skill-library repository or any maintainer-only root files after installation. The skill may rely only on its own installed files and target-project evidence.
-- Prefer small, accurate maps over exhaustive diagrams that future agents cannot trust.
+- Map only what exists in code or docs; leave new architecture, improvements, refactor ranking, interface design, and before/after proposals out of the map.
+- Show evidence for every relationship or label it as an assumption; a sensible-looking, decorative, or aspirational link is not evidence.
+- Keep quick inline zoom-out to orientation: cite callers, importers, entrypoints, tests, and project terms only when inspected or clearly labeled unverified, and give no refactor, planning, or implementation advice.
+- Keep credentials, private notes, and real user or client data out of tracked architecture maps.
 - Emit at most one justified next-step signal; do not reconstruct the downstream delivery pipeline.
 
 ## References

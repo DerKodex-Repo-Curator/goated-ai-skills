@@ -34,6 +34,11 @@ adds only the justified depth sections; omit empty sections.
 
 - [ ] <Observable proof condition>
 
+## Proof Surface
+
+<Optional. The highest existing interface where the criteria can be observed.
+Omit when it is obvious or not yet known.>
+
 ## Constraints
 
 - <Technical, product, policy, timing, compatibility, or resource constraint>

@@ -60,7 +60,11 @@ back to clarification or `write-a-spec`. Do not create assumption-heavy tickets.
    - Prefer user-, operator-, or maintainer-verifiable outcomes that include
      the implementation and proof needed for that outcome.
    - Avoid layer-only, test-only, docs-only, or broad setup tickets unless they
-     are a necessary narrow foundation with a named dependent slice.
+     are a necessary narrow foundation with a named dependent slice. The main
+     case is prefactoring: when a small behavior-preserving change would make
+     the slice easy, make it its own first ticket and block the slice on it.
+   - Size each ticket for one fresh agent session. If its reads, change, and
+     proof would not fit one context window, split it.
    - Keep tightly coupled changes together when splitting them would create
      unusable intermediate states or duplicate coordination.
    - Use `wide-refactor` only when one mechanical change's blast radius
@@ -74,7 +78,9 @@ back to clarification or `write-a-spec`. Do not create assumption-heavy tickets.
      acceptance criteria, expected proof, blockers, user stories when useful,
      and scope exclusions.
    - Link durable decisions and relevant source areas rather than relying on
-     chat or ignored notes.
+     chat or ignored notes. Describe the outcome by behavior and interface so
+     the ticket survives file moves; first reads are orientation and may have
+     moved.
    - State `AFK` only when no human decision, credential, external access,
      review, or approval gate is required; otherwise use `HITL` and name the
      gate.
@@ -121,19 +127,17 @@ return:
 The main agent owns slice boundaries, dependencies, approval interpretation,
 coverage, and final writes. Delegate only non-overlapping candidate slices,
 source-link discovery, or a fresh-agent review. Require inspected sources,
-proposed paths, blockers, coverage, assumptions, uncertainty, and status.
-Remain single-agent-compatible.
+proposed paths, blockers, coverage, assumptions, and status. Without
+delegation, run the same passes sequentially.
 
 ## Guardrails
 
-- Do not create tickets from an unsettled or stale contract.
-- Do not split by technical layer when one vertical slice is clearer.
-- Do not create duplicate alias skill folders for old planning names.
-- Do not embed exact implementation plans in durable tickets.
-- Do not ask again for an approved batch unless scope or action reach changes.
-- Do not silently create remote issues, labels, milestones, assignees, or
-  project-board state.
-- Do not rename or rewrite historical PRDs or archived issue artifacts.
+- Slice only from a settled, current contract.
+- Keep exact implementation plans out of durable tickets.
+- Use the canonical planning skill names; old names stay aliases, not folders.
+- Leave historical PRDs and archived issue artifacts unchanged.
+- Do not create remote issues, labels, milestones, assignees, or project-board
+  state without separate authorization.
 
 ## References
 

@@ -17,8 +17,8 @@ edits.
 
 ## Inputs
 
-- Request or originating spec, ticket, plan, review, or implementation summary.
-- Target-project root path.
+- Request or originating spec, ticket, plan, review, or implementation summary,
+  and the target-project root path.
 - Changed files, diffs, commits, staged changes, unstaged changes, generated files, migrations, config changes, or supplied patch.
 - Fresh proof and review evidence relevant to changed facts.
 - External documentation lookups when vendor or package docs materially
@@ -31,8 +31,6 @@ edits.
 Hard: None.
 
 Soft:
-- session-start-progressive-disclosure for unfamiliar target projects
-- context-matrix-map for broad discovery
 - project-context-calibration or project-standards-calibration when those
   durable artifacts changed
 - standards-and-spec-review when spec fit or changed scope is unclear
@@ -65,7 +63,7 @@ unverifiable drift risk.
      feature/API/schema docs, ADRs, standards, runbooks, changelogs, and nearby
      package or command docs.
    - Search docs for changed names, commands, APIs, routes, flags, schema terms, feature names, standards, and architecture vocabulary.
-   - Do not bulk-read generated output, dependency folders, old build artifacts, large logs, or unrelated historical notes.
+   - Skip generated output, dependency folders, old build artifacts, large logs, and unrelated historical notes.
 
 4. Classify doc obligations:
    - **Required update**: a durable doc now contradicts, omits, or misroutes current behavior, public contracts, standards, architecture, verification, or operating instructions.
@@ -124,16 +122,14 @@ edits—not broad rewrites.
 
 ## Guardrails
 
-- Do not edit docs before discovering the changed facts and the relevant docs.
-- Do not treat temporary handoffs, scratch files, chat transcripts, or `.local/` notes as durable source-of-truth docs.
-- Do not update a PRD, issue, or handoff to hide a mismatch between intended and implemented behavior. Report the mismatch or route it to the appropriate review skill.
-- Do not create new durable artifacts such as ADRs, context files, standards profiles, or docs indexes unless the current task or project convention clearly calls for them.
-- Do not bulk rewrite docs, reorganize documentation architecture, or modernize stale areas unrelated to the current change.
+- Treat temporary handoffs, scratch files, chat transcripts, and `.local/` notes as transient, never as durable source-of-truth docs.
+- Report a mismatch between intended and implemented behavior, or route it to the appropriate review skill, instead of updating a PRD, issue, or handoff to hide it.
+- Create new durable artifacts such as ADRs, context files, standards profiles, or docs indexes only when the current task or project convention clearly calls for them.
+- Limit edits to drift from the current change; leave bulk rewrites, documentation reorganization, and unrelated stale areas alone.
 - Keep external-doc lookup notes attributed, concise, public-safe, and free of
   invented automation claims.
-- Do not include private notes, ignored scratch content, credentials, client data, sensitive personal context, secrets, or real user data in tracked docs.
-- Do not claim a doc check passed when the relevant file, command, or generated output was not inspected.
-- Do not require this source repo's root docs after installation. The skill may rely only on its own instructions and target-project evidence.
+- Keep credentials, secrets, private notes, and client or real user data out of tracked docs.
+- Claim a doc check passed only after inspecting the relevant file, command, or generated output.
 
 ## References
 

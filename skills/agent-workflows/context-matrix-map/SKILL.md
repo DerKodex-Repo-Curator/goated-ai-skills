@@ -18,10 +18,8 @@ project can stop at thin policy and routing without this artifact.
 
 ## Inputs
 
-- User request or onboarding goal.
-- Target-project root path.
-- Existing agent instruction files, if present.
-- Existing root `CONTEXT.md`, if present.
+- User request or onboarding goal, and the target-project root path.
+- Existing agent instruction files and root `CONTEXT.md`, if present.
 - Existing project docs, ADRs, issue or PRD folders, test layout, build metadata, and command definitions.
 - Existing `docs/agents/` artifacts, external-doc lookup notes, or context packs, if present.
 - Selected onboarding profile, artifact budget, and shared evidence bundle when
@@ -32,8 +30,6 @@ project can stop at thin policy and routing without this artifact.
 Hard: None.
 
 Soft:
-- session-start-progressive-disclosure for new or unfamiliar project mapping
-- project-context-calibration after mapping when language needs durable context
 - project-standards-calibration after mapping when standards need durable profile
 - verification-before-completion before complete/evidence-backed/future-agent claims
 
@@ -57,7 +53,7 @@ Fallback: If companion skills are unavailable, inspect minimal project files and
    - List top-level files and directories.
    - Search for likely instruction files, README files, docs indexes, ADRs, issue folders, PRDs, context packs, optional `docs/agents/external-docs/` lookup notes, package manifests, build scripts, test folders, and config files.
    - Prefer fast file discovery commands and targeted file opens over recursive reading.
-   - Do not open generated output, dependency folders, lockfiles, binary assets, or large data dumps unless they are the only source for a required fact.
+   - Open generated output, dependency folders, lockfiles, binary assets, or large data dumps only when they are the only source for a required fact.
 
 4. Sample sources just enough to classify them:
    - Read short indexes, headings, manifests, command definitions, and nearby docs that explain project conventions.
@@ -90,7 +86,7 @@ Fallback: If companion skills are unavailable, inspect minimal project files and
    - Mark uncertainty explicitly instead of filling gaps with speculation.
 
 8. Stop when the map can route future reading:
-   - Do not keep exploring to explain every module.
+   - Leave module-by-module explanation out of scope.
    - Defer architecture diagrams, standards profiles, security review, or detailed delivery planning to companion skills.
    - If the project is too large to map in one pass, write a partial matrix with clear gaps and recommended next scans.
    - Use `verification-before-completion` before claiming the matrix is complete, evidence-backed, or ready for future agents.
@@ -160,26 +156,13 @@ visible report.
 
 ## Delegation
 
-Main owns the target-project boundary, tiering judgment, final artifact, and user communication.
-
-Delegate only bounded independent scans: find docs, ADRs, and context packs; identify code-area entrypoints, test frameworks, or commands; or summarize one named folder/source family.
-
-Require paths inspected, commands run, source docs/files used, assumptions, confidence, and unresolved gaps. If subagents are unavailable, run the same scans sequentially with a narrower context budget; never promote unevidenced summaries to project facts.
+Main owns the target-project boundary, tiering judgment, final artifact, and user communication. Delegate only bounded independent scans: find docs, ADRs, and context packs; identify code-area entrypoints, test frameworks, or commands; or summarize one named folder/source family. Require paths inspected, commands run, source docs/files used, assumptions, confidence, and unresolved gaps; without subagents, run the same scans sequentially with a narrower context budget, and never promote unevidenced summaries to project facts.
 
 ## Guardrails
 
-- Do not bulk-read the repository.
-- Do not turn the context matrix into a broad architecture essay, exhaustive file inventory, onboarding tutorial, or handoff.
-- Do not rank sources by personal preference; tier them by when future agents need them.
-- Do not include private notes, ignored local scratch files, credentials, client data, or sensitive personal context unless the user explicitly requests a private artifact.
-- Do not assume every project has GOATED artifacts, ADRs, tests, or agent instruction files.
-- Do not create this artifact merely because onboarding began or rebuild an
-  accurate existing matrix from a blank template.
-- Do not assume every project has external-doc lookup notes; when present, treat them as dated optional evidence and re-check external sources when freshness matters.
-- Do not claim commands work unless they were discovered from project files or actually run.
-- Keep entries brief, evidence-based, and path-oriented.
+- Keep the matrix a routing map with brief, evidence-based, path-oriented entries, not an architecture essay, exhaustive file inventory, onboarding tutorial, or handoff.
+- Tier sources by when future agents need them, not by personal preference.
+- Keep credentials, client data, and private or ignored notes out of the tracked matrix unless the user explicitly requests a private artifact.
+- Record GOATED artifacts, ADRs, tests, agent instruction files, and external-doc lookup notes only when found; treat lookup notes that are present as dated optional evidence and re-check external sources when freshness matters.
+- Claim a command works only when it was discovered from project files or actually run.
 - Prefer "unknown" or "not found in this pass" over guessing.
-
-## References
-
-No external references are required. This skill is self-contained after installation.

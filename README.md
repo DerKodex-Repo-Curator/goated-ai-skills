@@ -87,6 +87,7 @@ release uses the shared policy, registry, schema, templates, and fixtures under
 - [`framework-agnostic-skill-creator`](skills/agent-workflows/framework-agnostic-skill-creator/SKILL.md): create, port, adapt, and sanitize skills into the GOATED shape.
 - [`wayfinder`](skills/agent-workflows/wayfinder/SKILL.md): navigate branching multi-session uncertainty through a visible decision frontier and hand settled evidence to a named planning destination.
 - [`handoff`](skills/agent-workflows/handoff/SKILL.md): preserve continuity for future agents or future sessions.
+- [`retrospective`](skills/agent-workflows/retrospective/SKILL.md): turn a session's mistakes and friction into proposed checks, standards, or instruction changes.
 
 ### Engineering
 
@@ -116,6 +117,7 @@ only the canonical folders.
 - [`doc-sync`](skills/engineering/doc-sync/SKILL.md): keep docs aligned with changed behavior, interfaces, architecture, tests, and workflows.
 - [`verification-before-completion`](skills/engineering/verification-before-completion/SKILL.md): require fresh evidence before claiming work is done, correct, synced, or ready.
 - [`commit-message`](skills/engineering/commit-message/SKILL.md): draft concise, information-rich commit messages from local diffs and checks.
+- [`pr-description`](skills/engineering/pr-description/SKILL.md): draft a pull request description with a clear summary, real evidence, and merge risk.
 
 ### Productivity
 

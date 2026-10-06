@@ -35,10 +35,9 @@ uncertain axis when practical; do not require ceremonial coverage of both.
 
 - User request and target-project root path.
 - Fixed point for the review, such as a base commit, branch, tag, PR base, or issue-start commit.
-- Changed files, diffs, commits, staged changes, unstaged changes, or patch under review.
-- Originating issue, PRD, ticket, acceptance criteria, implementation spec, user request, or reviewed plan.
-- Existing `docs/agents/project-standards.md`, if present.
-- Relevant root `CONTEXT.md`, `docs/agents/context-matrix.md`, ADRs, contributor docs, style guides, tests, commands, and nearby source files.
+- Changed files, diffs, commits, staged or unstaged changes, or patch under review.
+- Originating issue, spec, ticket, acceptance criteria, user request, or reviewed plan.
+- `docs/agents/project-standards.md` when present, plus relevant context docs, ADRs, contributor docs, style guides, tests, and nearby source.
 - Prior implementation notes, TDD evidence, prototype verdicts, or known skipped checks when available.
 
 ## Dependencies
@@ -46,9 +45,6 @@ uncertain axis when practical; do not require ceremonial coverage of both.
 Hard: None.
 
 Soft:
-- session-start-progressive-disclosure for unfamiliar target projects
-- project-standards-calibration when docs/agents/project-standards.md is missing, stale, or standards need durable capture
-- tdd when implemented behavior should have test evidence
 - code-refinement when findings call for scoped behavior-preserving cleanup or simplification
 - code-security-review when trust boundaries, user data, auth, persistence, execution, or unsafe config may be affected
 - doc-sync after this review when behavior, standards, specs, public interfaces, or docs may have drifted
@@ -66,7 +62,7 @@ Fallback: If companion skills, git history, standards, or source spec are unavai
    - Identify the target-project root and whether the review covers committed changes, staged changes, unstaged changes, or a supplied patch.
    - Identify the originating issue, PRD, ticket, spec, or user request. If none exists, review against the explicit user request and state lower spec confidence.
    - List changed files before reviewing. In git projects, use an equivalent of `git status --short`, `git diff --name-status <fixed-point>...HEAD`, and working-tree diff commands as appropriate for the requested scope.
-   - Use non-mutating commands by default. Do not format, generate, migrate, rewrite, or otherwise repair files during the review unless the user separately asks for implementation.
+   - Use non-mutating commands. Formatting, generating, migrating, or repairing files is implementation and needs a separate request.
 
 2. Discover the fixed point:
    - Use an explicit base from the user, PR metadata, issue handoff, or review request when provided.
@@ -129,30 +125,19 @@ final closeout.
 
 ## Delegation
 
-Main owns the fixed point, axis separation, review judgment, and communication.
-Delegate only bounded baseline discovery, standards/spec extraction, one-axis
-review, or finding validation.
-
-Return paths, commands, source evidence, assumptions, confidence, risk, status,
-and candidate findings separated by axis. Resolve concerns or missing context
-before reporting; narrow or stop on `BLOCKED`. Without delegation, review
+Main owns the fixed point, axis separation, and review judgment. Delegate only
+bounded baseline discovery, standards or spec extraction, one-axis review, or
+finding validation. Require paths, commands, source evidence, assumptions,
+status, and candidate findings separated by axis; resolve concerns before
+reporting, and narrow or stop on `BLOCKED`. Without delegation, review
 sequentially.
 
 ## Guardrails
 
-- Do not perform or claim a security audit. Route exploitable risk, trust-boundary issues, auth, data leaks, injection, unsafe execution, and unsafe config concerns to `code-security-review`.
-- Do not mix standards findings and spec findings into one undifferentiated list.
-- Do not report speculative findings. If evidence is weak, record an assumption or residual risk instead.
-- Do not run mutating commands such as formatters, generators, migrations, codemods, or auto-fixers as part of review unless the user explicitly asks for implementation.
-- Do not treat missing `docs/agents/project-standards.md` as a failure by itself; fall back to discovered evidence and state lower confidence.
-- Do not invent project standards from ecosystem habits, personal taste, or generic best practices without local evidence.
-- Do not let user-confirmed `preference-only` entries outweigh tooling-enforced checks, documented standards, stronger project instructions, or clearly sourced local conventions.
-- Do not treat every supporting edit as unrequested scope; explain the contract, behavior, maintenance, or verification impact.
-- Do not silently choose a fixed point when multiple plausible baselines would change the review result.
-- Do not broaden the review into implementation, refactoring, architecture redesign, doc-sync, commit writing, or handoff unless the user separately requests that work.
-- Do not include private notes, ignored local scratch files, credentials, client data, sensitive personal context, or real user data in review output.
-- Do not require this source repo's root docs after installation. The skill may rely only on its own instructions and target-project evidence.
-
-## References
-
-No external references are required. This skill is self-contained after installation.
+- This is not a security audit. Route exploitable risk, trust-boundary issues, auth, data leaks, injection, and unsafe execution or config to `code-security-review`.
+- Keep standards findings and spec findings in separate lists.
+- Report only evidence-backed findings; weak evidence becomes an assumption or residual risk.
+- Draw standards from local evidence, not ecosystem habits, taste, or generic best practice. A missing `docs/agents/project-standards.md` lowers confidence; it is not a failure.
+- User-confirmed `preference-only` entries rank below tooling-enforced checks, documented standards, stronger project instructions, and clearly sourced local conventions.
+- A supporting edit is unrequested scope only when it changes the contract, behavior, maintenance burden, or verification expectations.
+- Keep to review: implementation, refactoring, redesign, doc-sync, commit writing, and handoff need a separate request.

@@ -43,8 +43,7 @@ Soft:
 - `verification-before-completion` before a readiness claim
 
 Fallback: Inspect available evidence, mark unresolved questions, and produce a
-draft with a narrower readiness claim. Do not invent decisions or depend on the
-GOATED source repository after installation.
+draft with a narrower readiness claim.
 
 ## Workflow
 
@@ -77,7 +76,10 @@ GOATED source repository after installation.
    - State the problem and affected users or operators.
    - Make goals outcome-oriented and non-goals explicit.
    - Write requirements as observable capabilities or durable constraints.
-   - Write acceptance criteria so a future agent can prove each one.
+   - Write acceptance criteria so a future agent can prove each one. When it
+     is already known, name the proof surface: the highest existing interface
+     where those criteria can be observed. Propose a new one only when none
+     fits.
    - Link relevant sources; avoid brittle file inventories, code snippets, and
      exact implementation sequences unless they encode an accepted constraint.
 
@@ -114,21 +116,20 @@ Create or update one spec using
 
 ## Delegation
 
-The main agent owns mode, scope, decisions, approval interpretation, readiness,
-and final wording. Delegate only bounded evidence collection or one review axis.
-Require inspected paths, evidence, assumptions, uncertainty, and recommended
-spec changes. Keep the workflow single-agent-compatible.
+The main agent owns mode, scope, decisions, approval interpretation, and
+readiness. Delegate only bounded evidence collection or one review axis.
+Require inspected paths, evidence, assumptions, and recommended spec changes.
+Without delegation, run the same passes sequentially.
 
 ## Guardrails
 
-- Do not force every request into a tracked spec.
-- Do not choose full mode merely because its template exists.
-- Do not retain empty sections or duplicate linked source content.
-- Do not disguise unsettled decisions as requirements.
-- Do not turn the spec into a backlog, ticket set, or exact implementation plan.
-- Do not claim ticket readiness while material scope, acceptance, or blocker
-  questions remain unresolved.
-- Do not overwrite historical PRDs merely to adopt V2 vocabulary.
+- Track a spec only when intent must outlive the conversation, and use full
+  mode only when its extra sections carry real decisions.
+- Mark unsettled decisions as open questions, not requirements.
+- Keep backlog items, ticket sets, and exact implementation plans out of the
+  spec.
+- Leave historical PRDs as they are; adopting current vocabulary is not a
+  reason to rewrite them.
 - Do not publish or sync to a remote system without separate authorization.
 
 ## References

@@ -44,12 +44,12 @@ workflow or requiring a formal skip report.
 Hard: None.
 
 Soft:
-- tdd when missing proof is behavior, regression, red/green, or test-surface evidence
-- code-refinement when a review-ready or closeout claim depends on scoped behavior-preserving cleanup of recently changed code
-- standards-and-spec-review when completion depends on issue fit, acceptance, or standards
-- code-security-review when completion depends on security-relevant behavior, trust boundaries, auth, user data, persistence, execution, or unsafe config
-- doc-sync when behavior, interfaces, docs, standards, configuration, or tests may drift
-- handoff when residual risk, skipped checks, failures, or unfinished verification need continuity
+- tdd for missing behavior, regression, or test-surface proof
+- code-refinement for scoped behavior-preserving cleanup before a review-ready or closeout claim
+- standards-and-spec-review for issue fit, acceptance, or standards
+- code-security-review for security-relevant behavior or trust boundaries
+- doc-sync for possible documentation drift
+- handoff when residual risk or unfinished verification needs continuity
 
 Fallback: If companion skills, commands, tools, artifacts, or runtime access are unavailable, inspect minimal evidence, state unverified facts, downgrade unsupported claims, and report residual risk.
 
@@ -61,7 +61,7 @@ Fallback: If companion skills, commands, tools, artifacts, or runtime access are
    - Write the claim as a concrete sentence, such as "the focused tests pass", "issue acceptance is covered", "docs are synced", or "the implementation is ready for review".
    - If the next action would close, archive, move, rename, or mark an issue complete, name that lifecycle action as the claim.
    - If the user asked only for a draft, analysis, or best-effort scan, verify only the claims you actually intend to make.
-   - Do not use vague substitutes such as "looks good" when you mean a stronger claim.
+   - State a stronger claim directly instead of a vague substitute such as "looks good".
 
 2. Set the freshness boundary:
    - Evidence is fresh only if it was gathered after the relevant change, review scope, artifact, or completion claim was known.
@@ -134,26 +134,20 @@ auditable without another artifact.
 
 Main owns the final claim, evidence standard, risk judgment, and communication.
 Delegate only bounded commands, artifact/diff inspection, claim-strength checks,
-stale-evidence pressure tests, or summary review.
-
-Return inspected surfaces and commands, fresh applicable evidence, assumptions,
-skips, failures, risk, confidence, status, and a recommendation—not a final
-claim. Resolve concerns or missing context first; narrow or stop on `BLOCKED`.
-Without delegation, verify sequentially.
+stale-evidence pressure tests, or summary review. Delegates return inspected
+surfaces and commands, fresh applicable evidence, assumptions, skips, failures,
+risk, confidence, status, and a recommendation—not a final claim; resolve
+concerns or missing context first, narrow or stop on `BLOCKED`, and verify
+sequentially without delegation.
 
 ## Guardrails
 
-- Do not claim completion, correctness, passing checks, review readiness, docs sync, security confidence, or successful implementation without fresh matching evidence.
+- Claim completion, correctness, passing checks, review readiness, docs sync, security confidence, or successful implementation only with fresh matching evidence.
 - Do not close, archive, move, rename, or mark an issue, ticket, or handoff complete unless all required acceptance and review evidence supports that lifecycle action.
-- Do not reuse stale proof as if it proves the current scope.
-- Do not treat a passing partial check as proof for a broader claim.
-- Do not treat code changes, clean-looking diffs, or generated summaries as proof that behavior works.
-- Do not treat subagent success reports as proof until important evidence is inspected or reproduced by the main agent.
-- Do not hide failed checks, skipped checks, warnings, flaky results, missing artifacts, or environment limits behind positive wording.
-- Do not run unsafe or irrelevant commands to satisfy the form of verification. Report why they were skipped.
-- Do not require a specific test runner, CI provider, git host, browser, artifact renderer, or agent framework.
-- Do not include private notes, credentials, ignored scratch content, client data, secrets, sensitive personal context, or real user data in verification summaries.
-- Do not require this source repo's root files after installation. The skill may rely only on its own files and target-project evidence.
+- Match proof to claim breadth: a passing partial check, code change, clean-looking diff, or generated summary does not prove that broader behavior works.
+- Report failed checks, skipped checks, warnings, flaky results, missing artifacts, and environment limits plainly, not behind positive wording.
+- Use whatever test runner, CI provider, git host, browser, artifact renderer, or agent framework the project has; none is required.
+- Keep credentials, secrets, and private or real user data out of verification summaries.
 
 ## References
 

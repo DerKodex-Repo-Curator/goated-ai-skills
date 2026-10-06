@@ -34,9 +34,6 @@ Hard: None.
 
 Soft:
 - grill-with-docs when unresolved intent or conflicting source evidence materially blocks the skill change
-- session-start-progressive-disclosure for unfamiliar target projects or source packages
-- agent-instructions-integrator when target-project framework routing is needed
-- handoff when skill creation or porting is interrupted or resumable
 
 Fallback: If companion skills, source-framework docs, or live subagents are unavailable, inspect available artifacts, mark unverified assumptions, and state residual risk.
 
@@ -66,9 +63,9 @@ Fallback: If companion skills, source-framework docs, or live subagents are unav
    - Make the body a framework-neutral operating procedure with `Purpose`, `Inputs`, `Dependencies`, `Workflow`, `Output Contract`, `Delegation`, `Guardrails`, and `References` when useful.
    - State outcomes, decisions, and non-obvious invariants. Reserve fixed sequences for operations where deviation causes a concrete problem; distinguish requirements from suggestions.
    - Keep support files one level below `SKILL.md` and link them directly with explicit read or run conditions. Keep branch-only detail behind those links and simple skills self-contained.
-   - Avoid decorative files, standalone README files, install guides, and changelogs inside the skill package.
+   - Keep decorative files, standalone README files, install guides, and changelogs out of the skill package.
    - Keep `SKILL.md` under the soft 300-line review threshold whenever possible.
-   - Attribute public inspiration when useful, but do not bulk-copy external material or private source text.
+   - Summarize the behavior of external material or private source text instead of bulk-copying it; respect licensing and attribute public inspiration when relevant.
    - If the user requested review only, return the proposed shape and blockers without editing files.
 
 5. Evaluate the skill:
@@ -113,14 +110,11 @@ evaluation gaps.
 ## Guardrails
 
 - Do not publish credentials, secrets, client data, private project names, sensitive personal context, or private workflow assumptions in public main.
-- Do not put workflow steps, proof gates, or implementation detail in `description`; keep `description` focused on triggers.
-- Do not inspect only the obvious entrypoint when a provided source package includes first-party support files that may define real behavior.
-- Do not assume one framework's instruction filename, command syntax, file mention behavior, plugin system, issue tracker, or docs layout is universal.
-- Do not claim behavioral proof from skill evaluation unless scenarios actually ran; describe unrun checks as a plan or residual risk.
-- Do not turn authoring review labels into mandatory GOATED terminology; use them only when they sharpen a concrete skill decision.
-- Do not bulk-copy external source material; summarize behavior, respect licensing, and attribute public inspiration when relevant.
-- Do not expand `SKILL.md` with long examples, templates, or generic compatibility matrices when a directly linked `references/` file would keep the skill lean.
-- Do not require this source repo's root `AGENTS.md`, `README.md`, `CONTEXT.md`, issues, `.local/`, or handoffs at installed runtime.
+- Keep `description` focused on triggers; workflow steps, proof gates, and implementation detail belong in the body.
+- Inspect the first-party support files in a provided source package, not only the obvious entrypoint; they may define real behavior.
+- Treat one framework's instruction filename, command syntax, file mention behavior, plugin system, issue tracker, or docs layout as framework-specific, not universal.
+- Use authoring review labels only when they sharpen a concrete skill decision; they are not mandatory GOATED terminology.
+- Put long examples, templates, and generic compatibility matrices in a directly linked `references/` file when that keeps `SKILL.md` lean.
 - Prefer explicit blockers over quiet assumptions when portability, privacy, or evaluation confidence is uncertain.
 
 ## References

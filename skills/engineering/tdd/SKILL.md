@@ -11,39 +11,30 @@ metadata:
 
 Use behavior-first TDD to implement target-project changes with proof. The loop is red, green, refactor: write one focused failing test for observable behavior, make the smallest production change that passes it, then improve design only after the tests are green.
 
-The core principle is simple: tests should verify behavior through public interfaces, not implementation details. Code can change entirely; tests should keep proving the same capability.
+Tests verify behavior through public interfaces, not implementation details. Code can change entirely; tests keep proving the same capability.
 
 Choose the smallest stable observable boundary that can prove the behavior.
 That may be a unit, property, component, contract, integration, or end-to-end
 test. Broader is not automatically stronger: integration tests are appropriate
 only when the behavior crosses a real integration boundary. A good test reads
-like a specification and survives internal replacement.
-
-Bad tests are coupled to implementation. They mock internal collaborators, test private helpers, assert call order, or verify through external backdoors when a public interface could prove the behavior. The warning sign is a test that fails during a harmless refactor while the behavior still works.
+like a specification and survives internal replacement; a test that fails
+during a harmless refactor is coupled to implementation.
 
 ## Inputs
 
-- User request, bug report, delivery ticket, spec slice, prototype verdict, or scoped behavior change.
-- Target-project root path.
-- Existing source files, tests, fixtures, commands, public interfaces, schemas, routes, adapters, or UI flows related to the behavior.
-- Existing project docs, including root `CONTEXT.md` when present, glossary/context files, ADRs, standards, and test conventions when they affect naming, interface shape, or expected proof.
-- Available test commands, focused test filters, local development constraints, and known weak or missing test infrastructure.
+- User request, bug report, delivery ticket, spec slice, prototype verdict, or scoped behavior change, and the target-project root.
+- Source, tests, fixtures, commands, and public interfaces related to the behavior.
+- Project context docs, ADRs, standards, and test conventions when they affect naming, interface shape, or expected proof.
+- Available test commands and known weak or missing test infrastructure.
 
 ## Dependencies
 
 Hard: None.
 
 Soft:
-- session-start-progressive-disclosure for unfamiliar target projects
-- grill-with-docs when behavior, public interface, scope, language, or testing priority is unclear
-- spec-to-tickets when implementing a planned vertical delivery ticket
-- prototype when risky behavior or interfaces need disposable evidence before production tests
-- project-standards-calibration when test, fixture, naming, or quality standards affect implementation
+- grill-with-docs when behavior, public interface, or testing priority is materially unclear
 - code-refinement after green only when explicitly requested or concrete refinement debt is observed
-- standards-and-spec-review after implementation when available
-- code-security-review after implementation when trust boundaries, persistence, auth, or user data are touched
-- doc-sync after behavior, public interface, architecture, or testing-doc changes
-- verification-before-completion before complete/correct/passing/review-ready implementation claims
+- verification-before-completion before complete, correct, passing, or review-ready claims
 
 Fallback: If companion skills or docs are unavailable, inspect minimal evidence, use discoverable tests/commands, and state lower confidence plus residual risk.
 
@@ -53,12 +44,12 @@ Fallback: If companion skills or docs are unavailable, inspect minimal evidence,
    - Identify the observable behavior that should change or be protected.
    - Identify the public interface that should prove it, such as a module API, CLI command, HTTP endpoint, UI flow, repository method, service boundary, or user-facing workflow.
    - Identify the first focused failing test that can prove one behavior.
-   - Use the project's root `CONTEXT.md`, domain language, glossary, existing test names, and ADRs when available.
-   - Proceed automatically when the ticket or spec already makes behavior and interface clear. Ask only when behavior, public interface, or test priorities are materially ambiguous.
+   - Name tests and interfaces in the project's documented domain language.
+   - Proceed when the ticket or spec already makes behavior and interface clear, including any proof surface it names. Ask only when behavior, public interface, or test priorities are materially ambiguous.
 
 2. Plan tests as behaviors, not implementation steps:
    - List behavior candidates in priority order.
-   - Select the smallest stable observable boundary that can catch the regression or missing behavior. Do not prefer integration tests merely because they exercise more code.
+   - Select the smallest stable observable boundary that can catch the regression or missing behavior.
    - Choose the first tracer bullet: the smallest end-to-end behavior that proves the path works.
    - Prefer critical paths, regression risks, and complex logic over exhaustive edge-case theater.
    - Read [Test Design](references/test-design.md) when test shape, naming, public-interface proof, or good-vs-bad test judgment matters.
@@ -78,14 +69,15 @@ Fallback: If companion skills or docs are unavailable, inspect minimal evidence,
 4. GREEN: implement only enough code to pass:
    - Change production code only for the current failing behavior.
    - Keep implementation scoped to the current ticket or request, current public interface, and current test.
-   - Do not anticipate future tests, add speculative features, or broaden the change because adjacent cleanup is tempting.
-   - Do not change a failing test to match broken behavior; change the test only when RED evidence shows the test is invalid or the requirement changed.
+   - Leave future tests, speculative features, and adjacent cleanup for their own cycle.
+   - Change a failing test only when RED evidence shows the test is invalid or the requirement changed.
    - Run the focused test until it passes, then run relevant nearby or existing checks that protect the touched area.
    - Capture green evidence in two parts: focused command and passing result first, then broader checks run or skipped.
 
 5. Repeat vertically:
-   - Add the next behavior only after the current test is green.
+   - One test, one implementation, then the next: add a behavior only after the current test is green.
    - Let each new test respond to what the previous cycle taught you about behavior, interface shape, fixtures, and design friction.
+   - Writing all tests first and all implementation second is horizontal slicing. Bulk tests describe imagined behavior and the shape of things, so they pass when behavior breaks and fail when it is fine.
    - Continue until the ticket or request acceptance criteria, or the agreed behavior set, is covered.
 
 6. Refactor after green:
@@ -94,7 +86,7 @@ Fallback: If companion skills or docs are unavailable, inspect minimal evidence,
    - Prefer deeper modules when a smaller interface can hide real complexity and reduce caller/test burden.
    - Keep ordinary local refactoring inside this TDD cycle. Load `code-refinement` only for an explicit cleanup request or observed debt such as confusing names, duplication, excessive branching, shallow indirection, unnecessary abstraction, or difficult local reasoning.
    - Run tests after each meaningful refactor step.
-   - Never refactor while red. Get to green first.
+   - Refactor only on green.
 
 7. Close the loop:
    - Summarize test intent, red evidence, green evidence, refactor notes, and residual risk.
@@ -135,62 +127,23 @@ If test infrastructure is weak or missing, report:
 
 ## Delegation
 
-Main owns behavior, public-interface judgment, scope, implementation, and
-communication. Delegate only bounded interface/test discovery, related-test
-inventory, coupling review, one owned slice after red, disjoint verification,
-or focused spec/standards/security review.
-
-Return paths, changes, commands, behavior and interface, red/green evidence,
-assumptions, risk, confidence, and status. Resolve concerns or missing context
-before continuing; narrow or stop on `BLOCKED`. Without delegation, run the
-same cycle sequentially.
+Main owns behavior, public-interface judgment, scope, and implementation.
+Delegate only bounded interface or test discovery, coupling review, one owned
+slice after red, or disjoint verification. Require paths, changes, commands,
+red/green evidence, assumptions, and status; resolve concerns before
+continuing, and narrow or stop on `BLOCKED`. Without delegation, run the same
+cycle sequentially.
 
 ## Guardrails
 
-### Guardrail: Horizontal Slices
-
-DO NOT write all tests first, then all implementation.
-
-This is horizontal slicing: treating RED as "write all tests" and GREEN as "write all code." It produces crap tests:
-
-- Tests written in bulk test imagined behavior, not actual behavior.
-- You end up testing the shape of things, such as data structures and function signatures, rather than user-facing behavior.
-- Tests become insensitive to real changes: they pass when behavior breaks and fail when behavior is fine.
-- You outrun your headlights, committing to test structure before understanding the implementation.
-
-Correct approach: vertical slices via tracer bullets.
-
-```text
-WRONG (horizontal):
-RED:   test1, test2, test3, test4, test5
-GREEN: impl1, impl2, impl3, impl4, impl5
-
-RIGHT (vertical):
-RED to GREEN: test1 to impl1
-RED to GREEN: test2 to impl2
-RED to GREEN: test3 to impl3
-...
-```
-
-One test, one implementation, repeat. Each test responds to what you learned from the previous cycle. Because you just wrote the code, you know exactly what behavior matters and how to verify it.
-
-### Other Guardrails
-
-- Do not test private helpers, internal collaborators, call counts, ordering, or implementation structure when a public interface can prove behavior.
-- Do not verify behavior through a storage query, external backdoor, log scrape, or internal state read when a caller-facing interface can prove it.
-- Do not mock owned code by default. Mock true external edges, time, randomness, filesystem, network calls, or dependencies that cannot safely run locally.
-- Do not introduce ports, adapters, or dependency injection unless there is a real seam where behavior varies across production and test.
-- Do not broaden scope beyond the current ticket or request, current failing test, and public interface under change.
-- Do not refactor while red.
-- Do not treat tests written after implementation as TDD unless you also prove they would have failed against the missing or broken behavior.
-- Do not weaken, delete, or rewrite a behavior test just to make current implementation pass.
-- Do not add production methods, flags, or hooks that exist only for tests; use test utilities or a real public interface.
-- Do not pretend tests are stronger than they are. If infrastructure is weak, use the smallest honest proof and report residual risk.
-- Do not claim work is complete from focused GREEN alone; route the actual claim through `verification-before-completion`.
-- Do not create broad test infrastructure, fixture frameworks, package-manager changes, CI changes, or new dependencies unless the current ticket or request explicitly calls for that foundation.
-- Do not delete or rewrite existing tests just because they are awkward. Replace obsolete implementation-detail tests only when the new public-interface proof covers the behavior.
-- Do not include private notes, credentials, client data, sensitive personal context, ignored scratch content, or real user data in tests or fixtures.
-- Do not require this source repo's root files, issue files, `.local` notes, upstream sources, or hidden chat history after installation. The skill may rely only on its own files and target-project evidence.
+- Prove behavior through a caller-facing interface. Private helpers, internal collaborators, call counts, storage queries, and log scrapes are not proof when a public interface can show the behavior.
+- Mock only true external edges, time, randomness, filesystem, network calls, or dependencies that cannot safely run locally. Introduce a port or adapter only at a real seam where behavior varies across production and test.
+- Take expected values from an independent source: a known-good literal, a worked example, or the spec. An assertion that recomputes the value the way the code does cannot fail.
+- A test written after the implementation counts as TDD only when you also show it fails against the missing or broken behavior.
+- Keep behavior tests as strict as the requirement; replace an implementation-detail test only when new public-interface proof covers the same behavior.
+- Keep test-only methods, flags, and hooks out of production code; use test utilities or a real public interface.
+- Build broad test infrastructure, fixture frameworks, CI changes, or new dependencies only when the current ticket or request calls for that foundation. When infrastructure is weak, use the smallest honest proof and report residual risk.
+- Use synthetic data in tests and fixtures, never credentials or real user data.
 
 ## References
 

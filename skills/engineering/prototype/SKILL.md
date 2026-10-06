@@ -27,7 +27,6 @@ Use this skill before spec creation, during ticket exploration, or before commit
 Hard: None.
 
 Soft:
-- session-start-progressive-disclosure for unfamiliar target projects
 - grill-with-docs when an unresolved question or conflicting project evidence blocks a useful experiment
 - write-a-spec when the prototype verdict should feed a broader product or delivery spec
 - spec-to-tickets when the prototype is exploring one focused delivery ticket
@@ -48,7 +47,7 @@ Fallback: If companion skills or docs are unavailable, inspect minimal local evi
    - Use a prototype when the answer is easier to learn by running, clicking, toggling, or inspecting than by discussing.
    - Require a live decision with at least two plausible outcomes and name the observation that would distinguish them. If existing evidence already settles the choice, return a `not needed` verdict and the evidence instead of building.
    - Prefer direct implementation when the change is obvious, low risk, and already specified.
-   - Do not use a prototype as a way to postpone required requirements work, tests, or design decisions.
+   - Do required requirements work, tests, and design decisions directly; a prototype does not postpone them.
    - Do not use a prototype to supply user consent, stakeholder intent, or another human-only high-risk decision.
 
 3. Read the branch needed for the experiment:
@@ -88,7 +87,7 @@ Fallback: If companion skills or docs are unavailable, inspect minimal local evi
    - For logic/API prototypes, keep a small useful interface around the validated behavior, delete the throwaway driver, and avoid carrying production-like scaffolding forward.
    - For UI prototypes, delete losing variants and the switcher; fold the chosen design into the real route or promote the winning throwaway route into a real route deliberately.
    - If the user still needs to inspect it, leave an explicit handoff note with the question, entrypoint, verdict status, cleanup owner, and cleanup trigger.
-   - Do not close the work as complete while prototype artifacts remain unexplained.
+   - Close the work as complete only when every remaining prototype artifact is explained.
    - Use `verification-before-completion` before claiming the prototype answered the question, cleanup is complete, or production absorption is ready; for rough exploratory prototypes, verify only the verdict or handoff claim being made and state residual risk.
 
 ## Output Contract
@@ -129,26 +128,19 @@ Cleanup owner: <agent, user, or future implementer>
 
 Main owns the question, scope, verdict, cleanup, and communication. Delegate
 only bounded convention discovery, independent variants, an owned logic
-harness, disposability checks, or evidence summaries.
-
-Return inspected or changed paths, commands, question coverage, verdict
-evidence, cleanup recommendation, remaining artifacts, and status. Resolve
-fidelity, scope, cleanup, or missing-context concerns before relying on the
-result; narrow or stop on `BLOCKED`. Without delegation, work sequentially.
+harness, disposability checks, or evidence summaries. Delegates return
+inspected or changed paths, commands, question coverage, verdict evidence,
+cleanup recommendation, remaining artifacts, and status; resolve fidelity,
+scope, cleanup, or missing-context concerns before relying on the result,
+narrow or stop on `BLOCKED`, and work sequentially without delegation.
 
 ## Guardrails
 
-- Do not build before the prototype question is stated.
-- Do not answer more than one major question with one prototype.
-- Do not let prototype code become accidental production behavior.
+- Do not ship prototype code, switchers, query-param variant branches, losing UI variants, or throwaway terminal drivers as production behavior.
 - Do not add persistence, real mutations, production database writes, network side effects, or durable background jobs unless the question explicitly requires that boundary.
-- Do not introduce new frameworks, package managers, services, design systems, or major dependencies just for a prototype.
-- Do not polish the prototype beyond what is needed to learn from it.
-- Do not add tests for the throwaway shell; add tests only when validated behavior is absorbed into production code.
-- Do not blur reusable logic with the throwaway driver; keep portable logic separate from terminal, browser, logging, or fixture plumbing.
-- Do not ship prototype switchers, query-param variant branches, losing UI variants, or throwaway terminal drivers as production behavior.
-- Do not leave prototype routes, switches, variants, scripts, fixtures, or scratch data in the project without an explicit handoff and cleanup trigger.
-- Do not include private data, credentials, client details, sensitive personal context, or real user data in prototype fixtures.
+- Build with what the project already has; a prototype does not justify new frameworks, package managers, services, design systems, or major dependencies.
+- Every prototype route, switch, variant, script, fixture, or scratch file ends deleted, absorbed, or covered by an explicit handoff with a cleanup trigger.
+- Keep credentials, private data, and real user or client data out of prototype fixtures.
 - Prefer a small honest verdict over a large impressive demo that does not answer the question.
 
 ## References

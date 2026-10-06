@@ -63,6 +63,16 @@ skills:
     accepts_signals: [scope-changed, evidence-stale]
     emits_signals: []
 
+  - name: retrospective
+    path: skills/agent-workflows/retrospective/SKILL.md
+    category: agent-workflows
+    aliases: []
+    workflow_role: environment-improvement
+    domains: [software, research, documentation, content, other]
+    profile_eligibility: [standard, full]
+    accepts_signals: [evidence-stale]
+    emits_signals: [documentation-impact]
+
   - name: project-context-calibration
     path: skills/agent-workflows/project-context-calibration/SKILL.md
     category: agent-workflows
@@ -151,6 +161,16 @@ skills:
     domains: [software, documentation, content, other]
     profile_eligibility: [lightweight, standard, full]
     accepts_signals: [scope-changed]
+    emits_signals: []
+
+  - name: pr-description
+    path: skills/engineering/pr-description/SKILL.md
+    category: engineering
+    aliases: []
+    workflow_role: review-request
+    domains: [software, documentation, content, other]
+    profile_eligibility: [lightweight, standard, full]
+    accepts_signals: [scope-changed, evidence-stale]
     emits_signals: []
 
   - name: diagnose

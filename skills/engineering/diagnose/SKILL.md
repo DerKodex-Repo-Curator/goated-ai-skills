@@ -11,34 +11,31 @@ metadata:
 
 Find and prove the cause of a bug, flaky failure, build or integration break, production symptom, or performance regression before fixing it.
 
-Diagnosis ends with evidence and a routed next action. It does not own the fix
+Diagnosis ends with evidence and a routed next action; it does not own the fix
 cycle. When the user already requested a fix and the cause and correct
-public-interface seam are known, continue directly into `tdd` without asking
-for redundant authorization. Ask again only when the fix would materially
-change the agreed scope, action reach, risk, or public contract. When no correct
-seam exists, tests require private access, or repeated fixes keep failing, route
-the architecture problem to `review-codebase-architecture`.
+public-interface seam are known, continue directly into `tdd`. Ask again only
+when the fix would materially change the agreed scope, action reach, risk, or
+public contract. When no correct seam exists or repeated fixes keep failing,
+route the architecture problem to `review-codebase-architecture`.
 
 ## Inputs
 
-- User report, issue, failing test, error output, logs, traces, metrics, screenshots, profiles, benchmark results, reproduction steps, or observed symptoms.
-- Target-project root, relevant docs, recent changes, configs, dependency versions, environment facts, and affected entrypoints.
-- Known safety constraints, including production access, customer or user data, destructive repro risk, secret handling, time limits, and whether instrumentation may be left running.
-- Available proof tools: tests, CLI commands, HTTP scripts, browser automation, fixtures, traces, profilers, query plans, log search, feature flags, bisection, or human-in-the-loop checks.
+- The reported symptom and its evidence: report, failing test, error output, logs, traces, metrics, profiles, or reproduction steps.
+- Target-project root, recent changes, configuration, dependency versions, environment facts, and affected entrypoints.
+- Safety constraints: production access, user data, destructive repro risk, secret handling, and time limits.
+- Available proof tools: tests, commands, scripts, browser automation, fixtures, profilers, query plans, log search, bisection, or human-in-the-loop checks.
 
 ## Dependencies
 
 Hard: None.
 
 Soft:
-- session-start-progressive-disclosure for unfamiliar target projects
-- grill-with-docs when reported vs expected behavior, scope, risk, or user impact is unclear
-- tdd when proven cause and fix/regression proof can use a public-interface seam
-- review-codebase-architecture when no correct seam, false seams, failed fixes, or testability friction appear
-- code-security-review when symptoms touch trust boundaries, auth, permissions, secrets, user data, persistence, execution, or unsafe config
-- doc-sync when diagnosis changes behavior docs, runbooks, architecture docs, or test guidance
-- verification-before-completion before proven-cause, complete, fixed, passing, or implementation-ready claims
-- handoff when repro, root cause, uncertainty, or blocked verification needs continuity
+- tdd when the cause is proven and a public-interface seam can carry the regression test
+- review-codebase-architecture when no correct seam exists or repeated fixes fail
+- code-security-review when the symptom touches a trust boundary or sensitive data
+- doc-sync when the diagnosis changes docs or runbooks
+- verification-before-completion before proven-cause or implementation-ready claims
+- handoff when an unfinished diagnosis needs continuity
 
 Fallback: If companion skills, docs, commands, profilers, production access, or subagents are unavailable, build/request the smallest safe feedback loop, state missing evidence, downgrade claims, and report residual risk.
 
@@ -47,13 +44,15 @@ Fallback: If companion skills, docs, commands, profilers, production access, or 
 1. Triage scope and safety:
    - Classify the symptom: functional bug, flaky or timing failure, performance regression, build failure, integration failure, production symptom, or unknown.
    - Identify the blast radius, data sensitivity, environment, urgency, and whether reproduction or instrumentation could be destructive.
-   - Do not run destructive repro steps, mutate production, add production instrumentation, or expose secrets without explicit approval and a rollback or cleanup plan.
    - Ask only for non-discoverable facts that materially change diagnosis: expected behavior, missing access, unsafe repro approval, or the user's tolerance for risk.
 
 2. Build the fastest honest feedback loop:
    - Before hypothesis testing, establish or request the smallest loop that can show the symptom with enough fidelity.
    - Prefer a focused failing test, exact command, CLI fixture, HTTP request script, browser path, captured trace replay, benchmark, profiler run, query plan, differential comparison, bisection, or human-in-the-loop loop.
-   - If the loop is slow, make it narrower before continuing. If no loop is safe or available, stop before full hypothesis testing, request the missing loop or access, and limit any artifact-only diagnosis to explicitly lower-confidence triage.
+   - Tighten the loop before continuing: narrow it until it runs in seconds, assert the exact symptom rather than "did not crash", and pin time, randomness, and external state where they vary.
+   - For an intermittent symptom, raise the reproduction rate until it is debuggable: repeat the trigger, run it in parallel, add load, or narrow the timing window. Record the rate reached.
+   - This step is complete when you can name one command or script you have already run that goes red on this symptom, gives the same verdict each run (or a recorded reproduction rate), finishes quickly, and needs no human. Show the invocation and its redacted output.
+   - If no such loop is safe or available, stop before hypothesis testing, list what you tried, request the missing loop or access, and limit any artifact-only diagnosis to explicitly lower-confidence triage.
    - Capture the loop as evidence: command or steps, inputs, environment, observed result, timing, and whether the result is deterministic or intermittent.
 
 3. Confirm the exact symptom:
@@ -71,17 +70,19 @@ Fallback: If companion skills, docs, commands, profilers, production access, or 
    - Read errors, stack traces, logs, recent changes, callers, tests, configs, schemas, dependency wiring, and working examples before proposing a fix.
    - Compare expectations to reality at each relevant interface: inputs, state, side effects, timing, outputs, errors, and invariants.
    - Read [Root-Cause Tracing](references/root-cause-tracing.md) when the bad value, event, state, or timing appears downstream from its origin.
-   - Do not edit production behavior, weaken tests, broaden retries, or add speculative guards during observation.
+   - Leave production behavior, tests, retries, and guards unchanged during observation.
 
 6. Rank falsifiable hypotheses:
    - List 3-5 plausible causes, ordered by evidence, impact, and cheapest falsifying probe.
    - For each hypothesis, state the prediction that would be true if it were the cause and the smallest probe that can confirm or falsify it.
    - Keep "obvious fix" ideas as hypotheses until evidence proves them.
+   - Show the ranked list before probing; the user may re-rank it or rule one out at once. Continue with your ranking if they do not respond.
    - If pressure, fatigue, authority, or sunk cost is pushing a shortcut, read [Pressure Scenarios](references/pressure-scenarios.md).
 
 7. Probe one hypothesis at a time:
    - Add the narrowest instrumentation, command, log, assertion, trace, breakpoint, metric, profile, query plan, or comparison needed for one prediction.
-   - Change one variable at a time. After each probe, record the result, update the ranking, and remove or tag temporary instrumentation for cleanup.
+   - Change one variable at a time. After each probe, record the result and update the ranking.
+   - Mark every temporary log, flag, or script with one unique tag for this diagnosis, such as `DIAG-a4f2`, so cleanup is a single search.
    - For flaky or async symptoms, read [Condition-Based Waiting](references/condition-based-waiting.md) before changing waits, retries, sleeps, polling, or timeouts.
    - For performance symptoms, measure the baseline first, then use profiling, query plans, benchmarks, bisection, allocation or I/O measurement, or differential traces before proposing optimization.
 
@@ -89,12 +90,13 @@ Fallback: If companion skills, docs, commands, profilers, production access, or 
    - Root cause is proven only when evidence explains the exact symptom and the symptom changes predictably when the cause or triggering condition changes.
    - Build a compact evidence packet: repro loop, key observations, hypotheses rejected, confirming probe, cause, affected interface, and residual uncertainty.
    - If a correct public-interface seam exists, route to `tdd` with the desired regression behavior and suggested first failing test.
-   - If the original request already includes the fix, reuse the diagnosis packet and continue automatically. Do not pause for authorization that the user has already supplied.
-   - If no correct seam exists, tests would need private internals, setup is pathological, or repeated fixes failed, route to `review-codebase-architecture` before implementation.
+   - If the original request already includes the fix, reuse the diagnosis packet and continue.
+   - If no correct seam exists, tests would need private internals, or repeated fixes failed, route to `review-codebase-architecture` before implementation; the missing seam is itself a finding.
    - If the diagnosis changes docs or runbooks, route to `doc-sync`. If it touches trust boundaries or sensitive data, route to `code-security-review`.
 
 9. Cleanup and verify closeout:
-   - Remove debug logs, temporary scripts, local harnesses, probes, flags, breakpoints, test-only hooks, scratch files, and instrumentation that should not remain.
+   - Remove temporary logs, scripts, harnesses, probes, flags, and test-only hooks; search for the diagnosis tag to confirm none remain.
+   - State the confirmed cause where the next debugger will find it: the commit message, pull request text, or ticket for the fix.
    - If any diagnostic artifact must remain, document why, who owns it, how it is controlled, and when to remove it.
    - Use `verification-before-completion` before claiming the cause is proven, diagnosis is complete, the fix is ready, or the work is safe to hand to implementation.
    - Report residual risk plainly: unreproduced paths, environment differences, skipped probes, unavailable access, weak measurement, flaky evidence, or unverified assumptions.
@@ -142,28 +144,22 @@ Return a diagnosis packet shaped like this:
 
 ## Delegation
 
-Main owns symptom framing, hypotheses, root-cause judgment, fix direction, and
-communication. Delegate only bounded reproduction, one trace or comparison,
-profiling/bisection evidence, hypothesis review, or cleanup checks.
-
-Return paths, commands, evidence, assumptions, skipped checks, risk, confidence,
-and status. Sanity-check important evidence; resolve concerns or missing context
-before relying on it, and narrow or stop on `BLOCKED`. Without delegation, run
-the same probes sequentially.
+Main owns symptom framing, hypotheses, root-cause judgment, and fix direction.
+Delegate only bounded reproduction, one trace or comparison, profiling or
+bisection evidence, or cleanup checks. Require paths, commands, evidence,
+assumptions, and status; check important evidence before relying on it, and
+narrow or stop on `BLOCKED`. Without delegation, run the same probes
+sequentially.
 
 ## Guardrails
 
-- Do not fix before proving the cause. A likely fix is still a hypothesis.
-- Do not rank broad hypotheses before minimizing a confirmed reducible reproduction, unless safety or symptom fidelity requires a recorded lower-confidence fallback.
-- Do not bundle probes with fixes; evidence becomes muddy when the variable changes with the treatment.
-- Do not weaken, delete, or rewrite failing tests just to make the symptom disappear.
-- Do not log secrets, tokens, credentials, private user data, raw production payloads, or sensitive identifiers. Redact before sharing or persisting evidence.
+- Prove the cause before fixing; a likely fix stays a hypothesis until a probe confirms it.
+- Minimize a confirmed reducible reproduction before ranking hypotheses, unless safety or symptom fidelity requires a recorded lower-confidence fallback.
+- Probe and fix in separate steps so each result has one explanation.
+- Keep failing tests intact; they are the symptom's evidence.
+- Redact secrets, credentials, and private data before sharing or persisting evidence.
 - Do not add production instrumentation, enable verbose logs, alter live config, or run destructive repro steps without explicit approval, scope, duration, and rollback.
-- Do not use arbitrary sleeps as the default flake fix. Prefer observed readiness conditions, bounded polling, deterministic synchronization, or root-cause proof.
-- Do not claim a performance fix path without baseline measurement and relevant profiling, query-plan, benchmark, bisection, or equivalent evidence.
-- Do not leave behind debug tags, temporary scripts, local harnesses, scratch artifacts, breakpoints, ad hoc flags, or diagnostic logs without documenting ownership and cleanup.
-- Do not force a regression test through the wrong seam. If the only available proof reaches into private internals or brittle implementation details, route architecture follow-up first.
-- Do not require this source repo, upstream repos, issue files, hidden chat history, ignored scratch folders, or maintainer-only docs after the skill is installed.
+- Fix flakes with observed readiness conditions or bounded polling, not arbitrary sleeps.
 
 ## References
 

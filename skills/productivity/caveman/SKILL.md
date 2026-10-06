@@ -58,10 +58,10 @@ Fallback: If the agent cannot reliably track persistence across turns, apply com
    - After the clarity-critical portion is complete, resume compact mode if it is still active.
 
 5. Avoid false terseness:
-   - Do not omit uncertainty to sound decisive.
-   - Do not shorten a warning until it becomes vague.
-   - Do not compress separate steps into one sentence if order matters.
-   - Do not alter code, SQL, shell commands, or error text to fit the style.
+   - State uncertainty even when omitting it would sound more decisive.
+   - Keep each warning long enough to stay specific.
+   - Keep separate steps in separate sentences when order matters.
+   - Leave code, SQL, shell commands, and error text unaltered.
 
 ## Output Contract
 
@@ -83,16 +83,6 @@ the inspected text, omissions found, assumptions, and confidence.
 
 ## Guardrails
 
-- Do not activate compact mode unless the user explicitly asks for terse communication.
-- Do not exit compact mode unless the user clearly asks for normal communication or the agent must use a temporary clarity exception.
 - Do not let brevity override safety, correctness, uncertainty, confirmations, exact errors, code blocks, technical identifiers, or required output contracts.
-- Do not reduce implementation, review, verification, or artifact detail
-  because the user requested fewer words.
-- Do not hide assumptions, skipped checks, failed commands, or residual risk.
-- Do not use compact style for destructive confirmations, security warnings, confusing multi-step instructions, user confusion, code review findings, or exact structured outputs when normal clarity is safer.
-- Do not require this source repo's root files, issues, `.local/`, or hidden chat history after installation.
-- Do not include private notes, credentials, client data, sensitive personal context, or private workflow assumptions in compact examples.
-
-## References
-
-No external references are required. This skill is self-contained after installation.
+- State assumptions, skipped checks, failed commands, and residual risk.
+- Do not use compact style for destructive confirmations, security warnings, confusing multi-step instructions, user confusion, code review findings, or exact structured outputs when normal clarity is safer; use normal prose there.

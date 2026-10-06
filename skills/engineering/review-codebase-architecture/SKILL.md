@@ -16,26 +16,21 @@ This skill is review-only. It ranks opportunities, explains tradeoffs, and emits
 ## Inputs
 
 - User request, target-project root, architecture concern, and requested scope.
-- Existing `docs/agents/context-matrix.md`, root `CONTEXT.md`, `docs/agents/project-standards.md`, `docs/agents/architecture-map.md`, ADRs, specs or legacy PRDs, ticket or remote-issue handoffs, and contributor docs when present.
-- Source files, manifests, package/module indexes, route definitions, entrypoints, dependency injection/configuration code, data-access code, service clients, adapters, tests, fixtures, and CI/test commands related to the review scope.
-- Existing architecture diagrams, prior refactor notes, implementation pain points, test failures, flaky areas, or user-provided examples of hard-to-change code.
+- Project context docs, context matrix, standards profile, architecture map, ADRs, specs, and tickets when present.
+- Source, manifests, entrypoints, dependency construction, adapters, tests, fixtures, and test commands related to the review scope.
+- Commit history, prior refactor notes, recorded rejections, known pain points, flaky areas, or user examples of hard-to-change code.
 
 ## Dependencies
 
 Hard: None.
 
 Soft:
-- session-start-progressive-disclosure for unfamiliar target projects
-- context-matrix-map when docs/agents/context-matrix.md exists or discovery is broad
-- project-context-calibration when root CONTEXT.md or language affects architecture terms
-- project-standards-calibration when standards affect refactor shape, tests, or artifact location
 - architecture-design-map when a descriptive current-state map is needed before ranking improvements
-- grill-with-docs when architecture goal, user intent, or constraints are unclear
-- code-refinement when a candidate is only scoped behavior-preserving cleanup rather than an architecture opportunity
+- design-codebase-architecture when an accepted finding needs prescriptive design
+- code-refinement when a candidate is only scoped behavior-preserving cleanup
 - tdd when a selected improvement moves into implementation and test design
-- write-a-spec when a chosen direction needs product-level scope or stakeholder decisions
-- spec-to-tickets when a chosen direction should become delivery slices
-- verification-before-completion before complete/evidence-backed/downstream-ready opportunity claims
+- write-a-spec or spec-to-tickets when a chosen direction needs planning or delivery slices
+- verification-before-completion before complete, evidence-backed, or downstream-ready claims
 
 Fallback: If companion skills or durable docs are unavailable, inspect minimal project evidence, keep confidence lower, and separate facts from assumptions.
 ## Architecture Language
@@ -55,13 +50,14 @@ Use target-project names for concrete modules and flows. Keep these review terms
 1. Confirm scope and mode:
    - Identify the target-project root from the request, current directory, repository metadata, or manifests.
    - Classify the work as broad architecture scan, focused subsystem review, testability review, dependency/seam review, or RFC-prep review.
-   - Keep installed-skill instructions separate from target-project artifacts.
+   - For a broad scan with no named direction, scope by recent change first: deepening pays off where the code keeps changing. Read a stretch of commit history, for example `git log --oneline --stat`, start with the areas that recur, and widen only when changes are scattered.
    - Ask only when the target root, review scope, or required output cannot be inferred safely.
 
 2. Gather evidence before judging:
    - Use `docs/agents/context-matrix.md` when present to choose first-read and second-read sources.
    - Read relevant context docs, ADRs, architecture maps, standards, specs or legacy PRDs, tickets or remote issues, manifests, entrypoints, package indexes, imports/callers, representative source, tests, fixtures, and dependency construction code.
    - Trace actual calls, imports, data flow, configuration, routes, job wiring, or test setup instead of relying on folder names alone.
+   - Check recorded rejections first: ADRs, out-of-scope records, or earlier review notes that already declined a direction. Raise such a direction again only when the friction is strong enough to reopen the decision, and say that it reopens it.
    - Record commands run, commands skipped, missing evidence, stale docs, inferred relationships, and contradictions.
 
 3. Find candidate architecture friction:
@@ -89,7 +85,8 @@ Use target-project names for concrete modules and flows. Keep these review terms
    - Recommend `code-refinement` when a plausible architecture concern turns out to be scoped behavior-preserving cleanup.
    - Recommend `write-a-spec`, `spec-to-tickets`, or an RFC when the chosen direction needs planning before implementation.
    - Recommend `tdd` when the next step is a focused implementation slice with behavior proof through the new or existing interface.
-   - Emit only the next signal justified by the selected finding; do not rebuild the downstream delivery pipeline.
+   - Emit only the next signal justified by the selected finding.
+   - When the user rejects a candidate for a reason a future review would need, offer to record it in the project's decision convention so it is not suggested again.
    - Use `verification-before-completion` before claiming the ranking is complete, evidence-backed, or ready for downstream work; for lightweight scans, verify only the recommendation claim being made and state skipped areas.
 
 ## Output Contract
@@ -137,29 +134,22 @@ For an RFC-style handoff, include the chosen problem, source evidence, public in
 
 ## Delegation
 
-Main owns scope, evidence standards, ranking, architecture judgment,
-recommendations, and communication. Delegate only bounded caller/test traces,
-one-area friction scans, seam checks, one interface alternative, or
-evidence-versus-speculation review.
-
-Return paths, commands, exact evidence, candidate friction and seam shape,
-confidence, assumptions, contradictions, uncertainty, and status—not a final
-recommendation. Resolve concerns or missing context before ranking; narrow,
-defer, or stop on `BLOCKED`. Without delegation, explore sequentially.
+Main owns scope, evidence standards, ranking, and recommendations. Delegate
+only bounded caller or test traces, one-area friction scans, seam checks, or
+one interface alternative. Require paths, commands, evidence, candidate
+friction and seam shape, assumptions, and status, not a recommendation;
+resolve concerns before ranking, and narrow or stop on `BLOCKED`. Without
+delegation, explore sequentially.
 
 ## Guardrails
 
-- Do not turn findings into a prescriptive architecture blueprint; route accepted design work to `design-codebase-architecture`.
-- Do not implement refactors, edit production code, rewrite tests, run formatters, apply migrations, or mutate architecture as part of this review-only skill.
-- Do not judge architecture before gathering relevant source evidence.
-- Do not rank speculative rewrites, personal taste, folder-layout impressions, or ecosystem best practices as findings without target-project evidence.
-- Do not claim a module is shallow only because it is small; judge by interface complexity, caller knowledge, deletion test, and hidden behavior.
-- Do not introduce ports, adapters, dependency injection, or seams unless behavior genuinely varies across the seam or dependency category justifies it.
-- Do not preserve old implementation-detail tests by default in a proposed direction; replace them only when equivalent interface-level behavior coverage exists.
-- Do not hide uncertainty. Mark inferred, stale, missing, weak, or conflicting evidence clearly.
-- Do not create durable target-project artifacts, ADRs, specs or legacy PRDs, or ticket or remote-issue files unless the user separately asks for those outputs.
-- Do not include private notes, ignored local scratch files, credentials, client data, sensitive personal context, secrets, or real user data in reports.
-- Do not require the original skill-library repository or any maintainer-only root files after installation. The skill may rely only on its own installed files and target-project evidence.
+- This skill reviews only. Route accepted design work to `design-codebase-architecture`; leave production code, tests, formatters, and migrations untouched.
+- Rank only findings backed by target-project evidence. Speculative rewrites, taste, folder-layout impressions, and ecosystem habits are not findings.
+- Judge shallowness by interface complexity, caller knowledge, the deletion test, and hidden behavior, not by size.
+- Recommend a port, adapter, or seam only where behavior genuinely varies across it or the dependency category justifies it.
+- In a proposed direction, replace implementation-detail tests only when equivalent interface-level coverage exists.
+- Mark inferred, stale, missing, weak, or conflicting evidence clearly.
+- Create durable artifacts, ADRs, specs, or tickets only when the user separately asks for them.
 
 ## References
 

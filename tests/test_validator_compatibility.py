@@ -101,8 +101,8 @@ ORCHESTRATED_VALIDATORS = (
 
 EXPECTED_SUCCESS_OUTPUT = "\n".join(
     (
-        "GOATED skill validation passed for 37 implemented skills.",
-        "Integrated registry validation passed for 37 catalog entries.",
+        "GOATED skill validation passed for 39 implemented skills.",
+        "Integrated registry validation passed for 39 catalog entries.",
         "Adaptive routing fixture validation passed for 9 scenarios.",
         "End-to-end fixture validation passed for 4 scenarios.",
         "Onboarding fixture validation passed for 4 scenarios.",
@@ -115,7 +115,7 @@ EXPECTED_SUCCESS_OUTPUT = "\n".join(
         "Behavior-proof fixture validation passed for 14 scenarios.",
         "Merge-conflict fixture validation passed for 5 scenarios.",
         "Review-and-verification fixture validation passed for 7 scenarios.",
-        "Output-and-communication fixture validation passed for 9 scenarios.",
+        "Output-and-communication fixture validation passed for 11 scenarios.",
         "Knowledge-retrieval fixture validation passed for 6 scenarios.",
         "Source-grounded-research fixture validation passed for 6 scenarios.",
         "Setup Scribe fixture validation passed for 8 scenarios.",
@@ -126,19 +126,13 @@ EXPECTED_SUCCESS_OUTPUT = "\n".join(
         ),
         (
             "Skills above the 1,500-word decomposition threshold: "
-            "skills/agent-workflows/project-standards-calibration/SKILL.md, "
             "skills/engineering/architecture-design-map/SKILL.md, "
             "skills/engineering/code-refinement/SKILL.md, "
             "skills/engineering/code-security-review/SKILL.md, "
             "skills/engineering/diagnose/SKILL.md, "
             "skills/engineering/grill-with-docs/SKILL.md, "
-            "skills/engineering/review-codebase-architecture/SKILL.md, "
-            "skills/engineering/design-codebase-architecture/SKILL.md, "
-            "skills/engineering/prototype/SKILL.md, "
             "skills/engineering/receiving-code-review/SKILL.md, "
-            "skills/engineering/tdd/SKILL.md, "
-            "skills/engineering/verification-before-completion/SKILL.md, "
-            "skills/engineering/writing-plans/SKILL.md"
+            "skills/engineering/tdd/SKILL.md"
         ),
         (
             "Per-type soft targets remain review-only until registry roles "
@@ -264,7 +258,7 @@ class ValidatorCompatibilityTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
         self.assertEqual(review_notes, [])
-        self.assertEqual(skill_count, 37)
+        self.assertEqual(skill_count, 39)
         self.assertEqual(len(drift), 3)
         self.assertEqual(
             [finding.path for finding in drift],
@@ -503,7 +497,7 @@ class RegistryConcernValidationTests(unittest.TestCase):
         )
 
         self.assertEqual(errors, [])
-        self.assertEqual(catalog_count, 37)
+        self.assertEqual(catalog_count, 39)
         self.assertEqual(policy_words, 1192)
         self.assertIn(
             "skills/engineering/tdd/SKILL.md",

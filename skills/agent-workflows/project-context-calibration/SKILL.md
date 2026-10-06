@@ -14,16 +14,13 @@ gives future agents one shared vocabulary.
 
 Activate it only when the onboarding artifact budget includes project context
 because boundaries, terms, artifact meanings, or reusable architecture language
-are missing, stale, or repeatedly confused. Do not create `CONTEXT.md` as a
-universal onboarding requirement.
+are missing, stale, or repeatedly confused. Onboarding without that need
+proceeds without a `CONTEXT.md`.
 
 ## Inputs
 
-- User request or onboarding goal.
-- Target-project root path.
-- Existing `docs/agents/context-matrix.md`, if present.
-- Existing root `CONTEXT.md`, if refreshing.
-- Existing `docs/agents/project-standards.md`, if present.
+- User request or onboarding goal, and the target-project root path.
+- Existing root `CONTEXT.md` when refreshing, plus `docs/agents/context-matrix.md` and `docs/agents/project-standards.md`, if present.
 - Project README files, docs indexes, glossary or domain docs, ADRs, PRDs, issue templates, architecture notes, agent instructions, and public docs.
 - Representative source or tests only when docs are missing, stale, or insufficient to ground important project language.
 - User decisions about project terms, scope boundaries, and artifact meanings when local evidence cannot settle them.
@@ -35,9 +32,7 @@ universal onboarding requirement.
 Hard: None.
 
 Soft:
-- session-start-progressive-disclosure for new or unfamiliar project calibration
 - context-matrix-map when docs/agents/context-matrix.md exists or discovery is needed
-- grill-with-docs when project language, boundaries, or artifact definitions require user decisions
 - project-standards-calibration after context when standards need a durable profile
 - agent-instructions-integrator after context when routing should reference root CONTEXT.md
 - verification-before-completion before complete/evidence-backed/future-agent claims
@@ -62,13 +57,13 @@ Fallback: If companion skills or project docs are unavailable, inspect minimal e
 3. Use the context matrix when present:
    - If `docs/agents/context-matrix.md` exists, read it first and use its first-read and second-read sources to choose evidence.
    - If no context matrix exists, do a narrow discovery pass for README files, docs indexes, existing context or glossary docs, ADRs, PRDs, agent instructions, and project manifests.
-   - Do not recreate the context matrix inside `CONTEXT.md`; use it only to find source-grounded context.
+   - Use the matrix only to find source-grounded context; source read-order stays there, not in `CONTEXT.md`.
 
 4. Inspect the existing context file when refreshing:
    - Read root `CONTEXT.md` before editing it.
    - Preserve accurate project-specific facts, terms, and artifact definitions.
    - Mark stale, conflicting, or weakly sourced content as a gap or assumption instead of silently deleting project knowledge.
-   - Do not confuse the target project's root `CONTEXT.md` with this GOATED source repo's root `CONTEXT.md`.
+   - Work on the target project's root `CONTEXT.md`; this GOATED source repo's root `CONTEXT.md` is the subject only when that repo is explicitly the target project.
 
 5. Calibrate project boundaries:
    - Capture what the project is, what it is not, and which adjacent systems, packages, products, repositories, or domains are outside its scope.
@@ -80,7 +75,7 @@ Fallback: If companion skills or project docs are unavailable, inspect minimal e
    - Collect terms future agents must use consistently, such as product concepts, actors, workflows, feature names, status labels, data concepts, and overloaded words.
    - Define terms from project evidence first and user clarification second.
    - Keep definitions short and operational: what the term means in this project and where the evidence came from.
-   - Avoid broad glossary building when the terms do not affect agent work.
+   - Include only terms that affect agent work; this is not a broad glossary.
 
 7. Calibrate durable artifact definitions:
    - Define durable project artifacts that future agents should recognize, such as `CONTEXT.md`, `docs/agents/context-matrix.md`, `docs/agents/project-standards.md`, PRDs, ADRs, issue handoffs, public docs, and temporary or tracked handoffs when the project uses them.
@@ -90,19 +85,19 @@ Fallback: If companion skills or project docs are unavailable, inspect minimal e
 8. Calibrate reusable architecture vocabulary:
    - Capture stable architecture terms future agents need across tasks, such as feature, module, service, adapter, seam, layer, package, route, schema, or project-specific equivalents.
    - Ground terms in docs or representative source structure when possible.
-   - Keep this to vocabulary and orientation. Do not draw diagrams, evaluate architecture quality, propose refactors, or invent new architectural decisions.
+   - Keep this to vocabulary and orientation; diagrams, architecture-quality evaluation, refactor proposals, and new architectural decisions are out of scope.
    - If architecture terms are contested or decision-heavy, record the gap and recommend an ADR or architecture-design-map follow-up.
 
 9. Write or incrementally refresh the default tracked artifact:
    - Use root `CONTEXT.md` inside the target project unless the user explicitly requested another tracked path.
    - Preserve accurate content and update only stale, contradicted, or
-     demonstrated missing sections. Do not rebuild the file from a blank
-     template merely to normalize its shape.
+     demonstrated missing sections; a shape that differs from the template is
+     no reason to rebuild the file.
    - Include gaps and assumptions instead of pretending weak evidence is settled.
    - Date the update and list the main evidence paths and commands used.
 
 10. Stop when future agents share the same language:
-   - Do not keep exploring to map every source file or explain every subsystem.
+   - Leave mapping every source file and explaining every subsystem out of scope.
    - Defer source-routing gaps to `context-matrix-map`.
    - Defer standards, coding conventions, and enforcement levels to `project-standards-calibration`.
    - Defer diagrams and source-grounded architecture maps to `architecture-design-map`.
@@ -165,25 +160,12 @@ visible report.
 
 ## Delegation
 
-Main owns the target-project boundary, final terminology, user questions, context-file edits, and user communication.
-
-Delegate only bounded evidence scans: terminology in docs/specs/issues, durable artifacts under root docs or `docs/agents/`, architecture-language usage in ADRs/notes/source layout, or contradictions between existing `CONTEXT.md` and current evidence.
-
-Require paths inspected, commands run or skipped, exact source evidence, assumptions/confidence, and candidate terms, artifact definitions, or contradictions rather than final `CONTEXT.md` prose. If subagents are unavailable, run the same scans sequentially with a narrower context budget; do not promote unevidenced summaries into project context.
+Main owns the target-project boundary, final terminology, user questions, context-file edits, and user communication. Delegate only bounded evidence scans: terminology in docs/specs/issues, durable artifacts under root docs or `docs/agents/`, architecture-language usage in ADRs/notes/source layout, or contradictions between existing `CONTEXT.md` and current evidence. Require paths inspected, commands run or skipped, exact source evidence, assumptions/confidence, and candidate terms, artifact definitions, or contradictions rather than final `CONTEXT.md` prose; without subagents, run the same scans sequentially with a narrower context budget, and keep unevidenced summaries out of project context.
 
 ## Guardrails
 
-- Do not ask the user about discoverable facts before inspecting available project evidence.
-- Do not create `CONTEXT.md` without a demonstrated durable terminology or
-  boundary need, or erase accurate existing knowledge during refresh.
-- Do not treat this GOATED source repo's root `CONTEXT.md` as the target project's context unless this source repo is explicitly the target project.
-- Do not make `CONTEXT.md` a source map, exhaustive glossary, onboarding tutorial, standards profile, architecture diagram, ADR, PRD, handoff, or refactor plan.
-- Do not duplicate `docs/agents/context-matrix.md`; use it to find sources and leave source read-order there.
-- Do not duplicate `docs/agents/project-standards.md`; leave standards, conventions, preferences, checks, and enforcement levels there.
-- Do not invent architecture vocabulary, project boundaries, or artifact meanings without source evidence or user confirmation.
-- Do not include ignored local scratch files, private notes, credentials, client data, or sensitive personal context unless the user explicitly requests a private artifact.
+- Inspect available project evidence before asking the user; ask only what it cannot settle.
+- Keep `CONTEXT.md` to boundaries, working vocabulary, and artifact meanings; it is not a source map, exhaustive glossary, onboarding tutorial, standards profile, architecture diagram, ADR, PRD, handoff, or refactor plan.
+- Ground every architecture term, project boundary, and artifact meaning in source evidence or user confirmation.
+- Keep credentials, client data, and private or ignored notes out of `CONTEXT.md` unless the user explicitly requests a private artifact.
 - Prefer "unknown", "not found in this pass", or an unresolved question over guessing.
-
-## References
-
-No external references are required. This skill is self-contained after installation.

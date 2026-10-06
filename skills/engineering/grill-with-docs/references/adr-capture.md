@@ -2,7 +2,7 @@
 
 Use this reference when a settled decision may need durable architectural decision record capture.
 
-ADR capture is a recommendation, not automatic output from the grill. The grill should identify candidate ADRs, explain why they qualify, and route follow-up according to the target project's existing convention.
+ADR capture is a recommendation, not automatic output from the grill. The grill identifies candidate ADRs, explains why they qualify, and either writes the record in the target project's existing convention when current consent covers that write or lists it as a candidate.
 
 ## First Inspect The Project Convention
 
@@ -35,6 +35,8 @@ Skip ADR capture when the decision is obvious, easy to reverse, local to one sma
 
 ## Candidate Durable Updates
 
+An ADR can be a single paragraph: the context, the decision, and why. Add status, considered options, or consequences only when they help a future reader.
+
 During the grill, capture ADR candidates in the working brief with:
 
 - decision title;
@@ -46,5 +48,5 @@ During the grill, capture ADR candidates in the working brief with:
 
 If the project has no ADR convention and the user asks to create one, suggest the smallest useful default: a tracked `docs/adr/` folder, sequential filenames such as `0001-short-title.md`, and a short record containing context, decision, and rationale. Add optional status, considered options, or consequences only when they help future readers.
 
-Do not create an ADR during the grill unless the user explicitly asks for it or the target project's established workflow requires immediate capture.
+Write an ADR during the grill only when the project already has an ADR convention and current consent covers the write, or when the user asks for it. Otherwise it stays a candidate.
 

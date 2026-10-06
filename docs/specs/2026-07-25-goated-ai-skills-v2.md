@@ -2,7 +2,8 @@
 
 ## Status
 
-Ready for ticket breakdown, last updated 2026-07-25.
+Delivered and maintainer-accepted; see `docs/v2-acceptance-report.md`. Spec
+text last updated 2026-07-25; this status line updated 2026-10-06.
 
 This spec intentionally supersedes conflicting V1 workflow and distribution
 decisions. V1 remains a stable historical release; V2 becomes the active

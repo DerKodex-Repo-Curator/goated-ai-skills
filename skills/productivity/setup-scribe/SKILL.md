@@ -118,7 +118,9 @@ files and available commands; mark gaps instead of inventing proof.
      [Automation And Safety](references/automation-and-safety.md), propose the
      automation before creating it unless the user already requested it, and
      preserve manual checkpoints. A task-runner entry point does not by itself
-     justify newly written non-Bash imperative replay logic.
+     justify newly written non-Bash imperative replay logic. When the steps
+     are ones only a human can perform, read
+     [Guided Manual Procedure](references/guided-manual-procedure.md).
 
 6. Reconcile approval and safety:
    - Ask or defer when an observation is uncertain, personal, sensitive,
@@ -177,31 +179,24 @@ In chat, report only material non-empty fields:
 ## Delegation
 
 Main owns project scope, evidence classification, approval interpretation,
-artifact integration, safety judgment, and final communication.
-
-Delegate only bounded source discovery, one platform branch, drift comparison,
-or static automation review. Require inspected paths and commands, evidence,
-assumptions, uncertainty, and status. The main agent must review results before
-changing the recipe or making a reproducibility claim. Without delegation,
-perform the same passes sequentially.
+and safety judgment. Delegate only bounded source discovery, one platform
+branch, drift comparison, or static automation review. Require inspected paths
+and commands, evidence, assumptions, and status, and review them before
+changing the recipe; without delegation, perform the same passes sequentially.
 
 ## Guardrails
 
-- Do not claim passive observation of commands, settings, or GUI actions that
-  were not available in the session.
-- Do not include unrelated personal preferences or machine customization.
-- Do not duplicate facts owned by declarative project sources.
-- Do not convert recollection, final state, generated output, or static
-  inspection into execution evidence.
-- Do not hide unsupported platforms, privileges, package-manager differences,
-  system APIs, or manual gaps behind a cross-platform claim.
+- Record only what the session could observe; commands, settings, or GUI
+  actions that were not visible are recollection, not observation.
+- Include a personal preference or machine customization only when the project
+  depends on it.
+- Name unsupported platforms, privileges, package-manager differences, and
+  manual gaps instead of claiming cross-platform coverage.
 - Do not create automation without covered consent, or execute newly generated
   automation without separate authority and safety checks.
 - Do not store secrets or private machine details in tracked or public output.
-- Do not replace substantial manuals, doc drift review, learning notes,
-  handoffs, or broad knowledge retrieval.
-- Do not require this source repository, an integrated registry, hidden chat
-  history, or local staging state after installation.
+- Leave substantial manuals, doc drift review, learning notes, handoffs, and
+  broad knowledge retrieval to their own skills.
 
 ## References
 
@@ -209,5 +204,7 @@ perform the same passes sequentially.
   creating, backfilling, or materially restructuring a recipe.
 - [Automation And Safety](references/automation-and-safety.md) - read before
   proposing, generating, reviewing, or approving replay automation.
+- [Guided Manual Procedure](references/guided-manual-procedure.md) - read in
+  automate mode when the steps are ones only a human can perform.
 - [Pressure Scenarios](references/pressure-scenarios.md) - read when pressure
   may encourage shortcuts or when evaluating Scribe behavior.

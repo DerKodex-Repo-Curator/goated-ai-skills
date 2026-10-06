@@ -30,9 +30,7 @@ Default to audit-first. Do not move, delete, archive, or change source-of-truth 
 Hard: None.
 
 Soft:
-- session-start-progressive-disclosure for unfamiliar target projects
-- context-matrix-map, project-context-calibration,
-  project-standards-calibration, or agent-instructions-integrator when the
+- project-context-calibration or project-standards-calibration when the
   corresponding artifact needs deeper work
 - documentation-writer when cleanup reveals a missing or rewritten durable doc
 - doc-sync when recent behavior, interface, architecture, test, or workflow changes created drift
@@ -48,9 +46,9 @@ avoid destructive cleanup claims.
    - **Plan mode** produces a decision-complete cleanup plan for a future implementation pass, including exact approval-needed actions.
    - **Implementation mode** may edit docs only after audit evidence exists and the action is safe under user intent and project conventions.
    - If the user asks for broad cleanup but intent is ambiguous, start in audit mode and state that assumption.
-   - Do not load `documentation-writer` unless the audit identifies a real
-     missing or substantially rewritten artifact. Do not load `doc-sync`
-     unless a specific changed fact created drift.
+   - Load `documentation-writer` only when the audit identifies a real missing
+     or substantially rewritten artifact, and `doc-sync` only when a specific
+     changed fact created drift.
 
 2. Confirm the project boundary and local authority order:
    - Identify the target-project root from the request, current directory, or repository metadata.
@@ -120,15 +118,12 @@ deletion, broad moves, or publication.
 
 ## Guardrails
 
-- Do not treat this skill as a targeted post-change `doc-sync`; route changed-behavior drift to `doc-sync`.
-- Do not use this skill to author a new manual or substantial guide from scratch; route planned authoring to `documentation-writer`.
-- Do not impose `docs/agents/`, `CONTEXT.md`, ADRs, or GOATED conventions on projects that document another convention.
-- Do not edit before inventorying and classifying the relevant docs.
+- Route changed-behavior drift to `doc-sync` and planned authoring of a new manual or substantial guide to `documentation-writer`.
+- Inventory and classify the relevant docs before editing.
 - Do not move, delete, archive, or rewrite source-of-truth ownership without explicit approval or clear project convention evidence.
 - Do not edit immutable ADRs, historical archives, legal/compliance docs, or generated docs except under an explicit project rule or user request.
-- Do not include private project names, personal paths, credentials, client data, sensitive personal context, raw transcripts, model payloads, or ignored scratch content in public artifacts.
-- Do not claim links, docs, or status are clean when relevant checks were skipped.
-- Do not require this source repo's root files, issue files, `.local/` notes, or chat history after installation.
+- Keep private project names, personal paths, credentials, client data, raw transcripts, and ignored scratch content out of public artifacts.
+- Claim links, docs, or status are clean only when the relevant checks ran.
 
 ## References
 

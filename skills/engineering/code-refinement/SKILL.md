@@ -41,13 +41,13 @@ It is not a broad architecture scan, generic code review, standards review, secu
 Hard: None.
 
 Soft:
-- tdd when behavior, regression coverage, public interfaces, or a red/green/refactor loop is still needed
-- review-codebase-architecture when cleanup pressure reveals broad architecture friction, shallow modules, false seams, or hard-to-test design
+- tdd when behavior should change or new behavior coverage is needed
+- review-codebase-architecture when cleanup pressure reveals broad architecture friction
 - design-codebase-architecture when a public interface, module boundary, dependency seam, file ownership, or migration strategy should change
 - standards-and-spec-review after refinement when issue fit, acceptance coverage, or project standards need review
-- code-security-review after refinement when trust boundaries, auth, permissions, user data, persistence, unsafe execution, or dependency behavior are touched
-- doc-sync when refinement changes public names, docs-relevant examples, commands, tests, or reports possible documentation drift
-- verification-before-completion before claiming behavior was preserved, checks pass, code is refined, docs are synced, or the change is ready
+- code-security-review when refinement touches security-relevant code paths
+- doc-sync when refinement changes public names, examples, commands, or docs-relevant tests
+- verification-before-completion before behavior-preserved, checks-pass, refined, or ready claims
 
 Fallback: If companion skills, tests, commands, or clean diffs are unavailable, limit edits to low-risk clarity changes, propose first when risk is material, and report the weaker proof and residual risk.
 
@@ -80,8 +80,8 @@ Fallback: If companion skills, tests, commands, or clean diffs are unavailable, 
 5. Refine in small reversible moves:
    - Improve names, grouping, branch structure, duplication, local helpers, comments, test setup, markup, and style organization only when behavior and readability are preserved.
    - Keep public APIs, routes, schemas, file/module ownership, dependency seams, and architecture boundaries stable by default.
-   - Do not collapse explicit logic into dense expressions, nested ternaries, clever chaining, or line-count-driven rewrites.
-   - Do not delete tests, weaken assertions, or hide behavior proof. Test cleanup is allowed only when coverage remains equivalent or clearer through the same public interface.
+   - Keep explicit logic explicit rather than collapsing it into dense expressions, nested ternaries, clever chaining, or line-count-driven rewrites.
+   - Keep tests, assertions, and behavior proof intact. Clean up tests only when coverage remains equivalent or clearer through the same public interface.
    - After each meaningful refinement step, rerun the smallest useful proof when the project makes that practical.
 
 6. Route larger findings instead of smuggling them into cleanup:
@@ -138,29 +138,21 @@ proof needed, and next step. Make the proposal-only claim explicit.
 Main owns scope, worktree judgment, mode, edits, proof interpretation, and
 communication. Delegate only bounded read-only diff, behavior-risk, mixed-work,
 style, proof-strength, or churn review unless a larger workflow assigns writes.
-
-Return paths, commands, candidate benefit/risk, drift or interface concerns,
-mixed-change warnings, assumptions, confidence, status, and next action.
-Resolve concerns or missing context before editing; use proposal mode or stop
-on `BLOCKED`. Without delegation, review sequentially.
+Delegates return paths, commands, candidate benefit/risk, drift or interface
+concerns, mixed-change warnings, assumptions, confidence, status, and next
+action; resolve concerns or missing context before editing, use proposal mode
+or stop on `BLOCKED`, and review sequentially without delegation.
 
 ## Guardrails
 
 - Do not edit outside the current diff, task-touched files, explicit user paths, or approved scope.
 - Do not rewrite unrelated user-authored dirty worktree changes.
-- Do not change behavior, public APIs, schemas, routes, CLI contracts, module ownership, dependency seams, file structure, or migration strategy by default.
-- Do not use "simpler" to mean fewer lines, denser expressions, clever one-liners, nested ternaries, or hidden control flow.
-- Do not remove named concepts, domain language, or comments that explain invariants, business rules, security constraints, or surprising behavior just because the code still runs.
-- Do not introduce abstractions that only move code around, hide one local branch, or make tests easier by leaking internals.
-- Do not delete, weaken, or rewrite tests to match the refined implementation unless equivalent behavior proof remains through the public interface.
-- Do not hand-edit generated files unless the project explicitly treats them as source.
-- Do not claim behavior preservation from a clean diff alone. Use fresh proof or report weaker confidence.
-- Do not hide changed interfaces, skipped proof, failures, or residual risk.
-- Omit empty or non-material fields unless omission would mislead.
-- Do not claim code was refined after proposal mode; say proposal-only when no refinement edits were made.
-- Do not replace `tdd`, `review-codebase-architecture`, `standards-and-spec-review`, `code-security-review`, `doc-sync`, or `verification-before-completion`.
-- Do not include private notes, ignored scratch content, credentials, client data, sensitive personal context, secrets, or real user data in reports or examples.
-- Do not require this source repo's root files, issue files, `.local` notes, or hidden chat history after installation. The skill may rely only on its own instructions, local support files, and target-project evidence.
+- Keep behavior, public APIs, schemas, routes, CLI contracts, module ownership, dependency seams, file structure, and migration strategy stable by default.
+- Keep named concepts, domain language, and comments that explain invariants, business rules, security constraints, or surprising behavior.
+- Add an abstraction only when it does more than move code around, hide one local branch, or ease tests by leaking internals.
+- Edit generated files by hand only when the project explicitly treats them as source.
+- Support behavior-preservation claims with fresh proof or report weaker confidence; a clean diff alone is not proof.
+- Report changed interfaces, skipped proof, failures, and residual risk; omit other empty or non-material fields unless omission would mislead.
 
 ## References
 

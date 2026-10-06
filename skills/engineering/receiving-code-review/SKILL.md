@@ -11,7 +11,7 @@ metadata:
 
 Handle review feedback as technical input to evaluate, not orders to obey or social pressure to satisfy.
 
-This skill is the controller for review feedback. It inventories comments, verifies them against the target project, decides which items are accepted, rejected, unclear, or non-actionable, then routes accepted work to the right implementation and proof workflow. It does not replace standards/spec review, security review, TDD, doc sync, or final verification.
+This skill is the controller for review feedback. It inventories comments, verifies them against the target project, decides which items are accepted, rejected, unclear, or non-actionable, then routes accepted work to the right implementation and proof workflow.
 
 The default posture is respectful skepticism: understand the reviewer, check
 the source, then act or respond with evidence.
@@ -39,13 +39,13 @@ evidence invalidated by the change or too weak for the feedback claim.
 Hard: None.
 
 Soft:
-- grill-with-docs when feedback exposes unclear intent, scope, language, tradeoffs, or public behavior
-- writing-plans when accepted feedback is non-trivial, multi-step, risky, or needs a route before edits
-- tdd when accepted feedback changes behavior, public interfaces, regressions, or testable workflows
-- code-refinement when accepted feedback is scoped cleanup, simplification, or behavior-preserving refactor work
-- standards-and-spec-review when feedback concerns issue fit, acceptance, standards, unrequested scope, or spec interpretation
+- grill-with-docs when feedback exposes unclear intent, scope, or tradeoffs
+- writing-plans when accepted feedback is broad, risky, or multi-step
+- tdd when accepted feedback changes behavior, public interfaces, or regression-prone workflows
+- code-refinement when accepted feedback is scoped, behavior-preserving cleanup or refactoring
+- standards-and-spec-review when feedback concerns issue fit, acceptance, standards, or allowed scope
 - code-security-review when feedback touches trust boundaries, auth, permissions, user data, persistence, execution, secrets, or security config
-- subagent-driven-development when large or parallelizable feedback needs delegated implementation or review
+- subagent-driven-development when independent accepted items can be delegated with clear write ownership
 - doc-sync when accepted feedback changes behavior, interfaces, architecture, standards, configuration, tests, or public docs
 - verification-before-completion for complex, high-risk, delegated,
   multi-surface, or explicitly audited feedback closeout; otherwise verify the
@@ -59,7 +59,7 @@ Fallback: If companion skills, review tools, git history, tests, docs, or subage
    - Read every review item in scope before reacting.
    - Preserve the original review context, such as file, line, thread, severity, reviewer, and requested-change status.
    - Separate review facts from interpretation. A reviewer saying "this is wrong" is a claim to verify, not proof by itself.
-   - Do not start edits until each item is at least understood well enough to classify or ask a focused clarification question.
+   - Start edits only after each item is understood well enough to classify or to ask a focused clarification question.
 
 2. Understand each item:
    - Restate the technical requirement in your own working notes: what behavior, code path, standard, risk, or expectation is the reviewer pointing at?
@@ -146,28 +146,18 @@ standards/security reports, or a separate completion summary.
 Main owns classification, technical judgment, scope, responses, and completion
 claims. Delegate only bounded thread inventory, claim verification, one owned
 accepted fix, focused specialist review, or classification evidence checks.
-
-Return inspected feedback and sources, changes, commands, checks, assumptions,
-concerns, risk, status, and recommendation—not the final response. Resolve
-concerns or missing context before editing or replying; narrow or stop on
-`BLOCKED`. Without delegation, run the lifecycle sequentially.
+Delegates return inspected feedback and sources, changes, commands, checks,
+assumptions, concerns, risk, status, and recommendation, not the final
+response; resolve concerns or missing context before editing or replying,
+narrow or stop on `BLOCKED`, and run the lifecycle sequentially without
+delegation.
 
 ## Guardrails
 
-- Do not implement feedback before understanding the item well enough to classify it.
-- Do not treat reviewer confidence, tool output, or social pressure as technical proof.
-- Do not agree performatively or imply correctness before checking the source.
-- Do not reject feedback defensively; reject only with technical evidence or explicit scope rationale.
-- Do not partially implement a multi-item review while unresolved items could change the shared design, interface, or correctness path.
-- Do not collapse accepted, rejected, unclear, and user-decision feedback into one "done" bucket.
-- Do not broaden accepted feedback into unrelated refactors, horizontal layers, speculative cleanup, or shallow abstractions.
+- Check the source before agreeing; reviewer confidence, tool output, and social pressure are claims, not technical proof.
+- Reject feedback only with technical evidence or explicit scope rationale, never defensively.
+- Hold related edits while unresolved items could change the shared design, interface, or correctness path.
 - Do not claim security confidence from normal tests or standards review; route security-relevant feedback to `code-security-review`.
-- Do not claim behavior is fixed without behavior proof when `tdd` or an equivalent public-interface check is feasible.
+- Back a behavior-fixed claim with `tdd` or an equivalent public-interface check when feasible.
 - Do not claim review feedback is complete until `verification-before-completion` supports the exact claim.
-- Do not require a specific git host, review tool, CI provider, subagent product, branch model, or command syntax.
-- Do not include private notes, ignored scratch content, credentials, client data, sensitive personal context, secrets, or real user data in review responses.
-- Do not make installed use depend on this source repo's root files, issue files, `.local/` research, upstream sources, or hidden chat history.
-
-## References
-
-No external references are required. This skill is self-contained after installation.
+- Keep credentials and private data out of review responses.

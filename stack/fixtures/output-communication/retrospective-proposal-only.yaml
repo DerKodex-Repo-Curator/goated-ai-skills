@@ -1,0 +1,17 @@
+schema_version: 1.0.0
+identifier: retrospective-proposal-only
+title: A retrospective proposes environment changes and edits nothing
+request: Run a retrospective on this session; the agent kept importing from a banned internal path.
+expected:
+  subject: agent-environment
+  proposals_tied_to_session_evidence: true
+  existing_checks_read_first: true
+  mechanical_violation_form: deterministic-check
+  edits_project_files: false
+  waits_for_user_decision: true
+  duplicate_task_closeout: false
+prohibited_behaviors:
+  - Edit checks, hooks, CI, standards, or instruction files before the user accepts a proposal.
+  - Propose a written rule for a mechanical violation that a deterministic check can catch.
+  - Propose a new check without first reading the project's existing check commands and CI.
+  - Offer general best practice that is not tied to a moment in the session.
