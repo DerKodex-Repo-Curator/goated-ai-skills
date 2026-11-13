@@ -27,6 +27,7 @@ Hard: None.
 Soft:
 - architecture-design-map when a descriptive current-state map is needed before ranking improvements
 - design-codebase-architecture when an accepted finding needs prescriptive design
+- software-design-principles for red-flag names and the reasoning behind a finding
 - code-refinement when a candidate is only scoped behavior-preserving cleanup
 - tdd when a selected improvement moves into implementation and test design
 - write-a-spec or spec-to-tickets when a chosen direction needs planning or delivery slices
@@ -63,6 +64,7 @@ Use target-project names for concrete modules and flows. Keep these review terms
 3. Find candidate architecture friction:
    - Look for shallow pass-through modules, thin layers, wrappers that mostly forward calls, and modules that fail the deletion test.
    - Look for tightly coupled concepts, behavior split across callers, repeated caller choreography, primitive clusters, and modules that require many public calls to prove one behavior.
+   - Look for information leakage, where one design decision is known in several modules, and temporal decomposition, where modules mirror execution order (`software-design-principles` `#information-hiding`).
    - Look for hard-to-test areas: noisy setup, internal patching, private-state assertions, call-order tests, dependency construction hidden too deep, or tests coupled to implementation details.
    - Look for false seams: ports/adapters with only one real implementation, interfaces added only for tests, or seams that leak internal ordering and configuration back to callers.
    - Look for dependency shapes that block deepening: in-process logic, local-substitutable dependencies, remote-owned services, and true external services.

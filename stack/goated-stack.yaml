@@ -243,6 +243,16 @@ skills:
     accepts_signals: [scope-changed, evidence-stale, security-impact]
     emits_signals: [scope-changed, security-impact, documentation-impact]
 
+  - name: software-design-principles
+    path: skills/engineering/software-design-principles/SKILL.md
+    category: engineering
+    aliases: []
+    workflow_role: design-guidance
+    domains: [software]
+    profile_eligibility: [lightweight, standard, full]
+    accepts_signals: [scope-changed, refinement-debt]
+    emits_signals: [scope-changed, refinement-debt]
+
   - name: spec-to-tickets
     path: skills/engineering/spec-to-tickets/SKILL.md
     category: engineering

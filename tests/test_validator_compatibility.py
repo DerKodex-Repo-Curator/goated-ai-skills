@@ -101,8 +101,8 @@ ORCHESTRATED_VALIDATORS = (
 
 EXPECTED_SUCCESS_OUTPUT = "\n".join(
     (
-        "GOATED skill validation passed for 39 implemented skills.",
-        "Integrated registry validation passed for 39 catalog entries.",
+        "GOATED skill validation passed for 40 implemented skills.",
+        "Integrated registry validation passed for 40 catalog entries.",
         "Adaptive routing fixture validation passed for 9 scenarios.",
         "End-to-end fixture validation passed for 4 scenarios.",
         "Onboarding fixture validation passed for 4 scenarios.",
@@ -112,7 +112,7 @@ EXPECTED_SUCCESS_OUTPUT = "\n".join(
             "Architecture and implementation-planning fixture validation "
             "passed for 5 scenarios."
         ),
-        "Behavior-proof fixture validation passed for 14 scenarios.",
+        "Behavior-proof fixture validation passed for 15 scenarios.",
         "Merge-conflict fixture validation passed for 5 scenarios.",
         "Review-and-verification fixture validation passed for 7 scenarios.",
         "Output-and-communication fixture validation passed for 11 scenarios.",
@@ -121,7 +121,7 @@ EXPECTED_SUCCESS_OUTPUT = "\n".join(
         "Setup Scribe fixture validation passed for 8 scenarios.",
         "Wayfinding fixture validation passed for 10 scenarios.",
         (
-            "Word-budget report: shared policy 1192 words "
+            "Word-budget report: shared policy 1199 words "
             "(within 800-1,200 target)."
         ),
         (
@@ -258,7 +258,7 @@ class ValidatorCompatibilityTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
         self.assertEqual(review_notes, [])
-        self.assertEqual(skill_count, 39)
+        self.assertEqual(skill_count, 40)
         self.assertEqual(len(drift), 3)
         self.assertEqual(
             [finding.path for finding in drift],
@@ -497,8 +497,8 @@ class RegistryConcernValidationTests(unittest.TestCase):
         )
 
         self.assertEqual(errors, [])
-        self.assertEqual(catalog_count, 39)
-        self.assertEqual(policy_words, 1192)
+        self.assertEqual(catalog_count, 40)
+        self.assertEqual(policy_words, 1199)
         self.assertIn(
             "skills/engineering/tdd/SKILL.md",
             over_budget_paths,

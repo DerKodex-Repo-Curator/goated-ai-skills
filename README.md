@@ -106,6 +106,7 @@ only the canonical folders.
 - [`prototype`](skills/engineering/prototype/SKILL.md): explore one product, UI, workflow, data, or technical idea with disposable, runnable evidence.
 - [`tdd`](skills/engineering/tdd/SKILL.md): use test-driven development to drive behavior changes through red, green, and refactor.
 - [`code-refinement`](skills/engineering/code-refinement/SKILL.md): refine recently changed code after an explicit cleanup request or concrete refinement-debt finding while preserving behavior and avoiding unrelated churn.
+- [`software-design-principles`](skills/engineering/software-design-principles/SKILL.md): apply design rules, checklists, and a red-flag scan that keep code easy to understand and change, with the reasoning in on-demand references.
 - [`subagent-driven-development`](skills/engineering/subagent-driven-development/SKILL.md): coordinate bounded implementer and reviewer agents while one main agent owns integration.
 - [`receiving-code-review`](skills/engineering/receiving-code-review/SKILL.md): handle review feedback without blindly accepting or dismissing it.
 - [`resolving-merge-conflicts`](skills/engineering/resolving-merge-conflicts/SKILL.md): resolve active merges, rebases, cherry-picks, and reverts by tracing and preserving both sides' intent without assuming Git lifecycle authority.

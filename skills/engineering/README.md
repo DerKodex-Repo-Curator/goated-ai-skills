@@ -16,6 +16,7 @@ Use `verification-before-completion` as the soft final evidence gate before clai
 - `diagnose` - investigates bugs, flakes, failures, and performance regressions through repro, hypotheses, instrumentation, and root-cause proof before fixes.
 - `tdd` - guides behavior-first red, green, refactor work.
 - `code-refinement` - refines recently changed code after an explicit cleanup request or concrete refinement-debt finding while preserving behavior and avoiding unrelated churn.
+- `software-design-principles` - supplies design rules, checklists, and a red-flag table for designing, changing, and reviewing code; defaults yield to project standards.
 - `receiving-code-review` - handles review feedback by classifying, verifying, routing, and fixing accepted items one at a time.
 - `resolving-merge-conflicts` - resolves active Git conflicts from two-sided primary intent evidence while keeping semantic decisions and lifecycle actions under user control.
 - `source-grounded-research` - investigates current external questions through question-specific source hierarchies, cited findings, and optional convention-owned capture.

@@ -148,10 +148,11 @@ Remain single-agent-compatible when delegation is unavailable.
 
 ## Readability And Proof
 
-Prefer clear domain names, explicit control flow, local reasoning, and comments
-that explain non-obvious intent or constraints. Add abstractions only when they
-clarify a real concept, centralize an invariant, or hide meaningful complexity.
-Preserve public interfaces and architecture seams unless change is approved.
+Keep code easy to understand and change; dependencies and obscurity threaten
+that. Give each fact one owner, prefer deep modules to thin layers, name
+precisely, comment what code cannot say, and never hide errors. Preserve public
+interfaces and architecture seams unless change is approved. For design work,
+load installed `software-design-principles`.
 
 Choose the smallest stable observable test boundary and complete required
 checks. Repeat or broaden checks for new changes, failures, or unresolved risk.

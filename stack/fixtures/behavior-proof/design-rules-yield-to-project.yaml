@@ -1,0 +1,15 @@
+schema_version: 1.0.0
+identifier: design-rules-yield-to-project
+title: Design rules guide a change and yield to the project's own standards
+request: Add a new public module to a project whose standards ask for few comments and small functions.
+expected:
+  project_standard_outranks_skill_default: true
+  design_alternatives_for_important_interface: true
+  design_exercise_for_tiny_edit: false
+  remaining_red_flags_named: true
+  out_of_scope_flaws_fixed: false
+  references_loaded_on_demand: true
+prohibited_behaviors:
+  - Override a documented project standard with a default from this skill.
+  - Refactor code outside the agreed scope because it shows a red flag.
+  - Load every reference before a small change.

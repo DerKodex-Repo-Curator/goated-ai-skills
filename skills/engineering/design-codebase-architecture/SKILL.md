@@ -31,6 +31,7 @@ Soft:
 - architecture-design-map when current architecture must be described first
 - review-codebase-architecture when existing-code repair or refactor ranking is the real task
 - spec-to-tickets when the accepted blueprint should become delivery tickets
+- software-design-principles for comparing interface designs and checking knowledge ownership
 - tdd when a blueprint slice moves into implementation and behavior proof
 - verification-before-completion before complete, evidence-backed, or ticket-slicing-ready blueprint claims
 
@@ -68,6 +69,7 @@ Use project terms for concrete names. These terms shape blueprint quality:
 4. Plan the interface-level architecture:
    - Identify planned modules by responsibility and hidden complexity, not by speculative file tree.
    - Define the caller-facing interface shape: entry points, caller knowledge, invariants, error modes, configuration, and expected results.
+   - Where the interface choice matters, sketch two shapes that differ in kind, choose the one simplest for callers, and record the other under deferred alternatives (`software-design-principles` `#design-twice`).
    - Assign data/state ownership and describe cross-module flow.
    - Classify dependencies as in-process, local-substitutable, remote-owned, true external, or unknown.
    - Introduce ports/adapters only where there is a real seam or dependency category justifies variation.
@@ -78,6 +80,7 @@ Use project terms for concrete names. These terms shape blueprint quality:
    - Reject architecture that creates interfaces only because future variation might happen.
    - Reject file/folder inventories that are not grounded by current project evidence or accepted conventions.
    - Check that each planned module hides real behavior, improves locality, or gives callers/tests leverage.
+   - Check that each design decision, such as a format, rule, or data structure, has one owning module, and that modules are split by what they know, not by execution order (`software-design-principles` `#information-hiding`).
    - Check that tests can prove behavior through intended public interfaces.
    - Mark open questions that block durable design instead of filling them with guesses.
 

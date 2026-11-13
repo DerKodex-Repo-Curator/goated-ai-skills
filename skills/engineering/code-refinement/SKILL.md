@@ -25,7 +25,7 @@ This skill optimizes in this order:
 4. Remove needless abstraction only when clarity improves.
 5. Reduce line count only when the result is also clearer.
 
-It is not a broad architecture scan, generic code review, standards review, security audit, or documentation sync. It edits code only inside a known scope and routes larger design or proof questions to companion skills.
+It is not a broad architecture scan, generic code review, standards review, security audit, or documentation sync.
 
 ## Inputs
 
@@ -41,6 +41,7 @@ It is not a broad architecture scan, generic code review, standards review, secu
 Hard: None.
 
 Soft:
+- software-design-principles for red-flag names and fix reasoning
 - tdd when behavior should change or new behavior coverage is needed
 - review-codebase-architecture when cleanup pressure reveals broad architecture friction
 - design-codebase-architecture when a public interface, module boundary, dependency seam, file ownership, or migration strategy should change
@@ -55,7 +56,7 @@ Fallback: If companion skills, tests, commands, or clean diffs are unavailable, 
 
 1. Confirm activation and scope:
    - Activate for explicit requests such as "clean this up", "simplify this diff", "make this easier to read", or "refactor this without behavior changes".
-   - Otherwise activate only after naming concrete debt in the scoped change. Substantially generated or agent-written code qualifies when focused review finds awkwardness or difficult local reasoning; its origin alone is not debt.
+   - Otherwise activate only after naming concrete debt in the scoped change; the red flags in `software-design-principles` (`#red-flags`) give the names. Substantially generated or agent-written code qualifies when focused review finds awkwardness or difficult local reasoning; its origin alone is not debt.
    - If there is no explicit request or concrete debt, return to the current workflow without loading this skill or producing a formal skip report.
    - Identify the target-project root and the refinement scope: current diff, staged diff, task-touched files, explicit user paths, or supplied patch.
    - Inspect working-tree state before editing. If files contain unrelated user-authored changes mixed with the refinement scope, edit around them carefully or propose changes first.
@@ -97,8 +98,7 @@ Fallback: If companion skills, tests, commands, or clean diffs are unavailable, 
    - Use `verification-before-completion` before saying behavior was preserved, checks pass, refinement is done, or the change is ready for review.
    - Return a compact refinement delta: result, changed paths, proof, material
      interface/docs/security impact, deferred work, and residual risk.
-   - Omit empty fields and repeated paths/checks. Do not produce a competing
-     task closeout.
+   - Do not produce a competing task closeout.
 
 ## Output Contract
 

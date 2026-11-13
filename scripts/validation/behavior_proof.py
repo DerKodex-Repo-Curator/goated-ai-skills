@@ -63,6 +63,14 @@ REQUIRED_BEHAVIOR_PROOF_FIXTURE_CONTRACTS = {
         "concrete_debt_observed": True,
         "activate_full_refinement": True,
     },
+    "design-rules-yield-to-project": {
+        "project_standard_outranks_skill_default": True,
+        "design_alternatives_for_important_interface": True,
+        "design_exercise_for_tiny_edit": False,
+        "remaining_red_flags_named": True,
+        "out_of_scope_flaws_fixed": False,
+        "references_loaded_on_demand": True,
+    },
     "no-refinement-debt": {
         "explicit_request": False,
         "concrete_debt_observed": False,

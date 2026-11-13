@@ -426,6 +426,14 @@ contract.
 - **Typical output**: A verification delta covering fresh/reused/invalidated evidence, proof gaps, residual risk, and the allowed claim.
 - **Pipeline role**: Conditional full controller; evidence-backed claim scope remains universal.
 
+#### `software-design-principles`
+
+- **Purpose**: Keeps code easy to understand and change by supplying design rules, three checklists, and a red-flag table, with the reasoning in references read on demand.
+- **Use when**: You are designing or changing a module, interface, abstraction, error-handling path, or configuration surface, or reviewing code for design quality. Tiny mechanical edits do not need it.
+- **Typical input**: The request, plan, or diff, the surrounding code, and any project standards that already settle a design question.
+- **Typical output**: No separate report. It shapes the work and returns only design decisions that need your choice, red flags that remain, and a refinement-debt signal.
+- **Pipeline role**: Design guidance cited by section id from architecture design and review, planning, TDD, and code refinement. Its defaults yield to system, user, and project instructions. A full edition for people is at `docs/reference/software-design-field-guide.html`.
+
 #### `commit-message`
 
 - **Purpose**: Drafts concise commit text from local diffs and evidence.

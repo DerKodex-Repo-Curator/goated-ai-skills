@@ -32,6 +32,7 @@ Soft:
 - spec-to-tickets when a scoped spec still needs delivery tickets or a broad target needs slicing
 - prototype when risky implementation choices need disposable evidence first
 - design-codebase-architecture when module, interface, dependency, or architecture strategy is unsettled
+- software-design-principles for module ownership and interface shape
 - tdd when implementation changes behavior, public interfaces, or regressions
 - subagent-driven-development for larger, riskier, or parallelizable implementation when available
 - code-refinement after implementation only for an explicit request or observed refinement debt
@@ -48,8 +49,6 @@ Fallback: If companion skills, docs, commands, subagents, or source evidence are
    - Identify the exact ticket, spec slice, request, or approved artifact being converted into a plan.
    - Confirm it is ready for implementation planning. If the work is not scoped, route to `grill-with-docs`, `write-a-spec`, `spec-to-tickets`, `prototype`, or `design-codebase-architecture` instead of writing an assumption-heavy plan.
    - Check that the target is small enough to implement as one focused vertical slice. If it is broad, narrow the plan to the first user-verifiable tracer bullet and defer the rest, or route back to `spec-to-tickets`.
-   - Separate durable requirements from volatile execution details.
-
 2. Choose the plan mode:
    - Use **inline** for focused, single-session work. Hold the ordered steps in the work envelope or conversation without creating a tracked artifact.
    - Use **durable** for resumable, delegated, architectural, or multi-surface work. Write a tracked plan using the target project's existing convention; if no convention exists, choose a clear project-local plans or architecture path and state it before writing.
@@ -73,7 +72,7 @@ Fallback: If companion skills, docs, commands, subagents, or source evidence are
    - Name exact files or source areas to inspect or edit, and why each matters.
    - When behavior is involved, start with the smallest end-to-end behavior path that can be proved through a public interface.
    - Avoid layer-by-layer batches such as schema-only, API-only, UI-only, or tests-only work unless they are narrow foundations with a named dependent slice and concrete verification.
-   - When module shape matters, name the deep module, public interface, seam, or test surface the plan is preserving or improving.
+   - When module shape matters, name the owning module, public interface, seam, or test surface the plan preserves or improves (`software-design-principles` checklist "Before you start").
    - Name the command or manual check for each meaningful proof step, plus the evidence expected from it.
    - For TDD work, include red, green, refactor, and rerun checkpoints rather than a single bulk test phase.
    - Include conditional closeout steps: `code-refinement` only for an explicit cleanup request or observed debt, standards/spec review and security review when relevant, documentation sync, and final verification.
@@ -86,7 +85,7 @@ Fallback: If companion skills, docs, commands, subagents, or source evidence are
    - Read [Plan Review Checklist](references/plan-review-checklist.md) for non-trivial, risky, delegated, resumable, or durable plans.
    - Check that every acceptance criterion has a planned proof path.
    - Remove placeholders, vague verbs, stale assumptions, and broad "do the rest" language.
-   - Make the plan no more detailed than the work needs. Tiny tasks can use a short inline checklist.
+   - Make the plan no more detailed than the work needs.
 
 7. Execute or hand off:
    - If the user asked for implementation and the plan is ready, proceed through the chosen route.
