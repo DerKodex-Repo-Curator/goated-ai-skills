@@ -59,8 +59,8 @@ Fallback: If companion skills are unavailable, continue the lightweight intervie
 4. Ask in frontier rounds:
    - The frontier is every open decision whose prerequisites are already settled. In deep-dive mode, ask the whole frontier as one numbered round, wait for the answers, then recompute the frontier and ask the next round. Rapid mode asks one round within its limit. Focused mode asks only the highest-risk frontier decision.
    - A question whose answer depends on another question still open in the same round belongs to a later round.
-   - Include a recommended default in every question.
-   - Explain the key tradeoff behind the recommendation without inventing undiscovered project facts.
+   - Make every question answerable from the chat alone. Before it, write in plain language what the decision is about and what it affects, what each option means and costs, and your recommendation with its key tradeoff, without inventing undiscovered project facts. Define unfamiliar terms where used, and add a small example when it shows how the options differ.
+   - A question form or picker may collect the answer; its short labels never replace that explanation.
    - Prefer choices, boundaries, priorities, scenarios, and definitions over vague "tell me more" prompts.
    - When the user uses a fuzzy term, propose a precise meaning and ask them to confirm or correct it.
    - In recommend-and-proceed, label reversible low-risk defaults as provisional rather than confirmed user decisions, then continue within the user's scope.

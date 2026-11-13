@@ -2,8 +2,8 @@
 
 ## Status
 
-Approved for an experimental branch (`update/lean-skills`). Not yet accepted
-for `main`; acceptance follows a period of real use.
+Accepted into `main` by the maintainer on 2026-11-13 after a trial period on
+the experimental branch `update/lean-skills` (decision: keep).
 
 ## Mode
 

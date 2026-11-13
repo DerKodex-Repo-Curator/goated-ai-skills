@@ -68,7 +68,8 @@ Fallback: If docs or companion skills are unavailable, inspect minimal evidence 
    - The frontier is every open decision whose prerequisites are already settled. In deep-dive mode, ask the whole frontier as one numbered round, wait for the answers, then recompute the frontier and ask the next round. Rapid mode asks one round within its limit. Focused mode asks only the highest-risk frontier decision.
    - A question whose answer depends on another question still open in the same round belongs to a later round.
    - A lookup still in progress blocks only the questions that depend on it; ask the rest of the frontier now.
-   - Include a recommended default and the evidence or rationale behind it in every decision-shaping question.
+   - Make every question answerable from the chat alone. Before it, write in plain language what the decision is about and what it affects, what each option means and costs, and your recommendation with its evidence. Define project terms, abbreviations, and ticket numbers where used, and add a small example when it shows how the options differ.
+   - A question form or picker may collect the answer; its short labels never replace that explanation.
    - When the user uses vague or overloaded terms, propose a precise term and ask them to confirm or correct it.
    - In recommend-and-proceed, record reversible low-risk defaults as provisional rather than confirmed user decisions, then continue within the approved scope.
 

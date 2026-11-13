@@ -2,9 +2,9 @@
 
 ## Status
 
-Approved by the maintainer on 2026-11-13 for the experimental branch
-`update/software-design-principles`, cut from `update/lean-skills`. Not yet
-accepted for `main`.
+Approved by the maintainer on 2026-11-13 and merged into `main` the same day
+from `update/software-design-principles`, cut from `update/lean-skills`. The
+real-use judgement in AC8 remains open.
 
 ## Mode
 
