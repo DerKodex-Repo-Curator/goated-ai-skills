@@ -218,6 +218,55 @@ svg .f-ink { fill: var(--ink); }
 .check { list-style: none; padding-left: 0; }
 .check li { padding-left: 28px; position: relative; margin-bottom: 6px; }
 .check li::before { content: ""; position: absolute; left: 2px; top: 5px; width: 14px; height: 14px; border: 1.5px solid var(--muted); border-radius: 3px; }
+svg .ring { fill: none; stroke: var(--ink); stroke-width: 3; }
+
+/* ---------- quick reference: principles, tips, glossary ---------- */
+/* Principles: a numbered badge, the principle, and a short plain-words line under it. */
+.plist { list-style: none; padding: 0; margin: 0 0 6px; max-width: none; }
+.plist li {
+  display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 4px 14px; align-items: center;
+  padding: 10px 12px; margin: 0 0 8px; background: var(--surface-2);
+  border: 1px solid var(--line); border-left: 4px solid var(--ap); border-radius: 8px;
+}
+/* The badge shows the li's own value attribute, so numbering survives the group headings. */
+.plist li::before {
+  content: attr(value); display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
+  background: var(--ap-soft); color: var(--ap); font: 700 15px var(--font-display);
+}
+.plist strong { display: block; font-size: 15.5px; }
+.plist .gloss { display: block; color: var(--ink-2); font-size: 14px; }
+.plist a, .term a { font-size: 13px; font-weight: 600; white-space: nowrap; text-decoration: none; }
+.plist a::after, .term a::after { content: " \2192"; }
+.plist a:hover, .term a:hover { text-decoration: underline; }
+
+/* Tips: one card per theme, laid out in columns that fill top to bottom. */
+.tipgrid { columns: 2 320px; column-gap: 14px; margin: 0 0 8px; }
+.tipgroup {
+  break-inside: avoid; margin: 0 0 14px; background: var(--surface-2);
+  border: 1px solid var(--line); border-top: 3px solid var(--pp); border-radius: 8px; padding: 10px 14px 6px;
+}
+.tipgroup h4 {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  margin: 0 0 6px; font-size: 15px; letter-spacing: .03em; text-transform: none; color: var(--ink);
+}
+.tipgroup h4 a { color: var(--ink); text-decoration: none; }
+.tipgroup h4 a:hover { color: var(--accent); text-decoration: underline; }
+.tipgroup h4 span { font: 600 11px var(--font-mono); color: var(--pp); white-space: nowrap; }
+.tips { margin: 0; padding-left: 30px; font-size: 14.5px; max-width: none; }
+.tips li { margin-bottom: 5px; padding-left: 2px; }
+.tips li::marker { color: var(--pp); font: 700 12px var(--font-mono); }
+
+/* Glossary: a grid of small definition cards. */
+.gloss-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin: 0 0 16px; }
+.term {
+  background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent);
+  border-radius: 8px; padding: 12px 14px 10px;
+}
+.term dt { font: 700 16px var(--font-display); letter-spacing: .02em; margin: 0 0 4px; }
+.term dd { margin: 0; font-size: 14.5px; color: var(--ink-2); }
+.term a { display: inline-block; margin-top: 6px; }
+.nomatch { color: var(--muted); font-size: 14.5px; }
+
 footer { color: var(--muted); font-size: 13.5px; border-top: 1px solid var(--line); padding-top: 16px; }
 
 @media (max-width: 920px) {
@@ -326,38 +375,39 @@ footer { color: var(--muted); font-size: 13.5px; border-top: 1px solid var(--lin
   </div>
 
   <figure>
-    <svg viewBox="0 0 760 330" role="img" aria-label="Map of the guide: one goal, two causes of complexity, and the main defences against each">
-      <rect class="box-soft" x="230" y="14" width="300" height="54" rx="8"/>
-      <text class="t-lg" x="380" y="38" text-anchor="middle">Goal: code that is easy to change</text>
-      <text class="t-2 t-sm" x="380" y="56" text-anchor="middle">PP calls this ETC. APoSD calls it low complexity.</text>
+    <svg viewBox="0 0 760 350" role="img" aria-label="Map of the guide. The goal is code that is easy to change: The Pragmatic Programmer calls this ETC, short for Easier To Change, and A Philosophy of Software Design calls it low complexity. Two threats work against it. Threat 1 is dependencies: code that cannot be understood or changed alone. Defences: deep modules that hide decisions (part 3), one home for each fact, called DRY (part 4), independent parts (part 4), fewer places that handle errors (part 5), no shared changeable state (part 9). Threat 2 is obscurity: important information is not obvious. Defences: precise, consistent names (part 6), comments that add what code cannot say (part 6), consistency and conventions (part 6), contracts and assertions (part 5), deliberate code, never coincidence (part 8).">
+      <rect class="box-soft" x="150" y="12" width="460" height="74" rx="8"/>
+      <text class="t-lg" x="380" y="36" text-anchor="middle">Goal: code that is easy to change</text>
+      <text class="t-2 t-sm" x="380" y="56" text-anchor="middle">The Pragmatic Programmer calls this ETC: Easier To Change.</text>
+      <text class="t-2 t-sm" x="380" y="73" text-anchor="middle">A Philosophy of Software Design calls it low complexity.</text>
 
-      <path class="ln" d="M300 68 L190 108"/><path class="ln" d="M460 68 L570 108"/>
+      <path class="ln" d="M300 86 L195 124"/><path class="ln" d="M460 86 L565 124"/>
 
-      <rect class="box" x="40" y="108" width="300" height="50" rx="8"/>
-      <text class="t-b" x="190" y="130" text-anchor="middle">Threat 1: dependencies</text>
-      <text class="t-2 t-sm" x="190" y="147" text-anchor="middle">Code that cannot be understood or changed alone</text>
+      <rect class="box" x="16" y="124" width="358" height="50" rx="8"/>
+      <text class="t-b" x="195" y="146" text-anchor="middle">Threat 1: dependencies</text>
+      <text class="t-2 t-sm" x="195" y="163" text-anchor="middle">Code you cannot understand or change alone</text>
 
-      <rect class="box" x="420" y="108" width="300" height="50" rx="8"/>
-      <text class="t-b" x="570" y="130" text-anchor="middle">Threat 2: obscurity</text>
-      <text class="t-2 t-sm" x="570" y="147" text-anchor="middle">Important information is not obvious</text>
+      <rect class="box" x="386" y="124" width="358" height="50" rx="8"/>
+      <text class="t-b" x="565" y="146" text-anchor="middle">Threat 2: obscurity</text>
+      <text class="t-2 t-sm" x="565" y="163" text-anchor="middle">Important information is not obvious</text>
 
-      <path class="ln" d="M190 158 L190 182"/><path class="ln" d="M570 158 L570 182"/>
+      <path class="ln" d="M195 174 L195 198"/><path class="ln" d="M565 174 L565 198"/>
 
-      <rect class="box" x="40" y="182" width="300" height="134" rx="8"/>
-      <text class="t-b t-sm" x="56" y="204">Defences</text>
-      <text class="t-sm" x="56" y="224">Deep modules that hide decisions (part 3)</text>
-      <text class="t-sm" x="56" y="243">One home for each piece of knowledge: DRY (part 4)</text>
-      <text class="t-sm" x="56" y="262">Orthogonal parts, no reaching through objects (part 4)</text>
-      <text class="t-sm" x="56" y="281">Fewer places that handle errors (part 5)</text>
-      <text class="t-sm" x="56" y="300">No shared mutable state (part 9)</text>
+      <rect class="box" x="16" y="198" width="358" height="138" rx="8"/>
+      <text class="t-b t-sm" x="32" y="220">Defences</text>
+      <text class="t-sm" x="32" y="241">Deep modules that hide decisions (part 3)</text>
+      <text class="t-sm" x="32" y="260">One home for each fact: DRY (part 4)</text>
+      <text class="t-sm" x="32" y="279">Independent parts (part 4)</text>
+      <text class="t-sm" x="32" y="298">Fewer places that handle errors (part 5)</text>
+      <text class="t-sm" x="32" y="317">No shared changeable state (part 9)</text>
 
-      <rect class="box" x="420" y="182" width="300" height="134" rx="8"/>
-      <text class="t-b t-sm" x="436" y="204">Defences</text>
-      <text class="t-sm" x="436" y="224">Precise, consistent names (part 6)</text>
-      <text class="t-sm" x="436" y="243">Comments that say what code cannot (part 6)</text>
-      <text class="t-sm" x="436" y="262">Consistency and conventions (part 6)</text>
-      <text class="t-sm" x="436" y="281">Contracts and assertions (part 5)</text>
-      <text class="t-sm" x="436" y="300">Deliberate code, never coincidence (part 8)</text>
+      <rect class="box" x="386" y="198" width="358" height="138" rx="8"/>
+      <text class="t-b t-sm" x="402" y="220">Defences</text>
+      <text class="t-sm" x="402" y="241">Precise, consistent names (part 6)</text>
+      <text class="t-sm" x="402" y="260">Comments that add what code cannot (part 6)</text>
+      <text class="t-sm" x="402" y="279">Consistency and conventions (part 6)</text>
+      <text class="t-sm" x="402" y="298">Contracts and assertions (part 5)</text>
+      <text class="t-sm" x="402" y="317">Deliberate code, never coincidence (part 8)</text>
     </svg>
     <figcaption>The map of this guide. Parts 1 and 7 to 10 cover the habits that make these defences happen in practice: small steps, fast feedback, and steady investment in the design.</figcaption>
   </figure>
@@ -392,7 +442,7 @@ footer { color: var(--muted); font-size: 13.5px; border-top: 1px solid var(--lin
     <p><strong>Tactical programming</strong> means the goal is to get the current feature or fix working as fast as possible. Each shortcut seems reasonable. Because complexity builds up in small pieces, the shortcuts pile up, and the code gets slower and slower to work in.</p>
     <p><strong>Strategic programming</strong> treats working code as necessary but not as the goal. Most of the code you will ever write extends code that already exists, so the most valuable thing you can produce is a structure that is easy to extend.</p>
     <figure>
-      <svg viewBox="0 0 760 330" role="img" aria-label="Illustrative chart of progress over time. Tactical work starts faster then flattens. Strategic work starts slower and overtakes it.">
+      <svg viewBox="0 0 760 330" role="img" aria-label="Illustrative chart of total progress against time on a project. Tactical work (get it working now) starts faster, then flattens as shortcuts pile up. Strategic work (invest in the design) starts slower, keeps its speed and overtakes. After the crossover the investment has paid for itself.">
         <line class="grid" x1="70" y1="270" x2="720" y2="270"/>
         <line class="grid" x1="70" y1="30" x2="70" y2="270"/>
         <line class="grid" x1="70" y1="190" x2="720" y2="190" stroke-dasharray="3 5"/>
@@ -514,7 +564,7 @@ footer { color: var(--muted); font-size: 13.5px; border-top: 1px solid var(--lin
     <h3>Three symptoms, two causes <span class="src ap">APoSD ch.2</span></h3>
     <p class="oneline">You feel complexity in three ways. It comes from two sources. Learn to name them and you can point at what is wrong.</p>
     <figure>
-      <svg viewBox="0 0 760 290" role="img" aria-label="Two causes of complexity, dependencies and obscurity, lead to three symptoms: change amplification, cognitive load and unknown unknowns">
+      <svg viewBox="0 0 760 290" role="img" aria-label="Two causes lead to three symptoms. Cause 1, dependencies: this code cannot be understood or changed without looking at other code. Cause 2, obscurity: something important is not obvious from reading the code. Symptom 1, change amplification: a small change needs edits in many places. Symptom 2, cognitive load: you must know a lot to change it safely. Symptom 3, unknown unknowns (the worst): you cannot tell what you need to know.">
         <text class="t-muted t-sm t-b" x="40" y="24">CAUSES</text>
         <text class="t-muted t-sm t-b" x="440" y="24">SYMPTOMS YOU FEEL</text>
 
@@ -534,7 +584,7 @@ footer { color: var(--muted); font-size: 13.5px; border-top: 1px solid var(--lin
 
         <rect class="box" x="440" y="118" width="290" height="66" rx="8"/>
         <text class="t-b" x="456" y="142">2. Cognitive load</text>
-        <text class="t-2 t-sm" x="456" y="162">You must know a lot to make the change safely.</text>
+        <text class="t-2 t-sm" x="456" y="162">You must know a lot to change it safely.</text>
 
         <rect class="box-bad" x="440" y="200" width="290" height="66" rx="8"/>
         <text class="t-b" x="456" y="224">3. Unknown unknowns (the worst)</text>
@@ -616,7 +666,7 @@ EMPHASIS_COLOUR = "#084f54"
     <p class="oneline">The best modules give you a lot of behaviour through a small, simple interface.</p>
     <p>Think of the interface as the <strong>cost</strong> of a module: it is what every user has to learn. The behaviour behind it is the <strong>benefit</strong>. A deep module has a low cost and a high benefit. A shallow module makes you learn almost as much as it saves you.</p>
     <figure>
-      <svg viewBox="0 0 760 270" role="img" aria-label="A deep module is a tall rectangle with a narrow top edge. A shallow module is a wide flat rectangle with a long top edge.">
+      <svg viewBox="0 0 760 270" role="img" aria-label="Two modules drawn as rectangles. The top edge is the interface and the area is the behaviour. A deep module has a short top edge and a large area, for example open, read, write and close in front of an entire file system. A shallow module has a long top edge and a small area, for example a class of one-line methods that each forward to something else.">
         <text class="t-lg" x="190" y="26" text-anchor="middle">Deep module</text>
         <rect class="f-accent" x="130" y="44" width="120" height="8"/>
         <rect class="box-soft" x="130" y="52" width="120" height="170" rx="2"/>
@@ -737,17 +787,101 @@ text.delete(cursor, cursor + 1)</pre></div>
     <h3>Each layer should add something <span class="src ap">APoSD ch.7</span></h3>
     <p class="oneline">If two neighbouring layers look alike, one of them is probably not earning its place.</p>
     <p>As a call travels down through a system, the way of thinking about the problem should change at each step. A file is "a stream of bytes" at one level, "numbered blocks" below that, and "commands to a device" below that. When a layer only repeats the layer under it, it adds an interface to learn and nothing else.</p>
-    <div class="code bad"><div class="cap">Pass-through methods</div>
-<pre>class Document:
+    <p>A <strong>layer</strong> here means one level in a stack of code where each level calls the one below it. An <strong>abstraction</strong> is the simplified picture a layer gives its caller, so the caller can forget the details underneath.</p>
+    <h4>A worked example: saving a note</h4>
+    <p>Both versions below save a note to a file in three layers. In the first, every layer says the same thing. In the second, every layer has its own job.</p>
+    <figure>
+      <svg viewBox="0 0 760 300" role="img" aria-label="Two stacks of three layers for saving a note. Left, layers that repeat: NoteService.save_note(note) forwards to NoteManager.save_note(note), which forwards to NoteRepository.save_note(note), which does all the real work. That is three interfaces to learn and only one idea. Right, layers that each add something: Notebook.add(title, body) thinks in notes (tidy titles, dates). It calls RecordStore.put(key, record), which thinks in records (safe saving of any data). That calls the file system's write(bytes), which thinks in bytes on a disk. That is three interfaces and three different ideas.">
+        <text class="t-b" x="16" y="24">Layers that repeat</text>
+        <rect class="box-bad" x="16" y="40" width="350" height="56" rx="8"/>
+        <text class="t-sm t-b" x="191" y="63" text-anchor="middle">NoteService.save_note(note)</text>
+        <text class="t-2 t-sm" x="191" y="81" text-anchor="middle">Only forwards to the layer below</text>
+        <path class="ln-ink" d="M191 96 L191 112"/><path class="f-ink" d="M191 120 l-5 -10 h10 z"/>
+        <rect class="box-bad" x="16" y="120" width="350" height="56" rx="8"/>
+        <text class="t-sm t-b" x="191" y="143" text-anchor="middle">NoteManager.save_note(note)</text>
+        <text class="t-2 t-sm" x="191" y="161" text-anchor="middle">Only forwards to the layer below</text>
+        <path class="ln-ink" d="M191 176 L191 192"/><path class="f-ink" d="M191 200 l-5 -10 h10 z"/>
+        <rect class="box-bad" x="16" y="200" width="350" height="56" rx="8"/>
+        <text class="t-sm t-b" x="191" y="223" text-anchor="middle">NoteRepository.save_note(note)</text>
+        <text class="t-2 t-sm" x="191" y="241" text-anchor="middle">Does all the real work</text>
+        <text class="t-2 t-sm" x="191" y="282" text-anchor="middle">Three interfaces to learn, one idea.</text>
+
+        <text class="t-b" x="394" y="24">Layers that each add something</text>
+        <rect class="box-good" x="394" y="40" width="350" height="56" rx="8"/>
+        <text class="t-sm t-b" x="569" y="63" text-anchor="middle">Notebook.add(title, body)</text>
+        <text class="t-2 t-sm" x="569" y="81" text-anchor="middle">Thinks in notes: tidy titles, dates</text>
+        <path class="ln-ink" d="M569 96 L569 112"/><path class="f-ink" d="M569 120 l-5 -10 h10 z"/>
+        <rect class="box-good" x="394" y="120" width="350" height="56" rx="8"/>
+        <text class="t-sm t-b" x="569" y="143" text-anchor="middle">RecordStore.put(key, record)</text>
+        <text class="t-2 t-sm" x="569" y="161" text-anchor="middle">Thinks in records: safe saving of any data</text>
+        <path class="ln-ink" d="M569 176 L569 192"/><path class="f-ink" d="M569 200 l-5 -10 h10 z"/>
+        <rect class="box-good" x="394" y="200" width="350" height="56" rx="8"/>
+        <text class="t-sm t-b" x="569" y="223" text-anchor="middle">File system: write(bytes)</text>
+        <text class="t-2 t-sm" x="569" y="241" text-anchor="middle">Thinks in bytes on a disk</text>
+        <text class="t-2 t-sm" x="569" y="282" text-anchor="middle">Three interfaces, three different ideas.</text>
+      </svg>
+      <figcaption>Read each stack from top to bottom. On the left the same sentence describes all three boxes. On the right each box needs its own sentence.</figcaption>
+    </figure>
+    <div class="pair">
+      <div class="code bad"><div class="cap">Layers that repeat</div>
+<pre>class NoteRepository:
+    def save_note(self, note):
+        path = f"notes/{note['id']}.json"
+        with open(path, "w") as file:
+            json.dump(note, file)
+
+class NoteManager:
     def __init__(self):
-        self._text_area = TextArea()
+        self._repository = NoteRepository()
 
-    <span class="c"># Each method only forwards. Document adds an interface but no behaviour.</span>
-    def insert(self, position, text):
-        return self._text_area.insert(position, text)
+    <span class="c"># Only forwards. Adds nothing.</span>
+    def save_note(self, note):
+        return self._repository.save_note(note)
 
-    def cursor_offset(self):
-        return self._text_area.cursor_offset()</pre></div>
+class NoteService:
+    def __init__(self):
+        self._manager = NoteManager()
+
+    <span class="c"># Only forwards, again.</span>
+    def save_note(self, note):
+        return self._manager.save_note(note)</pre></div>
+      <div class="code good"><div class="cap">Layers that each add something</div>
+<pre>class Notebook:
+    """Thinks in notes. Knows what a tidy
+    note is. Knows nothing about files."""
+    def __init__(self, store):
+        self._store = store
+
+    def add(self, title, body):
+        title = title.strip() or "Untitled"
+        note = {"title": title, "body": body,
+                "created": str(date.today())}
+        self._store.put(title.lower(), note)
+
+class RecordStore:
+    """Thinks in records saved under a key.
+    Knows nothing about notes."""
+    def __init__(self, folder):
+        self._folder = folder
+
+    def put(self, key, record):
+        <span class="c"># Write a spare file, then rename it,</span>
+        <span class="c"># so a crash part-way through cannot</span>
+        <span class="c"># leave a half-written record.</span>
+        final = f"{self._folder}/{key}.json"
+        spare = final + ".tmp"
+        with open(spare, "w") as file:
+            json.dump(record, file)
+        os.replace(spare, final)</pre></div>
+    </div>
+    <p><strong>What is wrong on the left.</strong> To follow one save you open three classes and learn three interfaces, yet only the bottom one does anything. <code>NoteManager</code> and <code>NoteService</code> hide nothing from their callers: whoever calls <code>NoteService.save_note(note)</code> needs to know exactly what a caller of <code>NoteRepository.save_note(note)</code> needs to know. A change to the method, such as a new argument, must be made three times.</p>
+    <p><strong>What is better on the right.</strong> Each layer lets its caller forget something. Code that calls <code>Notebook.add</code> can forget about keys, dates and blank titles. <code>Notebook</code> can forget about files, JSON and crashes, because <code>RecordStore</code> owns those. And <code>RecordStore</code> never mentions notes, so it could save settings or scores without a change.</p>
+    <h4>How to test your own layers</h4>
+    <ol>
+      <li><strong>Describe each layer in one sentence.</strong> If two layers get the same sentence, one of them is spare.</li>
+      <li><strong>Ask what each layer lets its caller forget.</strong> If the answer is "nothing", it is not an abstraction, only an extra stop.</li>
+      <li><strong>Imagine deleting the layer</strong> and letting its caller use the one below directly. If nothing gets harder, delete it.</li>
+    </ol>
     <p>Fixes, in the order to try them: let callers use the lower class directly, move behaviour so each class has a clear job, or merge the two classes.</p>
     <p><strong>Same signature is fine when real work happens.</strong> A dispatcher that picks which function to call is doing a job. Several classes implementing one shared interface are also fine.</p>
     <h4>Pass-through variables</h4>
@@ -796,6 +930,84 @@ text.delete(cursor, cursor + 1)</pre></div>
         <tr><td>Combining removes repeated code.</td><td></td></tr>
       </tbody>
     </table></div>
+    <h4>Three questions to ask</h4>
+    <ol>
+      <li><strong>Can I understand one piece without reading the other?</strong> If not, they belong together.</li>
+      <li><strong>Is either piece used without the other?</strong> If one is used alone in many places, keep it apart.</li>
+      <li><strong>Is one piece a general tool and the other a single use of it?</strong> If so, keep them apart, with the single use sitting above the tool.</li>
+    </ol>
+    <h4>Example 1: two functions that should be one</h4>
+    <p>A settings file has one <code>name = value</code> per line. Blank lines and lines starting with <code>#</code> are ignored. The first version splits the work by step: first clean the lines, then read them.</p>
+    <div class="pair">
+      <div class="code bad"><div class="cap">Split, but not independent</div>
+<pre>def read_settings_lines(path):
+    """Return the useful lines."""
+    useful_lines = []
+    for line in open(path):
+        line = line.strip()
+        <span class="c"># Knows: "#" starts a comment.</span>
+        if line and not line.startswith("#"):
+            useful_lines.append(line)
+    return useful_lines
+
+def parse_settings(lines):
+    """Turn "name = value" lines into
+    a dict. Only works on lines already
+    cleaned by read_settings_lines."""
+    settings = {}
+    for line in lines:
+        name, value = line.split("=", 1)
+        settings[name.strip()] = value.strip()
+    return settings</pre></div>
+      <div class="code good"><div class="cap">Brought together</div>
+<pre>def load_settings(path):
+    """Read a settings file into a dict.
+
+    Format: one "name = value" per line.
+    Blank lines and lines starting with
+    "#" are skipped.
+    """
+    settings = {}
+    with open(path) as file:
+        for line in file:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            name, value = line.split("=", 1)
+            settings[name.strip()] = value.strip()
+    return settings</pre></div>
+    </div>
+    <p><strong>The thinking.</strong> Question 1: can <code>parse_settings</code> be understood alone? No. Give it a comment line and it crashes, so it only makes sense if you have also read <code>read_settings_lines</code>. Question 2: is either used without the other? No, every caller calls both, in the same order. On top of that, the file format is split across the two, so no single place describes it.</p>
+    <p><strong>What improved.</strong> Callers make one call and cannot get the order wrong. One docstring states the whole format. A change to the format, such as allowing <code>;</code> comments, is made in one place. The function is longer than either of the old ones and still easier to read, because nothing it depends on is somewhere else.</p>
+    <h4>Example 2: one function that should be two</h4>
+    <p>An app sends several kinds of email. Someone needed a password reset email and added it inside the general sending function.</p>
+    <div class="pair">
+      <div class="code bad"><div class="cap">One use mixed into a general tool</div>
+<pre>def send_email(to, subject, body,
+               reset_link=None):
+    if reset_link:
+        <span class="c"># One particular email, living</span>
+        <span class="c"># inside the tool for all emails.</span>
+        subject = "Reset your password"
+        body = (f"Click here: {reset_link}\n"
+                "The link lasts one hour.")
+    message = build_message(to, subject, body)
+    mail_server.send(message)</pre></div>
+      <div class="code good"><div class="cap">Kept apart</div>
+<pre>def send_email(to, subject, body):
+    """Send one plain-text email."""
+    message = build_message(to, subject, body)
+    mail_server.send(message)
+
+def send_password_reset(user, reset_link):
+    """Email a user their reset link."""
+    body = (f"Click here: {reset_link}\n"
+            "The link lasts one hour.")
+    send_email(user.email,
+               "Reset your password", body)</pre></div>
+    </div>
+    <p><strong>The thinking.</strong> Question 3: is one piece a general tool and the other a single use? Yes. Sending an email is general. The reset wording is one use. Question 2: is the tool used without that use? Yes, by welcome emails and receipts, and each of those callers now has to read past a <code>reset_link</code> parameter that has nothing to do with them. Question 1: can each be understood alone? Yes.</p>
+    <p><strong>What improved.</strong> <code>send_email</code> is back to one simple job and will not grow a new parameter for every kind of email. The reset wording lives in a function named after it, so it is easy to find. The single use sits above the tool and calls it, never the other way round.</p>
     <h4>How long should a function be?</h4>
     <p>Long enough to do one thing completely. A long function with a simple signature that reads top to bottom is fine. Split a function in only two cases: a self-contained subtask can be pulled out so that each part reads without the other, or the function does two unrelated jobs that callers want separately.</p>
     <div class="flag"><b>Red flags: Conjoined Methods, Special-General Mixture, Repetition</b><p><strong>Conjoined methods:</strong> you keep flipping between two functions to follow one idea. Merge them. <strong>Special-general mixture:</strong> a general mechanism contains code for one specific use. Move the specific code up to its user. <strong>Repetition:</strong> the same non-trivial code keeps appearing, so an abstraction is missing.</p></div>
@@ -1044,7 +1256,7 @@ def validate_quantity(value):
     <h3>Which kind of problem is this? <span class="src pp">PP</span> <span class="src ap">APoSD</span></h3>
     <p class="oneline">Design away the errors you can, handle expected failures in as few places as possible, and crash loudly on anything that should be impossible.</p>
     <figure>
-      <svg viewBox="0 0 760 400" role="img" aria-label="Decision flow for an error condition. Can the operation be redefined so this is normal? If so, define it away. Is it an expected outside failure? Handle it low down or in one place high up. Is it a broken assumption? Crash early.">
+      <svg viewBox="0 0 760 400" role="img" aria-label="Decision flow for anything that can go wrong. Question 1: could I redefine the operation so this case is simply normal behaviour? If yes, define it away, and no error exists. Question 2: is it an expected failure from outside, such as bad user input, a missing file or a network timeout? If yes, handle it once: low down inside the module (mask) or in one place high up (aggregate). Question 3: is it a broken assumption, such as something that can never happen or a caller breaking the contract? If yes, crash early: assert, stop and report. Question 4: does the caller truly need to know, and can it do something useful about it? If yes, raise it and document it. If no, go back to question 1, because raising an error nobody can act on only moves the problem.">
         <rect class="box-soft" x="250" y="10" width="260" height="42" rx="21"/>
         <text class="t-b" x="380" y="36" text-anchor="middle">Something can go wrong here</text>
         <path class="ln" d="M380 52 L380 72"/>
@@ -1086,8 +1298,29 @@ def validate_quantity(value):
         <text class="t-sm t-b" x="671" y="338" text-anchor="middle">document it</text>
         <text class="t-2 t-sm" x="380" y="378" text-anchor="middle">If the answer to 4 is no, go back to 1. Raising an error nobody can act on only moves the problem.</text>
       </svg>
-      <figcaption>The rest of this part covers each branch.</figcaption>
+      <figcaption>The rest of this part covers each branch. The two words in brackets at question 2 are explained just below.</figcaption>
     </figure>
+    <h4>What "mask" and "aggregate" mean</h4>
+    <p>Both are ways to handle an expected failure in <em>one</em> place, so that the rest of the code does not need its own <code>try</code> / <code>except</code>. They differ in where that one place is.</p>
+    <div class="cards">
+      <div class="card">
+        <div class="n">Low down</div>
+        <h4>Mask: deal with it where it happens</h4>
+        <p>To mask a failure is to cover it up on purpose. The code that hits the problem also recovers from it, so the code that called it never finds out anything went wrong.</p>
+        <p><strong>Everyday picture:</strong> a phone call drops for half a second and the phone reconnects by itself. You never had to redial.</p>
+        <p><strong>In code:</strong> a download function that quietly tries again when the network times out.</p>
+        <p><strong>Use it when</strong> the low-level code can fully recover, and the caller would have nothing useful to do with the news.</p>
+      </div>
+      <div class="card">
+        <div class="n">High up</div>
+        <h4>Aggregate: collect them in one handler</h4>
+        <p>To aggregate is to gather many things into one. The code that hits the problem raises an error and does nothing else. All such errors travel up to a single handler near the top of the program, which deals with every kind the same way.</p>
+        <p><strong>Everyday picture:</strong> a shop with one returns desk. Staff in every aisle send problems there, so no aisle needs its own returns process.</p>
+        <p><strong>In code:</strong> a web server with one <code>try</code> / <code>except</code> around each request, which turns any failure into an error page.</p>
+        <p><strong>Use it when</strong> the low-level code cannot recover, and many different failures all need the same response.</p>
+      </div>
+    </div>
+    <p>Either way the aim is the same: few handlers, each in a place that has enough information to do something sensible. Code examples of both are in <a href="#fewer-handlers">Handle errors in fewer places</a>.</p>
   </div>
 
   <div class="idea" id="define-away">
@@ -1128,6 +1361,23 @@ def validate_quantity(value):
         <tr><td><strong>Just crash</strong></td><td>Nowhere. Print what you know and stop.</td><td>Out of memory, a corrupted internal structure.</td></tr>
       </tbody>
     </table></div>
+    <h4>Mask, in code</h4>
+    <p>The retry lives inside <code>download</code>. Callers write one plain line and never see a timeout unless every attempt fails.</p>
+    <div class="code good"><div class="cap">Masked: the function recovers by itself</div>
+<pre>def download(url):
+    """Return the page at url. A timeout is retried up to three times."""
+    for attempt in range(3):
+        try:
+            return http_get(url)
+        except TimeoutError:
+            <span class="c"># Wait a little longer each time, then try again.</span>
+            time.sleep(attempt + 1)
+    <span class="c"># Three failures in a row is no longer a blip. Now the caller must know.</span>
+    raise DownloadFailed(url)
+
+page = download("https://example.com/prices")   <span class="c"># no try/except needed here</span></pre></div>
+    <h4>Aggregate, in code</h4>
+    <p>On the left, every step has its own handler. On the right, the steps only raise, and one handler at the top catches everything.</p>
     <div class="pair">
       <div class="code bad"><div class="cap">A handler at every step</div>
 <pre>def handle_request(request):
@@ -1344,7 +1594,7 @@ def request_vote(term_id) -> VoteResult:
     <p>Code can state what happens. It cannot state why a choice was made, what a value means, what the units are, or what a caller is allowed to assume. That knowledge was in the designer's head. If it is not written down, the next person must rediscover it or guess.</p>
     <p>Most importantly, <strong>a comment is what makes an abstraction usable</strong>. If people have to read a function's body to learn how to call it, the function is hiding nothing.</p>
     <figure>
-      <svg viewBox="0 0 760 210" role="img" aria-label="Three levels of detail. A higher-level comment gives intent and reasons. The code is in the middle. A lower-level comment gives precision such as units and limits. A comment at the same level as the code only repeats it.">
+      <svg viewBox="0 0 760 210" role="img" aria-label="Three levels of detail. Higher than the code, a comment gives intent: what this block is for, why it is done this way, the one thing to know about it. At the same level as the code, a comment only repeats the code and adds nothing. Lower than the code, a comment gives precision: units, limits, what None means, who closes it, what is always true.">
         <rect class="box-good" x="170" y="14" width="560" height="52" rx="8"/>
         <text class="t-b" x="186" y="36">Higher than the code: intent</text>
         <text class="t-2 t-sm" x="186" y="54">What this block is for, why it is done this way, the one thing to know about it.</text>
@@ -1353,7 +1603,7 @@ def request_vote(term_id) -> VoteResult:
         <text class="t-2 t-sm" x="186" y="120">A comment at this level only repeats the code. It adds nothing.</text>
         <rect class="box-good" x="170" y="146" width="560" height="52" rx="8"/>
         <text class="t-b" x="186" y="168">Lower than the code: precision</text>
-        <text class="t-2 t-sm" x="186" y="186">Units, whether limits are included, what None means, who must close it, what is always true.</text>
+        <text class="t-2 t-sm" x="186" y="186">Units, limits, what None means, who closes it, what is always true.</text>
         <path class="ln-ink" d="M90 30 L90 184"/><path class="f-ink" d="M90 20 l-5 10 h10 z"/><path class="f-ink" d="M90 194 l-5 -10 h10 z"/>
         <text class="t-muted t-sm" x="90" y="14" text-anchor="middle">more abstract</text>
         <text class="t-muted t-sm" x="90" y="208" text-anchor="middle">more detailed</text>
@@ -1466,7 +1716,7 @@ for item in items:
     <p class="oneline">Never move faster than you can check. Your rate of feedback is your speed limit.</p>
     <p>The book's picture is driving at night. Your headlights light a fixed distance. Drive faster than you can stop within that distance and you will hit something. In software, the further ahead you plan, the less you can actually see.</p>
     <figure>
-      <svg viewBox="0 0 760 150" role="img" aria-label="A loop of three steps: work out where you are, take the smallest meaningful step toward the goal, check where you ended up and fix anything you broke, then repeat.">
+      <svg viewBox="0 0 760 150" role="img" aria-label="A loop of three steps. Step 1, where am I: look at the real current state. Step 2: take the smallest useful step toward where I want to be. Step 3: check where I ended up, and fix anything the step broke. Repeat at every scale: a line of code, a feature, the way the team works.">
         <rect class="box" x="30" y="40" width="200" height="64" rx="8"/>
         <text class="t-b" x="130" y="66" text-anchor="middle">1. Where am I?</text>
         <text class="t-2 t-sm" x="130" y="86" text-anchor="middle">Look at the real current state</text>
@@ -1799,7 +2049,7 @@ def test_sorted_is_in_order(numbers):
     <h3>Debugging <span class="src pp">PP topic 20, Tips 29 to 34</span></h3>
     <p class="oneline">Debugging is problem solving. Reproduce the bug, read what the system tells you, narrow it down by halves, and question what you "know".</p>
     <figure>
-      <svg viewBox="0 0 760 330" role="img" aria-label="Debugging flow: reproduce the bug with a failing test, read the error message, narrow the search by halving, find the root cause, fix it, then ask why it was not caught earlier.">
+      <svg viewBox="0 0 760 216" role="img" aria-label="Debugging flow in six steps. 1: reproduce it with one command, as a failing test. 2: read the whole error message before touching code. 3: narrow the search by halves, on the data, the call stack or the versions. 4: find the root cause, not just the visible symptom. 5: fix it, re-run the test and keep the test for good. 6: learn from it by asking why it was not caught earlier.">
         <rect class="box" x="30" y="20" width="210" height="66" rx="8"/>
         <text class="t-b" x="135" y="46" text-anchor="middle">1. Reproduce it</text>
         <text class="t-2 t-sm" x="135" y="66" text-anchor="middle">One command, as a failing test</text>
@@ -1817,7 +2067,7 @@ def test_sorted_is_in_order(numbers):
         <text class="t-b" x="625" y="156" text-anchor="middle">4. Find the root cause</text>
         <text class="t-2 t-sm" x="625" y="176" text-anchor="middle">Not just the visible symptom</text>
         <rect class="box" x="275" y="130" width="210" height="66" rx="8"/>
-        <text class="t-b" x="380" y="156" text-anchor="middle">5. Fix, and see the test pass</text>
+        <text class="t-b" x="380" y="156" text-anchor="middle">5. Fix and re-run the test</text>
         <text class="t-2 t-sm" x="380" y="176" text-anchor="middle">Keep the test for good</text>
         <rect class="box-soft" x="30" y="130" width="210" height="66" rx="8"/>
         <text class="t-b" x="135" y="156" text-anchor="middle">6. Learn from it</text>
@@ -1825,23 +2075,242 @@ def test_sorted_is_in_order(numbers):
         <path class="ln-ink" d="M520 163 L491 163"/><path class="f-ink" d="M485 163 l10 -5 v10 z"/>
         <path class="ln-ink" d="M275 163 L246 163"/><path class="f-ink" d="M240 163 l10 -5 v10 z"/>
 
-        <text class="t-b t-sm" x="30" y="232">Narrowing by halves, on 16 versions:</text>
-        <g>
-          <rect class="box-good" x="30" y="246" width="38" height="26" rx="3"/><rect class="box" x="72" y="246" width="38" height="26" rx="3"/><rect class="box" x="114" y="246" width="38" height="26" rx="3"/><rect class="box" x="156" y="246" width="38" height="26" rx="3"/>
-          <rect class="box" x="198" y="246" width="38" height="26" rx="3"/><rect class="box" x="240" y="246" width="38" height="26" rx="3"/><rect class="box" x="282" y="246" width="38" height="26" rx="3"/><rect class="box-soft" x="324" y="246" width="38" height="26" rx="3"/>
-          <rect class="box" x="366" y="246" width="38" height="26" rx="3"/><rect class="box" x="408" y="246" width="38" height="26" rx="3"/><rect class="box" x="450" y="246" width="38" height="26" rx="3"/><rect class="box-soft" x="492" y="246" width="38" height="26" rx="3"/>
-          <rect class="box" x="534" y="246" width="38" height="26" rx="3"/><rect class="box-soft" x="576" y="246" width="38" height="26" rx="3"/><rect class="box" x="618" y="246" width="38" height="26" rx="3"/><rect class="box-bad" x="660" y="246" width="38" height="26" rx="3"/>
-        </g>
-        <text class="t-sm" x="49" y="264" text-anchor="middle">ok</text>
-        <text class="t-sm" x="679" y="264" text-anchor="middle">bad</text>
-        <text class="t-sm" x="343" y="264" text-anchor="middle">1st</text>
-        <text class="t-sm" x="511" y="264" text-anchor="middle">2nd</text>
-        <text class="t-sm" x="595" y="264" text-anchor="middle">3rd</text>
-        <text class="t-2 t-sm" x="30" y="296">Test the middle version. Whichever half still shows the change, test its middle next.</text>
-        <text class="t-2 t-sm" x="30" y="314">Sixteen versions need four tests. A thousand need ten. <tspan class="t-b">git bisect</tspan> automates this.</text>
       </svg>
-      <figcaption>The same halving works on a large input file that causes a crash, and on a long chain of function calls.</figcaption>
+      <figcaption>Follow the arrows from 1 to 6. Step 3 is explained in detail below.</figcaption>
     </figure>
+    <h4>Step 3 explained: narrowing by halves</h4>
+    <p>Often you know two things: the program <em>used to work</em>, and it is <em>broken now</em>. Somewhere between those two points, one change broke it. The question is how to find that change quickly.</p>
+    <p>The slow way is to check every version in order: 2, then 3, then 4, and so on. The fast way is to <strong>check the one in the middle</strong>. Whatever the answer, half of the versions are ruled out at once:</p>
+    <ul>
+      <li>If the middle version <strong>works</strong>, the break came later. Forget everything before it.</li>
+      <li>If the middle version <strong>is broken</strong>, the break came at or before it. Forget everything after it.</li>
+    </ul>
+    <p>Then do the same again on the half that is left, and keep going until one version remains. It is the same trick as the number-guessing game: "I am thinking of a number from 1 to 100" is solved fastest by guessing 50, then 25 or 75, never by guessing 1, 2, 3.</p>
+    <p><strong>An example.</strong> Your app has 16 saved versions. Version 1 worked. Version 16 is broken. You do not know yet that the bug arrived in version 11.</p>
+    <figure>
+      <!--BISECT_SVG--><svg viewBox="0 0 760 346" role="img" aria-label="Narrowing by halves on 16 versions, where version 1 is known to work and version 16 is known to be broken. Each row shows what is known after one test. Start: only version 1 (works) and version 16 (broken) are known. Test 1: version 8, the middle, works, so versions 1 to 8 are fine and the break is somewhere in 9 to 16. Test 2: version 12, the middle of what is left, is broken, so the break is in 9 to 12. Test 3: version 10 works, so the break is in 11 or 12. Test 4: version 11 is broken. Version 10 works and version 11 does not, so the change made in version 11 is the cause. Four tests instead of up to fourteen.">
+        <text class="t-muted t-sm" x="16" y="24">Version number</text>
+        <text class="t-muted t-sm" x="656" y="24">Result</text>
+        <text class="t-b t-sm" x="16" y="60">Start</text>
+        <rect class="box-good" x="104" y="40" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="119" y="60" text-anchor="middle">1</text>
+        <rect class="box" x="138" y="40" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="153" y="60" text-anchor="middle">2</text>
+        <rect class="box" x="172" y="40" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="187" y="60" text-anchor="middle">3</text>
+        <rect class="box" x="206" y="40" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="221" y="60" text-anchor="middle">4</text>
+        <rect class="box" x="240" y="40" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="255" y="60" text-anchor="middle">5</text>
+        <rect class="box" x="274" y="40" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="289" y="60" text-anchor="middle">6</text>
+        <rect class="box" x="308" y="40" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="323" y="60" text-anchor="middle">7</text>
+        <rect class="box" x="342" y="40" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="357" y="60" text-anchor="middle">8</text>
+        <rect class="box" x="376" y="40" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="391" y="60" text-anchor="middle">9</text>
+        <rect class="box" x="410" y="40" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="425" y="60" text-anchor="middle">10</text>
+        <rect class="box" x="444" y="40" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="459" y="60" text-anchor="middle">11</text>
+        <rect class="box" x="478" y="40" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="493" y="60" text-anchor="middle">12</text>
+        <rect class="box" x="512" y="40" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="527" y="60" text-anchor="middle">13</text>
+        <rect class="box" x="546" y="40" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="561" y="60" text-anchor="middle">14</text>
+        <rect class="box" x="580" y="40" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="595" y="60" text-anchor="middle">15</text>
+        <rect class="box-bad" x="614" y="40" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="629" y="60" text-anchor="middle">16</text>
+        <text class="t-b t-sm" x="16" y="110">Test 1</text>
+        <rect class="box-good" x="104" y="90" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="119" y="110" text-anchor="middle">1</text>
+        <rect class="box-good" x="138" y="90" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="153" y="110" text-anchor="middle">2</text>
+        <rect class="box-good" x="172" y="90" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="187" y="110" text-anchor="middle">3</text>
+        <rect class="box-good" x="206" y="90" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="221" y="110" text-anchor="middle">4</text>
+        <rect class="box-good" x="240" y="90" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="255" y="110" text-anchor="middle">5</text>
+        <rect class="box-good" x="274" y="90" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="289" y="110" text-anchor="middle">6</text>
+        <rect class="box-good" x="308" y="90" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="323" y="110" text-anchor="middle">7</text>
+        <rect class="box-good" x="342" y="90" width="30" height="30" rx="3"/>
+        <text class="t-sm t-b" x="357" y="110" text-anchor="middle">8</text>
+        <rect class="box" x="376" y="90" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="391" y="110" text-anchor="middle">9</text>
+        <rect class="box" x="410" y="90" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="425" y="110" text-anchor="middle">10</text>
+        <rect class="box" x="444" y="90" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="459" y="110" text-anchor="middle">11</text>
+        <rect class="box" x="478" y="90" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="493" y="110" text-anchor="middle">12</text>
+        <rect class="box" x="512" y="90" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="527" y="110" text-anchor="middle">13</text>
+        <rect class="box" x="546" y="90" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="561" y="110" text-anchor="middle">14</text>
+        <rect class="box" x="580" y="90" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="595" y="110" text-anchor="middle">15</text>
+        <rect class="box-bad" x="614" y="90" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="629" y="110" text-anchor="middle">16</text>
+        <rect class="ring" x="339" y="87" width="36" height="36" rx="5"/>
+        <text class="t-b t-sm" x="656" y="110">8 works</text>
+        <text class="t-b t-sm" x="16" y="160">Test 2</text>
+        <rect class="box-good" x="104" y="140" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="119" y="160" text-anchor="middle">1</text>
+        <rect class="box-good" x="138" y="140" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="153" y="160" text-anchor="middle">2</text>
+        <rect class="box-good" x="172" y="140" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="187" y="160" text-anchor="middle">3</text>
+        <rect class="box-good" x="206" y="140" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="221" y="160" text-anchor="middle">4</text>
+        <rect class="box-good" x="240" y="140" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="255" y="160" text-anchor="middle">5</text>
+        <rect class="box-good" x="274" y="140" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="289" y="160" text-anchor="middle">6</text>
+        <rect class="box-good" x="308" y="140" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="323" y="160" text-anchor="middle">7</text>
+        <rect class="box-good" x="342" y="140" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="357" y="160" text-anchor="middle">8</text>
+        <rect class="box" x="376" y="140" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="391" y="160" text-anchor="middle">9</text>
+        <rect class="box" x="410" y="140" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="425" y="160" text-anchor="middle">10</text>
+        <rect class="box" x="444" y="140" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="459" y="160" text-anchor="middle">11</text>
+        <rect class="box-bad" x="478" y="140" width="30" height="30" rx="3"/>
+        <text class="t-sm t-b" x="493" y="160" text-anchor="middle">12</text>
+        <rect class="box-bad" x="512" y="140" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="527" y="160" text-anchor="middle">13</text>
+        <rect class="box-bad" x="546" y="140" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="561" y="160" text-anchor="middle">14</text>
+        <rect class="box-bad" x="580" y="140" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="595" y="160" text-anchor="middle">15</text>
+        <rect class="box-bad" x="614" y="140" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="629" y="160" text-anchor="middle">16</text>
+        <rect class="ring" x="475" y="137" width="36" height="36" rx="5"/>
+        <text class="t-b t-sm" x="656" y="160">12 is broken</text>
+        <text class="t-b t-sm" x="16" y="210">Test 3</text>
+        <rect class="box-good" x="104" y="190" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="119" y="210" text-anchor="middle">1</text>
+        <rect class="box-good" x="138" y="190" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="153" y="210" text-anchor="middle">2</text>
+        <rect class="box-good" x="172" y="190" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="187" y="210" text-anchor="middle">3</text>
+        <rect class="box-good" x="206" y="190" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="221" y="210" text-anchor="middle">4</text>
+        <rect class="box-good" x="240" y="190" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="255" y="210" text-anchor="middle">5</text>
+        <rect class="box-good" x="274" y="190" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="289" y="210" text-anchor="middle">6</text>
+        <rect class="box-good" x="308" y="190" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="323" y="210" text-anchor="middle">7</text>
+        <rect class="box-good" x="342" y="190" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="357" y="210" text-anchor="middle">8</text>
+        <rect class="box-good" x="376" y="190" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="391" y="210" text-anchor="middle">9</text>
+        <rect class="box-good" x="410" y="190" width="30" height="30" rx="3"/>
+        <text class="t-sm t-b" x="425" y="210" text-anchor="middle">10</text>
+        <rect class="box" x="444" y="190" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="459" y="210" text-anchor="middle">11</text>
+        <rect class="box-bad" x="478" y="190" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="493" y="210" text-anchor="middle">12</text>
+        <rect class="box-bad" x="512" y="190" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="527" y="210" text-anchor="middle">13</text>
+        <rect class="box-bad" x="546" y="190" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="561" y="210" text-anchor="middle">14</text>
+        <rect class="box-bad" x="580" y="190" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="595" y="210" text-anchor="middle">15</text>
+        <rect class="box-bad" x="614" y="190" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="629" y="210" text-anchor="middle">16</text>
+        <rect class="ring" x="407" y="187" width="36" height="36" rx="5"/>
+        <text class="t-b t-sm" x="656" y="210">10 works</text>
+        <text class="t-b t-sm" x="16" y="260">Test 4</text>
+        <rect class="box-good" x="104" y="240" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="119" y="260" text-anchor="middle">1</text>
+        <rect class="box-good" x="138" y="240" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="153" y="260" text-anchor="middle">2</text>
+        <rect class="box-good" x="172" y="240" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="187" y="260" text-anchor="middle">3</text>
+        <rect class="box-good" x="206" y="240" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="221" y="260" text-anchor="middle">4</text>
+        <rect class="box-good" x="240" y="240" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="255" y="260" text-anchor="middle">5</text>
+        <rect class="box-good" x="274" y="240" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="289" y="260" text-anchor="middle">6</text>
+        <rect class="box-good" x="308" y="240" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="323" y="260" text-anchor="middle">7</text>
+        <rect class="box-good" x="342" y="240" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="357" y="260" text-anchor="middle">8</text>
+        <rect class="box-good" x="376" y="240" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="391" y="260" text-anchor="middle">9</text>
+        <rect class="box-good" x="410" y="240" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="425" y="260" text-anchor="middle">10</text>
+        <rect class="box-bad" x="444" y="240" width="30" height="30" rx="3"/>
+        <text class="t-sm t-b" x="459" y="260" text-anchor="middle">11</text>
+        <rect class="box-bad" x="478" y="240" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="493" y="260" text-anchor="middle">12</text>
+        <rect class="box-bad" x="512" y="240" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="527" y="260" text-anchor="middle">13</text>
+        <rect class="box-bad" x="546" y="240" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="561" y="260" text-anchor="middle">14</text>
+        <rect class="box-bad" x="580" y="240" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="595" y="260" text-anchor="middle">15</text>
+        <rect class="box-bad" x="614" y="240" width="30" height="30" rx="3"/>
+        <text class="t-sm" x="629" y="260" text-anchor="middle">16</text>
+        <rect class="ring" x="441" y="237" width="36" height="36" rx="5"/>
+        <text class="t-b t-sm" x="656" y="260">11 is broken</text>
+        <rect class="box-good" x="16" y="292" width="16" height="16" rx="3"/>
+        <text class="t-2 t-sm" x="40" y="304">Known to work</text>
+        <rect class="box-bad" x="192" y="292" width="16" height="16" rx="3"/>
+        <text class="t-2 t-sm" x="216" y="304">Known to be broken</text>
+        <rect class="box" x="368" y="292" width="16" height="16" rx="3"/>
+        <text class="t-2 t-sm" x="392" y="304">Not known yet</text>
+        <rect class="ring" x="544" y="292" width="16" height="16" rx="4"/>
+        <text class="t-2 t-sm" x="568" y="304">Tested in this row</text>
+        <text class="t-sm t-b" x="16" y="336">Version 10 works and version 11 is broken, so the change made in version 11 is the cause.</text>
+        </svg><!--/BISECT_SVG-->
+      <figcaption><strong>How to read it.</strong> Each row is one test, and the row shows everything you know after it. The outlined cell is the version you just tested. Green spreads from the left as versions are proved to work, red spreads from the right as versions are proved broken, and the uncoloured gap in between is where the bug must be. The gap halves on every row until nothing is left.</figcaption>
+    </figure>
+    <ol>
+      <li><strong>Test 1, version 8</strong> (the middle of 1 to 16). It works, so versions 1 to 8 are fine. The break is in 9 to 16.</li>
+      <li><strong>Test 2, version 12</strong> (the middle of 9 to 16). It is broken, so the break is in 9 to 12.</li>
+      <li><strong>Test 3, version 10</strong> (the middle of 9 to 12). It works, so the break is in 11 or 12.</li>
+      <li><strong>Test 4, version 11.</strong> It is broken. Version 10 works and version 11 does not, so the change made in version 11 is the cause.</li>
+    </ol>
+    <p>Now you only have to read what changed in that one version, which is usually a few lines, in place of everything that changed across all sixteen.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Versions to search</th><th>Checking one by one (worst case)</th><th>Checking by halves</th></tr></thead>
+      <tbody>
+        <tr><td class="num">16</td><td class="num">14 tests</td><td class="num">4 tests</td></tr>
+        <tr><td class="num">1,000</td><td class="num">998 tests</td><td class="num">about 10 tests</td></tr>
+        <tr><td class="num">1,000,000</td><td class="num">999,998 tests</td><td class="num">about 20 tests</td></tr>
+      </tbody>
+    </table></div>
+    <p>This relies on one assumption: once the bug appears, it stays in every later version. That is nearly always true.</p>
+    <p><strong>Git can run the search for you.</strong> The command is called <code>git bisect</code> ("bisect" means cut in two). You name one broken version and one working version. Git then loads the middle one, you test it and say which it is, and Git picks the next one.</p>
+    <div class="code" data-lang="bash"><div class="cap">Narrowing by halves with Git</div>
+<pre>git bisect start
+git bisect bad            <span class="c"># the version I have now is broken</span>
+git bisect good v1.0      <span class="c"># this older version worked</span>
+
+<span class="c"># Git now loads the middle version. Run your test, then answer with ONE of:</span>
+git bisect good           <span class="c"># this one works</span>
+git bisect bad            <span class="c"># this one is broken</span>
+
+<span class="c"># Repeat until Git names the first broken version. Then go back to where you were:</span>
+git bisect reset</pre></div>
+    <p><strong>The same idea works on other things:</strong></p>
+    <ul>
+      <li><strong>Data.</strong> A 1,000-line file crashes your importer. Try only the first 500 lines. If it still crashes, the bad line is in that half. If not, it is in the other half. Halve again.</li>
+      <li><strong>Code path.</strong> A value is correct at the start of a long chain of function calls and wrong at the end. Print it in the middle to learn which half spoils it.</li>
+      <li><strong>Settings or plugins.</strong> Something misbehaves with twenty plugins on. Turn half of them off and see whether the problem stays.</li>
+    </ul>
+    <h4>Habits that help</h4>
     <ul class="apply">
       <li><strong>Fix the problem, not the blame.</strong> It does not matter whose fault it is. <span class="tip">Tip 29</span></li>
       <li><strong>"That's impossible" is always wrong.</strong> It happened. <span class="tip">Tip 30</span></li>
@@ -2290,72 +2759,338 @@ def next_state(state, event):
 
   <div class="idea" id="aposd-principles">
     <h3>The 16 design principles <span class="src ap">APoSD</span></h3>
-    <ol>
-      <li>Complexity builds up in small pieces, so the small things matter. <a href="#complexity-incremental">More</a></li>
-      <li>Code that runs is not the finish line. <a href="#strategic">More</a></li>
-      <li>Keep making small investments in the design. <a href="#strategic">More</a></li>
-      <li>Modules should be deep. <a href="#deep-modules">More</a></li>
-      <li>Design interfaces so the most common use is the simplest. <a href="#deep-modules">More</a></li>
-      <li>A simple interface matters more than a simple implementation. <a href="#pull-down">More</a></li>
-      <li>General-purpose modules are deeper. <a href="#general-purpose">More</a></li>
-      <li>Keep general-purpose and special-purpose code apart. <a href="#general-purpose">More</a></li>
-      <li>Neighbouring layers should offer different abstractions. <a href="#layers">More</a></li>
-      <li>Pull complexity down into the module. <a href="#pull-down">More</a></li>
-      <li>Design errors out of existence. <a href="#define-away">More</a></li>
-      <li>Design it twice. <a href="#design-twice">More</a></li>
-      <li>Comments should say what is not obvious from the code. <a href="#comments">More</a></li>
-      <li>Design for ease of reading, not ease of writing. <a href="#obvious">More</a></li>
-      <li>Build in units of abstraction, not units of feature. <a href="#agility">More</a></li>
-      <li>Separate what matters from what does not, and emphasise what matters. <a href="#what-matters">More</a></li>
+    <h4>The mindset</h4>
+    <ol class="plist" start="1">
+      <li value="1"><div><strong>Complexity builds up in small pieces, so the small things matter.</strong> <span class="gloss">No single shortcut ruins a codebase. Hundreds of small ones do.</span></div> <a href="#complexity-incremental">More</a></li>
+      <li value="2"><div><strong>Code that runs is not the finish line.</strong> <span class="gloss">The goal is a design you can keep working in, not only a feature that works today.</span></div> <a href="#strategic">More</a></li>
+      <li value="3"><div><strong>Keep making small investments in the design.</strong> <span class="gloss">Spend a little of every task leaving the design better than you found it.</span></div> <a href="#strategic">More</a></li>
+    </ol>
+    <h4>Shaping modules</h4>
+    <ol class="plist" start="4">
+      <li value="4"><div><strong>Modules should be deep.</strong> <span class="gloss">A small interface in front of a lot of behaviour.</span></div> <a href="#deep-modules">More</a></li>
+      <li value="5"><div><strong>Design interfaces so the most common use is the simplest.</strong> <span class="gloss">What most callers want should need the least code and the least knowledge.</span></div> <a href="#deep-modules">More</a></li>
+      <li value="6"><div><strong>A simple interface matters more than a simple implementation.</strong> <span class="gloss">Do the hard part once, inside the module, so every caller is spared it.</span></div> <a href="#pull-down">More</a></li>
+      <li value="7"><div><strong>General-purpose modules are deeper.</strong> <span class="gloss">An interface that is not tied to one caller is usually smaller and cleaner.</span></div> <a href="#general-purpose">More</a></li>
+      <li value="8"><div><strong>Keep general-purpose and special-purpose code apart.</strong> <span class="gloss">Do not let one particular use leak into a shared tool.</span></div> <a href="#together-apart">More</a></li>
+      <li value="9"><div><strong>Neighbouring layers should offer different abstractions.</strong> <span class="gloss">Each layer should change the way you think about the problem.</span></div> <a href="#layers">More</a></li>
+      <li value="10"><div><strong>Pull complexity down into the module.</strong> <span class="gloss">Do not hand callers a setting or an error the module could deal with itself.</span></div> <a href="#pull-down">More</a></li>
+    </ol>
+    <h4>Errors and design process</h4>
+    <ol class="plist" start="11">
+      <li value="11"><div><strong>Design errors out of existence.</strong> <span class="gloss">Shape the operation so the special case is simply normal behaviour.</span></div> <a href="#define-away">More</a></li>
+      <li value="12"><div><strong>Design it twice.</strong> <span class="gloss">Sketch at least two quite different designs and compare them before choosing.</span></div> <a href="#design-twice">More</a></li>
+    </ol>
+    <h4>Making code readable</h4>
+    <ol class="plist" start="13">
+      <li value="13"><div><strong>Comments should say what is not obvious from the code.</strong> <span class="gloss">Write down intent, units, limits and reasons. Do not repeat the code.</span></div> <a href="#comments">More</a></li>
+      <li value="14"><div><strong>Design for ease of reading, not ease of writing.</strong> <span class="gloss">Code is read far more often than it is written.</span></div> <a href="#obvious">More</a></li>
+    </ol>
+    <h4>The big picture</h4>
+    <ol class="plist" start="15">
+      <li value="15"><div><strong>Build in units of abstraction, not units of feature.</strong> <span class="gloss">Grow the system by adding clean general pieces, not by bolting on one feature at a time.</span></div> <a href="#agility">More</a></li>
+      <li value="16"><div><strong>Separate what matters from what does not, and emphasise what matters.</strong> <span class="gloss">Make the important things prominent and hide the rest.</span></div> <a href="#what-matters">More</a></li>
     </ol>
   </div>
 
   <div class="idea" id="pp-tips">
     <h3>The 100 tips, in plain words <span class="src pp">PP</span></h3>
-    <div class="tablewrap"><table>
-      <thead><tr><th>Tips</th><th>Theme</th><th>In plain words</th></tr></thead>
-      <tbody>
-        <tr><td class="num">1 to 2</td><td>Craft</td><td>1 Care about the quality of what you build. 2 Think about what you are doing; never work on autopilot.</td></tr>
-        <tr><td class="num">3 to 4</td><td><a href="#responsibility">Ownership</a></td><td>3 You can change your situation. 4 Bring options, not excuses.</td></tr>
-        <tr><td class="num">5 to 7</td><td><a href="#gradual-change">Slow change</a></td><td>5 Fix small flaws when you find them. 6 Start change with something small that works. 7 Keep the big picture in view.</td></tr>
-        <tr><td class="num">8</td><td><a href="#good-enough">Good enough</a></td><td>8 Agree the level of quality with the users.</td></tr>
-        <tr><td class="num">9 to 10</td><td><a href="#knowledge">Learning</a></td><td>9 Learn on a regular schedule. 10 Question what you read and hear.</td></tr>
-        <tr><td class="num">11 to 13</td><td><a href="#communicate">Communication</a></td><td>11 Treat writing with the same care as code. 12 How you say it matters as much as what you say. 13 Build documentation in; keep it with the code.</td></tr>
-        <tr><td class="num">14</td><td><a href="#etc">Easier to change</a></td><td>14 A good design is one that is easier to change.</td></tr>
-        <tr><td class="num">15 to 16</td><td><a href="#dry">DRY</a></td><td>15 State each piece of knowledge once. 16 Make existing code easy to find and reuse.</td></tr>
-        <tr><td class="num">17</td><td><a href="#orthogonality">Orthogonality</a></td><td>17 Unrelated things should not affect each other.</td></tr>
-        <tr><td class="num">18 to 19</td><td><a href="#reversibility">Reversibility</a></td><td>18 No decision is final. 19 Do not choose technology by fashion.</td></tr>
-        <tr><td class="num">20 to 21</td><td><a href="#tracer-bullets">Feedback</a></td><td>20 Build a thin end-to-end slice first. 21 Prototype to learn, then throw it away.</td></tr>
-        <tr><td class="num">22</td><td><a href="#domain-language">Domain</a></td><td>22 Write code in the words of the problem.</td></tr>
-        <tr><td class="num">23 to 24</td><td><a href="#estimating">Estimating</a></td><td>23 Estimate before you commit. 24 Revise the schedule after each iteration.</td></tr>
-        <tr><td class="num">25 to 28</td><td><a href="#basic-tools">Tools</a></td><td>25 Keep knowledge in plain text. 26 Learn the command line. 27 Become fluent in your editor. 28 Always use version control.</td></tr>
-        <tr><td class="num">29 to 34</td><td><a href="#debugging">Debugging</a></td><td>29 Fix the problem, not the blame. 30 Stay calm. 31 Write a failing test before the fix. 32 Read the error message. 33 Suspect your own code before the platform. 34 Prove it; do not assume it.</td></tr>
-        <tr><td class="num">35</td><td><a href="#basic-tools">Tools</a></td><td>35 Learn a scripting language for working with text.</td></tr>
-        <tr><td class="num">36 to 39</td><td><a href="#errors">Defensive code</a></td><td>36 Perfect software does not exist. 37 Design with contracts. 38 Crash early. 39 Add checks for what "cannot happen".</td></tr>
-        <tr><td class="num">40 to 41</td><td><a href="#resources">Resources</a></td><td>40 Whoever opens a resource closes it. 41 Keep a resource's life within a small block.</td></tr>
-        <tr><td class="num">42 to 43</td><td><a href="#small-steps">Small steps</a></td><td>42 Always take small steps. 43 Do not try to predict the future.</td></tr>
-        <tr><td class="num">44 to 48</td><td><a href="#tell-dont-ask">Decoupling</a></td><td>44 Decoupled code is easier to change. 45 Tell objects what to do; do not ask for their data. 46 Do not chain calls through objects. 47 Avoid global data. 48 If something must be global, wrap it in an API.</td></tr>
-        <tr><td class="num">49 to 50</td><td><a href="#pipelines">Transformations</a></td><td>49 Programs exist to transform data. 50 Pass state along; do not hoard it inside objects.</td></tr>
-        <tr><td class="num">51 to 54</td><td><a href="#inheritance">Inheritance</a></td><td>51 Avoid inheriting implementation. 52 Use interfaces to say things can be treated alike. 53 Delegate: "has a" beats "is a". 54 Share functions with mixins.</td></tr>
-        <tr><td class="num">55</td><td><a href="#configuration">Configuration</a></td><td>55 Keep environment-specific values outside the code.</td></tr>
-        <tr><td class="num">56 to 60</td><td><a href="#concurrency">Concurrency</a></td><td>56 Study the workflow to find what can overlap. 57 Shared changeable state cannot be trusted. 58 Random failures often mean concurrency bugs. 59 Use actors to avoid shared state. 60 Use a blackboard to coordinate loosely ordered work.</td></tr>
-        <tr><td class="num">61</td><td><a href="#puzzles">Instinct</a></td><td>61 When the work feels wrong, stop and find out why.</td></tr>
-        <tr><td class="num">62</td><td><a href="#coincidence">Deliberate code</a></td><td>62 Do not rely on things that only happen to work.</td></tr>
-        <tr><td class="num">63 to 64</td><td><a href="#algorithm-speed">Speed</a></td><td>63 Know roughly how your code's cost grows. 64 Check that estimate by measuring.</td></tr>
-        <tr><td class="num">65</td><td><a href="#refactoring">Refactoring</a></td><td>65 Improve structure early and often.</td></tr>
-        <tr><td class="num">66 to 70</td><td><a href="#testing">Testing</a></td><td>66 Testing is mainly about design feedback. 67 A test is your code's first user. 68 Build end to end. 69 Design code to be testable. 70 If you do not test it, your users will.</td></tr>
-        <tr><td class="num">71</td><td><a href="#testing">Testing</a></td><td>71 Use generated inputs to check rules that must always hold.</td></tr>
-        <tr><td class="num">72 to 73</td><td><a href="#security">Security</a></td><td>72 Keep it simple and keep entry points few. 73 Apply security updates quickly.</td></tr>
-        <tr><td class="num">74</td><td><a href="#naming">Naming</a></td><td>74 Name well, and rename when the meaning changes.</td></tr>
-        <tr><td class="num">75 to 80</td><td><a href="#requirements">Requirements</a></td><td>75 Nobody knows exactly what they want. 76 Your job is to help them find out. 77 Requirements are learned through feedback. 78 Work alongside users to think like them. 79 Treat business policy as data. 80 Keep a project glossary.</td></tr>
-        <tr><td class="num">81</td><td><a href="#puzzles">Hard problems</a></td><td>81 Find the real constraints.</td></tr>
-        <tr><td class="num">82 to 86</td><td><a href="#teams">Teams</a></td><td>82 Do not code alone. 83 Agile describes how you work; it is not a product. 84 Keep teams small and stable. 85 Schedule improvement work or it will not happen. 86 Give one team every skill it needs to deliver.</td></tr>
-        <tr><td class="num">87 to 88</td><td><a href="#agility">Method</a></td><td>87 Do what works, not what is fashionable. 88 Be able to deliver whenever users need it.</td></tr>
-        <tr><td class="num">89 to 95</td><td><a href="#starter-kit">Starter kit</a></td><td>89 Let version control drive builds, tests and releases. 90 Test early, often and automatically. 91 Not done until the tests pass. 92 Break code on purpose to test your tests. 93 Cover states, not lines. 94 Find each bug once. 95 No manual procedures.</td></tr>
-        <tr><td class="num">96 to 97</td><td><a href="#requirements">Users and pride</a></td><td>96 Aim to solve the user's problem, not only to ship code. 97 Do work you would sign.</td></tr>
-        <tr><td class="num">98 to 100</td><td><a href="#ethics">Ethics</a></td><td>98 First, do no harm. 99 Do not help build harmful things. 100 It is your life: build something good, and enjoy it.</td></tr>
-      </tbody>
-    </table></div>
+    <div class="filter">
+      <input id="tipFilter" type="search" placeholder="Filter the tips, for example: test" aria-label="Filter the tips">
+      <span class="count" id="tipCount"></span>
+    </div>
+    <div class="tipgrid" id="tipGrid">
+      <div class="tipgroup">
+        <h4>Craft <span>Tips 1 to 2</span></h4>
+        <ol class="tips" start="1">
+          <li value="1">Care about the quality of what you build.</li>
+          <li value="2">Think about what you are doing; never work on autopilot.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#responsibility">Ownership</a> <span>Tips 3 to 4</span></h4>
+        <ol class="tips" start="3">
+          <li value="3">You can change your situation.</li>
+          <li value="4">Bring options, not excuses.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#gradual-change">Slow change</a> <span>Tips 5 to 7</span></h4>
+        <ol class="tips" start="5">
+          <li value="5">Fix small flaws when you find them.</li>
+          <li value="6">Start change with something small that works.</li>
+          <li value="7">Keep the big picture in view.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#good-enough">Good enough</a> <span>Tip 8</span></h4>
+        <ol class="tips" start="8">
+          <li value="8">Agree the level of quality with the users.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#knowledge">Learning</a> <span>Tips 9 to 10</span></h4>
+        <ol class="tips" start="9">
+          <li value="9">Learn on a regular schedule.</li>
+          <li value="10">Question what you read and hear.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#communicate">Communication</a> <span>Tips 11 to 13</span></h4>
+        <ol class="tips" start="11">
+          <li value="11">Treat writing with the same care as code.</li>
+          <li value="12">How you say it matters as much as what you say.</li>
+          <li value="13">Build documentation in; keep it with the code.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#etc">Easier to change</a> <span>Tip 14</span></h4>
+        <ol class="tips" start="14">
+          <li value="14">A good design is one that is easier to change.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#dry">DRY</a> <span>Tips 15 to 16</span></h4>
+        <ol class="tips" start="15">
+          <li value="15">State each piece of knowledge once.</li>
+          <li value="16">Make existing code easy to find and reuse.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#orthogonality">Orthogonality</a> <span>Tip 17</span></h4>
+        <ol class="tips" start="17">
+          <li value="17">Unrelated things should not affect each other.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#reversibility">Reversibility</a> <span>Tips 18 to 19</span></h4>
+        <ol class="tips" start="18">
+          <li value="18">No decision is final.</li>
+          <li value="19">Do not choose technology by fashion.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#tracer-bullets">Feedback</a> <span>Tips 20 to 21</span></h4>
+        <ol class="tips" start="20">
+          <li value="20">Build a thin end-to-end slice first.</li>
+          <li value="21">Prototype to learn, then throw it away.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#domain-language">Domain</a> <span>Tip 22</span></h4>
+        <ol class="tips" start="22">
+          <li value="22">Write code in the words of the problem.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#estimating">Estimating</a> <span>Tips 23 to 24</span></h4>
+        <ol class="tips" start="23">
+          <li value="23">Estimate before you commit.</li>
+          <li value="24">Revise the schedule after each iteration.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#basic-tools">Tools</a> <span>Tips 25 to 28</span></h4>
+        <ol class="tips" start="25">
+          <li value="25">Keep knowledge in plain text.</li>
+          <li value="26">Learn the command line.</li>
+          <li value="27">Become fluent in your editor.</li>
+          <li value="28">Always use version control.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#debugging">Debugging</a> <span>Tips 29 to 34</span></h4>
+        <ol class="tips" start="29">
+          <li value="29">Fix the problem, not the blame.</li>
+          <li value="30">Stay calm.</li>
+          <li value="31">Write a failing test before the fix.</li>
+          <li value="32">Read the error message.</li>
+          <li value="33">Suspect your own code before the platform.</li>
+          <li value="34">Prove it; do not assume it.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#basic-tools">Tools</a> <span>Tip 35</span></h4>
+        <ol class="tips" start="35">
+          <li value="35">Learn a scripting language for working with text.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#errors">Defensive code</a> <span>Tips 36 to 39</span></h4>
+        <ol class="tips" start="36">
+          <li value="36">Perfect software does not exist.</li>
+          <li value="37">Design with contracts.</li>
+          <li value="38">Crash early.</li>
+          <li value="39">Add checks for what "cannot happen".</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#resources">Resources</a> <span>Tips 40 to 41</span></h4>
+        <ol class="tips" start="40">
+          <li value="40">Whoever opens a resource closes it.</li>
+          <li value="41">Keep a resource's life within a small block.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#small-steps">Small steps</a> <span>Tips 42 to 43</span></h4>
+        <ol class="tips" start="42">
+          <li value="42">Always take small steps.</li>
+          <li value="43">Do not try to predict the future.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#tell-dont-ask">Decoupling</a> <span>Tips 44 to 48</span></h4>
+        <ol class="tips" start="44">
+          <li value="44">Decoupled code is easier to change.</li>
+          <li value="45">Tell objects what to do; do not ask for their data.</li>
+          <li value="46">Do not chain calls through objects.</li>
+          <li value="47">Avoid global data.</li>
+          <li value="48">If something must be global, wrap it in an API.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#pipelines">Transformations</a> <span>Tips 49 to 50</span></h4>
+        <ol class="tips" start="49">
+          <li value="49">Programs exist to transform data.</li>
+          <li value="50">Pass state along; do not hoard it inside objects.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#inheritance">Inheritance</a> <span>Tips 51 to 54</span></h4>
+        <ol class="tips" start="51">
+          <li value="51">Avoid inheriting implementation.</li>
+          <li value="52">Use interfaces to say things can be treated alike.</li>
+          <li value="53">Delegate: "has a" beats "is a".</li>
+          <li value="54">Share functions with mixins.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#configuration">Configuration</a> <span>Tip 55</span></h4>
+        <ol class="tips" start="55">
+          <li value="55">Keep environment-specific values outside the code.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#concurrency">Concurrency</a> <span>Tips 56 to 60</span></h4>
+        <ol class="tips" start="56">
+          <li value="56">Study the workflow to find what can overlap.</li>
+          <li value="57">Shared changeable state cannot be trusted.</li>
+          <li value="58">Random failures often mean concurrency bugs.</li>
+          <li value="59">Use actors to avoid shared state.</li>
+          <li value="60">Use a blackboard to coordinate loosely ordered work.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#puzzles">Instinct</a> <span>Tip 61</span></h4>
+        <ol class="tips" start="61">
+          <li value="61">When the work feels wrong, stop and find out why.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#coincidence">Deliberate code</a> <span>Tip 62</span></h4>
+        <ol class="tips" start="62">
+          <li value="62">Do not rely on things that only happen to work.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#algorithm-speed">Speed</a> <span>Tips 63 to 64</span></h4>
+        <ol class="tips" start="63">
+          <li value="63">Know roughly how your code's cost grows.</li>
+          <li value="64">Check that estimate by measuring.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#refactoring">Refactoring</a> <span>Tip 65</span></h4>
+        <ol class="tips" start="65">
+          <li value="65">Improve structure early and often.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#testing">Testing</a> <span>Tips 66 to 71</span></h4>
+        <ol class="tips" start="66">
+          <li value="66">Testing is mainly about design feedback.</li>
+          <li value="67">A test is your code's first user.</li>
+          <li value="68">Build end to end.</li>
+          <li value="69">Design code to be testable.</li>
+          <li value="70">If you do not test it, your users will.</li>
+          <li value="71">Use generated inputs to check rules that must always hold.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#security">Security</a> <span>Tips 72 to 73</span></h4>
+        <ol class="tips" start="72">
+          <li value="72">Keep it simple and keep entry points few.</li>
+          <li value="73">Apply security updates quickly.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#naming">Naming</a> <span>Tip 74</span></h4>
+        <ol class="tips" start="74">
+          <li value="74">Name well, and rename when the meaning changes.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#requirements">Requirements</a> <span>Tips 75 to 80</span></h4>
+        <ol class="tips" start="75">
+          <li value="75">Nobody knows exactly what they want.</li>
+          <li value="76">Your job is to help them find out.</li>
+          <li value="77">Requirements are learned through feedback.</li>
+          <li value="78">Work alongside users to think like them.</li>
+          <li value="79">Treat business policy as data.</li>
+          <li value="80">Keep a project glossary.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#puzzles">Hard problems</a> <span>Tip 81</span></h4>
+        <ol class="tips" start="81">
+          <li value="81">Find the real constraints.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#teams">Teams</a> <span>Tips 82 to 86</span></h4>
+        <ol class="tips" start="82">
+          <li value="82">Do not code alone.</li>
+          <li value="83">Agile describes how you work; it is not a product.</li>
+          <li value="84">Keep teams small and stable.</li>
+          <li value="85">Schedule improvement work or it will not happen.</li>
+          <li value="86">Give one team every skill it needs to deliver.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#agility">Method</a> <span>Tips 87 to 88</span></h4>
+        <ol class="tips" start="87">
+          <li value="87">Do what works, not what is fashionable.</li>
+          <li value="88">Be able to deliver whenever users need it.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#starter-kit">Starter kit</a> <span>Tips 89 to 95</span></h4>
+        <ol class="tips" start="89">
+          <li value="89">Let version control drive builds, tests and releases.</li>
+          <li value="90">Test early, often and automatically.</li>
+          <li value="91">Not done until the tests pass.</li>
+          <li value="92">Break code on purpose to test your tests.</li>
+          <li value="93">Cover states, not lines.</li>
+          <li value="94">Find each bug once.</li>
+          <li value="95">No manual procedures.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#requirements">Users and pride</a> <span>Tips 96 to 97</span></h4>
+        <ol class="tips" start="96">
+          <li value="96">Aim to solve the user's problem, not only to ship code.</li>
+          <li value="97">Do work you would sign.</li>
+        </ol>
+      </div>
+      <div class="tipgroup">
+        <h4><a href="#ethics">Ethics</a> <span>Tips 98 to 100</span></h4>
+        <ol class="tips" start="98">
+          <li value="98">First, do no harm.</li>
+          <li value="99">Do not help build harmful things.</li>
+          <li value="100">It is your life: build something good, and enjoy it.</li>
+        </ol>
+      </div>
+    </div>
+    <p class="nomatch" id="tipNone" hidden>No tip matches that filter.</p>
   </div>
 </section>
 
@@ -2364,36 +3099,45 @@ def next_state(state, event):
   <div class="part-head">
     <div class="part-num">Quick reference</div>
     <h2>Glossary</h2>
+    <p>Every special term used in this guide, in plain words. Each card links to the place where the idea is explained.</p>
   </div>
-  <div class="tablewrap"><table>
-    <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><strong>Abstraction</strong></td><td>A simplified view of something that leaves out details you do not need.</td></tr>
-      <tr><td><strong>Assertion</strong></td><td>A check in code for something that should always be true. Failing it means there is a bug.</td></tr>
-      <tr><td><strong>Change amplification</strong></td><td>One simple change needs edits in many places.</td></tr>
-      <tr><td><strong>Cognitive load</strong></td><td>How much you must hold in your head to do a task.</td></tr>
-      <tr><td><strong>Cohesion</strong></td><td>How well the contents of a module belong together around one purpose.</td></tr>
-      <tr><td><strong>Coupling</strong></td><td>A dependency between two pieces of code, so that they tend to change together.</td></tr>
-      <tr><td><strong>Deep module</strong></td><td>A module with a simple interface and a lot of behaviour behind it.</td></tr>
-      <tr><td><strong>Design by contract</strong></td><td>Stating what a function requires, what it guarantees and what stays true.</td></tr>
-      <tr><td><strong>DRY</strong></td><td>Don't Repeat Yourself. Each piece of knowledge has one home.</td></tr>
-      <tr><td><strong>ETC</strong></td><td>Easier To Change. The test for choosing between designs.</td></tr>
-      <tr><td><strong>Information hiding</strong></td><td>Keeping a design decision inside one module so others do not depend on it.</td></tr>
-      <tr><td><strong>Information leakage</strong></td><td>The same design decision known in more than one module.</td></tr>
-      <tr><td><strong>Interface</strong></td><td>Everything a user of a module must know to use it, including what only comments can say.</td></tr>
-      <tr><td><strong>Invariant</strong></td><td>Something that is always true, such as "this list is never empty".</td></tr>
-      <tr><td><strong>Orthogonal</strong></td><td>Independent. Changing one does not affect the other.</td></tr>
-      <tr><td><strong>Precondition / postcondition</strong></td><td>What must be true before a call / what the function guarantees after it.</td></tr>
-      <tr><td><strong>Prototype</strong></td><td>A throw-away experiment built to answer one question.</td></tr>
-      <tr><td><strong>Refactoring</strong></td><td>Changing the structure of code without changing what it does.</td></tr>
-      <tr><td><strong>Shallow module</strong></td><td>A module whose interface is nearly as complicated as what it hides.</td></tr>
-      <tr><td><strong>Strategic / tactical programming</strong></td><td>Investing in the design as you go / only getting the current task working.</td></tr>
-      <tr><td><strong>Temporal coupling</strong></td><td>A dependency on order in time, such as "call A before B".</td></tr>
-      <tr><td><strong>Temporal decomposition</strong></td><td>Splitting code by the order things happen, which tends to duplicate knowledge.</td></tr>
-      <tr><td><strong>Tracer bullet</strong></td><td>A thin, real, end-to-end slice of a system, built first and kept.</td></tr>
-      <tr><td><strong>Unknown unknown</strong></td><td>Something you need to know to make a change safely, with nothing to tell you it exists.</td></tr>
-    </tbody>
-  </table></div>
+  <div class="filter">
+    <input id="termFilter" type="search" placeholder="Filter the terms, for example: module" aria-label="Filter the glossary">
+    <span class="count" id="termCount"></span>
+  </div>
+  <dl class="gloss-list" id="termList">
+    <div class="term"><dt>Abstraction</dt><dd>A simplified view of something that leaves out details you do not need. <a href="#deep-modules">Deep modules</a></dd></div>
+    <div class="term"><dt>Aggregate (errors)</dt><dd>Let many kinds of failure travel up to one handler near the top of the program, which deals with them all the same way. <a href="#error-decision">Which kind of problem</a></dd></div>
+    <div class="term"><dt>Assertion</dt><dd>A check in code for something that should always be true. Failing it means there is a bug. <a href="#assertions">Assertions</a></dd></div>
+    <div class="term"><dt>Bisect</dt><dd>Cut in two. Find a fault by testing the middle of the range and throwing away the half that cannot contain it, again and again. <a href="#debugging">Debugging</a></dd></div>
+    <div class="term"><dt>Change amplification</dt><dd>One simple change needs edits in many places. <a href="#complexity-symptoms">Symptoms</a></dd></div>
+    <div class="term"><dt>Cognitive load</dt><dd>How much you must hold in your head to do a task. <a href="#complexity-symptoms">Symptoms</a></dd></div>
+    <div class="term"><dt>Cohesion</dt><dd>How well the contents of a module belong together around one purpose. <a href="#together-apart">Together or apart</a></dd></div>
+    <div class="term"><dt>Context object</dt><dd>One object that holds system-wide settings and shared services, so they need not be passed down through every function. <a href="#layers">Layers</a></dd></div>
+    <div class="term"><dt>Coupling</dt><dd>A dependency between two pieces of code, so that they tend to change together. <a href="#decoupling">Decoupling</a></dd></div>
+    <div class="term"><dt>Deep module</dt><dd>A module with a simple interface and a lot of behaviour behind it. <a href="#deep-modules">Deep modules</a></dd></div>
+    <div class="term"><dt>Design by contract</dt><dd>Stating what a function requires, what it guarantees and what stays true. <a href="#contracts">Contracts</a></dd></div>
+    <div class="term"><dt>DRY</dt><dd>Don't Repeat Yourself. Each piece of knowledge has one home. <a href="#dry">DRY</a></dd></div>
+    <div class="term"><dt>ETC</dt><dd>Easier To Change. The test for choosing between designs. <a href="#etc">Easier to change</a></dd></div>
+    <div class="term"><dt>Information hiding</dt><dd>Keeping a design decision inside one module so others do not depend on it. <a href="#information-hiding">Information hiding</a></dd></div>
+    <div class="term"><dt>Information leakage</dt><dd>The same design decision known in more than one module. <a href="#information-hiding">Information hiding</a></dd></div>
+    <div class="term"><dt>Interface</dt><dd>Everything a user of a module must know to use it, including what only comments can say. <a href="#deep-modules">Deep modules</a></dd></div>
+    <div class="term"><dt>Invariant</dt><dd>Something that is always true, such as &quot;this list is never empty&quot;. <a href="#contracts">Contracts</a></dd></div>
+    <div class="term"><dt>Layer</dt><dd>One level in a stack of code, where each level calls the one below it. <a href="#layers">Layers</a></dd></div>
+    <div class="term"><dt>Mask (errors)</dt><dd>Recover from a failure low down, where it happens, so the calling code never finds out. <a href="#error-decision">Which kind of problem</a></dd></div>
+    <div class="term"><dt>Orthogonal</dt><dd>Independent. Changing one does not affect the other. <a href="#orthogonality">Orthogonality</a></dd></div>
+    <div class="term"><dt>Pass-through method</dt><dd>A method that only hands its arguments to another method and adds nothing. <a href="#layers">Layers</a></dd></div>
+    <div class="term"><dt>Precondition / postcondition</dt><dd>What must be true before a call / what the function guarantees after it. <a href="#contracts">Contracts</a></dd></div>
+    <div class="term"><dt>Prototype</dt><dd>A throw-away experiment built to answer one question. <a href="#prototypes">Prototypes</a></dd></div>
+    <div class="term"><dt>Refactoring</dt><dd>Changing the structure of code without changing what it does. <a href="#refactoring">Refactoring</a></dd></div>
+    <div class="term"><dt>Shallow module</dt><dd>A module whose interface is nearly as complicated as what it hides. <a href="#deep-modules">Deep modules</a></dd></div>
+    <div class="term"><dt>Strategic / tactical programming</dt><dd>Investing in the design as you go / only getting the current task working. <a href="#strategic">Strategic programming</a></dd></div>
+    <div class="term"><dt>Temporal coupling</dt><dd>A dependency on order in time, such as &quot;call A before B&quot;. <a href="#temporal-coupling">Temporal coupling</a></dd></div>
+    <div class="term"><dt>Temporal decomposition</dt><dd>Splitting code by the order things happen, which tends to duplicate knowledge. <a href="#information-hiding">Information hiding</a></dd></div>
+    <div class="term"><dt>Tracer bullet</dt><dd>A thin, real, end-to-end slice of a system, built first and kept. <a href="#tracer-bullets">Tracer bullets</a></dd></div>
+    <div class="term"><dt>Unknown unknown</dt><dd>Something you need to know to make a change safely, with nothing to tell you it exists. <a href="#complexity-symptoms">Symptoms</a></dd></div>
+  </dl>
+  <p class="nomatch" id="termNone" hidden>No term matches that filter.</p>
 </section>
 
 <footer>
@@ -2483,6 +3227,40 @@ def next_state(state, event):
   }
   filterBox.addEventListener("input", applyFilter);
   applyFilter();
+
+  // ---- Filters for the tips and the glossary ------------------------------
+  // Both lists work the same way: hide the entries that do not contain every
+  // typed word, hide a group card once all of its entries are hidden, and say
+  // how many are left.
+  function wireListFilter(inputId, countId, emptyId, entrySelector, groupSelector, noun) {
+    var input = document.getElementById(inputId);
+    var count = document.getElementById(countId);
+    var emptyNote = document.getElementById(emptyId);
+    var entries = Array.prototype.slice.call(document.querySelectorAll(entrySelector));
+    var groups = groupSelector ? Array.prototype.slice.call(document.querySelectorAll(groupSelector)) : [];
+    function apply() {
+      var words = input.value.toLowerCase().split(/\s+/).filter(Boolean);
+      var shown = 0;
+      entries.forEach(function (entry) {
+        // A tip also matches on its theme, so "testing" finds the whole card.
+        var group = groupSelector ? entry.closest(groupSelector) : null;
+        var heading = group ? group.querySelector("h4").textContent : "";
+        var text = (entry.textContent + " " + heading).toLowerCase();
+        var matches = words.every(function (word) { return text.indexOf(word) !== -1; });
+        entry.hidden = !matches;
+        if (matches) { shown += 1; }
+      });
+      groups.forEach(function (group) {
+        group.hidden = group.querySelectorAll("li:not([hidden])").length === 0;
+      });
+      count.textContent = shown + " of " + entries.length + " " + noun + " shown";
+      emptyNote.hidden = shown !== 0;
+    }
+    input.addEventListener("input", apply);
+    apply();
+  }
+  wireListFilter("tipFilter", "tipCount", "tipNone", "#tipGrid li", ".tipgroup", "tips");
+  wireListFilter("termFilter", "termCount", "termNone", "#termList .term", null, "terms");
 })();
 </script>
 </body>
