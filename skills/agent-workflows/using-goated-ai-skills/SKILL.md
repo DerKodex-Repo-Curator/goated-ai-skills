@@ -74,7 +74,7 @@ skill map, approval, evidence, checkpoint, and route-line rules in this file.
 
 | Gate | Select when | Skills |
 | --- | --- | --- |
-| Proportional orientation | Always; near-zero ceremony for fresh tiny work | `session-start-progressive-disclosure` only for full orientation |
+| Proportional orientation | Always; near-zero ceremony for fresh tiny work | `session-start-progressive-disclosure` |
 | Clarification or diagnosis | Intent or root cause materially blocks action | `grill-with-docs`; `diagnose` for failures |
 | External research | Current external claims need cited, freshness-aware evidence | `source-grounded-research` |
 | Knowledge retrieval | Durable project knowledge must answer a question, especially when authority, freshness, conflict, or provenance matters | `knowledge-retrieval` |
@@ -157,14 +157,12 @@ End routing with one route line, on its own line, outside code blocks:
 - `goated-route: direct` for tiny work that needs no specialist skill;
 - `goated-route: <lightweight|standard|full> | requires: <skill>, <skill>`
   when the listed specialist skills must load before the first write;
-- `goated-route: continue` on a later prompt that continues the current task
-  and keeps its route and `requires:` list.
+- `goated-route: continue` when a later prompt continues the current task and
+  its route.
 
-Keywords are lowercase, skills use their installed kebab-case names, the list
-is non-empty with no duplicates, and the line has no trailing text. When a
-checkpoint changes the required skills, write a new route line; the last one
-wins. The line is the same in standalone use; in an integrated install,
-`stack/fixtures/markers/README.md` fixes its exact grammar.
+Use lowercase keywords and installed skill names, list each skill once, and
+add no trailing text. A checkpoint that changes the required skills writes a
+new route line; the last one wins.
 
 ## Delegation
 

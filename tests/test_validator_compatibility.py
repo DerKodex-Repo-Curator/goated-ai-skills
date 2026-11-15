@@ -124,7 +124,7 @@ EXPECTED_SUCCESS_OUTPUT = "\n".join(
         "Wayfinding fixture validation passed for 10 scenarios.",
         "Route-and-skip-line marker fixture validation passed for 1 scenarios.",
         (
-            "Word-budget report: shared policy 1197 words "
+            "Word-budget report: shared policy 1196 words "
             "(within 800-1,200 target)."
         ),
         (
@@ -502,7 +502,7 @@ class RegistryConcernValidationTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
         self.assertEqual(catalog_count, 40)
-        self.assertEqual(policy_words, 1197)
+        self.assertEqual(policy_words, 1196)
         self.assertIn(
             "skills/engineering/tdd/SKILL.md",
             over_budget_paths,

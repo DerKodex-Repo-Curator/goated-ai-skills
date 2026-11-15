@@ -108,9 +108,9 @@ Use the registry for cross-skill metadata and the installed
 `using-goated-ai-skills` skill for route selection; it ends routing with a
 `goated-route:` line. Select only justified required and conditional gates.
 
-When an expected skill does not apply, write a justified-skip line,
-`goated-skip: <skill>: <reason>`, on its own line for each skill. The reason
-must be specific to the current action, never a placeholder.
+When the route line or a framework hold names a skill that does not apply,
+write `goated-skip: <skill>: <reason>` on its own line with an action-specific
+reason. Omit ceremonial skip reports.
 
 Re-evaluate the route at controlled checkpoints:
 
@@ -132,7 +132,8 @@ intensity; rapid never exceeds three tightly related questions. Reuse fresh
 evidence before asking discoverable facts. Provisional defaults may advance
 reversible low-risk choices, but irreversible or high-risk decisions require
 explicit human input. Deep-dive follows the material decision tree with
-periodic summaries of settled, provisional, and open decisions. Route to a
+periodic summaries of settled, provisional, deferred, and conflicting
+decisions. Route to a
 disposable prototype only when it can produce evidence that improves a live
 decision, never as production work.
 
