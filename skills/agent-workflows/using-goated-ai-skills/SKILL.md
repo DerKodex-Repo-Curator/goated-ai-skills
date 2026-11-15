@@ -82,6 +82,7 @@ skill map, approval, evidence, checkpoint, and route-line rules in this file.
 | Spec, architecture, or tickets | Durable intent, module strategy, or multiple resumable slices must be settled | `write-a-spec`, `design-codebase-architecture`, `spec-to-tickets` |
 | Writing plan | A scoped task still needs executable steps | `writing-plans` |
 | TDD or equivalent proof | Behavior, a public interface, or regression risk changes | `tdd` |
+| Design principles | A module, interface, abstraction, error path, or configuration surface is designed, changed, or reviewed | `software-design-principles` |
 | Standards/spec review | Diff size, risk, acceptance, scope, or convention uncertainty warrants specialist review | `standards-and-spec-review` |
 | Security review | A trust boundary changes or auth, permissions, secrets, private data, persistence policy, execution, dependency, deployment, or another sensitive surface is affected | `code-security-review` |
 | Documentation sync | Durable behavior, interfaces, configuration, architecture, or operator expectations may drift | `doc-sync` |
@@ -91,11 +92,11 @@ skill map, approval, evidence, checkpoint, and route-line rules in this file.
    - Load full orientation only for unfamiliar, cross-area, stale, or
      boundary-uncertain work; load code refinement only for observed debt or
      explicit cleanup.
-   - Other specialists load on their own triggers: `software-design-principles`
-     for design work, `documentation-writer` or `documentation-cleanup` when
-     docs are the work, `goated-prompt` for prompt work, `prototype` for cheap
-     evidence, and `setup-scribe` for setup knowledge. When a named skill is
-     not installed, apply the gate directly and leave it out of `requires:`.
+   - Other specialists load on their own triggers: `documentation-writer` or
+     `documentation-cleanup` when docs are the work, `goated-prompt` for
+     prompt work, `prototype` for cheap evidence, and `setup-scribe` for setup
+     knowledge. When a named skill is not installed, apply the gate directly
+     and leave it out of `requires:`.
    - Wayfinder is not a synonym for large work. Reject it for session-sized
      discussion and for implementation whose decisions are already settled.
      Its chart requires approval covering destination, location, visible
