@@ -92,11 +92,10 @@ publication or deployment, protected-branch changes, and expanded scope or reach
 Reuse it only while it covers the same action. Prepare authorized, reviewable
 work before requesting approval for a remaining action.
 
-Honor the approval mode selected by the user or project:
-`confirm-each-write`, `approve-batch`, `standing-session-consent`, or
-`draft-without-applying`. Use risk-adaptive approval as the default when no mode
-is selected. A material scope or action-reach change invalidates consent where
-relevant, regardless of mode.
+Honor the selected approval mode: `confirm-each-write`, `approve-batch`,
+`standing-session-consent`, or `draft-without-applying`; default to
+risk-adaptive approval. A material scope or reach change invalidates consent
+in every mode.
 
 Protect private and restricted data. Do not expose credentials, tokens,
 personal data, client data, or ignored private notes in prompts, logs, tracked
@@ -106,9 +105,12 @@ recoverable operations, and report material deletions and recoverability.
 ## Routing And Checkpoints
 
 Use the registry for cross-skill metadata and the installed
-`using-goated-ai-skills` skill for route selection. Select only justified
-required and conditional gates. Record skipped gates only when the omission is
-meaningful.
+`using-goated-ai-skills` skill for route selection; it ends routing with a
+`goated-route:` line. Select only justified required and conditional gates.
+
+When an expected skill does not apply, write a justified-skip line,
+`goated-skip: <skill>: <reason>`, on its own line for each skill. The reason
+must be specific to the current action, never a placeholder.
 
 Re-evaluate the route at controlled checkpoints:
 
@@ -129,10 +131,10 @@ clarification. Outside deep-dive, derive a soft question budget from workflow
 intensity; rapid never exceeds three tightly related questions. Reuse fresh
 evidence before asking discoverable facts. Provisional defaults may advance
 reversible low-risk choices, but irreversible or high-risk decisions require
-explicit human input. Deep-dive follows the material decision tree and
-periodically summarizes settled, provisional, deferred, and conflicting
-decisions. Route to a disposable prototype only when it can produce evidence
-that improves a live decision, never as production work.
+explicit human input. Deep-dive follows the material decision tree with
+periodic summaries of settled, provisional, and open decisions. Route to a
+disposable prototype only when it can produce evidence that improves a live
+decision, never as production work.
 
 ## Ownership And Delegation
 
@@ -141,8 +143,8 @@ and user communication. Delegate from a concrete task board with owners,
 scopes, dependencies, evidence, review paths, and settled interfaces. Keep
 overlapping writes or dependent work sequential.
 Require delegated work to return inspected paths, commands, evidence,
-assumptions, uncertainty, and status. The main agent reviews and integrates the
-result rather than forwarding it unexamined.
+assumptions, uncertainty, and status; review and integrate it rather than
+forwarding it unexamined.
 
 Remain single-agent-compatible when delegation is unavailable.
 
@@ -166,20 +168,17 @@ high-risk, delegated, multi-surface, or explicitly audited work.
 Load standards/spec review when diff size, risk, acceptance, scope, or
 convention uncertainty warrants it. Load security review for changed trust
 boundaries or sensitive auth, data, persistence, execution, dependency, or
-deployment surfaces. Omit ceremonial skip reports.
-
-Specialists reuse envelope evidence and return findings, classifications,
-proof gaps, or route deltas, not repeated discovery or competing closeouts.
+deployment surfaces.
 
 ## Communication And Closeout
 
 Report decisions, blockers, material scope or risk changes, and long-running
 work concisely. Avoid repeated routes and skill closeouts. The main agent
 produces one final outcome with important changes, proof, and residual risk.
-Specialists return internal deltas unless their artifact schema is itself the
-requested result. Omit empty fields and repeated path or check summaries unless
-omission would mislead. Put the requested artifact or decision before optional
-explanation.
+Specialists reuse envelope evidence and return internal deltas, not repeated
+discovery or closeouts, unless their artifact is itself the requested result.
+Omit empty fields and repeated path or check summaries unless omission would
+mislead. Put the requested artifact or decision before optional explanation.
 
 Continue implementation through the requested behavior, verification, and fixes
 caused by the change. A first implementation is not completion. Respect a

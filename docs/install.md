@@ -129,6 +129,34 @@ If the environment supports repo instructions, use a thin adapter that routes Co
 
 For Claude Code-style workflows, adapt each skill into the supported command, skill, or instruction format for that environment. If a project instruction file is used, keep it short and route to the installed skills.
 
+### Load The Shared Policy In Claude Code
+
+Claude Code applies `CLAUDE.md` files, not `AGENTS.md`, and it applies an
+`@path` import line inside a `CLAUDE.md` as if the imported file were pasted
+there. A plain Markdown link does not load anything. To load the shared policy
+for every project, keep the distribution root somewhere stable, for example
+`~/.claude/goated/` holding `stack/` and `skills/`, and add one import line to
+your user-level `~/.claude/CLAUDE.md`:
+
+```text
+@~/.claude/goated/stack/AGENTS.md
+```
+
+To load it for one project only, put the same line in that project's
+`CLAUDE.md` or `CLAUDE.local.md`, with a path that resolves from that file.
+Claude Code asks once before it applies an import from outside the project;
+approve it.
+
+Claude Code discovers skills from `~/.claude/skills/<skill-name>/SKILL.md` or a
+project's `.claude/skills/<skill-name>/SKILL.md`. Copy each selected skill
+folder there as a flat discovery copy of the distribution, and refresh both
+layouts from the same revision.
+
+Verify the load in a fresh session: the `/memory` command lists the imported
+`stack/AGENTS.md`, or ask the agent to quote the policy's
+`## Routing And Checkpoints` heading without reading the file. If the policy
+is not loaded, the router still runs from its standalone fallback.
+
 Use `agent-instructions-integrator` to help create the correct target-project routing instructions.
 
 ## Hermes Notes

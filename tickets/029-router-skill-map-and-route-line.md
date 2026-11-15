@@ -43,18 +43,18 @@ ticket must land before the adapter.
 
 ## Acceptance Criteria
 
-- [ ] Every gate in the router names its skill or skills. The router stays
+- [x] Every gate in the router names its skill or skills. The router stays
       under 300 lines.
-- [ ] The router's output contract specifies the route line in all three forms,
+- [x] The router's output contract specifies the route line in all three forms,
       with its grammar.
-- [ ] The shared policy defines the skip line, stays within its word target,
+- [x] The shared policy defines the skip line, stays within its word target,
       and says skips need a specific reason.
-- [ ] Fixtures exist for valid and invalid route and skip lines.
-- [ ] The install docs show a working way to load the shared policy in Claude
+- [x] Fixtures exist for valid and invalid route and skip lines.
+- [x] The install docs show a working way to load the shared policy in Claude
       Code.
-- [ ] The router still works standalone without the shared policy, and its
+- [x] The router still works standalone without the shared policy, and its
       compact fallback covers the route line.
-- [ ] The validator, the unit tests, and the context comparison pass.
+- [x] The validator, the unit tests, and the context comparison pass.
 
 ## Expected Proof
 

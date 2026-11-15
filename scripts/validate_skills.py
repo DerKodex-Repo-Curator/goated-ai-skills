@@ -20,6 +20,7 @@ from pathlib import Path
 
 if __package__:
     from .validation import behavior_proof as behavior_proof_validation
+    from .validation import markers as marker_validation
     from .validation import merge_conflicts as merge_conflict_validation
     from .validation import onboarding as onboarding_validation
     from .validation import operations as operations_validation
@@ -35,6 +36,7 @@ if __package__:
     from .validation.shared import Finding
 else:
     from validation import behavior_proof as behavior_proof_validation
+    from validation import markers as marker_validation
     from validation import merge_conflicts as merge_conflict_validation
     from validation import onboarding as onboarding_validation
     from validation import operations as operations_validation
@@ -121,6 +123,9 @@ validate_source_grounded_research_fixtures = (
 validate_setup_scribe_fixtures = operations_validation.validate_setup_scribe_fixtures
 validate_wayfinding_fixtures = operations_validation.validate_wayfinding_fixtures
 
+# The markers module owns the route-line and skip-line reference grammar.
+validate_marker_fixtures = marker_validation.validate_marker_fixtures
+
 
 def validate_skills(repo: Path) -> tuple[list[Finding], list[Finding], list[Finding], int]:
     """Run all validation phases and return grouped findings."""
@@ -146,6 +151,7 @@ def validate_skills(repo: Path) -> tuple[list[Finding], list[Finding], list[Find
     errors.extend(validate_source_grounded_research_fixtures(repo))
     errors.extend(validate_setup_scribe_fixtures(repo))
     errors.extend(validate_wayfinding_fixtures(repo))
+    errors.extend(validate_marker_fixtures(repo))
 
     return (
         errors,
