@@ -74,6 +74,26 @@ class Session:
         )
         return output
 
+    def notify(self, result: str) -> str:
+        """Record a background-task notification, which Claude Code submits as a prompt."""
+
+        self.prompt_id = str(uuid.uuid4())
+        text = (
+            "<task-notification> <task-id>a1</task-id> <status>completed</status> "
+            f"<result>{result}</result> </task-notification>"
+        )
+        output = self.hook("UserPromptSubmit", prompt=text, prompt_id=self.prompt_id)
+        self._append(
+            {
+                "type": "user",
+                "promptSource": "system",
+                "turnOrigin": "task_notification",
+                "origin": {"kind": "task-notification", "producer": "session-task"},
+                "message": {"role": "user", "content": text},
+            }
+        )
+        return output
+
     def say(self, text: str) -> None:
         self._append(
             {

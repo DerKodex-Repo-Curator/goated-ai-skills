@@ -25,14 +25,22 @@ MAX_TURNS = 50
 POLL_SECONDS = 0.03
 
 # Typed-looking user entries that Claude Code writes itself; they never open a
-# turn. Interrupt markers end a turn, and local-command entries wrap slash
-# commands such as /model whose output is not a prompt.
+# turn. Interrupt markers end a turn, local-command entries wrap slash commands
+# such as /model whose output is not a prompt, and task notifications carry a
+# background task's result, which Claude Code submits as a prompt.
 NOT_PROMPT_PREFIXES = (
     "[Request interrupted by user",
     "<local-command-stdout>",
     "<local-command-stderr>",
     "<local-command-caveat>",
+    "<task-notification>",
 )
+
+
+def is_harness_prompt(text: str) -> bool:
+    """True when prompt text was submitted by Claude Code itself, not typed."""
+
+    return text.lstrip().startswith(NOT_PROMPT_PREFIXES)
 
 
 class TranscriptUnreadable(Exception):
@@ -162,6 +170,8 @@ def _opens_turn(entry: dict) -> bool:
         return False
     if entry.get("isSidechain") or entry.get("isMeta") or entry.get("isCompactSummary"):
         return False
+    if (entry.get("origin") or {}).get("kind") == "task-notification":
+        return False
     content = (entry.get("message") or {}).get("content")
     if isinstance(content, str):
         text = content
@@ -173,7 +183,7 @@ def _opens_turn(entry: dict) -> bool:
         )
     else:
         return False
-    return not text.lstrip().startswith(NOT_PROMPT_PREFIXES)
+    return not is_harness_prompt(text)
 
 
 def _build_turn(entries: list[dict], key: str | None = None) -> Turn:

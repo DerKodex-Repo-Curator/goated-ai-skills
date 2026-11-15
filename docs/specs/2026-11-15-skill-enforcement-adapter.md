@@ -284,11 +284,14 @@ Claude Code adapter structure, settled in Ticket 030:
   raw hook input to one function. That function dispatches on
   `hook_event_name`, owns fail-open handling, and is the tests' surface.
 - **Turn reader.** It reads the transcript backward from the end to the latest
-  user prompt or compaction boundary, never crossing a compaction boundary. A
-  turn yields its assistant text, its successful Skill loads, and its route and
-  skip lines. Claude Code writes the transcript asynchronously, so before
-  judging a tool call the reader waits briefly for that call's own `tool_use`
-  entry to appear. If it does not, the hook fails open with a visible warning.
+  user prompt or compaction boundary, never crossing a compaction boundary.
+  Prompts Claude Code submits itself, such as task notifications, do not open a
+  turn and never yield overrides. A turn yields its assistant text, its
+  successful Skill loads, and its route and skip lines. Claude Code writes the
+  transcript asynchronously; in live runs the call being judged appeared 54 to
+  114 ms after its hook started. So the reader waits up to 1.5 seconds for
+  that call's own `tool_use` entry. If it does not appear, the hook fails open
+  with a visible warning.
 - **Task state.** A task starts at the turn whose winning route line is not
   `continue`, and runs through later `continue` turns. Loads and skips count
   for the task they occur in, never for a later task. Per-session state holds

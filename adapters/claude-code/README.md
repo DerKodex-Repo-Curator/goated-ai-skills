@@ -119,6 +119,11 @@ Matching ignores case and harness `<system-reminder>` blocks.
 | `skip routing`, `skip the router`, `no routing` | Stands down `router-first`, `route-line`, and `pipeline` |
 | `skip <skill>`, `skip the <skill> skill` | Stands down the `pipeline` requirement for that skill; `skip using-goated-ai-skills` also stands down `router-first` |
 
+Claude Code also submits some prompts itself, such as the
+`<task-notification>` that reports a finished background task. Those carry
+agent output, so they never yield overrides, and they do not start a new turn:
+the typed prompt's route line and overrides still cover the work that follows.
+
 Claude Code shows a short notice when the adapter records an override. The
 phrase set lives in [`goated_adapter/overrides.py`](goated_adapter/overrides.py);
 change it and this table together.
@@ -138,8 +143,8 @@ and shows a warning that starts `GOATED Claude Code adapter:` when:
 - the transcript cannot be read, or the current turn starts more than 64 MB
   from its end;
 - the transcript has not caught up with the call being judged. Claude Code
-  writes the transcript asynchronously, so the hook waits up to 0.75 seconds
-  for the call's own `tool_use` entry first;
+  writes the transcript asynchronously, so the hook waits up to 1.5 seconds
+  for the call's own `tool_use` entry first (see [Latency](#latency));
 - the adapter hits an internal error.
 
 Unreadable saved state is reset with a warning; a reset can only re-hold, never
@@ -171,6 +176,12 @@ i9-14900K, spawning `goated_hook.py` in exec form, 30 runs each:
 The reader reads only the current turn from the end of the file, so
 transcript size barely matters. Most of the cost is interpreter start-up and
 the `json` and `re` imports.
+
+In live headless sessions on the same machine (Claude Code 2.1.325), the call
+being judged was never yet in the transcript when the hook started. Its entry
+appeared 54 to 114 ms later, over 7 main-agent calls, so a held-or-passed
+`PreToolUse` call costs roughly the figures above plus that wait. The 1.5-second
+budget leaves headroom before the hook fails open.
 
 ## Known Limits
 

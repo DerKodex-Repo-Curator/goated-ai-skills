@@ -16,7 +16,7 @@ from . import gates
 from .overrides import parse_overrides
 from .policy import shared_policy_loaded
 from .state import StateStore, StateUnsafe
-from .transcript import TranscriptUnreadable, read_recent_turns
+from .transcript import TranscriptUnreadable, is_harness_prompt, read_recent_turns
 
 STATE_DIR_ENV = "GOATED_ADAPTER_STATE_DIR"
 NAME = "GOATED Claude Code adapter"
@@ -38,7 +38,7 @@ class Config:
     __slots__ = ("state_dir", "home", "lag_wait_seconds")
 
     def __init__(
-        self, state_dir: Path, home: Path | None = None, lag_wait_seconds: float = 0.75
+        self, state_dir: Path, home: Path | None = None, lag_wait_seconds: float = 1.5
     ) -> None:
         self.state_dir = Path(state_dir)
         self.home = Path(home) if home is not None else Path.home()
@@ -163,15 +163,27 @@ def _session_start(payload: dict, config: Config) -> str:
 
 
 def _user_prompt_submit(payload: dict, config: Config) -> str:
-    """Record the overrides the user typed; they apply to this prompt's turn only."""
+    """Record the overrides the user typed; they apply to this prompt's turn only.
+
+    Prompts Claude Code submits itself, such as task notifications, are not
+    typed and never yield overrides. They continue the current turn, so the
+    typed prompt's overrides also cover them.
+    """
 
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         raise _FailOpen("the hook input has no session_id")
-    found = parse_overrides(str(payload.get("prompt") or ""))
+    prompt = str(payload.get("prompt") or "")
     store = StateStore(config.state_dir)
     state, state_warning = store.load(session_id)
-    state.overrides = {"prompt_id": payload.get("prompt_id"), **found}
+    if is_harness_prompt(prompt):
+        found = {"phrases": []}
+        if state.overrides and payload.get("prompt_id"):
+            continued = state.overrides.setdefault("continued_prompt_ids", [])
+            continued.append(payload["prompt_id"])
+    else:
+        found = parse_overrides(prompt)
+        state.overrides = {"prompt_id": payload.get("prompt_id"), **found}
     store.save(session_id, state)
 
     notes = []
@@ -187,8 +199,8 @@ def _overrides_for(state, prompt_id: object) -> dict:
     """Return stored overrides only when they belong to the prompt being handled."""
 
     stored = state.overrides or {}
-    stored_id = stored.get("prompt_id")
-    if stored_id and prompt_id and stored_id != prompt_id:
+    owned = {stored.get("prompt_id"), *stored.get("continued_prompt_ids", [])} - {None}
+    if owned and prompt_id and prompt_id not in owned:
         return {}
     return stored
 
