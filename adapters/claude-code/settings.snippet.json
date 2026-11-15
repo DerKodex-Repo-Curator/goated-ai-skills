@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["<adapter-dir>/goated_hook.py"]
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["<adapter-dir>/goated_hook.py"]
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["<adapter-dir>/goated_hook.py"]
+          }
+        ]
+      }
+    ]
+  }
+}

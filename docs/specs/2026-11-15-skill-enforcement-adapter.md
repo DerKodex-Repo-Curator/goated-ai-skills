@@ -248,17 +248,20 @@ Today a subagent that loads no skill leaves the Subagents node blank.
 
 ## Open Questions
 
-- Where the adapter and mod live in the repo (for example `adapters/claude-code/`
-  as a new top-level folder recorded in `AGENTS.md`). Decided in the
-  architecture step. Recommended: a new top-level `adapters/` folder, since the
-  mod is not stack policy.
-- Whether the adapter's rule table (which moments hold for which skills) lives
-  in the adapter or in the registry. Recommended: the adapter, to avoid a
-  registry schema change; revisit when a second framework arrives.
 - How the mod's tests run in CI, if at all. Owner: maintainer, at the mod
   ticket.
-- The exact route-line and skip-line grammar. Settled in architecture, with
-  fixtures.
+
+Resolved:
+
+- **Adapter location** (Ticket 030, 2026-11-15): a new top-level `adapters/`
+  folder, one subfolder per framework. The Claude Code adapter lives in
+  `adapters/claude-code/`, and the mod joins it there in Ticket 032. The folder
+  is not stack policy, so it stays out of `stack/`. Recorded in `AGENTS.md`.
+- **Rule table** (Ticket 030, 2026-11-15): the adapter owns it, in
+  `adapters/claude-code/goated_adapter/gates.py`, so the registry schema does
+  not change. Revisit when a second framework arrives.
+- **Route-line and skip-line grammar**: settled by Ticket 029 in
+  `stack/fixtures/markers/`.
 
 ## Architecture
 
@@ -274,6 +277,34 @@ Accepted seams:
 - **One parser.** One documented contract defines hold-message and marker
   formats (`goated-route`, `goated-skip`, hold names), so the adapter and the
   mod stay in step.
+
+Claude Code adapter structure, settled in Ticket 030:
+
+- **One entry point.** Every hook event runs `goated_hook.py`, which hands the
+  raw hook input to one function. That function dispatches on
+  `hook_event_name`, owns fail-open handling, and is the tests' surface.
+- **Turn reader.** It reads the transcript backward from the end to the latest
+  user prompt or compaction boundary, never crossing a compaction boundary. A
+  turn yields its assistant text, its successful Skill loads, and its route and
+  skip lines. Claude Code writes the transcript asynchronously, so before
+  judging a tool call the reader waits briefly for that call's own `tool_use`
+  entry to appear. If it does not, the hook fails open with a visible warning.
+- **Task state.** A task starts at the turn whose winning route line is not
+  `continue`, and runs through later `continue` turns. Loads and skips count
+  for the task they occur in, never for a later task. Per-session state holds
+  the current task, whether the router loaded since the last compaction, the
+  last turn seen, and the latest user overrides. When a turn change is
+  detected, unseen turns back to the last one seen are folded in, so a load
+  that ended a turn still counts.
+- **Rule table.** Write tools (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`)
+  meet all three routing gates; command tools (`Bash`, `PowerShell`) meet only
+  router-first; every other tool is free. Router-first and route-line are
+  strict. The pipeline gate accepts a `goated-skip` line for a required skill,
+  because the shared policy tells agents to write one when a route names a
+  skill that does not apply.
+- **Overrides.** The user-prompt hook reads only the typed `prompt` field and
+  stores overrides with its `prompt_id`; they apply to that prompt's turn.
+- **Subagents.** A hook input carrying `agent_id` skips the routing gates.
 
 ## Rollout
 
