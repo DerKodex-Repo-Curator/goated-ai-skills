@@ -24,6 +24,7 @@ FIXTURE_DIRECTORIES = {
     "source_grounded_research": "source-grounded-research",
     "setup_scribe": "setup-scribe",
     "wayfinding": "wayfinding",
+    "markers": "markers",
 }
 
 FIXTURE_SUCCESS_LABELS = (
@@ -44,6 +45,7 @@ FIXTURE_SUCCESS_LABELS = (
     ("source_grounded_research", "Source-grounded-research"),
     ("setup_scribe", "Setup Scribe"),
     ("wayfinding", "Wayfinding"),
+    ("markers", "Route-and-skip-line marker"),
 )
 
 

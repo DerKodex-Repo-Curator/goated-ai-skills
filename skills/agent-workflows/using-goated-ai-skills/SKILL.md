@@ -14,7 +14,8 @@ and revise only the affected route parts at controlled checkpoints.
 
 Use this router when work begins, an existing work envelope needs refreshing,
 or a material route signal appears. A finished skill alone is not a reason to
-reload it. For an obvious tiny request, apply the lightweight path silently.
+reload it. For an obvious tiny request, apply the lightweight path silently
+apart from the one-line `goated-route: direct`.
 
 ## Inputs
 
@@ -36,7 +37,7 @@ Soft:
 - `wayfinder` when uncertainty is branching and exceeds one focused session
 
 Fallback: Without the shared policy or registry, use the compact profile, gate,
-approval, evidence, and checkpoint rules in this file.
+skill map, approval, evidence, checkpoint, and route-line rules in this file.
 
 ## Workflow
 
@@ -71,25 +72,31 @@ approval, evidence, and checkpoint rules in this file.
      only when decision-relevant.
    - Choose the smallest correct, safe path:
 
-| Gate | Select when |
-| --- | --- |
-| Proportional orientation | Always; near-zero ceremony for fresh tiny work |
-| Clarification or diagnosis | Intent or root cause materially blocks action |
-| External research | Current external claims need cited, freshness-aware evidence |
-| Knowledge retrieval | Durable project knowledge must answer a question, especially when authority, freshness, conflict, or provenance matters |
-| Wayfinder | Uncertainty branches across focused sessions and later decisions depend on earlier evidence |
-| Spec, architecture, or tickets | Durable intent, module strategy, or multiple resumable slices must be settled |
-| Writing plan | A scoped task still needs executable steps |
-| TDD or equivalent proof | Behavior, a public interface, or regression risk changes |
-| Standards/spec review | Diff size, risk, acceptance, scope, or convention uncertainty warrants specialist review |
-| Security review | A trust boundary changes or auth, permissions, secrets, private data, persistence policy, execution, dependency, deployment, or another sensitive surface is affected |
-| Documentation sync | Durable behavior, interfaces, configuration, architecture, or operator expectations may drift |
-| Full verification | Work is complex, high-risk, delegated, multi-surface, or explicitly audited |
-| Handoff | Work is resumable, interrupted, cross-session delegated, or unfinished |
+| Gate | Select when | Skills |
+| --- | --- | --- |
+| Proportional orientation | Always; near-zero ceremony for fresh tiny work | `session-start-progressive-disclosure` only for full orientation |
+| Clarification or diagnosis | Intent or root cause materially blocks action | `grill-with-docs`; `diagnose` for failures |
+| External research | Current external claims need cited, freshness-aware evidence | `source-grounded-research` |
+| Knowledge retrieval | Durable project knowledge must answer a question, especially when authority, freshness, conflict, or provenance matters | `knowledge-retrieval` |
+| Wayfinder | Uncertainty branches across focused sessions and later decisions depend on earlier evidence | `wayfinder` |
+| Spec, architecture, or tickets | Durable intent, module strategy, or multiple resumable slices must be settled | `write-a-spec`, `design-codebase-architecture`, `spec-to-tickets` |
+| Writing plan | A scoped task still needs executable steps | `writing-plans` |
+| TDD or equivalent proof | Behavior, a public interface, or regression risk changes | `tdd` |
+| Design principles | A module, interface, abstraction, error path, or configuration surface is designed, changed, or reviewed | `software-design-principles` |
+| Standards/spec review | Diff size, risk, acceptance, scope, or convention uncertainty warrants specialist review | `standards-and-spec-review` |
+| Security review | A trust boundary changes or auth, permissions, secrets, private data, persistence policy, execution, dependency, deployment, or another sensitive surface is affected | `code-security-review` |
+| Documentation sync | Durable behavior, interfaces, configuration, architecture, or operator expectations may drift | `doc-sync` |
+| Full verification | Work is complex, high-risk, delegated, multi-surface, or explicitly audited | `verification-before-completion` |
+| Handoff | Work is resumable, interrupted, cross-session delegated, or unfinished | `handoff` |
 
    - Load full orientation only for unfamiliar, cross-area, stale, or
      boundary-uncertain work; load code refinement only for observed debt or
      explicit cleanup.
+   - Other specialists load on their own triggers: `documentation-writer` or
+     `documentation-cleanup` when docs are the work, `goated-prompt` for
+     prompt work, `prototype` for cheap evidence, and `setup-scribe` for setup
+     knowledge. When a named skill is not installed, apply the gate directly
+     and leave it out of `requires:`.
    - Wayfinder is not a synonym for large work. Reject it for session-sized
      discussion and for implementation whose decisions are already settled.
      Its chart requires approval covering destination, location, visible
@@ -144,6 +151,20 @@ Return one compact envelope update using Step 2's core fields. Add only
 decision-relevant route changes, approval needs, evidence, or residual risk,
 and explain a change when it affects a user decision. Standalone use returns
 the same route and closeout without shared files.
+
+End routing with one route line, on its own line, outside code blocks:
+
+- `goated-route: direct` for tiny work that needs no specialist skill;
+- `goated-route: <lightweight|standard|full> | requires: <skill>, <skill>`
+  when the listed specialist skills must load before the first write;
+- `goated-route: continue` on a later prompt that continues the current task
+  and keeps its route and `requires:` list.
+
+Keywords are lowercase, skills use their installed kebab-case names, the list
+is non-empty with no duplicates, and the line has no trailing text. When a
+checkpoint changes the required skills, write a new route line; the last one
+wins. The line is the same in standalone use; in an integrated install,
+`stack/fixtures/markers/README.md` fixes its exact grammar.
 
 ## Delegation
 

@@ -129,6 +129,42 @@ If the environment supports repo instructions, use a thin adapter that routes Co
 
 For Claude Code-style workflows, adapt each skill into the supported command, skill, or instruction format for that environment. If a project instruction file is used, keep it short and route to the installed skills.
 
+### Load The Shared Policy In Claude Code
+
+Claude Code v2.1.277 and later reads a project's `AGENTS.md` directly, with no
+`CLAUDE.md` needed, as long as no `CLAUDE.md`, `.claude/CLAUDE.md`, or
+`CLAUDE.local.md` exists in the working directory or above it. Adding any of
+those three stops Claude Code from reading `AGENTS.md` unless its **Project
+instructions** setting is `claude-md-and-agents-md`. A user-level
+`~/.claude/CLAUDE.md` does not count and loads alongside `AGENTS.md`.
+
+The shared policy is a separate installed file, so load it one of two ways:
+
+- **Per project, for every tool:** merge `stack/AGENTS.md` into the project's
+  own `AGENTS.md`. Every `AGENTS.md`-aware tool then reads it. Do not rely on
+  an `@path` import here: other tools read it as plain text, and Claude Code
+  loads an import from outside the project only if external imports were
+  already approved for that project.
+- **Every project on this machine, for Claude Code:** copy `stack/AGENTS.md` to
+  `~/.claude/rules/goated-stack.md`. User-level rules load in every session,
+  alongside the project's `AGENTS.md`, with no approval prompt. Copy rather than
+  symlink, because Cowork desktop sessions skip a symlinked rule that points
+  outside the working directory, and refresh the copy with the rest of the
+  distribution.
+
+Claude Code discovers skills from `~/.claude/skills/<skill-name>/SKILL.md` or a
+project's `.claude/skills/<skill-name>/SKILL.md`. Copy each selected skill
+folder there as a flat discovery copy of the distribution, and refresh both
+layouts from the same revision.
+
+Verify the load in a fresh session. An interactive session reports the
+project file it read, such as `no CLAUDE.md found; AGENTS.md loaded: ...`. To
+check the policy itself, ask the agent to quote the policy's
+`## Routing And Checkpoints` heading without reading the file. If the policy
+is not loaded, the router still runs from its standalone fallback. On older
+Claude Code versions, or where `AGENTS.md` support is turned off, a `CLAUDE.md`
+containing only `@AGENTS.md` makes Claude Code read the shared file.
+
 Use `agent-instructions-integrator` to help create the correct target-project routing instructions.
 
 ## Hermes Notes

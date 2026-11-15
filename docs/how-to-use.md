@@ -619,6 +619,7 @@ Use GOATED AI Skills to write a handoff for the next agent. Include the current 
 - If onboarding uncovers project-level product scope, roadmap intent, or acceptance criteria, use `write-a-spec` before architecture planning; otherwise skip spec creation.
 - If architecture shape must be prescribed, use `design-codebase-architecture`; for review-only findings use `review-codebase-architecture`; if you only need a descriptive map, use `architecture-design-map`.
 - If behavior changes, route implementation through `tdd`.
+- If a module, interface, abstraction, error path, or configuration surface is designed or changed, apply `software-design-principles`; skip it for tiny mechanical edits.
 - Use `code-refinement` after implementation proof when cleanup is explicitly requested or concrete refinement debt is observed. Ordinary refactor-after-green remains inside `tdd`.
 - If planned durable documentation is the work, or part of the work, use `documentation-writer`; if docs structure or agent docs are messy, use `documentation-cleanup`; use `doc-sync` for drift checks after behavior or docs change.
 - Match "done", "correct", "passing", "synced", and "ready" claims to fresh
