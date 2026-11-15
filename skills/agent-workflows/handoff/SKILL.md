@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Use when a session needs a handoff, continuity note, restart note, resume note, or unfinished context for a future agent.
+description: Use when a session needs a handoff, continuity note, restart note, resume note, or unfinished context for a future agent, or a brief for a new agent or session it is about to start.
 metadata:
   goated-category: agent-workflows
 ---
@@ -11,7 +11,7 @@ metadata:
 
 Create a compact continuity note that lets a future agent or session resume without rereading the whole conversation.
 
-Use this skill at the end of onboarding, delivery, review, planning, or interrupted work. The handoff should point to source artifacts and current evidence; it should not duplicate specs or legacy PRDs, tickets or remote issues, ADRs, diffs, commits, or long transcripts.
+Use this skill at the end of onboarding, delivery, review, planning, or interrupted work, and in spawn-brief mode when work starts in a fresh agent or session now. The handoff should point to source artifacts and current evidence; it should not duplicate specs or legacy PRDs, tickets or remote issues, ADRs, diffs, commits, or long transcripts.
 
 ## Inputs
 
@@ -36,6 +36,7 @@ Fallback: If companion skills or durable artifacts are unavailable, write compac
 
 1. Confirm a handoff is the right tool, then its scope:
    - A handoff is a lossy summary of the session, so check the cheaper options first. Continue in this session when the next phase needs this one's reasoning and there is room for it. Start fresh without a handoff when nothing here matters to what comes next. Delegate when the next task is scoped tightly enough to run unattended. Write a handoff when the work must travel to another session, tool, directory, or person, or is interrupted or resumable.
+   - **Spawn-brief mode:** when you are about to start a subagent or a new session that begins work now, write the brief from [Spawn Brief](references/spawn-brief.md) as its first message instead of a file, then skip to the reference's "After Sending" step. Steps 2 to 7 apply only to written handoffs.
    - Identify whether the handoff is for target-project onboarding, target-project delivery, review, planning, or an interrupted session.
    - If the user provides a next-session focus, tailor the handoff around what that future session needs first.
    - Confirm the target-project root, and keep the handoff focused on resuming the current work.
@@ -164,3 +165,7 @@ Main owns the handoff scope, final summary, and privacy judgment. Delegate only 
 - Reference specs, tickets, ADRs, diffs, commits, and logs instead of copying them; a handoff does not replace them.
 - State a check as passed only when it was run or already evidenced.
 - Keep the note short enough to read first: references and resume actions over narrative history.
+
+## References
+
+Linked support file, used at Step 1 for a live delegation: [Spawn Brief](references/spawn-brief.md).

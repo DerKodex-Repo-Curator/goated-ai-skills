@@ -1,0 +1,72 @@
+# Spawn Brief
+
+Use this template when work is about to start in a fresh agent or session now:
+a subagent, a parallel session, or a session the current task moves into. The
+brief is that agent's first message. It is the only context the agent gets
+unless it inherits this conversation, so it must stand on its own.
+
+For a scoped implementation task, fill the implementer prompt from
+`subagent-driven-development` instead when that skill is installed; it adds
+write ownership and review statuses. Use this template for everything else.
+
+## Before Writing
+
+- Decide the brief is needed. A lookup you could run in a few steps, or a
+  question this conversation already answers, needs no new agent.
+- If the agent inherits this whole conversation, write only the task, the
+  scope, and what done looks like. Do not retell what it can already read.
+- Do not restate rules the agent already receives from its own instructions
+  or setup, such as project instruction files or a session-start rule. Name a
+  rule only when this task needs it applied differently.
+- Write in your own words. "Based on the findings above" points at context the
+  agent does not have.
+- Leave out credentials, private data, and content the agent should not see.
+
+## Template
+
+```markdown
+## Goal
+
+<One or two sentences: the task and why it exists.>
+
+## Scope
+
+- Work in: <files, directories, or area>
+- May change: <write scope, or "read only">
+- Must not touch: <areas other agents or the main agent own>
+- Others may be editing elsewhere: do not revert changes you did not make.
+
+## Done Means
+
+- <Observable result: a passing check, a file that exists, a question answered.>
+
+## Already Settled
+
+- Decisions: <what is decided and must not be reopened>
+- Ruled out: <approaches tried or rejected, and why in a phrase>
+- Sources: <paths, specs, tickets, commands worth reading first>
+
+## Constraints
+
+- <Commit, push, branch, dependency, or publication rules for this task.>
+
+## Stop And Report When
+
+- You need a decision, source, or permission you were not given.
+- The task looks wrong, or is larger than this brief describes.
+
+## Report Back
+
+- Status: DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT | BLOCKED
+- Changed paths and paths inspected
+- Commands run and their results
+- Assumptions, concerns, and checks skipped
+```
+
+Drop sections that carry nothing for this task. Keep the brief short enough
+that the agent reads all of it before acting.
+
+## After Sending
+
+Treat the report as evidence to inspect, not a finished claim. Check changed
+paths or reproduce important results before relying on them.
