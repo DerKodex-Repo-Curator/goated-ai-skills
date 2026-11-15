@@ -41,7 +41,7 @@ decision in the spec.
 
 ## Blocked By
 
-- `tickets/028-discoverable-skill-descriptions.md`
+- `tickets/archive/028-discoverable-skill-descriptions.md`
 - `tickets/032-skill-usage-mod-in-repo.md`
 
 ## Scope Exclusions

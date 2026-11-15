@@ -69,7 +69,7 @@ snippet, and install, disable and remove docs.
 
 ## Blocked By
 
-- `tickets/029-router-skill-map-and-route-line.md`
+- `tickets/archive/029-router-skill-map-and-route-line.md`
 
 ## Scope Exclusions
 

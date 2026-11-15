@@ -35,12 +35,12 @@ framework, with or without hooks.
 
 ## Acceptance Criteria
 
-- [ ] Every user-gated or stack-vocabulary description has been reviewed:
+- [x] Every user-gated or stack-vocabulary description has been reviewed:
       rewritten to name an agent-side moment, or deliberately kept user-only
       with a one-line reason.
-- [ ] No description gains workflow steps or new frontmatter fields.
-- [ ] The validator, the unit tests, and the V1/V2 context comparison pass.
-- [ ] The maintainer has approved the wording.
+- [x] No description gains workflow steps or new frontmatter fields.
+- [x] The validator, the unit tests, and the V1/V2 context comparison pass.
+- [x] The maintainer has approved the wording.
 
 ## Expected Proof
 
@@ -56,10 +56,10 @@ framework, with or without hooks.
 - Skill bodies, the router map, and the route line (Ticket 029).
 - Any hook or adapter work.
 
-## Draft Closeout (Pending Maintainer Approval)
+## Closeout
 
-Status: implemented on 2026-11-15; awaiting the maintainer's approval of the
-wording before the ticket closes. Only `description` frontmatter changed. No
+Status: completed on 2026-11-15. The maintainer accepted the wording when the
+branch was merged into main and asked for the ticket to be archived. Only `description` frontmatter changed. No
 skill body, frontmatter field, router map, route line, or shared policy was
 touched, and no fixture under `stack/fixtures/` pins description text.
 

@@ -3,15 +3,17 @@
 Source spec: `docs/specs/2026-11-15-skill-enforcement-adapter.md`
 Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
 
-1. `tickets/028-discoverable-skill-descriptions.md`
+1. `tickets/archive/028-discoverable-skill-descriptions.md`
+   - Status: Completed and archived on 2026-11-15.
    - Blocked by: None
    - Enables: skills found from their descriptions in any framework; the
      trial in 033.
-2. `tickets/029-router-skill-map-and-route-line.md`
+2. `tickets/archive/029-router-skill-map-and-route-line.md`
+   - Status: Completed and archived on 2026-11-15.
    - Blocked by: None
    - Enables: the portable route and skip contracts the adapter enforces.
 3. `tickets/030-claude-code-adapter-routing-gates.md`
-   - Blocked by: `tickets/029-router-skill-map-and-route-line.md`
+   - Blocked by: `tickets/archive/029-router-skill-map-and-route-line.md`
    - Enables: router-first, route-line, and pipeline enforcement, and the
      adapter base for 031.
 4. `tickets/031-claude-code-adapter-action-and-closeout-gates.md`
@@ -22,16 +24,15 @@ Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
    - Blocked by: `tickets/031-claude-code-adapter-action-and-closeout-gates.md`
    - Enables: measurement for the trial.
 6. `tickets/033-adapter-real-use-trial.md`
-   - Blocked by: `tickets/028-discoverable-skill-descriptions.md`,
+   - Blocked by: `tickets/archive/028-discoverable-skill-descriptions.md`,
      `tickets/032-skill-usage-mod-in-repo.md`
    - Enables: the maintainer's keep, revise, or revert decision.
 
-Tickets 028 and 029 can run in parallel; their write scopes do not overlap.
+Tickets 028 and 029 ran in parallel and were merged on 2026-11-15.
 
 ## Ready Frontier
 
-- `tickets/028-discoverable-skill-descriptions.md`
-- `tickets/029-router-skill-map-and-route-line.md`
+- `tickets/030-claude-code-adapter-routing-gates.md`
 
 ## Coverage
 
