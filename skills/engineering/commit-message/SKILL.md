@@ -1,6 +1,6 @@
 ---
 name: commit-message
-description: Use when the user asks to draft or revise a Git commit message.
+description: Use before any Git commit, whether the user asked for it or the agent is committing its own work, and when the user asks to draft or revise a commit message.
 metadata:
   goated-category: engineering
 ---

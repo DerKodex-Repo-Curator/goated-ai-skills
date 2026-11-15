@@ -1,6 +1,6 @@
 ---
 name: pr-description
-description: Use when the user asks to draft or revise a pull request or merge request description.
+description: Use before opening or updating a pull request or merge request, whether the user asked for it or the agent is opening it, and when the user asks to draft or revise a PR or MR description.
 metadata:
   goated-category: engineering
 ---

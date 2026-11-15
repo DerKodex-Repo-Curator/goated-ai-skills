@@ -1,6 +1,6 @@
 ---
 name: standards-and-spec-review
-description: Use when diff size, risk, acceptance ambiguity, scope fit, or uncertain project conventions justify a standards and/or spec review.
+description: Use when a change is large or risky enough to review before it lands, its acceptance criteria or scope fit are ambiguous, or project conventions are uncertain enough to justify a standards and/or spec review.
 metadata:
   goated-category: engineering
 ---

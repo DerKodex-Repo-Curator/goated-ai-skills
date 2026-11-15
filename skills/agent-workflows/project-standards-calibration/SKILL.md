@@ -1,6 +1,6 @@
 ---
 name: project-standards-calibration
-description: Use when onboarding or refreshing a project after discovery shows a durable standards, convention, enforcement, or preference gap.
+description: Use when a project's coding standards, conventions, commands, or enforcement are undocumented, contradictory, or ignored by agents, typically found while onboarding or refreshing a project.
 metadata:
   goated-category: agent-workflows
 ---

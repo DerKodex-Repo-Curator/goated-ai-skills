@@ -1,6 +1,6 @@
 ---
 name: using-goated-ai-skills
-description: Use when an installed GOATED stack should select or revise a proportionate route for delivery, onboarding, source maintenance, installation, durable-knowledge retrieval, prompt work, or a tiny direct task.
+description: Use at the start of each new task before the first edit or command, when it is unclear which installed skill applies, or when scope changes mid-task; selects a proportionate route for delivery, onboarding, maintenance, installation, knowledge retrieval, research, prompt work, or a tiny direct task.
 metadata:
   goated-category: agent-workflows
 ---

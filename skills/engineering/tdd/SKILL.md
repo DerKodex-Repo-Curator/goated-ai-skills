@@ -1,6 +1,6 @@
 ---
 name: tdd
-description: Use when implementing or fixing target-project behavior, changing public interfaces, adding regression coverage, or doing test-first development.
+description: Use when implementing or fixing code behavior, changing public interfaces, adding regression coverage, or doing test-first development.
 metadata:
   goated-category: engineering
 ---

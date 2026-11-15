@@ -1,6 +1,6 @@
 ---
 name: wayfinder
-description: Use when branching uncertainty spans multiple focused sessions, later decisions depend on earlier evidence, and the complete route to a named planning destination cannot yet be specified responsibly.
+description: Use when a planning question is too branching to settle in one session, because it needs several focused sessions, later decisions depend on earlier evidence, and the full route to the planning destination cannot yet be specified responsibly.
 metadata:
   goated-category: agent-workflows
 ---

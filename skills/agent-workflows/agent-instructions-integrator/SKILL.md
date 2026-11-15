@@ -1,6 +1,6 @@
 ---
 name: agent-instructions-integrator
-description: Use when integrating installed GOATED skills into a target project, creating or updating agent instructions, or routing agents to durable project artifacts.
+description: Use when creating or updating a project's agent instruction files such as AGENTS.md or CLAUDE.md, wiring installed skills into a project, or pointing agents to the project's durable docs and artifacts.
 metadata:
   goated-category: agent-workflows
 ---

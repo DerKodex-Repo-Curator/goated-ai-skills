@@ -1,6 +1,6 @@
 ---
 name: verification-before-completion
-description: Use the full verification controller for complex, high-risk, delegated, multi-surface, or explicitly audited completion claims; narrow work verifies directly from shared policy.
+description: Use before claiming that complex, high-risk, delegated, multi-surface, or explicitly audited work is done, fixed, or passing; narrow work can verify directly without it.
 metadata:
   goated-category: engineering
 ---

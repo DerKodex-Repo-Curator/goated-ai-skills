@@ -1,6 +1,6 @@
 ---
 name: project-context-calibration
-description: Use when onboarding or refreshing a project after discovery shows durable confusion about project boundaries, vocabulary, or artifact meanings.
+description: Use when project terms, boundaries, or artifact meanings are ambiguous, contested, or used inconsistently, or a context or glossary file is missing or stale, typically found while onboarding or refreshing a project.
 metadata:
   goated-category: agent-workflows
 ---

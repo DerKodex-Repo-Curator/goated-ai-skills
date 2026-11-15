@@ -1,6 +1,6 @@
 ---
 name: grill-with-docs
-description: Use when important target-project work needs docs-grounded clarification, pressure testing, success criteria, or scope decisions before implementation.
+description: Use before implementing important project work whose intent, success criteria, scope, or tradeoffs are unclear or conflict with the project's docs, and the gaps must be clarified and pressure-tested against those docs.
 metadata:
   goated-category: engineering
 ---

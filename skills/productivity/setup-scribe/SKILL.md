@@ -1,6 +1,6 @@
 ---
 name: setup-scribe
-description: Use when project-dependent installation, environment changes, application or machine settings, manual setup, setup backfill, reproducibility drift, or replay automation would otherwise be lost or become stale.
+description: Use after installing project dependencies or tools, changing environment variables, application or machine settings, or doing manual setup steps that must be recorded to stay reproducible, or when recorded setup has drifted or is ready to automate.
 metadata:
   goated-category: productivity
 ---

@@ -1,6 +1,6 @@
 ---
 name: doc-sync
-description: Use when behavior, interfaces, architecture, standards, configuration, tests, or public docs may have documentation drift.
+description: Use after changing behavior, interfaces, architecture, standards, configuration, or tests, or whenever README, guides, or other docs may have drifted from the code.
 metadata:
   goated-category: engineering
 ---

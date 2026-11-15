@@ -1,6 +1,6 @@
 ---
 name: framework-agnostic-skill-creator
-description: Use when creating a new GOATED skill from clarified intent or porting, adapting, sanitizing, or publishing an existing skill, command, prompt, workflow, or agent instruction for portable GOATED use.
+description: Use when creating a new skill or SKILL.md from clarified intent, or porting, adapting, sanitizing, or publishing an existing skill, command, prompt, workflow, or agent instruction as a portable, framework-agnostic skill.
 metadata:
   goated-category: agent-workflows
 ---

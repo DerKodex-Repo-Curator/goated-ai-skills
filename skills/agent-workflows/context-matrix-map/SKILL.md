@@ -1,6 +1,6 @@
 ---
 name: context-matrix-map
-description: Use when onboarding or refreshing a project after discovery shows a durable source-routing or repeated retrieval problem.
+description: Use when agents in a project keep searching for the same sources, read the wrong docs first, or lack a map of which files to load for which kind of task, typically found while onboarding or refreshing a project.
 metadata:
   goated-category: agent-workflows
 ---
