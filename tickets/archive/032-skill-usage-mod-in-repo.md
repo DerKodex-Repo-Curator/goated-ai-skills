@@ -53,21 +53,21 @@ maintainer's personal hooks readable until Ticket 033 replaces those hooks.
 
 ## Acceptance Criteria
 
-- [ ] The mod lives in the repo next to the adapter, with no private paths,
+- [x] The mod lives in the repo next to the adapter, with no private paths,
       names, or data.
-- [ ] Mod tests cover:
-  - [ ] route lines;
-  - [ ] the merged adapter's routing holds and their outcomes;
-  - [ ] user overrides;
-  - [ ] justified skips;
-  - [ ] required-reference reads;
-  - [ ] a subagent spawn that loads no skill;
-  - [ ] the subagent start message.
-- [ ] A test checks the mod's line reading against
+- [x] Mod tests cover:
+  - [x] route lines;
+  - [x] the merged adapter's routing holds and their outcomes;
+  - [x] user overrides;
+  - [x] justified skips;
+  - [x] required-reference reads;
+  - [x] a subagent spawn that loads no skill;
+  - [x] the subagent start message.
+- [x] A test checks the mod's line reading against
       `stack/fixtures/markers/lines.yaml`.
-- [ ] One live session shows a subagent spawn, a justified skip, and a route
+- [x] One live session shows a subagent spawn, a justified skip, and a route
       line in the pane.
-- [ ] Install and remove docs for the mod exist.
+- [x] Install and remove docs for the mod exist.
 - [x] The maintainer has recorded a decision on running the mod's tests in CI.
 
 ## Decisions
@@ -90,6 +90,14 @@ Recorded 2026-11-16 by the maintainer:
 - **Writing turns.** The mod counts turns that write (the main agent's edits
   and spawns) by whether a route line came before the first write, only
   after it, or not at all. A turn runs from one typed prompt to the next.
+
+## Closeout
+
+Completed on 2026-11-16. A code review's findings and two live-check bugs
+(held spawns counted, repeated prompt rows) were fixed before merge. One
+interactive session's pane showed a route line, a subagent spawn that loads
+no skill, and a declined design hold with its reason. Live override counts
+wait on the adapter change in Ticket 034.
 
 ## Expected Proof
 

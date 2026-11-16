@@ -33,6 +33,14 @@ Ticket 031 fixes, not guess at wording. It also settles when the personal
 hooks' hold texts can be retired: after Ticket 033 swaps those hooks out, or
 in this ticket if 033 lands first.
 
+Found in the 2026-11-16 live checks of Tickets 031 and 032:
+
+- One strict spawn hold showed as one followed and two ignored nudges, and a
+  strict commit hold as one followed and one ignored. The mod seems to read
+  the new holds a second time as older hook messages.
+- The end-of-turn (closeout) hold, a blocked `Stop`, does not appear in the
+  pane.
+
 ## Recommended First Reads
 
 - The hold-message format documented by Ticket 031 in
@@ -58,8 +66,8 @@ in this ticket if 033 lands first.
 
 ## Blocked By
 
-- `tickets/031-claude-code-adapter-action-and-closeout-gates.md`
-- `tickets/032-skill-usage-mod-in-repo.md`
+- `tickets/archive/031-claude-code-adapter-action-and-closeout-gates.md`
+- `tickets/archive/032-skill-usage-mod-in-repo.md`
 
 ## Scope Exclusions
 

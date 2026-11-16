@@ -65,21 +65,31 @@ instead of copying them.
 
 ## Acceptance Criteria
 
-- [ ] Unit tests prove each of these:
-  - [ ] each strict hold blocks until its skill loads in the current turn;
-  - [ ] a `goated-skip` line passes design, security, and closeout holds, but
+- [x] Unit tests prove each of these:
+  - [x] each strict hold blocks until its skill loads in the current turn;
+  - [x] a `goated-skip` line passes design, security, and closeout holds, but
         never strict ones;
-  - [ ] an unchanged retry never passes;
-  - [ ] a missing required-reference read keeps the hold;
-  - [ ] a brief missing a required section is held;
-  - [ ] a commit message breaking the `commit-message` contract is held;
-  - [ ] a user-typed commit message stands the commit hold down;
-  - [ ] a hold does not refire after compliance;
-  - [ ] action gates apply in subagents;
-  - [ ] each shell-write pattern listed above meets the route-line and
+  - [x] an unchanged retry never passes;
+  - [x] a missing required-reference read keeps the hold;
+  - [x] a brief missing a required section is held;
+  - [x] a commit message breaking the `commit-message` contract is held;
+  - [x] a user-typed commit message stands the commit hold down;
+  - [x] a hold does not refire after compliance;
+  - [x] action gates apply in subagents;
+  - [x] each shell-write pattern listed above meets the route-line and
         pipeline holds, while reads, test runs, and `git status` stay free.
-- [ ] The tests run in CI on Python 3.11 and 3.14.
-- [ ] Hold messages follow one documented format that the mod can parse.
+- [x] The tests run in CI on Python 3.11 and 3.14.
+- [x] Hold messages follow one documented format that the mod can parse.
+
+## Closeout
+
+Completed on 2026-11-16. A code review's findings were fixed before merge.
+A live check then found that interactive Claude Code records a tool call in
+the transcript only after its PreToolUse hook returns, so the adapter now
+judges each call from the hook input. Checked live in an interactive session:
+router-first, route-line, spawn, design, and closeout holds fired and cleared.
+Known cost: a route or skip line written in the same message as the held call
+is not yet visible, so the agent repeats the call once.
 
 ## Expected Proof
 

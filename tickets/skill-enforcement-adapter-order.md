@@ -17,17 +17,19 @@ Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
    - Blocked by: `tickets/archive/029-router-skill-map-and-route-line.md`
    - Enables: router-first, route-line, and pipeline enforcement, and the
      adapter base for 031 and 032.
-4. `tickets/031-claude-code-adapter-action-and-closeout-gates.md`
+4. `tickets/archive/031-claude-code-adapter-action-and-closeout-gates.md`
+   - Status: Completed, merged and archived on 2026-11-16.
    - Blocked by: `tickets/archive/030-claude-code-adapter-routing-gates.md`
    - Enables: action and closeout enforcement, and the stable hold format for
      034.
-5. `tickets/032-skill-usage-mod-in-repo.md`
+5. `tickets/archive/032-skill-usage-mod-in-repo.md`
+   - Status: Completed, merged and archived on 2026-11-16.
    - Blocked by: `tickets/archive/030-claude-code-adapter-routing-gates.md`
    - Enables: the mod in the repo, measuring routing holds, route lines,
      skips, overrides, references, and subagents; the base for 034.
 6. `tickets/034-skill-usage-mod-action-holds.md`
-   - Blocked by: `tickets/031-claude-code-adapter-action-and-closeout-gates.md`,
-     `tickets/032-skill-usage-mod-in-repo.md`
+   - Blocked by: `tickets/archive/031-claude-code-adapter-action-and-closeout-gates.md`,
+     `tickets/archive/032-skill-usage-mod-in-repo.md`
    - Enables: measurement of every hold for the trial.
 7. `tickets/033-adapter-real-use-trial.md`
    - Blocked by: `tickets/archive/028-discoverable-skill-descriptions.md`,
@@ -41,8 +43,7 @@ their write scopes do not overlap. Ticket 034 needs both.
 
 ## Ready Frontier
 
-- `tickets/031-claude-code-adapter-action-and-closeout-gates.md`
-- `tickets/032-skill-usage-mod-in-repo.md`
+- `tickets/034-skill-usage-mod-action-holds.md`
 
 ## Coverage
 
