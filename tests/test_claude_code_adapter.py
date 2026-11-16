@@ -108,13 +108,125 @@ class RouteLineTests(AdapterTestCase):
         s.say("goated-route: continue")
         self.assertEqual(decision(s.call("Write")), "pass")
 
-    def test_continue_without_a_current_task_is_held(self) -> None:
+    def test_continue_in_a_session_with_no_task_starts_one_without_required_skills(
+        self,
+    ) -> None:
+        s = self.session
+        s.prompt(
+            "Background (from the session that started this one): the export work "
+            "begun there continues here.",
+            origin=None,
+            turnOrigin="host_synthetic",
+        )
+        s.load(ROUTER)
+        s.say("goated-route: continue")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+        s.prompt("Also cover the empty file.")
+        s.say("goated-route: continue")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+    def test_continue_in_a_new_sessions_second_turn_starts_a_task(self) -> None:
+        s = self.session
+        s.hook("SessionStart", source="startup")
+        s.prompt(
+            "Background (from the session that started this one): read the brief.",
+            origin=None,
+            turnOrigin="host_synthetic",
+        )
+        s.read("brief.md")
+
+        s.prompt("Go ahead with it.")
+        s.load(ROUTER)
+        s.say("goated-route: continue")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+    def test_a_task_started_by_continue_gives_way_to_a_full_route(self) -> None:
         s = self.routed_session()
+        s.say("goated-route: continue")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+        s.prompt("Now add the importer.")
+        s.say("goated-route: lightweight | requires: tdd")
+        held = s.call("Edit")
+        self.assertEqual(decision(held), "deny")
+        self.assertTrue(reason(held).startswith("goated-hold: pipeline | strict"))
+
+    def test_continue_after_a_state_reset_is_still_held(self) -> None:
+        s = self.routed_session()
+        s.say("goated-route: lightweight | requires: tdd")
+        self.assertEqual(decision(s.call("Edit")), "deny")
+
+        s.prompt("Go on.")
+        s.load(ROUTER)
+        s.say("goated-route: continue")
+        (s.config.state_dir / "session-1.json").write_text("{not json")
+        held = s.call("Edit")
+        self.assertEqual(decision(held), "deny")
+        self.assertTrue(reason(held).startswith("goated-hold: route-line | strict"))
+        self.assertIn("reset", reason(held))
+        self.assertEqual(decision(s.call("Edit")), "deny")
+
+        s.say("goated-route: lightweight | requires: tdd")
+        s.load("tdd")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+    def test_continue_after_the_state_file_went_missing_is_still_held(self) -> None:
+        s = self.routed_session()
+        s.say("goated-route: lightweight | requires: tdd")
+        self.assertEqual(decision(s.call("Edit")), "deny")
+
+        (s.config.state_dir / "session-1.json").unlink()
+        s.prompt("Go on.")
+        s.load(ROUTER)
+        s.say("goated-route: continue")
+        held = s.call("Edit")
+        self.assertEqual(decision(held), "deny")
+        self.assertTrue(reason(held).startswith("goated-hold: route-line | strict"))
+        self.assertIn("missing", reason(held))
+
+        s.prompt("Still going.")
+        s.say("goated-route: continue")
+        self.assertEqual(decision(s.call("Edit")), "deny")
+
+    def test_a_missing_state_file_in_the_first_turn_still_lets_continue_start_a_task(
+        self,
+    ) -> None:
+        s = self.routed_session()
+        s.say("goated-route: continue")
+        (s.config.state_dir / "session-1.json").unlink()
+
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+    def test_continue_after_a_route_in_the_same_turn_keeps_its_skills(self) -> None:
+        s = self.routed_session()
+        s.say("goated-route: lightweight | requires: tdd")
         s.say("goated-route: continue")
 
         held = s.call("Edit")
         self.assertEqual(decision(held), "deny")
-        self.assertIn("no current task", reason(held))
+        self.assertIn("`tdd`", reason(held))
+
+    def test_continue_after_a_route_in_the_same_turn_replaces_the_old_task(self) -> None:
+        s = self.routed_session()
+        s.say("goated-route: direct")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+        s.prompt("Now the importer, test first.")
+        s.say("goated-route: lightweight | requires: tdd")
+        s.say("goated-route: continue")
+        held = s.call("Edit")
+        self.assertEqual(decision(held), "deny")
+        self.assertIn("`tdd`", reason(held))
+
+    def test_continue_as_the_first_route_after_compaction_starts_a_task(self) -> None:
+        s = self.routed_session()
+        self.assertEqual(decision(s.call("Bash")), "pass")
+
+        s.compact()
+        s.load(ROUTER)
+        s.say("goated-route: continue")
+        self.assertEqual(decision(s.call("Edit")), "pass")
 
     def test_malformed_route_line_is_named_in_the_hold(self) -> None:
         s = self.routed_session()
@@ -245,16 +357,120 @@ class PipelineTests(AdapterTestCase):
         for _ in range(3):
             self.assertEqual(decision(s.call("Edit")), "deny")
 
-    def test_loads_before_a_new_route_line_in_the_same_turn_do_not_count(self) -> None:
-        s = self.start("goated-route: lightweight | requires: tdd")
+    def test_a_load_earlier_in_the_turn_counts_for_the_task_it_starts(self) -> None:
+        s = self.session
+        s.prompt("Add CSV export.")
+        s.load(ROUTER)
         s.load("tdd")
+        s.say("goated-route: lightweight | requires: tdd")
+
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+    def test_a_load_in_an_earlier_turn_does_not_count(self) -> None:
+        s = self.session
+        s.prompt("Read up on the exporter first.")
+        s.load(ROUTER)
+        self.assertEqual(decision(s.call("Bash")), "pass")
+        s.load("tdd")
+
+        s.prompt("Now add CSV export.")
+        s.say("goated-route: lightweight | requires: tdd")
+        held = s.call("Edit")
+        self.assertEqual(decision(held), "deny")
+        self.assertIn("earlier turn", reason(held))
+
+    def test_a_load_before_an_earlier_tasks_route_line_does_not_count(self) -> None:
+        s = self.session
+        s.prompt("Add CSV export.")
+        s.load(ROUTER)
+        s.load("tdd")
+        s.say("goated-route: lightweight | requires: tdd")
         self.assertEqual(decision(s.call("Edit")), "pass")
 
         s.say("A separate change now.\n\ngoated-route: lightweight | requires: tdd")
         held = s.call("Edit")
         self.assertEqual(decision(held), "deny")
-        self.assertIn("only loads after the route line", reason(held))
+        self.assertIn("another task's route line", reason(held))
         s.load("tdd")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+    def test_a_load_after_an_earlier_tasks_route_line_counts_for_the_next(self) -> None:
+        s = self.start("goated-route: direct")
+        s.load("tdd")
+        s.say("This needs tests after all.\n\ngoated-route: lightweight | requires: tdd")
+
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+    def test_a_corrected_route_line_keeps_loads_made_before_the_first(self) -> None:
+        s = self.session
+        s.prompt("Add CSV export.")
+        s.load(ROUTER)
+        s.load("tdd")
+        s.say("goated-route: standard | requires: tdd, doc-sync")
+        self.assertEqual(decision(s.call("Edit")), "deny")
+        s.say("doc-sync does not apply.\n\ngoated-route: lightweight | requires: tdd")
+
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+    def test_a_shell_write_between_route_lines_starts_another_task(self) -> None:
+        s = self.session
+        s.prompt("Add CSV export.")
+        s.load(ROUTER)
+        s.load("tdd")
+        s.say("goated-route: direct")
+        s.run("echo done > notes.txt")
+        s.say("Next, the importer.\n\ngoated-route: lightweight | requires: tdd")
+
+        held = s.call("Edit")
+        self.assertEqual(decision(held), "deny")
+        self.assertIn("`tdd`", reason(held))
+
+    def test_a_failed_shell_write_between_route_lines_still_starts_another_task(
+        self,
+    ) -> None:
+        s = self.session
+        s.prompt("Add CSV export.")
+        s.load(ROUTER)
+        s.load("tdd")
+        s.say("goated-route: direct")
+        s.run("echo done > notes.txt && false", success=False)
+        s.say("Next, the importer.\n\ngoated-route: lightweight | requires: tdd")
+
+        held = s.call("Edit")
+        self.assertEqual(decision(held), "deny")
+        self.assertIn("`tdd`", reason(held))
+
+    def test_a_held_shell_write_between_route_lines_does_not_split_the_task(self) -> None:
+        s = self.session
+        s.prompt("Add CSV export.")
+        s.load(ROUTER)
+        s.load("tdd")
+        s.say("goated-route: standard | requires: tdd, doc-sync")
+        self.assertEqual(decision(s.call("Bash", {"command": "echo x > out.csv"})), "deny")
+        s.say("doc-sync does not apply.\n\ngoated-route: lightweight | requires: tdd")
+
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+    def test_a_load_before_another_tasks_correction_does_not_count(self) -> None:
+        s = self.session
+        s.prompt("Add CSV export.")
+        s.load(ROUTER)
+        s.say("goated-route: standard | requires: tdd, doc-sync")
+        s.load("tdd")
+        s.say("Only a typo after all.\n\ngoated-route: direct")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+        s.say("Now the importer.\n\ngoated-route: lightweight | requires: tdd")
+        held = s.call("Edit")
+        self.assertEqual(decision(held), "deny")
+        self.assertIn("`tdd`", reason(held))
+
+    def test_a_load_after_another_tasks_last_route_line_counts(self) -> None:
+        s = self.start("goated-route: direct")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+        s.load("tdd")
+        s.say("Now the importer.\n\ngoated-route: lightweight | requires: tdd")
+
         self.assertEqual(decision(s.call("Edit")), "pass")
 
     def test_a_skill_the_user_invoked_with_a_slash_command_counts(self) -> None:
@@ -713,6 +929,10 @@ class FailOpenTests(AdapterTestCase):
     def test_state_with_the_wrong_shape_resets_and_re_holds(self) -> None:
         s = self.session
         s.prompt("Fix it.")
+        s.load(ROUTER)
+        s.say("goated-route: lightweight | requires: tdd")
+        self.assertEqual(decision(s.call("Edit")), "deny")
+        s.prompt("Go on.")
         s.load(ROUTER)
         s.say("goated-route: continue")
         s.config.state_dir.mkdir(parents=True, exist_ok=True)

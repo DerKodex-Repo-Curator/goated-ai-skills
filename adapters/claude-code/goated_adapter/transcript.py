@@ -17,6 +17,7 @@ import os
 import re
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 from .markers import parse_reply
 
@@ -65,6 +66,9 @@ NOT_PROMPT = "not-prompt"
 REMINDER_RE = re.compile(r"\A\s*(?:<system-reminder>.*?</system-reminder>\s*)+", re.DOTALL)
 COMMAND_NAME_RE = re.compile(r"<command-name>/([^<\s]+)</command-name>")
 SKILL_BODY_PREFIX = "Base directory for this skill:"
+# A call this adapter held: Claude Code 2.1.3xx records the deny reason as
+# `PreToolUse:<tool> hook error: <reason>`, and the reason opens with the hold line.
+HOLD_RESULT_RE = re.compile(r"(?:PreToolUse:\S+ hook error: )?goated-hold: ")
 
 
 def prompt_text_kind(text: str) -> str:
@@ -92,17 +96,35 @@ class Call:
     """A tool call that has finished in the turn: its name, input, and outcome.
 
     `ok` is False when the tool result was an error, which includes a call a
-    hook held. `agent_id` is the subagent a spawn started, from the result's
+    hook held; `held` is True only when this adapter held it, so it never ran.
+    `agent_id` is the subagent a spawn started, from the result's
     `toolUseResult.agentId`, else None.
     """
 
-    __slots__ = ("name", "input", "ok", "agent_id")
+    __slots__ = ("name", "input", "ok", "held", "agent_id")
 
-    def __init__(self, name: str, tool_input: dict, ok: bool, agent_id: str | None = None) -> None:
+    def __init__(
+        self,
+        name: str,
+        tool_input: dict,
+        ok: bool,
+        agent_id: str | None = None,
+        held: bool = False,
+    ) -> None:
         self.name = name
         self.input = tool_input
         self.ok = ok
+        self.held = held
         self.agent_id = agent_id
+
+
+class RouteMark(NamedTuple):
+    """A valid route line and where it fell in its turn: how many loads and
+    finished calls the turn held when it was written."""
+
+    route: dict
+    loads_before: int
+    calls_before: int
 
 
 class Turn:
@@ -110,17 +132,19 @@ class Turn:
 
     `typed` says a person typed the prompt that opened the turn, so it may
     carry overrides; `prompt_id` is that prompt's id. `loads` lists raw names
-    of skills loaded successfully, in order. `task_loads` lists the loads that
-    count for a task the turn starts: skills the prompt itself invoked as
-    `/<skill>`, plus loads after the winning route line. `route` is the
-    winning route line and `malformed` the route-like lines that failed the
-    grammar. `skips` are the valid `goated-skip` lines, and `calls` the tool
-    calls that finished in this turn, oldest first.
+    of skills loaded successfully, in order, and `invoked_load` is the skill
+    the prompt itself invoked as `/<skill>`, once its body loaded. `route` is
+    the winning route line, `route_marks` every valid route line in order, and
+    `malformed` the route-like lines that failed the grammar. `skips` are the
+    valid `goated-skip` lines, and `calls` the tool calls that finished in this
+    turn, oldest first. `opens_transcript` is set on the oldest turn read when
+    reading reached the start of the transcript, so no earlier turn exists.
     """
 
     __slots__ = (
-        "key", "is_compaction", "typed", "prompt_id", "loads", "task_loads",
-        "route", "malformed", "skips", "calls", "prompt_ids",
+        "key", "is_compaction", "typed", "prompt_id", "loads", "invoked_load",
+        "route", "route_marks", "malformed", "skips", "calls", "prompt_ids",
+        "opens_transcript",
     )
 
     def __init__(self, key: str) -> None:
@@ -129,8 +153,10 @@ class Turn:
         self.typed = False
         self.prompt_id: str | None = None
         self.loads: list[str] = []
-        self.task_loads: list[str] = []
+        self.invoked_load: str | None = None
         self.route: dict | None = None
+        self.route_marks: list[RouteMark] = []
+        self.opens_transcript = False
         self.malformed: list[str] = []
         self.skips: list[dict] = []
         self.calls: list[Call] = []
@@ -151,6 +177,8 @@ def read_recent_turns(
     last turn the caller has already seen, so that anything written after the
     caller last looked is included. Without `since_key`, or when it is not
     found within the read limits, only the turns read so far are returned.
+    Without `since_key`, reading goes on past the current turn only far enough
+    to tell whether an earlier turn exists (see `Turn.opens_transcript`).
     Reading never crosses a compaction boundary. It raises
     `TranscriptUnreadable` only when the current turn itself cannot be read.
 
@@ -184,6 +212,9 @@ def _read_turns_once(path: Path, since_key: str | None, sidechain: bool) -> list
     try:
         turns: list[Turn] = []
         pending: list[dict] = []
+        # Set once the current turn is read without `since_key`: the reader
+        # then only looks for an earlier turn's opener, collecting nothing.
+        probing = False
         for line in _lines_backward(path):
             if line is None:
                 # Read limit reached. Older unseen turns are given up, as if
@@ -201,26 +232,30 @@ def _read_turns_once(path: Path, since_key: str | None, sidechain: bool) -> list
                 continue
             if not isinstance(entry, dict):
                 continue
-            pending.append(entry)
             kind = _opener_kind(entry, sidechain)
-            if kind not in (TYPED, MACHINE, "compaction"):
+            is_opener = kind in (TYPED, MACHINE, "compaction")
+            if probing:
+                if is_opener:
+                    break  # An earlier turn exists.
+                continue
+            pending.append(entry)
+            if not is_opener:
                 continue
             turn = _build_turn(list(reversed(pending)), kind, sidechain)
             turns.append(turn)
             pending = []
-            if (
-                turn.is_compaction
-                or since_key is None
-                or turn.key == since_key
-                or len(turns) >= MAX_TURNS
-            ):
+            if turn.is_compaction or turn.key == since_key or len(turns) >= MAX_TURNS:
                 break
+            if since_key is None:
+                probing = True
         else:
-            # Reached the start of the file: entries before the first prompt
-            # (session-start attachments, or a transcript with no prompt yet)
-            # form a turn of their own.
-            if pending or not turns:
+            # Reached the start of the file. Without `since_key`, entries before
+            # the first prompt are session-start attachments and are dropped;
+            # otherwise they (or a transcript with no prompt yet) form a turn of
+            # their own.
+            if not probing and (pending or not turns):
                 turns.append(_build_turn(list(reversed(pending)), None, sidechain))
+            turns[-1].opens_transcript = True
     except OSError as exc:
         raise TranscriptUnreadable(f"the transcript could not be read ({exc.strerror})")
     return list(reversed(turns))
@@ -343,7 +378,9 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                     markers = parse_reply(str(block.get("text", "")))
                     if markers.route is not None:
                         turn.route = markers.route
-                        turn.task_loads = [s for s in turn.loads if s == invoked][:1]
+                        turn.route_marks.append(
+                            RouteMark(markers.route, len(turn.loads), len(turn.calls))
+                        )
                     turn.malformed.extend(markers.malformed)
                     turn.skips.extend(markers.skips)
                 elif block.get("type") == "tool_use":
@@ -362,7 +399,7 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                 # The prompt invoked a skill as `/<skill>`; Claude Code adds
                 # its body as a meta entry, which proves the load.
                 turn.loads.append(invoked)
-                turn.task_loads.append(invoked)
+                turn.invoked_load = invoked
                 continue
             for block in content:
                 if not isinstance(block, dict) or block.get("type") != "tool_result":
@@ -375,6 +412,8 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                         *finished,
                         ok=not block.get("is_error"),
                         agent_id=agent if isinstance(agent, str) else None,
+                        held=bool(block.get("is_error"))
+                        and bool(HOLD_RESULT_RE.match(_result_text(block))),
                     ))
                 if (
                     block.get("tool_use_id") in skill_calls
@@ -382,13 +421,23 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                 ):
                     skill = skill_calls.pop(block["tool_use_id"])
                     turn.loads.append(skill)
-                    turn.task_loads.append(skill)
     return turn
 
 
 def _starts_skill_body(content: list) -> bool:
     first = content[0] if content else None
     return isinstance(first, dict) and str(first.get("text", "")).startswith(SKILL_BODY_PREFIX)
+
+
+def _result_text(block: dict) -> str:
+    """A tool result's text, whether recorded as a string or as text blocks."""
+
+    content = block.get("content")
+    if isinstance(content, list):
+        return "".join(
+            str(part.get("text", "")) for part in content if isinstance(part, dict)
+        )
+    return str(content or "")
 
 
 def skill_name(value: object) -> str:

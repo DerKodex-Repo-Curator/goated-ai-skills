@@ -72,19 +72,70 @@ def fold_turns(
     turn again to pick up anything written after they last looked.
     """
 
+    if turns and turns[0].opens_transcript:
+        # Every turn of the session is in hand, so whether it has a task is
+        # known again even if saved state was missing or reset.
+        state.task_unknown = False
     for turn in turns:
         loads = [n for n in (goated_skill_name(raw, namespaces) for raw in turn.loads) if n]
         if ROUTER_SKILL in loads:
             state.router_loaded = True
-        route = turn.route
-        if route is not None and route["form"] != "continue":
-            # A new route starts a new task. Only loads after its route line
-            # (or a skill the prompt invoked) count; earlier proof is dropped.
-            task_loads = [goated_skill_name(raw, namespaces) for raw in turn.task_loads]
-            state.task = Task(route=route, started_turn=turn.key, loads=_unique(task_loads))
+        started = _task_started_in(turn)
+        if started is not None:
+            route, task_loads = started
+            state.task = Task(
+                route=route,
+                started_turn=turn.key,
+                loads=_unique(goated_skill_name(raw, namespaces) for raw in task_loads),
+            )
+            state.task_unknown = False
+        elif turn.route is not None and state.task is None and not state.task_unknown:
+            # Only `continue` lines, in a session with no task, such as one
+            # started from another session: they start a task with no skills.
+            state.task = Task(
+                route={"form": "continue"}, started_turn=turn.key, loads=_unique(loads)
+            )
         elif state.task is not None:
             state.task.loads = _unique([*state.task.loads, *loads])
         state.last_turn = turn.key
+
+
+def _task_started_in(turn: Turn) -> tuple[dict, list[str]] | None:
+    """Return the route and raw loads of the task `turn` starts, or None.
+
+    Every route line that is not `continue` starts a task, but lines with no
+    write or spawn between them (see `_did_work`) are one task, corrected; the
+    last line is its route. Its loads are the skill the prompt invoked plus
+    this turn's loads since the previous task's last route line, or since the
+    turn began. A `continue` line keeps whatever task the turn already started.
+    """
+
+    starts = [mark for mark in turn.route_marks if mark.route["form"] != "continue"]
+    if not starts:
+        return None
+    first = 0  # Index in `starts` of the current task's first route line.
+    for index in range(1, len(starts)):
+        between = turn.calls[starts[index - 1].calls_before:starts[index].calls_before]
+        if any(_did_work(call) for call in between):
+            first = index
+    since = starts[first - 1].loads_before if first else 0
+    loads = turn.loads[since:]
+    if turn.invoked_load:
+        loads = [turn.invoked_load, *loads]
+    return starts[-1].route, loads
+
+
+def _did_work(call) -> bool:
+    """True for a write or spawn that ran, so a later route line is a new task.
+
+    A failed edit wrote nothing, but a shell command or spawn that ended in an
+    error may still have written or handed off work. A call this adapter held
+    never ran.
+    """
+
+    if call.held or not writes_like_an_edit(call.name, call.input):
+        return False
+    return call.ok or call.name not in WRITE_TOOLS
 
 
 def writes_like_an_edit(tool_name: str, tool_input: dict) -> bool:
@@ -124,11 +175,14 @@ def check_routing(
     if turn.route is None:
         return Hold("route-line", STRICT, _route_line_instruction(turn))
     if turn.route["form"] == "continue" and state.task is None:
+        # Only when saved state was missing or reset: otherwise folding the
+        # turn started a task.
         return Hold(
             "route-line",
             STRICT,
-            "`goated-route: continue` was written, but this session has no current "
-            "task to continue. Write the route line the router selects for this task.",
+            "`goated-route: continue` was written, but the adapter's saved state for "
+            "this session was missing or reset, so it cannot tell which task "
+            "continues. Write the route line the router selects for this task.",
         )
     task = state.task
     if task is None or task.route["form"] != "route":
@@ -145,10 +199,11 @@ def check_routing(
         "pipeline",
         STRICT,
         f"The current route requires {names} before the first write or spawn. "
-        "Load each with the Skill tool and follow it; only loads after the route "
-        "line that started this task count, so load again if you loaded it "
-        "earlier. If one does not apply, write a corrected route line without "
-        "it; the last route line wins.",
+        "Load each with the Skill tool and follow it. A load earlier in this turn "
+        "counts unless another task's route line came after it; route lines with "
+        "no write or spawn between them are one task, corrected. A load in an "
+        "earlier turn does not count, so load it again. If one does not apply, "
+        "write a corrected route line without it; the last route line wins.",
     )
 
 
@@ -157,7 +212,8 @@ def _route_line_instruction(turn: Turn) -> str:
         "Before the first write or spawn after a user prompt, end routing with a "
         "route line on its own line, as the router's output contract defines: "
         "`goated-route: direct`, `goated-route: <intensity> | requires: <skills>`, "
-        "or `goated-route: continue` when this prompt continues the current task. "
+        "or `goated-route: continue` when this prompt continues the current task "
+        "or, in a session with no task yet, work begun elsewhere. "
         "Claude Code records a message only after this check, so a route line in "
         "the same message as this call is not visible yet: if you wrote one there, "
         "make the call again."

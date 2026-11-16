@@ -319,15 +319,23 @@ Claude Code adapter structure, settled in Ticket 030:
   (`prompt_id`), and fails open with a visible warning if it does not appear.
   Older unseen turns beyond the 64 MB read limit are given
   up; only a current turn larger than the limit fails open.
-- **Task state.** A task starts at the turn whose winning route line is not
-  `continue`, and runs through later `continue` turns. Only loads after the
-  route line that starts a task, plus a skill the prompt itself invoked, count
-  for it, so proof never carries over from an earlier task, even in the same
-  turn. Compaction clears the task's loads but keeps its route. Per-session
-  state holds the current task, whether the router loaded since the last
-  compaction, the last turn seen, and the latest user overrides; a file of any
-  other shape is reset. When a turn change is detected, unseen turns back to
-  the last one seen are folded in, so a load that ended a turn still counts.
+- **Task state.** A task starts at a route line that is not `continue`, and
+  runs through later `continue` turns. Route lines in one turn with no write
+  or spawn that ran between them (a held call or a failed edit did not run; a
+  failed shell write or spawn did) are one task, corrected, and a `continue`
+  after them in the same turn keeps it. In a session with no task,
+  a turn whose only route lines are `continue` starts a task with no required
+  skills (Ticket 042). A task counts a skill the prompt invoked, the turn's
+  loads after its first route line, and earlier loads in the turn unless
+  another task's route line came between; a load in an earlier turn never
+  counts. Compaction clears the task's loads but keeps its route. Per-session
+  state holds the current task, whether missing or reset state lost it,
+  whether the router loaded since the last compaction, the last turn seen, and
+  the latest user overrides; a file of any other shape is reset. Missing or
+  reset state leaves the task unknown, so `continue` stays held, until a full
+  route line, a session start, or a read of the whole transcript settles it.
+  When a turn change is detected, unseen turns back to the last one seen are
+  folded in, so a load that ended a turn still counts.
 - **Rule table.** Write tools (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`)
   and spawn tools (`Agent`, `mcp__ccd_session__start_session`,
   `mcp__ccd_session__hand_off_to_session`) meet all three routing gates;
