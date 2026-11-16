@@ -8,10 +8,11 @@ export type Stamp = { t: number; isEarlier?: true }
 export type UsageEvent = Stamp &
   (
     | { kind: 'prompt'; named: string[] }
-    | { kind: 'load'; skill: string; via: 'tool' | 'slash'; isSubagent: boolean }
+    /** `id`: the Skill call's tool_use id, so a call whose result is an error (`refused`) loaded nothing. */
+    | { kind: 'load'; id?: string; skill: string; via: 'tool' | 'slash'; isSubagent: boolean }
     /** `isSubagent`: the hook spoke to a subagent, not the main agent; `agent`: which subagent, so its own turn end settles it. */
-    /** `holdKind`: an adapter hold (`goated-hold:`), whose `hook` is its gate. */
-    | { kind: 'nudge'; hook: string; named: string[]; holdKind?: HoldKind; isSubagent?: true; agent?: string }
+    /** `holdKind`: an adapter hold (`goated-hold:`), whose `hook` is its gate; `isStop`: it held a `Stop`, not a call. */
+    | { kind: 'nudge'; hook: string; named: string[]; holdKind?: HoldKind; isStop?: true; isSubagent?: true; agent?: string }
     /** A `goated-skip: <skill>: <reason>` line in a reply: the agent (or the subagent `agent`) declined a skill for this turn. */
     | { kind: 'skip'; skill: string; reason: string; isSubagent?: true; agent?: string }
     /** A turn ended: the main agent's, or the subagent `agent`'s. A nudge it leaves open can no longer be followed. */
@@ -112,8 +113,8 @@ export type TimelineEntry = Stamp &
     | { kind: 'prompt' }
     /** `isSubagent`: a subagent loaded it, whatever caused the load. */
     | { kind: 'load'; skill: string; origin: Origin; isSubagent?: true }
-    /** `holdKind`: set for an adapter hold, whose `hook` is its gate. */
-    | { kind: 'nudge'; hook: string; skills: NudgedSkill[]; holdKind?: HoldKind; isSubagent?: true }
+    /** `holdKind`: set for an adapter hold, whose `hook` is its gate. `repeats`: how many times it held in a row, asking the same, when more than once. */
+    | { kind: 'nudge'; hook: string; skills: NudgedSkill[]; holdKind?: HoldKind; repeats?: number; isSubagent?: true }
     /** `isLoaded`: the skill had loaded (since the last compaction) when its file was read. */
     | { kind: 'ref'; skill: string; file: string; isLoaded: boolean; isSubagent?: true }
     | ({ kind: 'route'; isSubagent?: true } & Route)

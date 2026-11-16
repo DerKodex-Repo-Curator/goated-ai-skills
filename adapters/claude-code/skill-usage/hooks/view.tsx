@@ -207,8 +207,8 @@ function feedRow(entry: TimelineEntry): { mark: string; kind: string; runs: Run[
         : statuses.length > 0 && statuses.every(s => s === 'declined') ? 'declined'
         : 'good'
       const reasons = entry.skills.flatMap(s => (s.status === 'declined' && s.reason ? [s.reason] : []))
-      const runs: Run[] = [{ text: `${hookName(entry.hook)} → `, tone: 'plain' }]
-      if (entry.skills.length === 0) runs.push({ text: 'no skill named', tone: 'dim' })
+      const runs: Run[] = [{ text: `${hookName(entry.hook)}${entry.repeats ? ` ×${entry.repeats}` : ''} → `, tone: 'plain' }]
+      if (entry.skills.length === 0) runs.push({ text: entry.holdKind ? (FIX_ASKED[entry.hook] ?? 'asked for a fix, not a skill') : 'no skill named', tone: 'dim' })
       entry.skills.forEach((s, i) => {
         if (i > 0) runs.push({ text: ', ', tone: 'plain' })
         runs.push({ text: `${skillName(s.skill)} ${RESULT[s.status]}`, tone: OUTCOME_TONE[s.status] })
@@ -217,6 +217,12 @@ function feedRow(entry: TimelineEntry): { mark: string; kind: string; runs: Run[
       return { mark, kind: 'Hook', runs, tone, ...(reasons.length > 0 ? { reasons } : {}) }
     }
   }
+}
+
+/** What an adapter hold that names no skill asks for instead: a fix to the call it held. */
+const FIX_ASKED: Record<string, string> = {
+  commit: 'asked to fix the commit message',
+  spawn: 'asked for the brief template or its headings',
 }
 
 /** Each count of a table that is not zero, as `<n> <label>`, joined by commas; empty when none is. */

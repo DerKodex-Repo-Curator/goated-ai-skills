@@ -1448,3 +1448,38 @@ test('a declined row reads in pale green and reveals its reason on hover', async
     await ui.unmount()
   }
 })
+
+test('a hold that held again reads once with how many times, and one that asks for a fix says so instead of naming no skill', async ($, on) => {
+  const hold = (t: number, hook: string, named: string[]) => ({ kind: 'nudge', t, hook, named, holdKind: 'strict' })
+  const stored: Record<string, unknown> = {
+    tab: 'session',
+    events: {
+      shape: 'events-1',
+      value: [
+        { kind: 'prompt', t: 1, named: [] },
+        hold(2, 'route-line', ['(route line)']),
+        hold(3, 'route-line', ['(route line)']),
+        hold(4, 'route-line', ['(route line)']),
+        { kind: 'route', t: 5, form: 'direct' },
+        hold(6, 'commit', []),
+        hold(7, 'spawn', []),
+        hold(8, 'pull-request', []),
+      ],
+    },
+  }
+  on('clock.now', () => ({ value: 60_000 }))
+  on('state.get', (_, e) => {
+    const key = (e as { key: string }).key
+    return { value: key in stored ? { value: stored[key], version: 1 } : { value: undefined, version: 0 } }
+  })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  // Each row's whole sentence; its hook's name is a run of its own inside it.
+  const rows = (await ui.findAll({ type: 'Text', text: /→ ./ })).map(t => t.text)
+  await ui.unmount()
+  expect(rows).toEqual([
+    'pull-request hold → asked for a fix, not a skill',
+    'spawn hold → asked for the brief template or its headings',
+    'commit hold → asked to fix the commit message',
+    'route-line hold ×3 → a route line loaded',
+  ])
+})

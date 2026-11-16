@@ -8,7 +8,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { UsageEvent } from '../types'
-import { historyEvents, hookEvents, isObservedRow, markerEvents, rowEvents, summarize } from '../hooks/classify'
+import { historyEvents, hookEvents, isObservedRow, markerEvents, rowEvents, summarize, toolUseEvents } from '../hooks/classify'
 import type { HistoryMessage, Row } from '../hooks/classify'
 import { ADAPTER_TEXTS } from './adapter-texts'
 
@@ -69,10 +69,12 @@ test('holds that ask for a read, missing headings or a message fix name no skill
 // ---------- the closeout hold, a blocked Stop ---------------------------------------
 
 test('the closeout hold reads from the blocked Stop that carries it, live and in history, once each', async () => {
-  // The proof item asks for a check to run, which is no skill, so the hold names the skills its other items ask for.
-  const want = [{ kind: 'nudge', t: 1, hook: 'closeout', named: ['doc-sync'], holdKind: 'justified-skip' }]
+  // The proof item asks for a check to run, or a skip line naming the verification skill, so it names that skill.
+  const want = [{ kind: 'nudge', t: 1, hook: 'closeout', named: ['verification-before-completion', 'doc-sync'], holdKind: 'justified-skip', isStop: true }]
   const live = row('hook-context', [{ type: 'text', text: blockedStop(ADAPTER_TEXTS.closeout) }], { name: 'hook_blocking_error' })
-  expect(rowEvents(live, SKILLS, 1, { hasTool: true })).toEqual(want)
+  // A blocked Stop hands the agent its reason as a tool result would, so it ends the reply's round trip.
+  expect(rowEvents(live, SKILLS, 1, { hasTool: true, lastBoundary: 'response' })).toEqual([...want, { kind: 'results', t: 1 }])
+  expect(rowEvents(live, SKILLS, 1, { hasTool: true, lastBoundary: 'results' })).toEqual(want)
   // History holds the same reminder, after the reply it blocked; the plain "Stop hook feedback" note is not in it.
   const history: HistoryMessage[] = [
     { role: 'user', content: [{ type: 'text', text: 'Fix the exporter.' }] },
@@ -80,6 +82,7 @@ test('the closeout hold reads from the blocked Stop that carries it, live and in
     { role: 'user', content: [{ type: 'text', text: blockedStop(ADAPTER_TEXTS.closeout) }] },
   ]
   expect(historyEvents(history, SKILLS, 1).filter(e => e.kind === 'nudge')).toEqual(want.map(e => ({ ...e, isEarlier: true })))
+  expect(historyEvents(history, SKILLS, 1).map(e => e.kind)).toEqual(['prompt', 'response', 'nudge', 'results'])
   // Line ends written as CRLF read the same.
   expect(hookEvents(blockedStop(ADAPTER_TEXTS.closeout, '\r\n'), SKILLS, 1)).toEqual(want)
 })
@@ -89,8 +92,8 @@ test('the closeout hold is read once live: the plain feedback note row is not ob
   expect(isObservedRow(note)).toBe(false)
 })
 
-test('the closeout hold names each skill its items ask for: handoff for unfinished work, doc-sync, and not the red-flags path', async () => {
-  expect(stopHold(1, ADAPTER_TEXTS.closeoutUnfinished)).toEqual([{ kind: 'nudge', t: 1, hook: 'closeout', named: ['handoff', 'doc-sync'], holdKind: 'justified-skip' }])
+test('the closeout hold names each skill its items ask for, those named only in their skip line too, and not the red-flags path', async () => {
+  expect(stopHold(1, ADAPTER_TEXTS.closeoutUnfinished)).toEqual([{ kind: 'nudge', t: 1, hook: 'closeout', named: ['handoff', 'doc-sync', 'software-design-principles'], holdKind: 'justified-skip', isStop: true }])
 })
 
 test('a hold line is a hold only as an errored result or a blocked Stop: other hook text that carries one is not', async () => {
@@ -138,6 +141,23 @@ test('the spawn hold asks once for either brief skill: loading one follows it, a
   // A load in an earlier turn does not answer it.
   const later = summarize([prompt(1), load('handoff', 2), turnEnd(3), prompt(4), ...preHold('Agent', ADAPTER_TEXTS.spawn, 5), load('handoff', 6), turnEnd(7)])
   expect(later.nudges).toEqual({ spawn: { followed: 1 } })
+})
+
+// ---------- a load counts only when it ran ------------------------------------------
+
+test('a Skill call whose result is an error loaded nothing: it neither counts nor answers a hold', async () => {
+  const call = toolUseEvents([{ id: 'u1', name: 'Skill', input: { skill: 'software-design-principles' } }], false, true, 3)
+  const s = summarize([prompt(), ...preHold('Write', ADAPTER_TEXTS.design, 2), ...call, { kind: 'refused', t: 4, id: 'u1' }, turnEnd(5)])
+  expect(s.loads).toEqual({})
+  expect(s.nudges).toEqual({ design: { ignored: 1 } })
+  expect(s.timeline.some(e => e.kind === 'load')).toBe(false)
+  // The same call with a result that is no error loaded the skill.
+  expect(summarize([prompt(), ...preHold('Write', ADAPTER_TEXTS.design, 2), ...call, turnEnd(5)]).nudges).toEqual({ design: { followed: 1 } })
+})
+
+test('a Skill call names its skill as the adapter reads it: no leading slash, no arguments', async () => {
+  const [load] = toolUseEvents([{ id: 'u1', name: 'Skill', input: { skill: '/tdd write the failing test first' } }], false, true, 1)
+  expect(load).toEqual({ kind: 'load', t: 1, id: 'u1', skill: 'tdd', via: 'tool', isSubagent: false })
 })
 
 // ---------- a hold the held call's own reply already answered ----------------------
@@ -235,20 +255,70 @@ test('a security hold on a file named like a word, as adapters before 034 backti
 })
 
 test('the closeout hold is followed by loading the skill it names, declined by a skip line with its reason, and otherwise ignored', async () => {
-  const followed = summarize([prompt(), ...stopHold(2), load('doc-sync', 3), turnEnd(4)])
+  // The docs item alone, so each case turns on doc-sync.
+  const docsOnly = ADAPTER_TEXTS.closeout.replace(/\n- Proof:[^\n]*/, '')
+  const followed = summarize([prompt(), ...stopHold(2, docsOnly), load('doc-sync', 3), turnEnd(4)])
   expect(followed.nudges).toEqual({ closeout: { followed: 1 } })
   const reason = 'the change touches behavior no doc describes'
-  const declined = summarize([prompt(), ...stopHold(2), ...markerEvents(`goated-skip: doc-sync: ${reason}`, 3), turnEnd(4)])
+  const declined = summarize([prompt(), ...stopHold(2, docsOnly), ...markerEvents(`goated-skip: doc-sync: ${reason}`, 3), turnEnd(4)])
   expect(declined.nudges).toEqual({ closeout: { declined: 1 } })
   const nudge = declined.timeline.find(e => e.kind === 'nudge' && e.hook === 'closeout')
   expect(nudge?.kind === 'nudge' && nudge.skills).toEqual([{ skill: 'doc-sync', status: 'declined', at: 3, reason }])
-  const ignored = summarize([prompt(), ...stopHold(2), turnEnd(3)])
+  const ignored = summarize([prompt(), ...stopHold(2, docsOnly), turnEnd(3)])
   expect(ignored.nudges).toEqual({ closeout: { ignored: 1 } })
   expect(ignored.holds).toEqual({ 'justified-skip': 1 })
 })
 
-test('a blocked Stop does not end the turn: each block is its own hold, and the load that follows answers what they ask', async () => {
-  const s = summarize([prompt(), response(1), ...stopHold(2), response(3), ...stopHold(4), response(5), load('doc-sync', 5), results(6), turnEnd(7)])
+test('a blocked Stop does not end the turn: blocks in a row are one hold, and the load that follows answers it once', async () => {
+  const s = summarize([prompt(), response(1), ...stopHold(2), results(2), response(3), ...stopHold(4), results(4), response(5), load('doc-sync', 5), results(6), turnEnd(7)])
   expect(s.nudges.closeout).toEqual({ followed: 2 })
   expect(s.holds).toEqual({ 'justified-skip': 2 })
+  const rows = s.timeline.filter(e => e.kind === 'nudge')
+  expect(rows).toHaveLength(1)
+  expect(rows[0]?.kind === 'nudge' && rows[0].repeats).toBe(2)
+})
+
+test('a turn that ends after the agent answered a blocked Stop passed the closeout: what it still asked counts as followed', async () => {
+  // The adapter judges every Stop: a reply after the block that ends the turn without another block met each item,
+  // by a check run, a fix, a load or a skip line. The proof item asks for a check run, which is no load.
+  const passed = summarize([prompt(), response(1), ...stopHold(2, ADAPTER_TEXTS.closeoutUnfinished), results(2), response(3), turnEnd(4)])
+  expect(passed.nudges).toEqual({ closeout: { followed: 3 } })
+  // A skip line still declines its own item, with its reason.
+  const reason = 'no test runner exists in this folder'
+  const skipped = summarize([prompt(), response(1), ...stopHold(2), results(2), response(3), ...markerEvents(`goated-skip: verification-before-completion: ${reason}`, 3), turnEnd(4)])
+  expect(skipped.nudges).toEqual({ closeout: { declined: 1, followed: 1 } })
+  // With no reply after the block, the turn did not get past it.
+  expect(summarize([prompt(), response(1), ...stopHold(2), results(2), turnEnd(3)]).nudges).toEqual({ closeout: { ignored: 2 } })
+})
+
+test('a turn that ends after nine blocked Stops in a row hit the Claude Code limit: what was still asked counts as not followed', async () => {
+  const blocks = Array.from({ length: 9 }, (_, i) => [...stopHold(2 + 2 * i), results(2 + 2 * i), response(3 + 2 * i)]).flat()
+  const s = summarize([prompt(), response(1), ...blocks, turnEnd(30)])
+  expect(s.nudges).toEqual({ closeout: { ignored: 2 } })
+  expect(s.holds).toEqual({ 'justified-skip': 9 })
+})
+
+test('a hold repeated in the turn while its asks still wait is one row counted once; a different ask is a row of its own', async () => {
+  const routeHolds = summarize([
+    prompt(),
+    response(1), ...preHold('Edit', ADAPTER_TEXTS.routeLine, 2), results(2),
+    response(3), ...preHold('Edit', ADAPTER_TEXTS.routeLine, 3), results(3),
+    response(4), ...preHold('Edit', ADAPTER_TEXTS.routeLine, 4), results(4),
+    response(5), ...markerEvents('goated-route: direct', 5),
+    turnEnd(6),
+  ])
+  expect(routeHolds.nudges).toEqual({ 'route-line': { followed: 1 } })
+  expect(routeHolds.holds).toEqual({ strict: 3 })
+  const rows = routeHolds.timeline.filter(e => e.kind === 'nudge')
+  expect(rows.map(e => e.kind === 'nudge' && e.repeats)).toEqual([3])
+  // A pipeline hold that asks again for what is still missing joins the row; what it no longer asks for was met.
+  const pipeline = summarize([prompt(), ...preHold('Edit', ADAPTER_TEXTS.pipeline, 2), load('tdd', 3), ...preHold('Edit', ADAPTER_TEXTS.pipeline.replace('`tdd`, ', ''), 4), turnEnd(5)])
+  expect(pipeline.nudges).toEqual({ pipeline: { followed: 1, ignored: 1 } })
+  expect(pipeline.timeline.filter(e => e.kind === 'nudge')).toHaveLength(1)
+  // Holds on two different skills of the same gate stay apart.
+  const two = summarize([prompt(), ...preHold('Edit', ADAPTER_TEXTS.pipeline.replace('`tdd`, ', ''), 2), ...preHold('Edit', ADAPTER_TEXTS.pipeline.replace(', `doc-sync`', ''), 3), turnEnd(4)])
+  expect(two.timeline.filter(e => e.kind === 'nudge')).toHaveLength(2)
+  // In the next turn the same hold is a new row.
+  const later = summarize([prompt(1), ...preHold('Edit', ADAPTER_TEXTS.routeLine, 2), turnEnd(3), prompt(4), ...preHold('Edit', ADAPTER_TEXTS.routeLine, 5), turnEnd(6)])
+  expect(later.timeline.filter(e => e.kind === 'nudge')).toHaveLength(2)
 })

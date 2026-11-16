@@ -137,22 +137,33 @@ const ADAPTER_HOLD = /^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-sk
 const CALL_HELD = /^\S+ hook error: /
 const STOP_BLOCKED = /^Stop hook blocking error from command: ".*": (goated-hold: .*)$/
 const BACKTICKED_SKILL = /`([a-z0-9]+(?:-[a-z0-9]+)*)`/g
+// The skip line a justified-skip hold offers, backticked whole: its skill is asked for too, as for the closeout's proof item.
+const OFFERED_SKIP = /`goated-skip: ([a-z0-9]+(?:-[a-z0-9]+)*): /g
 /** The grammar's own words, which adapters before Ticket 034 backticked in hold texts; they are no skills. */
 const MARKER_WORDS = new Set(['goated-hold', 'goated-route', 'goated-skip'])
 /** The adapter's gate for a route's required skills. */
 const PIPELINE_GATE = 'pipeline'
 /** Gates whose named skills are alternatives, one of which answers the hold: the spawn hold's `handoff` or `subagent-driven-development`. */
 const ALTERNATIVE_GATES = new Set(['spawn'])
+/**
+ * How many times in a row Claude Code lets a `Stop` hook block before it ends
+ * the turn anyway (2.1.325, seen in Ticket 034's runs). A turn that ends after
+ * that many blocks did not get past the hold.
+ */
+const STOP_BLOCK_LIMIT = 9
 
 /**
  * What an adapter hold asks for: the router, a route line, or every skill its
- * text backticks. The adapter backticks only skill names, so the names are
- * taken as they stand, whether or not the session's skill listing has loaded.
+ * text backticks, alone or as the skill of a skip line it offers, in the order
+ * they appear. The adapter backticks only skill names and whole marker lines,
+ * so the names are taken as they stand, whether or not the session's skill
+ * listing has loaded.
  */
 function adapterHoldNamed(gate: string, body: string): string[] {
   if (gate === 'router-first') return [ROUTER]
   if (gate === 'route-line') return [ROUTE_LINE]
-  return [...new Set([...body.matchAll(BACKTICKED_SKILL)].flatMap(m => (m[1] && !MARKER_WORDS.has(m[1]) ? [m[1]] : [])))]
+  const named = [...body.matchAll(BACKTICKED_SKILL), ...body.matchAll(OFFERED_SKIP)].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+  return [...new Set(named.flatMap(m => (m[1] && !MARKER_WORDS.has(m[1]) ? [m[1]] : [])))]
 }
 
 /**
@@ -161,7 +172,7 @@ function adapterHoldNamed(gate: string, body: string): string[] {
  * or the reason of a blocked Stop. A hold line anywhere else, such as in a
  * failing command's output or another hook's context, is not one.
  */
-function adapterHold(text: string, isErrorResult: boolean): { gate: string; kind: HoldKind; body: string } | null {
+function adapterHold(text: string, isErrorResult: boolean): { gate: string; kind: HoldKind; body: string; isStop: boolean } | null {
   let lines = text.trimStart().split(/\r?\n/)
   if (!isErrorResult) {
     if (lines[0]?.trim() !== '<system-reminder>') return null
@@ -170,19 +181,19 @@ function adapterHold(text: string, isErrorResult: boolean): { gate: string; kind
   const first = (lines[0] ?? '').trim()
   const reason = isErrorResult ? first.replace(CALL_HELD, '') : STOP_BLOCKED.exec(first)?.[1]
   const hold = reason === undefined ? null : ADAPTER_HOLD.exec(reason)
-  return hold ? { gate: hold[1] ?? '', kind: hold[2] as HoldKind, body: lines.slice(1).join('\n') } : null
+  return hold ? { gate: hold[1] ?? '', kind: hold[2] as HoldKind, body: lines.slice(1).join('\n'), isStop: !isErrorResult } : null
 }
 
 /**
  * The hook messages in one piece of hook output, each with the skills it
  * names. Output that carries an adapter hold is that one hold, and its
- * `hook` is its gate. Otherwise a legacy marked paragraph starts a message,
+ * `hook` is its gate; `isStop`: it held a `Stop`, not a call. Otherwise a legacy marked paragraph starts a message,
  * and unmarked paragraphs after it belong to it. `holdsOnly`: the text is an
  * errored tool result, which can quote a marker, so only holds count.
  */
-export function hookNudges(text: string, skills: readonly string[], holdsOnly = false): { hook: string; named: string[]; holdKind?: HoldKind }[] {
+export function hookNudges(text: string, skills: readonly string[], holdsOnly = false): { hook: string; named: string[]; holdKind?: HoldKind; isStop?: true }[] {
   const hold = adapterHold(text, holdsOnly)
-  if (hold) return [{ hook: hold.gate, named: adapterHoldNamed(hold.gate, hold.body), holdKind: hold.kind }]
+  if (hold) return [{ hook: hold.gate, named: adapterHoldNamed(hold.gate, hold.body), holdKind: hold.kind, ...(hold.isStop ? { isStop: true as const } : {}) }]
 
   const messages: { hook: string; body: string }[] = []
   for (const paragraph of text.split('\n\n')) {
@@ -245,6 +256,9 @@ export function promptEvents(text: string, skills: readonly string[], t: number)
   ]
 }
 
+/** The skill a Skill call names, as the adapter reads it: `/tdd write the test` is `tdd`, and `plugin:tdd` is `tdd`. */
+const skillArgument = (value: unknown) => short(String(value ?? '').trim().replace(/^\/+/, '').split(/\s+/)[0] ?? '')
+
 // The tools that start a subagent; `Task` is the Agent tool's older name.
 const SPAWN_TOOLS = new Set(['Agent', 'Task'])
 // What the adapter holds like a write (adapters/claude-code/README.md): edits, and spawns, which hand work on.
@@ -271,7 +285,7 @@ export function toolUseEvents(
   for (const { id, name, input } of uses) {
     const ofCall = id ? { id } : {}
     if (name === 'Skill') {
-      events.push({ kind: 'load', t, skill: short(String(input.skill ?? '')), via: 'tool', isSubagent })
+      events.push({ kind: 'load', t, ...ofCall, skill: skillArgument(input.skill), via: 'tool', isSubagent })
       continue
     }
     if (SPAWN_TOOLS.has(name)) {
@@ -430,7 +444,8 @@ export function historyEvents(messages: readonly HistoryMessage[], skills: reado
       }
     }
     events.push(...opening, ...after)
-    if (message.content.some(b => b.type === 'tool_result') && lastBoundary !== 'results') {
+    const isAnswered = message.content.some(b => b.type === 'tool_result') || after.some(isStopHold)
+    if (isAnswered && lastBoundary !== 'results') {
       events.push({ kind: 'results', t })
       lastBoundary = 'results'
     }
@@ -453,6 +468,9 @@ function refusalEvents(block: { [field: string]: unknown }, skills: readonly str
   const id = block.tool_use_id
   return [...hookEvents(textOf(block.content), skills, t, { agent, holdsOnly: true }), ...(typeof id === 'string' ? [{ kind: 'refused' as const, t, id }] : [])]
 }
+
+/** Whether an event is an adapter hold on a `Stop`: the closeout's, which the reply after it answers. */
+const isStopHold = (e: UsageEvent) => e.kind === 'nudge' && e.isStop === true
 
 /** One conversation row as `session.append` carries it, as far as the mod reads it. */
 export type Row = {
@@ -501,7 +519,10 @@ export function rowEvents(
   }
   if (isHookRow(row)) {
     const text = textOf(blocks)
-    return [...hookEvents(text, skills, t, { agent: row.agentId }), ...(isMain ? overrideEvents(text, t) : [])]
+    const heard = hookEvents(text, skills, t, { agent: row.agentId })
+    // A blocked Stop hands the agent its reason as tool results do, so it ends the reply's round trip.
+    const ends = isMain && heard.some(isStopHold) && seen.lastBoundary !== 'results' ? [{ kind: 'results' as const, t }] : []
+    return [...heard, ...(isMain ? overrideEvents(text, t) : []), ...ends]
   }
   if (row.door === 'tool-result') {
     const refusals = blocks.flatMap(b => (b.type === 'tool_result' && b.is_error ? refusalEvents(b, skills, t, row.agentId) : []))
@@ -547,6 +568,8 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
     turnWrites = null
     pendingWrites.clear()
   }
+  // Skill calls whose result was an error: they loaded nothing. A refusal arrives after its call, so it is looked up ahead.
+  const failedLoads = new Set(events.flatMap(e => (e.kind === 'refused' ? [e.id] : [])))
   // Spawn log rows by tool_use id, so a refusal of the call marks its row held and takes it out of the count.
   const spawnRows = new Map<string, { isHeld?: true }>()
   const timeline: TimelineEntry[] = []
@@ -558,7 +581,9 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   // are alternatives), and its mark on the nudge's own log row, so settling it updates that row.
   // `agent`: the subagent it spoke to, absent for the main agent; that loop's turn end settles it.
   // `isStrict`: an adapter hold that only loading the skill clears; a skip line never declines it.
-  type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; mark: NudgedSkill }
+  // `row`: the nudge's log row, which a repeat of the same hold in the turn joins. `isStop`: a hold on a `Stop`.
+  type NudgeRow = TimelineEntry & { kind: 'nudge' }
+  type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; isStop?: true; mark: NudgedSkill; row: NudgeRow }
   let open: Open[] = []
   /** Whether an open ask is answered by `skill`; the route hold of earlier hooks is answered by any specialist. */
   const answers = (n: Open, skill: string) => n.anyOf.includes(skill) || (n.anyOf[0] === ANY_SPECIALIST && skill !== ROUTER)
@@ -572,6 +597,8 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   let reply: Reply = { loads: new Set() }
   let answeredReply: Reply = reply
   let isInResults = false
+  // Whether the main agent replied since the last blocked `Stop`: a turn that then ends got past that hold.
+  let hasRepliedSinceStop = false
   // Whether the session has a task a `continue` route line can continue, as the adapter's route-line hold checks.
   let hasTask = false
   let routerRule = false
@@ -590,14 +617,38 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
       return false
     })
   }
-  /** A loop's turn is over: what it left open can no longer be followed, so each is declined (a skip line said why) or ignored. */
+  /**
+   * A loop's turn is over: what it left open can no longer be followed, so each is declined (a skip line said why) or
+   * ignored. A hold on a `Stop` is the exception: the adapter judges every `Stop`, so a turn that ended after the agent
+   * answered the last block got past it, by a check run, a fix or a load the hold cannot name, unless Claude Code's
+   * limit on blocks in a row ended it.
+   */
   const closeTurn = (isInLoop: (n: Open) => boolean, by: UsageEvent) => {
     const ending = open.filter(n => isInLoop(n) && n.hook !== 'router-rule')
     for (const n of ending) {
       const reason = n.isStrict ? undefined : skipReason(n.anyOf, n.agent)
       if (reason !== undefined) n.mark.reason = reason
-      settle(m => m === n, reason !== undefined ? 'declined' : 'ignored', by)
+      const isPassed = n.isStop && hasRepliedSinceStop && (n.row.repeats ?? 1) < STOP_BLOCK_LIMIT
+      settle(m => m === n, reason !== undefined ? 'declined' : isPassed ? 'followed' : 'ignored', by)
     }
+  }
+  /**
+   * An adapter hold asking again, in the same turn, only for what an earlier hold of its gate still waits on: the agent
+   * retried, or a blocked `Stop` blocked again. It joins that hold's row as a repeat and counts once; what the earlier
+   * hold asked and this one no longer does was met. A hold that asks for anything new, or for nothing, is a row of its own.
+   */
+  const joinRepeat = (e: UsageEvent & { kind: 'nudge' }, asks: readonly string[][]): boolean => {
+    const row = open.findLast(n => n.hook === e.hook && n.agent === e.agent)?.row
+    const waiting = open.filter(n => n.row === row)
+    const sameAsk = (n: Open, ask: readonly string[]) => n.anyOf.join(' ') === ask.join(' ')
+    if (!row || asks.length === 0 || !asks.every(ask => waiting.some(n => sameAsk(n, ask)))) return false
+    row.repeats = (row.repeats ?? 1) + 1
+    settle(n => waiting.includes(n) && !asks.some(ask => sameAsk(n, ask)), 'followed', e)
+    for (const ask of asks) {
+      const inReply = answeredInReply(ask, e)
+      if (inReply !== undefined) settle(n => waiting.includes(n) && sameAsk(n, ask), 'followed', e, inReply)
+    }
+    return true
   }
   /** What the held call's own reply already did for `ask`, which the adapter could not see yet: the answering skill, or none. */
   const answeredInReply = (ask: readonly string[], e: UsageEvent & { kind: 'nudge' }) => {
@@ -626,6 +677,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
       case 'response':
         reply = { loads: new Set() }
         isInResults = false
+        hasRepliedSinceStop = true
         break
       case 'results':
         if (!isInResults) answeredReply = reply
@@ -634,7 +686,11 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
       case 'nudge': {
         if (e.hook === 'router-rule') routerRule = true
         if (e.holdKind) measures.holds[e.holdKind] = (measures.holds[e.holdKind] ?? 0) + 1
-        const row = {
+        if (e.isStop) hasRepliedSinceStop = false
+        // A gate whose skills are alternatives asks once; any other nudge asks for each skill it names.
+        const asks = ALTERNATIVE_GATES.has(e.hook) && e.named.length > 1 ? [e.named] : e.named.map(s => [s])
+        if (e.holdKind && joinRepeat(e, asks)) break
+        const row: NudgeRow = {
           ...stamp(e),
           kind: 'nudge' as const,
           hook: e.hook,
@@ -643,8 +699,6 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
           ...(e.isSubagent ? { isSubagent: true as const } : {}),
         }
         timeline.push(row)
-        // A gate whose skills are alternatives asks once; any other nudge asks for each skill it names.
-        const asks = ALTERNATIVE_GATES.has(e.hook) && e.named.length > 1 ? [e.named] : e.named.map(s => [s])
         const at = e.isEarlier ? {} : { at: e.t }
         for (const ask of asks) {
           const label = ask.join(' or ')
@@ -665,7 +719,15 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
             const mark: NudgedSkill = { skill: label, status: 'pending' }
             row.skills.push(mark)
             for (const s of ask) turnNudged.add(s)
-            open.push({ hook: e.hook, anyOf: ask, ...(e.agent ? { agent: e.agent } : {}), ...(e.holdKind === 'strict' ? { isStrict: true as const } : {}), mark })
+            open.push({
+              hook: e.hook,
+              anyOf: ask,
+              ...(e.agent ? { agent: e.agent } : {}),
+              ...(e.holdKind === 'strict' ? { isStrict: true as const } : {}),
+              ...(e.isStop ? { isStop: true as const } : {}),
+              mark,
+              row,
+            })
           }
         }
         break
@@ -685,6 +747,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         skipped.delete(e.agent ?? '')
         break
       case 'load': {
+        if (e.id && failedLoads.has(e.id)) break
         // A hook asking for the skill outranks who loaded it, for a subagent as for the agent; the log row keeps that a subagent did.
         const origin: Origin =
           e.via === 'slash' ? 'user-slash'

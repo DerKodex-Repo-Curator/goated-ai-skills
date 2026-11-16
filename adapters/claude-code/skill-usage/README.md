@@ -36,9 +36,11 @@ adapter replaces those hooks.
 
 Holds reach a session as denied tool calls, and the closeout hold as a
 blocked `Stop`. The mod reads each hold's gate and kind from its first line,
-and the skills it asks for from the skill names its text backticks. The pane
-counts a held skill as followed when the agent then loads it (or reads its
-files), and as not loaded when the turn ends without that. A
+and the skills it asks for from the skill names its text backticks, alone or
+as the skill of a `goated-skip:` line it offers. The pane counts a held skill
+as followed when the agent then loads it (or reads its files), and as not
+loaded when the turn ends without that. A Skill call whose result is an error
+loaded nothing, so it neither counts as a load nor answers a hold. A
 `justified-skip` hold (`design`, `security`, `closeout`) also counts as
 declined when a skip line names the skill in the same turn, before or after
 the hold; a `strict` hold (`router-first`, `route-line`, `pipeline`,
@@ -62,8 +64,19 @@ clears it. In particular:
 - A `spawn` hold names two ways to write the brief, `handoff` or
   `subagent-driven-development`. It counts once: its row shows "handoff or
   subagent-driven-development" until the agent loads one, then names that one.
+- A hold that holds again in the same turn while it still waits, asking for
+  the same skills or fewer, is one row marked `×N` and counts once in the
+  rates; the adapter holds count each time. What it no longer asks for was
+  met. This is the agent retrying a held call, or the adapter blocking the
+  `Stop` again.
 - A blocked `Stop` does not end the turn, so the closeout hold waits for the
-  agent's next move; each time the adapter blocks again is its own hold.
+  agent's next move. The adapter judges every `Stop`: when the turn ends after
+  the agent replied to the last block, the turn got past the hold, so each
+  item still waiting counts as followed (a skip line still declines its own
+  item). That covers the items no load answers, a check run for the proof
+  item or a fix for unfinished work. Claude Code ends a turn after nine blocks
+  in a row whatever the hook says, so after nine the items still waiting count
+  as not loaded.
 
 ## The Pane
 
@@ -173,12 +186,11 @@ This has not been tested end to end. Keep a backup of both files.
 
 - A hold is read only as far as its `goated-hold:` first line and the skill
   names it backticks allow. A hold that names no skill counts by gate and
-  kind with no per-skill result: the `spawn` holds that ask for a template
-  read or for missing brief headings, and the `commit` hold for a message
-  that breaks the contract. In the closeout hold, the proof item asks for a
-  check to run and the design item for a read of the red-flags reference,
-  neither of which is a skill load, so only the skills its other items name
-  (`doc-sync`, `handoff`) get a result.
+  kind with no per-skill result, and its row says what it asked for instead:
+  the `spawn` holds that ask for a template read or for missing brief
+  headings, and the `commit` hold for a message that breaks the contract.
+- The nine-block limit is Claude Code's as seen on 2.1.325. If a version
+  changes it, a closeout the agent never got past may count as followed.
 - Overrides reach the mod through the adapter's `UserPromptSubmit` hook
   context. A notice reaches a mod as a row with no text, so the notice
   itself is not read. When the mod loads mid-session, the history it
