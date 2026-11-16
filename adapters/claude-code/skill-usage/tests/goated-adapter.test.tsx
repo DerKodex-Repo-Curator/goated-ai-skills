@@ -85,6 +85,52 @@ test('route lines are counted by form, listed in the log, and add up across sess
   expect(mergeSummaries(s, s).routes).toEqual({ route: 2, continue: 2, direct: 2 })
 })
 
+// ---------- a route line on every turn that writes ----------------------------------
+
+const EDIT = { name: 'Edit', input: { file_path: 'src/a.ts', old_string: 'a', new_string: 'b' } }
+
+test('writes are the calls the adapter holds like writes: edits and spawns, by the main agent only', async () => {
+  for (const name of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Agent', 'mcp__ccd_session__start_session', 'mcp__ccd_session__hand_off_to_session']) {
+    expect(toolUseEvents([{ name, input: {} }], false, true, 1).filter(e => e.kind === 'write')).toEqual([{ kind: 'write', t: 1 }])
+  }
+  expect(toolUseEvents([{ name: 'Read', input: { file_path: 'a' } }, { name: 'Bash', input: { command: 'ls' } }], false, true, 1).filter(e => e.kind === 'write')).toEqual([])
+  expect(toolUseEvents([EDIT], true, true, 1, 'a1').filter(e => e.kind === 'write')).toEqual([])
+})
+
+test('each turn that writes counts once: routed before its first write, only after it, or not at all', async () => {
+  const s = summarize([
+    // Routed before the first write; a second write in the turn does not count again.
+    { kind: 'prompt', t: 1, named: [] },
+    ...markerEvents('goated-route: standard | requires: tdd', 2),
+    ...toolUseEvents([EDIT], false, false, 3),
+    ...toolUseEvents([EDIT], false, true, 4),
+    // `continue` is a route line too.
+    { kind: 'prompt', t: 5, named: [] },
+    ...markerEvents('goated-route: continue', 6),
+    ...toolUseEvents([EDIT], false, true, 7),
+    // A route line only after the write.
+    { kind: 'prompt', t: 8, named: [] },
+    ...toolUseEvents([EDIT], false, true, 9),
+    ...markerEvents('goated-route: direct', 10),
+    // A main turn end inside a typed prompt's turn (a background result woke the agent) does not split it.
+    { kind: 'turn-end', t: 11 },
+    ...toolUseEvents([EDIT], false, true, 12),
+    // No route line at all.
+    { kind: 'prompt', t: 13, named: [] },
+    ...toolUseEvents([EDIT], false, true, 14),
+    // A turn that only reads is not counted.
+    { kind: 'prompt', t: 15, named: [] },
+    ...toolUseEvents([{ name: 'Read', input: { file_path: 'a' } }], false, true, 16),
+  ])
+  expect(s.writingTurns).toEqual({ routed: 2, late: 1, none: 1 })
+  expect(addSession(addSession(null, s), s).writingTurns).toEqual({ routed: 4, late: 2, none: 2 })
+})
+
+test('the report says how many writing turns had a route line', async () => {
+  const s = summarize([{ kind: 'prompt', t: 1, named: [] }, ...toolUseEvents([EDIT], false, false, 2)])
+  expect(reportText(addSession(null, s), null)).toContain('- Writing turns: 0 routed before the first write · 0 routed only after it · 1 with no route line')
+})
+
 // ---------- the adapter's routing holds --------------------------------------------
 
 // As a held call's errored tool result reads in a real transcript.
@@ -127,16 +173,36 @@ test('the router-first hold is followed by loading the router, the route-line ho
   expect(pipeline).toEqual({ kind: 'nudge', t: 6, hook: 'pipeline', holdKind: 'strict', skills: [{ skill: 'tdd', status: 'followed', at: 7 }, { skill: 'doc-sync', status: 'ignored', at: 8 }] })
 })
 
-test('a justified skip line declines the adapter hold it names, keeping the reason', async () => {
+test('a skip line never declines a strict adapter hold: only loading the skill clears it', async () => {
   const s = summarize([
     { kind: 'prompt', t: 1, named: [] },
     ...hookEvents(PIPELINE, SKILLS, 2, { holdsOnly: true }),
     { kind: 'load', t: 3, skill: 'tdd', via: 'tool', isSubagent: false },
     ...markerEvents('goated-skip: doc-sync: change touches only test fixtures', 4),
+    { kind: 'turn-end', t: 5 },
   ])
-  expect(s.nudges).toEqual({ pipeline: { followed: 1, declined: 1 } })
+  expect(s.nudges).toEqual({ pipeline: { followed: 1, ignored: 1 } })
   const row = s.timeline.find(e => e.kind === 'nudge')
-  expect(row?.kind === 'nudge' && row.skills[1]).toEqual({ skill: 'doc-sync', status: 'declined', at: 4, reason: 'change touches only test fixtures' })
+  expect(row?.kind === 'nudge' && row.skills[1]).toEqual({ skill: 'doc-sync', status: 'ignored', at: 5 })
+})
+
+test('a justified skip line declines a justified-skip hold it names, before or after the hold, keeping the reason', async () => {
+  const design = 'PreToolUse:Edit hook error: goated-hold: design | justified-skip\nLoad `doc-sync` or write a skip line.'
+  const after = summarize([
+    { kind: 'prompt', t: 1, named: [] },
+    ...hookEvents(design, SKILLS, 2, { holdsOnly: true }),
+    ...markerEvents('goated-skip: doc-sync: change touches only test fixtures', 3),
+  ])
+  expect(after.nudges).toEqual({ design: { declined: 1 } })
+  expect(after.holds).toEqual({ 'justified-skip': 1 })
+  const row = after.timeline.find(e => e.kind === 'nudge')
+  expect(row?.kind === 'nudge' && row.skills[0]).toEqual({ skill: 'doc-sync', status: 'declined', at: 3, reason: 'change touches only test fixtures' })
+  const before = summarize([
+    { kind: 'prompt', t: 1, named: [] },
+    ...markerEvents('goated-skip: doc-sync: change touches only test fixtures', 2),
+    ...hookEvents(design, SKILLS, 3, { holdsOnly: true }),
+  ])
+  expect(before.nudges).toEqual({ design: { declined: 1 } })
 })
 
 test('the hooks of earlier installs are still read beside the adapter', async () => {
@@ -157,6 +223,12 @@ test("the adapter's override notice records each phrase you typed, and nothing e
   ])
   expect(overrideEvents('GOATED Claude Code adapter: the transcript cannot be read, so this action was allowed without checks.', 3)).toEqual([])
   expect(overrideEvents('You wrote: recorded your override for this prompt: "skip routing".', 3)).toEqual([])
+})
+
+test('the override sentence is found inside hook context beside other notices, which is where mods can read it', async () => {
+  // The notice row itself reaches a mod with no text; the adapter's hook context carries the same sentence.
+  const context = `The GOATED shared policy is not loaded. ${NOTICE}`
+  expect(overrideEvents(context, 3)).toEqual([{ kind: 'override', t: 3, phrases: ['skip routing', 'skip the tdd skill'] }])
 })
 
 test('overrides are counted by phrase, logged, and add up across sessions', async () => {
@@ -186,7 +258,8 @@ test('a read of a reference file the route requires is recorded against its skil
 const SPAWN = { name: 'Agent', input: { description: 'Scan the repo', subagent_type: 'Explore', prompt: 'Find every caller of x.' } }
 
 test('a subagent spawn is recorded with its type and task, by the main agent or a subagent', async () => {
-  expect(toolUseEvents([SPAWN], false, true, 4)).toEqual([{ kind: 'spawn', t: 4, agentType: 'Explore', description: 'Scan the repo' }])
+  // A spawn hands work on, so it is also a write, as the adapter holds it.
+  expect(toolUseEvents([SPAWN], false, true, 4)).toEqual([{ kind: 'spawn', t: 4, agentType: 'Explore', description: 'Scan the repo' }, { kind: 'write', t: 4 }])
   expect(toolUseEvents([{ name: 'Agent', input: { description: 'Help', prompt: 'x' } }], true, true, 4, 'a1')).toEqual([
     { kind: 'spawn', t: 4, agentType: 'general-purpose', description: 'Help', isSubagent: true, agent: 'a1' },
   ])
@@ -262,7 +335,9 @@ test('the Session tab logs route lines, adapter holds, overrides, spawns and sta
     expect((await ui.find({ type: 'Text', text: /^you typed "skip doc-sync"$/ }))?.text).toBeDefined()
     expect((await ui.find({ type: 'Text', text: /^Explore started: Scan the repo$/ }))?.text).toBeDefined()
     expect((await ui.find({ type: 'Text', text: /^a subagent received its start message$/ }))?.text).toBeDefined()
-    expect((await ui.find({ type: 'Text', text: /^Routes: 1 routed · Adapter holds: 1 strict · Overrides: 1 · Subagents: 1 started, 1 start message$/ }))?.text).toBeDefined()
+    expect(
+      (await ui.find({ type: 'Text', text: /^Routes: 1 routed · Writing turns: 1 routed · Adapter holds: 1 strict · Overrides: 1 · Subagents: 1 started, 1 start message$/ }))?.text,
+    ).toBeDefined()
     await ui.unmount()
   }
 })

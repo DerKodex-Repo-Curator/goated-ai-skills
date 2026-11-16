@@ -29,9 +29,18 @@ export type UsageEvent = Stamp &
     | { kind: 'spawn'; agentType: string; description: string; isSubagent?: true; agent?: string }
     /** The start message a SubagentStart hook gave the subagent `agent`. */
     | { kind: 'subagent-start'; agent?: string }
+    /** A main-agent call the adapter holds like a write: an edit, or a spawn that hands work on. */
+    | { kind: 'write' }
     | { kind: 'tool' }
     | { kind: 'compact' }
   )
+
+/**
+ * Turns that wrote, by whether a route line came before the first write
+ * (`routed`), only after it (`late`), or not at all (`none`). A turn runs
+ * from one typed prompt to the next.
+ */
+export type WritingTurns = { routed: number; late: number; none: number }
 
 /** A route line as the marker grammar reads it (stack/fixtures/markers/README.md in the GOATED repo). */
 export type Route = { form: 'direct' | 'continue' } | { form: 'route'; intensity: 'lightweight' | 'standard' | 'full'; requires: string[] }
@@ -72,6 +81,7 @@ export type SessionSummary = {
 export type Measures = {
   /** Winning route lines, by form. */
   routes?: Counts<RouteForm>
+  writingTurns?: WritingTurns
   /** Adapter holds, by kind; what became of them is in `nudges`, by gate. */
   holds?: Counts<HoldKind>
   /** Overrides you typed, by phrase. */

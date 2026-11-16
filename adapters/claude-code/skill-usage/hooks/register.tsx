@@ -24,8 +24,6 @@ const MAX_EVENTS = 5000
 const MAX_SESSIONS = 300
 // The attachment rows that carry hook output; other hook_* rows repeat it.
 const HOOK_ATTACHMENTS = new Set(['hook_additional_context', 'hook_blocking_error'])
-// The attachment row of a hook's notice to you, where the adapter says it recorded an override.
-const NOTICE_ATTACHMENT = 'hook_system_message'
 const OWN_SOURCES = new Set(['userSettings', 'projectSettings'])
 
 const events = atom({ plugin: 'skill-usage', key: 'events' } as const, [], { shape: 'events-1' })
@@ -262,9 +260,7 @@ async function observeRow($: Dollar, e: SessionAppendInput) {
   const isMain = !e.agentId
   const isHookRow = e.door === 'hook-context' || (e.door === 'attachment' && HOOK_ATTACHMENTS.has(e.message.name ?? ''))
   // Every row of the conversation passes here: leave the others at no cost.
-  // Unverified which door a hook's notice comes in by; only the adapter's override wording counts, so both are read.
-  const isNoticeRow = e.door === 'notice' || (e.door === 'attachment' && e.message.name === NOTICE_ATTACHMENT)
-  if (!['prompt', 'command', 'response', 'tool-result', 'compaction'].includes(e.door) && !isHookRow && !isNoticeRow) return
+  if (!['prompt', 'command', 'response', 'tool-result', 'compaction'].includes(e.door) && !isHookRow) return
   const blocks = e.message.content
   const t = await $.clock.now()
   const add: UsageEvent[] = []
@@ -277,9 +273,9 @@ async function observeRow($: Dollar, e: SessionAppendInput) {
     add.push(...markerEvents(textOf(blocks.filter(b => b.type === 'text')), t, e.agentId), ...toolUseEvents(uses, !isMain, hasToolBefore, t, e.agentId))
   } else if (isHookRow) {
     // Which subagent a row belongs to, so its own turn end and skip lines settle its own nudges.
-    add.push(...hookEvents(textOf(blocks), await knownSkills($), t, { agent: e.agentId }))
-  } else if (isNoticeRow) {
-    add.push(...overrideEvents(textOf(blocks), t))
+    // A hook's notice to you (`hook_system_message`) reaches a mod with no text, so the adapter's override sentence is read from its hook context.
+    const text = textOf(blocks)
+    add.push(...hookEvents(text, await knownSkills($), t, { agent: e.agentId }), ...(isMain ? overrideEvents(text, t) : []))
   } else if (e.door === 'tool-result') {
     const skills = await knownSkills($)
     for (const b of blocks) {

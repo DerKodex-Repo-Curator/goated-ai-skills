@@ -25,6 +25,7 @@ import type {
   SubagentCounts,
   TimelineEntry,
   UsageEvent,
+  WritingTurns,
 } from '../types'
 
 export const ROUTER = 'using-goated-ai-skills'
@@ -34,6 +35,8 @@ export const ANY_SPECIALIST = '(any specialist)'
 export const ROUTE_LINE = '(route line)'
 /** Subagent counts before any subagent did anything. */
 export const NO_SUBAGENTS: Readonly<SubagentCounts> = { spawns: 0, starts: 0, bodyReads: 0 }
+/** Writing-turn counts before any turn wrote. */
+export const NO_WRITING_TURNS: Readonly<WritingTurns> = { routed: 0, late: 0, none: 0 }
 
 // Hand-written hook messages, the first match winning within one paragraph of hook output.
 // `subagent-start` is a SubagentStart hook's contract for a subagent: recorded as its start, not as a nudge.
@@ -178,12 +181,13 @@ export function hookEvents(text: string, skills: readonly string[], t: number, o
   )
 }
 
-// The adapter's notice when it records overrides you typed, each phrase quoted. Its other notices share the prefix.
-const OVERRIDE_NOTICE = /^GOATED Claude Code adapter: recorded your override for this prompt: ((?:"[^"]*"(?:, )?)+)/
+// The adapter's sentence when it records overrides you typed, each phrase quoted; its other notices share the prefix.
+// The notice row itself reaches a mod with no text, so the sentence is read wherever hook context carries it.
+const OVERRIDE_NOTICE = /GOATED Claude Code adapter: recorded your override for this prompt: ((?:"[^"]*"(?:, )?)+)/
 
-/** The overrides an adapter notice says it recorded, as one event; none for any other text. */
+/** The overrides an adapter sentence in hook output says it recorded, as one event; none for any other text. */
 export function overrideEvents(text: string, t: number): UsageEvent[] {
-  const quoted = OVERRIDE_NOTICE.exec(text.trim())?.[1]
+  const quoted = OVERRIDE_NOTICE.exec(text)?.[1]
   if (!quoted) return []
   const phrases = [...quoted.matchAll(/"([^"]*)"/g)].flatMap(m => (m[1] ? [m[1].toLowerCase()] : []))
   return phrases.length > 0 ? [{ kind: 'override', t, phrases }] : []
@@ -210,13 +214,16 @@ export function promptEvents(text: string, skills: readonly string[], t: number)
 
 // The tools that start a subagent; `Task` is the Agent tool's older name.
 const SPAWN_TOOLS = new Set(['Agent', 'Task'])
+// What the adapter holds like a write (adapters/claude-code/README.md): edits, and spawns, which hand work on.
+const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', ...SPAWN_TOOLS, 'mcp__ccd_session__start_session', 'mcp__ccd_session__hand_off_to_session'])
 
 /**
  * The events of one assistant message's tool calls: skill loads, subagent
- * spawns, reads into a skill's folder, reads of a skill's supporting files,
- * and the turn's first real tool (`hasToolBefore`: one was already seen). A
- * subagent's calls count only as skill loads, spawns, supporting-file reads
- * and reads of a SKILL.md (`body`); `agent` names that subagent.
+ * spawns, writes, reads into a skill's folder, reads of a skill's supporting
+ * files, and the turn's first real tool (`hasToolBefore`: one was already
+ * seen). A subagent's calls count only as skill loads, spawns,
+ * supporting-file reads and reads of a SKILL.md (`body`); `agent` names that
+ * subagent.
  */
 export function toolUseEvents(
   uses: readonly { name: string; input: Record<string, unknown> }[],
@@ -247,6 +254,7 @@ export function toolUseEvents(
     const reached = skillsInPath(target)
     if (reached.length > 0) events.push({ kind: 'read', t, skills: reached })
     events.push(...refs)
+    if (WRITE_TOOLS.has(name)) events.push({ kind: 'write', t })
     if (!seenTool && !BOOKKEEPING_TOOL.test(name)) {
       events.push({ kind: 'tool', t })
       seenTool = true
@@ -397,7 +405,16 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   const lastUsed: Record<string, number> = {}
   const refs: Refs = {}
   let refsUnloaded = 0
-  const measures: Required<Measures> = { routes: {}, holds: {}, overrides: {}, subagents: { ...NO_SUBAGENTS } }
+  const measures: Required<Measures> = { routes: {}, writingTurns: { ...NO_WRITING_TURNS }, holds: {}, overrides: {}, subagents: { ...NO_SUBAGENTS } }
+  // The running typed-prompt turn: whether the main agent wrote a route line yet, and, once it wrote, how that write stood.
+  // A turn ends only at the next typed prompt, so a background result that wakes the agent stays in the turn, as the adapter treats it.
+  let isTurnRouted = false
+  let turnWrites: keyof WritingTurns | null = null
+  const tallyWritingTurn = () => {
+    if (turnWrites) measures.writingTurns[turnWrites] += 1
+    isTurnRouted = false
+    turnWrites = null
+  }
   const timeline: TimelineEntry[] = []
   let loaded = new Set<string>()
   let turnNamed = new Set<string>()
@@ -405,7 +422,8 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   let turnRouter = false
   // Each open nudge points at its skill's status on the nudge's own log row, so settling it updates that row.
   // `agent`: the subagent it spoke to, absent for the main agent; that loop's turn end settles it.
-  type Open = { hook: string; skill: string; agent?: string; mark: NudgedSkill }
+  // `isStrict`: an adapter hold that only loading the skill clears; a skip line never declines it.
+  type Open = { hook: string; skill: string; agent?: string; isStrict?: true; mark: NudgedSkill }
   let open: Open[] = []
   // Skip lines written in each loop's running turn, by agent ('' for the main agent) then skill, with their reasons.
   const skipped = new Map<string, Map<string, string>>()
@@ -428,7 +446,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   const closeTurn = (isInLoop: (n: Open) => boolean, by: UsageEvent) => {
     const ending = open.filter(n => isInLoop(n) && n.hook !== 'router-rule')
     for (const n of ending) {
-      const reason = skipsOf(n.agent).get(n.skill)
+      const reason = n.isStrict ? undefined : skipsOf(n.agent).get(n.skill)
       if (reason !== undefined) n.mark.reason = reason
       settle(m => m === n, reason !== undefined ? 'declined' : 'ignored', by)
     }
@@ -441,6 +459,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         // and holds for the whole session: it stays open until the router loads.
         // Anything else still open belongs to a turn that is over, a turn end the mod did not see included.
         closeTurn(() => true, e)
+        tallyWritingTurn()
         skipped.clear()
         turnNamed = new Set(e.named)
         turnNudged = new Set(open.map(n => n.skill))
@@ -460,7 +479,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         }
         timeline.push(row)
         for (const skill of e.named) {
-          const reason = skipsOf(e.agent).get(skill)
+          const reason = e.holdKind === 'strict' ? undefined : skipsOf(e.agent).get(skill)
           if (loaded.has(skill) && e.hook !== 'router-rule') {
             bump(nudges, e.hook, 'already loaded')
             row.skills.push({ skill, status: 'already loaded', ...(e.isEarlier ? {} : { at: e.t }) })
@@ -472,7 +491,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
             const mark: NudgedSkill = { skill, status: 'pending' }
             row.skills.push(mark)
             turnNudged.add(skill)
-            open.push({ hook: e.hook, skill, ...(e.agent ? { agent: e.agent } : {}), mark })
+            open.push({ hook: e.hook, skill, ...(e.agent ? { agent: e.agent } : {}), ...(e.holdKind === 'strict' ? { isStrict: true as const } : {}), mark })
           }
         }
         break
@@ -481,7 +500,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         const own = skipsOf(e.agent)
         own.set(e.skill, e.reason)
         skipped.set(e.agent ?? '', own)
-        for (const n of open.filter(n => n.skill === e.skill && n.agent === e.agent)) {
+        for (const n of open.filter(n => n.skill === e.skill && n.agent === e.agent && !n.isStrict)) {
           n.mark.reason = e.reason
           settle(m => m === n, 'declined', e)
         }
@@ -522,6 +541,10 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         break
       case 'route': {
         measures.routes[e.form] = (measures.routes[e.form] ?? 0) + 1
+        if (!e.agent) {
+          isTurnRouted = true
+          if (turnWrites === 'none') turnWrites = 'late'
+        }
         settle(n => n.skill === ROUTE_LINE && n.agent === e.agent, 'followed', e)
         const route: Route = e.form === 'route' ? { form: e.form, intensity: e.intensity, requires: e.requires } : { form: e.form }
         timeline.push({ ...stamp(e), kind: 'route', ...route, ...(e.isSubagent ? { isSubagent: true as const } : {}) })
@@ -547,6 +570,9 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         timeline.push({ ...stamp(e), kind: 'ref', skill: e.skill, file: e.file, isLoaded, ...(e.isSubagent ? { isSubagent: true as const } : {}) })
         break
       }
+      case 'write':
+        turnWrites ??= isTurnRouted ? 'routed' : 'none'
+        break
       case 'tool':
         toolSeen = true
         break
@@ -558,6 +584,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
     }
   }
   settle(() => true, isFinal ? 'ignored' : 'pending')
+  tallyWritingTurn()
 
   return { loads, nudges, lastUsed, refs, refsUnloaded, ...measures, timeline, router: routerRule ? router ?? 'never' : 'off' }
 }
@@ -569,6 +596,7 @@ function addFlat(into: Record<string, number | undefined>, from: Record<string, 
 /** Adds `from`'s measures into `into`, either of which may predate them. */
 function addMeasures(into: Measures, from: Measures) {
   addFlat((into.routes ??= {}), from.routes)
+  addFlat((into.writingTurns ??= { ...NO_WRITING_TURNS }), from.writingTurns)
   addFlat((into.holds ??= {}), from.holds)
   addFlat((into.overrides ??= {}), from.overrides)
   addFlat((into.subagents ??= { ...NO_SUBAGENTS }), from.subagents)

@@ -68,7 +68,28 @@ maintainer's personal hooks readable until Ticket 033 replaces those hooks.
 - [ ] One live session shows a subagent spawn, a justified skip, and a route
       line in the pane.
 - [ ] Install and remove docs for the mod exist.
-- [ ] The maintainer has recorded a decision on running the mod's tests in CI.
+- [x] The maintainer has recorded a decision on running the mod's tests in CI.
+
+## Decisions
+
+Recorded 2026-11-16 by the maintainer:
+
+- **CI.** The Python drift check of the mod's marker fixtures runs with the
+  unit tests on every change. A separate `Skill-usage mod` workflow runs
+  `claude plugin validate` and `claude plugin test` on a pinned Claude Code
+  version, only when the mod, `stack/fixtures/markers/`, or the workflow
+  change. The pin is bumped deliberately because the plugin API is early
+  access. The tests make no model calls and passed locally with no
+  credentials.
+- **Overrides.** A probe on Claude Code 2.1.325 showed that a hook's notice
+  reaches a mod as a `hook-context` row named `hook_system_message` with no
+  text, and no other mod API exposes it. The adapter should also send its
+  override sentence as hook context, which mods receive with text, so that the
+  adapter stays the one owner of what counts as an override. That adapter
+  change is in Ticket 034. Until then the mod counts no overrides live.
+- **Writing turns.** The mod counts turns that write (the main agent's edits
+  and spawns) by whether a route line came before the first write, only
+  after it, or not at all. A turn runs from one typed prompt to the next.
 
 ## Expected Proof
 

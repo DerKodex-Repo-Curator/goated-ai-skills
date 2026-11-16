@@ -16,9 +16,10 @@ without it.
 | --- | --- |
 | Skill loads and why each loaded: your `/command`, your prompt naming it, a hook, the router's route, the agent, or a subagent | Skill tool calls and slash commands |
 | Route lines, counted by form (`direct`, `continue`, routed) | `goated-route:` lines in replies |
-| Justified skips, with their reasons; a skip declines the hold or nudge naming that skill in the same turn | `goated-skip:` lines in replies |
+| Turns that write, by whether a route line came before the first write, only after it, or not at all | The main agent's edits and spawns, the calls the adapter holds like writes |
+| Justified skips, with their reasons; a skip declines a justified-skip hold or a hook nudge naming that skill in the same turn | `goated-skip:` lines in replies |
 | The adapter's holds by gate and kind, and each held skill's outcome: loaded, files read, already loaded, declined, not loaded, or waiting | Denied calls whose reason starts `goated-hold: <gate> \| <kind>` |
-| Your overrides, by phrase | The adapter's notice `recorded your override for this prompt` |
+| Your overrides, by phrase | The adapter's sentence `recorded your override for this prompt` in hook context (see [Known Limits](#known-limits)) |
 | Reads of skills' reference and other supporting files, and whether the skill had loaded first | `Read` paths and shell commands |
 | Subagent spawns, with type and task, including ones that load no skill | Agent tool calls |
 | A subagent's start message, and its reads of a skill's `SKILL.md` | SubagentStart hook context; a subagent's `Read` calls |
@@ -34,16 +35,17 @@ and others in `hooks/classify.ts`). It will keep reading them until the
 adapter replaces those hooks.
 
 Holds reach a session as denied tool calls. The pane counts a hold as
-followed when the agent then loads the skill (or reads its files), as
-declined when a skip line names the skill in the same turn, and as not loaded
-when the turn ends without either. A `router-first` hold asks for the router,
-and a `route-line` hold asks for a route line.
+followed when the agent then loads the skill (or reads its files), and as not
+loaded when the turn ends without that. A `justified-skip` hold also counts as
+declined when a skip line names the skill in the same turn; a `strict` hold
+never does, because only loading the skill clears it. A `router-first` hold
+asks for the router, and a `route-line` hold asks for a route line.
 
 ## The Pane
 
 - **Session**: a picture of where skill loads came from, then lines on how
-  the holds went, the router rule, and route lines, adapter holds, overrides,
-  and subagents. Below them is an activity log, newest first, with per-hold
+  the holds went, the router rule, and route lines, writing turns, adapter
+  holds, overrides, and subagents. Below them is an activity log, newest first, with per-hold
   and per-skill tables.
 - **All time**: the same totals across stored sessions.
 - **Unused**: your own skills by how often they loaded, and those that never
@@ -125,13 +127,17 @@ compare.
 - The adapter's justified-skip holds and its action and closeout holds are
   read only as far as their `goated-hold:` first line and backticked skill
   names allow.
-- Overrides are read from the adapter's notice as the session runs. When the
-  mod loads mid-session, the session history it rebuilds from has no notices,
-  so earlier overrides go uncounted.
+- Overrides are not counted yet. The adapter shows your override as a notice,
+  and a notice reaches a mod as a row with no text (checked on Claude Code
+  2.1.325). The mod reads the same sentence from the adapter's hook context,
+  which mods do receive with text, but the adapter does not send it there
+  yet. When the mod loads mid-session, the history it rebuilds from has no
+  hook context either, so earlier overrides go uncounted.
+- A writing turn runs from one typed prompt to the next. A message from
+  another session that starts a new turn for the adapter joins the running
+  turn here, and so does a background result, as it does for the adapter.
 - Only the subagent start message of the hand-written hooks
   (`DELEGATED AGENT`) is recognized; the adapter does not send one yet.
-- It counts route lines and holds but does not yet check that every turn that
-  writes has a route line.
 - The mod judges nothing. Whether a skip reason is specific to the action is
   for you to read in the log.
 
@@ -152,3 +158,9 @@ The tests in `tests/goated-adapter.test.tsx` read the marker fixtures through
 In the GOATED source repo, `tests/test_skill_usage_mod.py` fails when that copy
 drifts. Regenerate it with
 `uv run python tests/test_skill_usage_mod.py --write` from the repo root.
+
+CI runs that drift check on every change. The `Skill-usage mod` workflow
+(`.github/workflows/skill-usage-mod.yml`) runs `claude plugin validate` and
+`claude plugin test` on a pinned Claude Code version, only when the mod, the
+marker fixtures, or the workflow change. The tests make no model calls and
+need no credentials.

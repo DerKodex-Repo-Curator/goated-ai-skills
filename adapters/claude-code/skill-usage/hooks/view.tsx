@@ -12,8 +12,8 @@
 
 import type { ElementTable, RenderSurface } from 'claude-code'
 
-import type { AllTime, Available, Counts, Measures, Origin, Outcome, Refs, RouteForm, SessionSummary, TimelineEntry } from '../types'
-import { ANY_SPECIALIST, NO_SUBAGENTS, ORIGINS, OUTCOMES, ROUTE_LINE, total } from './classify'
+import type { AllTime, Available, Counts, Measures, Origin, Outcome, Refs, RouteForm, SessionSummary, TimelineEntry, WritingTurns } from '../types'
+import { ANY_SPECIALIST, NO_SUBAGENTS, NO_WRITING_TURNS, ORIGINS, OUTCOMES, ROUTE_LINE, total } from './classify'
 
 /** Where a drawing goes: the surface's elements and its name. */
 export type View = { ui: ElementTable<RenderSurface>; surface: RenderSurface }
@@ -1052,6 +1052,9 @@ const countWords = (c: Counts<string> | undefined, label: (k: string) => string 
   Object.entries(c ?? {}).flatMap(([k, n]) => (n ? [`${n} ${label(k)}`] : [])).join(', ')
 const routeWords = (m: Measures) => countWords(m.routes, k => ROUTE_FORM[k as RouteForm] ?? k)
 const holdWords = (m: Measures) => countWords(m.holds)
+/** Writing turns by whether a route line came before the first write, only after it, or never. */
+const WRITING: Record<keyof WritingTurns, string> = { routed: 'routed', late: 'routed late', none: 'unrouted' }
+const writingWords = (m: Measures) => countWords(m.writingTurns, k => WRITING[k as keyof WritingTurns] ?? k)
 
 /**
  * Route lines, adapter holds, overrides and subagents in one line of words,
@@ -1067,6 +1070,7 @@ function measuresText(m: Measures): string | undefined {
   const overrides = total(m.overrides)
   const parts = [
     ['Routes', routeWords(m)],
+    ['Writing turns', writingWords(m)],
     ['Adapter holds', holdWords(m)],
     ['Overrides', overrides ? String(overrides) : ''],
     ['Subagents', subParts.join(', ')],
@@ -1321,8 +1325,10 @@ export function reportText(all: AllTime, avail: Available | null): string {
   }
   const overrides = Object.entries(all.overrides ?? {}).sort(([, x], [, y]) => y - x).map(([phrase, n]) => `"${phrase}" ${n}`)
   const sub = all.subagents ?? NO_SUBAGENTS
+  const writes = all.writingTurns ?? NO_WRITING_TURNS
   out.push('', '## Routes and adapter holds', '')
   out.push(`- Route lines: ${routeWords(all) || 'none'}`)
+  out.push(`- Writing turns: ${writes.routed} routed before the first write · ${writes.late} routed only after it · ${writes.none} with no route line`)
   out.push(`- Adapter holds: ${holdWords(all) || 'none'}`)
   out.push(`- Overrides: ${overrides.join(' · ') || 'none'}`)
   out.push(`- Subagents: ${sub.spawns} started · ${plural(sub.starts, 'start message')} · ${sub.bodyReads} skill bodies read`)
