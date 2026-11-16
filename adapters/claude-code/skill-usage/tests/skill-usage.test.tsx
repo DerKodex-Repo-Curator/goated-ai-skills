@@ -1080,6 +1080,19 @@ test("the References table's subtitle counts reads made before their skill loade
   expect(await subtitle()).toEqual(["each skill's supporting files read, most read first"])
 })
 
+test('a table heading\'s note wraps onto more lines in a narrow pane instead of being cut short', async ($, on) => {
+  const stored: Record<string, unknown> = {
+    tab: 'all',
+    events: { shape: 'events-1', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'ref', t: 2, skill: 'tdd', file: 'references/a.md' }] },
+  }
+  pictureRig($, on, stored, () => 10_000)
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  const notes = await ui.findAll({ type: 'Text', text: /^(how often each hold|what most often|each skill's supporting files)/ })
+  expect(notes.length).toBe(3)
+  for (const note of notes) expect(note.props.wrap).toBe('wrap')
+  await ui.unmount()
+})
+
 test('the preview plays a reference read and one without loading', async () => {
   const plays = playQueue(previewTimeline(1000))
   expect(plays.flatMap(p => (p.kind === 'ref' ? [p.isLoaded] : []))).toEqual([true, false])
