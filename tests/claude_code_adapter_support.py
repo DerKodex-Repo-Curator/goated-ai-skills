@@ -332,11 +332,11 @@ class Session:
                 is_error=True,
             )
 
-    def read(self, path: str, *, success: bool = True) -> None:
+    def read(self, path: str, *, success: bool = True, content: str | None = None) -> None:
         """Record a finished Read tool call, as Claude Code does."""
 
         tool_use_id = self._tool_use("Read", {"file_path": path})
-        self._tool_result(tool_use_id, "file text" if success else "File does not exist.",
+        self._tool_result(tool_use_id, (content or "file text") if success else "File does not exist.",
                           is_error=not success)
 
     def run(self, command: str, *, success: bool = True, tool: str = "Bash",

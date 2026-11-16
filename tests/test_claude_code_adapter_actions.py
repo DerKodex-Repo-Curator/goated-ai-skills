@@ -35,6 +35,8 @@ SHELL_WRITES = (
     ("Bash", "git apply fix.patch"),
     ("Bash", "git checkout -- src/app.py"),
     ("Bash", "git checkout HEAD~1 -- src/app.py"),
+    ("Bash", "git checkout --theirs src/app.py"),
+    ("Bash", "git checkout --ours ."),
     ("Bash", "cat <<'EOF' > src/new.py\nprint('hi')\nEOF"),
     ("PowerShell", "Set-Content -Path notes.txt -Value 'x'"),
     ("PowerShell", "'x' | Out-File notes.txt"),
@@ -479,6 +481,12 @@ STASH_CONFLICT = (
     "On branch main\n"
     "The stash entry is kept in case you need it again."
 )
+CONFLICT_HOLD = "goated-hold: conflict-resolution | justified-skip"
+# A Read of a conflicted file, with the line numbers the Read tool adds.
+CONFLICTED_READ = (
+    "     1\t<<<<<<< HEAD\n     2\trate = 1\n     3\t=======\n     4\trate = 2\n"
+    "     5\t>>>>>>> feature\n"
+)
 CONFLICT_EDIT = {
     "file_path": "src/app.py",
     "old_string": "<<<<<<< HEAD\nrate = 1\n=======\nrate = 2\n>>>>>>> feature\n",
@@ -586,6 +594,109 @@ class ConflictResolutionHoldTests(AdapterTestCase):
         s = self.routed(prompt="Fix the conflict; skip resolving-merge-conflicts.")
 
         self.assertEqual(decision(s.call("Edit", CONFLICT_EDIT)), "pass")
+
+    def conflicted(self, prompt: str = "Bring the branch up to date.") -> Session:
+        """A fresh routed session whose turn has a conflicting `git merge`."""
+
+        s = self.fresh()
+        s.prompt(prompt)
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        s.run("git merge feature", success=False, output=MERGE_CONFLICT)
+        return s
+
+    def test_checking_out_one_side_after_a_conflict_is_held(self) -> None:
+        for command in ("git checkout --theirs src/app.py", "git checkout --ours .",
+                        "git -C repo checkout --theirs -- src/app.py"):
+            with self.subTest(command=command):
+                s = self.conflicted()
+                self.assertEqual(hold_line(s.call("Bash", {"command": command})), CONFLICT_HOLD)
+
+    def test_powershell_and_git_dash_c_are_read_like_bash(self) -> None:
+        s = self.fresh()
+        s.prompt("Bring the branch up to date.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        s.run("git -C repo merge feature", tool="PowerShell", success=False, output=MERGE_CONFLICT)
+
+        held = s.call("PowerShell", {"command": "Set-Content -Path notes.txt -Value 'x'"})
+        self.assertEqual(hold_line(held), CONFLICT_HOLD)
+
+    def test_a_write_to_a_file_read_with_markers_is_held(self) -> None:
+        s = self.routed()
+        s.read("src/app.py", content=CONFLICTED_READ)
+
+        self.assertEqual(hold_line(s.call("Write", write("src/app.py", 1))), CONFLICT_HOLD)
+        # Old text spanning only the separator and one side, in that file.
+        partial = {"file_path": "src/app.py", "old_string": "=======\nrate = 2\n", "new_string": ""}
+        self.assertEqual(hold_line(s.call("Edit", partial)), CONFLICT_HOLD)
+        self.assertEqual(decision(s.call("Write", write("src/other.py", 1))), "pass")
+
+    def test_a_lone_separator_is_not_a_conflict(self) -> None:
+        s = self.routed()
+        s.read("docs/guide.rst", content="     1\tSection\n     2\t=======\n")
+
+        self.assertEqual(decision(s.call("Write", write("docs/guide.rst", 1))), "pass")
+        edit = {"file_path": "notes.md", "old_string": "=======\nrate = 2\n", "new_string": ""}
+        self.assertEqual(decision(s.call("Edit", edit)), "pass")
+
+    def test_label_less_markers_with_crlf_are_held(self) -> None:
+        s = self.routed()
+        edit = {"file_path": "src/app.py", "old_string": "x\r\n=======\r\ny\r\n>>>>>>>\r\n",
+                "new_string": "y\r\n"}
+        self.assertEqual(hold_line(s.call("Edit", edit)), CONFLICT_HOLD)
+
+    def test_an_abort_continue_or_commit_ends_the_conflict(self) -> None:
+        for command in ("git merge --abort", "git rebase --abort", "git cherry-pick --abort",
+                        "git revert --abort", "git rebase --continue", "git cherry-pick --continue",
+                        'git commit -m "Merge feature"'):
+            with self.subTest(command=command):
+                s = self.conflicted('Merge it. Commit message: "Merge feature"')
+                s.read("src/app.py", content=CONFLICTED_READ)
+                s.run(command)
+
+                edit = {"file_path": "notes.md", "old_string": "a", "new_string": "b"}
+                self.assertEqual(decision(s.call("Edit", edit)), "pass")
+                self.assertEqual(decision(s.call("Write", write("src/app.py", 1))), "pass")
+
+    def test_a_failed_continue_leaves_the_conflict_open(self) -> None:
+        s = self.conflicted()
+        s.run("git rebase --continue", success=False,
+              output="error: you must edit all merge conflicts and then\nmark them as resolved")
+
+        edit = {"file_path": "notes.md", "old_string": "a", "new_string": "b"}
+        self.assertEqual(hold_line(s.call("Edit", edit)), CONFLICT_HOLD)
+
+    def test_a_new_conflict_after_an_abort_reopens_it(self) -> None:
+        s = self.conflicted()
+        s.run("git merge --abort")
+        s.run("git rebase main", success=False, output=REBASE_CONFLICT)
+
+        edit = {"file_path": "notes.md", "old_string": "a", "new_string": "b"}
+        self.assertEqual(hold_line(s.call("Edit", edit)), CONFLICT_HOLD)
+
+    def test_a_skip_line_clears_the_marker_path(self) -> None:
+        s = self.routed()
+        s.say("goated-skip: resolving-merge-conflicts: the markers are a test fixture's text")
+
+        self.assertEqual(decision(s.call("Edit", CONFLICT_EDIT)), "pass")
+
+    def test_a_load_or_an_override_clears_the_after_git_path(self) -> None:
+        edit = {"file_path": "notes.md", "old_string": "a", "new_string": "b"}
+        loaded = self.conflicted()
+        loaded.load("resolving-merge-conflicts")
+        self.assertEqual(decision(loaded.call("Edit", edit)), "pass")
+
+        overridden = self.conflicted("Merge it and skip resolving-merge-conflicts.")
+        self.assertEqual(decision(overridden.call("Edit", edit)), "pass")
+
+    def test_the_commit_gate_still_fires_once_the_conflict_gate_clears(self) -> None:
+        s = self.conflicted()
+        s.load("resolving-merge-conflicts")
+        self.assertEqual(decision(s.call("Edit", CONFLICT_EDIT)), "pass")
+
+        held = s.call("Bash", {"command": 'git add src/app.py && git commit -m "Merge feature"'})
+        self.assertEqual(hold_line(held), "goated-hold: commit | strict")
 
 
 class SubagentActionTests(AdapterTestCase):

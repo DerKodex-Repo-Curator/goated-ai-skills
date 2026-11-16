@@ -581,6 +581,8 @@ def _git_writes(sub: str, rest: list[str]) -> tuple[list[str], bool]:
         if any(a in ("-b", "-B", "--orphan") for a in rest):
             return [], False
         positional = _positional(rest)
+        if "--theirs" in rest or "--ours" in rest:
+            return positional, False  # One side of a conflict: every positional is a path.
         # `git checkout <rev> <path>...` restores files; `git checkout <branch>` does not.
         return positional[1:], False
     if sub == "reset":
