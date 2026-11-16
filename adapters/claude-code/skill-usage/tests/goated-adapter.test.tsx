@@ -412,7 +412,7 @@ test('a reply row gives its route line, then its writes; a typed prompt row is a
     { type: 'tool_use', id: 'u1', name: 'Edit', input: { file_path: 'a.md' } },
   ])
   expect(rowEvents(reply, SKILLS, 1, SEEN)).toEqual([{ kind: 'response', t: 1 }, { kind: 'route', t: 1, form: 'direct' }, { kind: 'write', t: 1, id: 'u1' }])
-  expect(rowEvents(row('prompt', [{ type: 'text', text: 'Use tdd here.' }]), SKILLS, 1, SEEN)).toEqual([{ kind: 'prompt', t: 1, named: ['tdd'] }])
+  expect(rowEvents(row('prompt', [{ type: 'text', text: 'Use tdd here.' }]), SKILLS, 1, SEEN)).toEqual([{ kind: 'prompt', t: 1, named: ['tdd'], isTimed: true }])
   expect(isObservedRow(row('attachment', [{ type: 'text', text: 'x' }], { name: 'environment' }))).toBe(false)
 })
 
@@ -462,11 +462,11 @@ test('a local command such as /skill-usage is no prompt, nor is its output; a ty
     row('command', [{ type: 'text', text: '<local-command-stdout>skill-usage: Skill usage pane opened.</local-command-stdout>' }], { type: 'system' }),
     row('prompt', [{ type: 'text', text: 'Run git log --oneline -3.' }], { type: 'user' }),
   ]
-  expect(rows.flatMap(r => rowEvents(r, SKILLS, 1, SEEN))).toEqual([{ kind: 'prompt', t: 1, named: [] }])
+  expect(rows.flatMap(r => rowEvents(r, SKILLS, 1, SEEN))).toEqual([{ kind: 'prompt', t: 1, named: [], isTimed: true }])
   // A skill invoked by its slash command is still a prompt that loads it.
   const tdd = row('command', [{ type: 'text', text: '<command-name>/tdd</command-name>' }], { type: 'user' })
   expect(rowEvents(tdd, SKILLS, 1, SEEN)).toEqual([
-    { kind: 'prompt', t: 1, named: [] },
+    { kind: 'prompt', t: 1, named: [], isTimed: true },
     { kind: 'load', t: 1, skill: 'tdd', via: 'slash', isSubagent: false },
   ])
 })

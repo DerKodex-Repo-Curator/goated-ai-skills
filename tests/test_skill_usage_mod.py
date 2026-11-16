@@ -37,8 +37,9 @@ DESIGN_READS_FIXTURES = REPO_ROOT / "stack" / "fixtures" / "markers" / "design-r
 MOD_ROOT = REPO_ROOT / "adapters" / "claude-code" / "skill-usage"
 GENERATED_MARKERS = MOD_ROOT / "tests" / "marker-fixtures.ts"
 GENERATED_DESIGN_READS = MOD_ROOT / "tests" / "design-reads-fixtures.ts"
-# The mod's copy of the adapter's code-file extensions, in hooks/classify.ts.
+# The mod's copies of the adapter's code-file extensions and edit tools, in hooks/classify.ts.
 MOD_CODE_EXTENSIONS = re.compile(r"const CODE_EXTENSIONS = new Set\(\s*'([^']*)'")
+MOD_FILE_EDIT_TOOLS = re.compile(r"const FILE_EDIT_TOOLS: Record<string, string> = \{([^}]*)\}")
 GENERATED_ADAPTER_TEXTS = MOD_ROOT / "tests" / "adapter-texts.ts"
 
 
@@ -244,11 +245,15 @@ class SkillUsageModFixtureTests(unittest.TestCase):
 
     def test_mod_counts_the_same_files_as_code_as_the_adapter(self) -> None:
         # The mod times reference reads against code changes, which it must judge as the adapter does.
-        from goated_adapter.actions import CODE_EXTENSIONS
+        from goated_adapter.actions import CODE_EXTENSIONS, FILE_WRITE_TOOLS
 
-        found = MOD_CODE_EXTENSIONS.search((MOD_ROOT / "hooks" / "classify.ts").read_text(encoding="utf-8"))
+        source = (MOD_ROOT / "hooks" / "classify.ts").read_text(encoding="utf-8")
+        found = MOD_CODE_EXTENSIONS.search(source)
         self.assertIsNotNone(found, "hooks/classify.ts no longer declares CODE_EXTENSIONS as this test reads it")
         self.assertEqual(set(found.group(1).split()), set(CODE_EXTENSIONS))
+        tools = MOD_FILE_EDIT_TOOLS.search(source)
+        self.assertIsNotNone(tools, "hooks/classify.ts no longer declares FILE_EDIT_TOOLS as this test reads it")
+        self.assertEqual(dict(re.findall(r"(\w+): '([^']+)'", tools.group(1))), FILE_WRITE_TOOLS)
 
     def test_mod_manifest_names_its_type_contract(self) -> None:
         manifest = json.loads((MOD_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))

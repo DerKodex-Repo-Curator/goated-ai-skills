@@ -209,7 +209,7 @@ function feedRow(entry: TimelineEntry): { mark: string; kind: string; runs: Run[
       return { mark: '↳', kind: 'Ref', runs: [{ text: `${entry.skill} › ${entry.file}`, tone: 'read' }, { text: ` · ${note}`, tone: entry.isLoaded ? 'dim' : 'waiting' }], tone: 'read' }
     }
     case 'design-reads': {
-      const declared = entry.form === 'none' ? `none: ${entry.reason}` : entry.files.join(', ')
+      const declared = [...(entry.files.length > 0 ? [entry.files.join(', ')] : []), ...entry.noneReasons.map(r => `none: ${r}`)].join(' · ')
       return { mark: '✎', kind: 'Design', runs: [{ text: `reads ${declared}` }, ...(entry.isSubagent ? [{ text: ' · by a subagent', tone: 'dim' as const }] : [])], tone: 'plain' }
     }
     case 'load':
@@ -254,7 +254,7 @@ const holdWords = (m: Measures) => countWords(m.holds)
 /** Writing turns by whether a route line came before the first write, only after it, or never. */
 const WRITING: Record<keyof WritingTurns, string> = { routed: 'routed', late: 'routed late', none: 'unrouted' }
 const writingWords = (m: Measures) => countWords(m.writingTurns, k => WRITING[k as keyof WritingTurns] ?? k)
-/** Design-reads lines: each file declared with how often, most declared first, then the `none` declarations. */
+/** Design-reads lines: each file with how many replies declared it, most declared first, then the `none` declarations. */
 function designReadWords(m: Measures): string {
   const files = Object.entries(m.designReads?.files ?? {}).sort(([a, x], [b, y]) => y - x || a.localeCompare(b))
   const none = m.designReads?.none ?? 0

@@ -192,10 +192,10 @@ export const short = (skill: string) => skill.split(':').pop() ?? skill
 export function promptEvents(text: string, skills: readonly string[], t: number): UsageEvent[] {
   if (text.trimStart().startsWith('<local-command-')) return []
   const command = /<command-name>\/?([\w:.-]+)<\/command-name>/.exec(text)?.[1]
-  if (!command) return [{ kind: 'prompt', t, named: skillsNamed(text, skills) }]
+  if (!command) return [{ kind: 'prompt', t, named: skillsNamed(text, skills), isTimed: true }]
   if (!skills.includes(short(command))) return []
   return [
-    { kind: 'prompt', t, named: [] },
+    { kind: 'prompt', t, named: [], isTimed: true },
     { kind: 'load', t, skill: short(command), via: 'slash', isSubagent: false },
   ]
 }
@@ -359,15 +359,19 @@ export function markerLines(text: string): { route: Route | null; skips: Skip[];
 
 /**
  * The marker events of one reply: its winning route, then each skip line, then
- * each design-reads line. `agent`: the subagent that wrote it.
+ * its design-reads lines as one event, declaring the union of their files (a
+ * later line adds files and never removes any). `agent`: the subagent that
+ * wrote it.
  */
 export function markerEvents(text: string, t: number, agent?: string): UsageEvent[] {
   const { route, skips, designReads } = markerLines(text)
   const loop = agent ? { isSubagent: true as const, agent } : {}
+  const files = [...new Set(designReads.flatMap(d => (d.form === 'files' ? d.files : [])))]
+  const noneReasons = designReads.flatMap(d => (d.form === 'none' ? [d.reason] : []))
   return [
     ...(route ? [{ kind: 'route' as const, t, ...route, ...loop }] : []),
     ...skips.map(k => ({ kind: 'skip' as const, t, ...k, ...loop })),
-    ...designReads.map(d => ({ kind: 'design-reads' as const, t, ...d, ...loop })),
+    ...(designReads.length > 0 ? [{ kind: 'design-reads' as const, t, files, noneReasons, ...loop }] : []),
   ]
 }
 
@@ -552,7 +556,10 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   // call, so it is looked up ahead.
   const refusedCalls = new Set(events.flatMap(e => (e.kind === 'refused' ? [e.id] : [])))
   // The running turn's reference reads, each with how many code changes came before it, and the turn's code changes so
-  // far. A read's moment depends on changes still to come, so the reads settle when the turn ends.
+  // far. A read's moment depends on changes still to come, so the reads settle when the turn ends. Only a turn whose
+  // prompt this version recorded is timed: an earlier version stored no code changes, and a log trimmed mid-turn lost
+  // its turn's prompt, so those reads count in `refs` with no moment.
+  let isTurnTimed = false
   let turnReads: { skill: string; file: string; changesBefore: number }[] = []
   let turnChanges = 0
   const settleReadMoments = () => {
@@ -579,6 +586,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
       case 'prompt':
         tallyWritingTurn()
         settleReadMoments()
+        isTurnTimed = e.isTimed === true
         turnNamed = new Set(e.named)
         turnRouter = false
         timeline.push({ ...stamp(e), kind: 'prompt' })
@@ -613,13 +621,11 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         timeline.push({ ...stamp(e), kind: 'route', ...route, ...(e.isSubagent ? { isSubagent: true as const } : {}) })
         break
       }
-      case 'design-reads': {
-        if (e.form === 'none') measures.designReads.none += 1
-        else for (const file of e.files) measures.designReads.files[file] = (measures.designReads.files[file] ?? 0) + 1
-        const declared: DesignReads = e.form === 'none' ? { form: e.form, reason: e.reason } : { form: e.form, files: e.files }
-        timeline.push({ ...stamp(e), kind: 'design-reads', ...declared, ...(e.isSubagent ? { isSubagent: true as const } : {}) })
+      case 'design-reads':
+        for (const file of e.files) measures.designReads.files[file] = (measures.designReads.files[file] ?? 0) + 1
+        measures.designReads.none += e.noneReasons.length
+        timeline.push({ ...stamp(e), kind: 'design-reads', files: e.files, noneReasons: e.noneReasons, ...(e.isSubagent ? { isSubagent: true as const } : {}) })
         break
-      }
       case 'override':
         for (const phrase of e.phrases) measures.overrides[phrase] = (measures.overrides[phrase] ?? 0) + 1
         timeline.push({ ...stamp(e), kind: 'override', phrases: e.phrases })
@@ -640,7 +646,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         files[e.file] = (files[e.file] ?? 0) + 1
         const isLoaded = loaded.has(e.skill)
         if (!isLoaded) refsUnloaded += 1
-        turnReads.push({ skill: e.skill, file: e.file, changesBefore: turnChanges })
+        if (isTurnTimed) turnReads.push({ skill: e.skill, file: e.file, changesBefore: turnChanges })
         timeline.push({ ...stamp(e), kind: 'ref', skill: e.skill, file: e.file, isLoaded, ...(e.isSubagent ? { isSubagent: true as const } : {}) })
         break
       }

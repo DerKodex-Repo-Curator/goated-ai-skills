@@ -7,7 +7,11 @@ export type Stamp = { t: number; isEarlier?: true }
 /** One observation, in the same neutral shape the transcript backfill uses. */
 export type UsageEvent = Stamp &
   (
-    | { kind: 'prompt'; named: string[] }
+    /**
+     * `isTimed`: recorded by a version that records code changes, so its turn's reads can be timed. Prompts stored by
+     * earlier versions lack it: their turns' code changes were never recorded, so their reads have no moment.
+     */
+    | { kind: 'prompt'; named: string[]; isTimed?: true }
     /** `id`: the Skill call's tool_use id, so a call whose result is an error (`refused`) loaded nothing. */
     | { kind: 'load'; id?: string; skill: string; via: 'tool' | 'slash'; isSubagent: boolean }
     /** `isSubagent`: the hook spoke to a subagent, not the main agent; `agent`: which subagent, so its own turn end settles it. */
@@ -28,8 +32,11 @@ export type UsageEvent = Stamp &
     | { kind: 'body'; skill: string; isSubagent: true; agent?: string }
     /** A winning `goated-route:` line in a reply, by the main agent or the subagent `agent`. */
     | ({ kind: 'route'; isSubagent?: true; agent?: string } & Route)
-    /** A `goated-design-reads:` line in a reply, by the main agent or the subagent `agent`. */
-    | ({ kind: 'design-reads'; isSubagent?: true; agent?: string } & DesignReads)
+    /**
+     * A reply's `goated-design-reads:` lines, by the main agent or the subagent `agent`: the union of the files they
+     * declare, each once, and the reason of each `none` line.
+     */
+    | { kind: 'design-reads'; files: string[]; noneReasons: string[]; isSubagent?: true; agent?: string }
     /** The adapter's notice that it recorded overrides you typed, each phrase lowercased. */
     | { kind: 'override'; phrases: string[] }
     /** An Agent tool call starting a subagent, by the main agent or the subagent `agent`. */
@@ -70,7 +77,7 @@ export type RouteForm = Route['form']
 /** A design-reads line as the marker grammar reads it: the reference files it declares, or `none` with a reason. */
 export type DesignReads = { form: 'files'; files: string[] } | { form: 'none'; reason: string }
 
-/** Design-reads lines counted: how often each file was declared, and how many lines declared `none`. */
+/** Design-reads lines counted: in how many replies each file was declared, and how many lines declared `none`. */
 export type DesignReadCounts = { files: Record<string, number>; none: number }
 
 /** An adapter hold's kind, from its `goated-hold: <gate> | <kind>` first line. */
@@ -150,7 +157,7 @@ export type TimelineEntry = Stamp &
     /** `isLoaded`: the skill had loaded (since the last compaction) when its file was read. */
     | { kind: 'ref'; skill: string; file: string; isLoaded: boolean; isSubagent?: true }
     | ({ kind: 'route'; isSubagent?: true } & Route)
-    | ({ kind: 'design-reads'; isSubagent?: true } & DesignReads)
+    | { kind: 'design-reads'; files: string[]; noneReasons: string[]; isSubagent?: true }
     | { kind: 'override'; phrases: string[] }
     /** `isHeld`: the call was refused, so no subagent started. */
     | { kind: 'spawn'; agentType: string; description: string; isHeld?: true; isSubagent?: true }

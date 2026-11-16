@@ -6,22 +6,25 @@ import { expect, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
 import type { UsageEvent } from '../types'
-import { addSession, allTimeOf, historyEvents, markerEvents, markerLines, mergeSummaries, summarize, toolUseEvents } from '../hooks/classify'
+import { addSession, allTimeOf, historyEvents, markerEvents, markerLines, mergeSummaries, promptEvents, rowEvents, summarize, toolUseEvents } from '../hooks/classify'
+import type { Row } from '../hooks/classify'
 import { reportText } from '../hooks/view'
 import { DESIGN_READS_FIXTURES } from './design-reads-fixtures'
 
 const SDP = 'software-design-principles'
 const ref = (t: number, file: string, rest: Partial<UsageEvent & { kind: 'ref' }> = {}): UsageEvent => ({ kind: 'ref', t, skill: SDP, file: `references/${file}`, ...rest })
+/** A typed prompt as this version records it: its turn's code changes are recorded, so its reads can be timed. */
+const prompt = (t: number): UsageEvent => ({ kind: 'prompt', t, named: [], isTimed: true })
 
 test('a read before, between and after code changes is recorded with that moment, and a turn with no code change as such', async () => {
   const s = summarize([
-    { kind: 'prompt', t: 1, named: [] },
+    prompt(1),
     ref(2, 'process.md'),
     { kind: 'change', t: 3, id: 'c1' },
     ref(4, 'errors.md'),
     { kind: 'change', t: 5, id: 'c2' },
     ref(6, 'red-flags.md'),
-    { kind: 'prompt', t: 7, named: [] },
+    prompt(7),
     ref(8, 'coding.md'),
   ])
   expect(s.refMoments).toEqual({
@@ -52,7 +55,7 @@ test("a code change is an edit tool's call on a code file, by the main agent or 
 
 test('a refused edit changed nothing, so a read after it is still before the first change', async () => {
   const s = summarize([
-    { kind: 'prompt', t: 1, named: [] },
+    prompt(1),
     { kind: 'change', t: 2, id: 'held' },
     { kind: 'refused', t: 3, id: 'held' },
     ref(4, 'process.md'),
@@ -60,6 +63,41 @@ test('a refused edit changed nothing, so a read after it is still before the fir
     ref(6, 'red-flags.md', { isSubagent: true }),
   ])
   expect(s.refMoments?.[SDP]).toEqual({ 'references/process.md': { before: 1 }, 'references/red-flags.md': { after: 1 } })
+})
+
+test("reads in a turn whose prompt an earlier version stored, or before any prompt, are not timed: that version recorded no code changes", async () => {
+  expect(promptEvents('Add CSV export.', [], 1)).toEqual([prompt(1)])
+  const s = summarize([
+    // The log's start was trimmed mid-turn: no prompt says whether this turn's changes were recorded.
+    ref(1, 'decoupling.md'),
+    // Stored before the upgrade: the turn edited code, but no change was recorded.
+    { kind: 'prompt', t: 2, named: [] },
+    ref(3, 'process.md'),
+    ref(4, 'red-flags.md'),
+    prompt(5),
+    ref(6, 'errors.md'),
+  ])
+  expect(s.refs?.[SDP]).toEqual({ 'references/decoupling.md': 1, 'references/process.md': 1, 'references/red-flags.md': 1, 'references/errors.md': 1 })
+  expect(s.refMoments).toEqual({ [SDP]: { 'references/errors.md': { 'no-change': 1 } } })
+})
+
+test("a subagent's edit refused on the live path changed nothing", async () => {
+  const rows: Row[] = [
+    { door: 'prompt', message: { content: [{ type: 'text', text: 'Add CSV export.' }] } },
+    { door: 'response', agentId: 'a1', message: { content: [{ type: 'tool_use', id: 'e1', name: 'Edit', input: { file_path: 'src/export.py' } }] } },
+    { door: 'tool-result', agentId: 'a1', message: { content: [{ type: 'tool_result', tool_use_id: 'e1', is_error: true, content: 'held' }] } },
+    { door: 'response', message: { content: [{ type: 'tool_use', id: 'r1', name: 'Read', input: { file_path: `/h/.claude/skills/${SDP}/references/process.md` } }] } },
+  ]
+  const events: UsageEvent[] = []
+  for (const row of rows) {
+    const boundary = [...events].reverse().find(e => e.kind === 'response' || e.kind === 'results')?.kind as 'response' | 'results' | undefined
+    events.push(...rowEvents(row, [SDP], 1, { lastKind: events.at(-1)?.kind, lastBoundary: boundary }))
+  }
+  expect(events.filter(e => e.kind === 'change' || e.kind === 'refused')).toEqual([
+    { kind: 'change', t: 1, id: 'e1', isSubagent: true },
+    { kind: 'refused', t: 1, id: 'e1' },
+  ])
+  expect(summarize(events).refMoments?.[SDP]).toEqual({ 'references/process.md': { 'no-change': 1 } })
 })
 
 test('history rebuilds code changes, so a mod that joined late still times the reads', async () => {
@@ -80,7 +118,7 @@ test('history rebuilds code changes, so a mod that joined late still times the r
 })
 
 test('moments add up across a resume and across sessions, and an older summary with no moments still merges', async () => {
-  const s = summarize([{ kind: 'prompt', t: 1, named: [] }, ref(2, 'process.md'), { kind: 'change', t: 3, id: 'c1' }, ref(4, 'red-flags.md')])
+  const s = summarize([prompt(1), ref(2, 'process.md'), { kind: 'change', t: 3, id: 'c1' }, ref(4, 'red-flags.md')])
   const both = { 'references/process.md': { before: 2 }, 'references/red-flags.md': { after: 2 } }
   expect(mergeSummaries(s, s).refMoments?.[SDP]).toEqual(both)
   expect(addSession(addSession(null, s), s).refMoments?.[SDP]).toEqual(both)
@@ -110,28 +148,30 @@ test('every design-reads line in the grammar fixtures reads as the fixture expec
     const read = markerLines(text)
     expect(read.designReads).toEqual(want.lines)
     expect(read.malformed).toEqual(want.malformed)
+    // A reply declares the union of its lines' files, each once: later lines add files and never remove any.
+    const declared = markerEvents(text, 1).flatMap(e => (e.kind === 'design-reads' ? e.files : []))
+    expect(declared).toEqual(want.files)
   }
 })
 
-test('design-reads lines are recorded per session: the files each declares, and the none declarations', async () => {
+test('design-reads lines are recorded per session: the files each reply declares, once each, and the none declarations', async () => {
   const reply = 'goated-design-reads: process.md, errors.md\nThen a lock.\ngoated-design-reads: errors.md, concurrency.md'
   const s = summarize([
-    { kind: 'prompt', t: 1, named: [] },
+    prompt(1),
     ...markerEvents(reply, 2),
     ...markerEvents('`goated-design-reads: none: renames one local variable`', 3),
     ...markerEvents('goated-design-reads: none: edits only test data', 4, 'a1'),
     // Malformed: not recorded.
     ...markerEvents('goated-design-reads: none: too short', 5),
   ])
-  expect(s.designReads).toEqual({ files: { 'process.md': 1, 'errors.md': 2, 'concurrency.md': 1 }, none: 2 })
+  expect(s.designReads).toEqual({ files: { 'process.md': 1, 'errors.md': 1, 'concurrency.md': 1 }, none: 2 })
   expect(s.timeline.filter(e => e.kind === 'design-reads')).toEqual([
-    { kind: 'design-reads', t: 2, form: 'files', files: ['process.md', 'errors.md'] },
-    { kind: 'design-reads', t: 2, form: 'files', files: ['errors.md', 'concurrency.md'] },
-    { kind: 'design-reads', t: 3, form: 'none', reason: 'renames one local variable' },
-    { kind: 'design-reads', t: 4, form: 'none', reason: 'edits only test data', isSubagent: true },
+    { kind: 'design-reads', t: 2, files: ['process.md', 'errors.md', 'concurrency.md'], noneReasons: [] },
+    { kind: 'design-reads', t: 3, files: [], noneReasons: ['renames one local variable'] },
+    { kind: 'design-reads', t: 4, files: [], noneReasons: ['edits only test data'], isSubagent: true },
   ])
   // They add up across a resume and across sessions; a summary stored before they were recorded still merges.
-  expect(mergeSummaries(s, s).designReads).toEqual({ files: { 'process.md': 2, 'errors.md': 4, 'concurrency.md': 2 }, none: 4 })
+  expect(mergeSummaries(s, s).designReads).toEqual({ files: { 'process.md': 2, 'errors.md': 2, 'concurrency.md': 2 }, none: 4 })
   const { designReads: _, ...old } = s
   expect(addSession(addSession(null, old), s).designReads).toEqual(s.designReads)
   expect(mergeSummaries(old, s).designReads).toEqual(s.designReads)
@@ -161,15 +201,15 @@ async function paneText(...[$, on, stored]: [...Parameters<TestBody>, Record<str
 }
 
 const SESSION_EVENTS: UsageEvent[] = [
-  { kind: 'prompt', t: 1, named: [] },
+  prompt(1),
   { kind: 'load', t: 2, skill: SDP, via: 'tool', isSubagent: false },
-  { kind: 'design-reads', t: 3, form: 'files', files: ['process.md', 'errors.md'] },
+  { kind: 'design-reads', t: 3, files: ['process.md', 'errors.md'], noneReasons: [] },
   ref(4, 'process.md'),
   { kind: 'change', t: 5, id: 'c1' },
   ref(6, 'process.md'),
   { kind: 'change', t: 7, id: 'c2' },
   ref(8, 'red-flags.md'),
-  { kind: 'design-reads', t: 9, form: 'none', reason: 'renames one local variable' },
+  { kind: 'design-reads', t: 9, files: [], noneReasons: ['renames one local variable'] },
 ]
 
 test('the Session tab shows each reference by moment, and logs and counts design-reads lines', async ($, on) => {
