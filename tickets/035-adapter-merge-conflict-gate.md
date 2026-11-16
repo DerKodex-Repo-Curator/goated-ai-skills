@@ -56,7 +56,7 @@ repository state on disk, so the gate stays a pure function of the turn.
 
 ## Blocked By
 
-- `tickets/033-adapter-real-use-trial.md` (the trial's keep decision)
+- `tickets/archive/033-adapter-real-use-trial.md` (the trial's keep decision)
 - `tickets/046-adapter-pipeline-after-compaction.md`, the last of the trial's
   revise fixes (041–046), which edit the same files
 

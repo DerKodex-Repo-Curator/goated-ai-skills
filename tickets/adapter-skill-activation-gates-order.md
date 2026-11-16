@@ -3,16 +3,16 @@
 Source spec: `docs/specs/2026-11-16-adapter-skill-activation-gates.md`
 
 1. `tickets/035-adapter-merge-conflict-gate.md`
-   - Blocked by: `tickets/033-adapter-real-use-trial.md`
+   - Blocked by: `tickets/archive/033-adapter-real-use-trial.md`
    - Enables: `resolving-merge-conflicts` at the moment a conflict is open.
 2. `tickets/036-adapter-repeated-failure-gate.md`
-   - Blocked by: `tickets/033-adapter-real-use-trial.md`
+   - Blocked by: `tickets/archive/033-adapter-real-use-trial.md`
    - Enables: `diagnose` after a check keeps failing.
 3. `tickets/037-adapter-setup-closeout-item.md`
-   - Blocked by: `tickets/033-adapter-real-use-trial.md`
+   - Blocked by: `tickets/archive/033-adapter-real-use-trial.md`
    - Enables: `setup-scribe` when a turn changed setup.
 4. `tickets/038-adapter-large-pull-request-review.md`
-   - Blocked by: `tickets/033-adapter-real-use-trial.md`,
+   - Blocked by: `tickets/archive/033-adapter-real-use-trial.md`,
      `tickets/041-adapter-review-holds-read-the-change.md`
    - Enables: `standards-and-spec-review` before a large pull request.
 

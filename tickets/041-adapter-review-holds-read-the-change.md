@@ -103,7 +103,7 @@ to load. Each hold keeps its first line and kind.
 
 ## Blocked By
 
-- `tickets/033-adapter-real-use-trial.md` (the trial's keep decision)
+- `tickets/archive/033-adapter-real-use-trial.md` (the trial's keep decision)
 
 ## Scope Exclusions
 

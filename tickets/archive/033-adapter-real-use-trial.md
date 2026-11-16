@@ -57,3 +57,21 @@ tests and README mentions (maintainer decision recorded in Ticket 034,
 ## Scope Exclusions
 
 - Adapters for other frameworks.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-16. Decision: revise.
+
+- Merged as `78e89aa`: the spec's Trial Result (13 sessions, 166 holds, all
+  three AC9 targets met), Tickets 042-046 for the revise fixes, and the
+  skill-usage mod's removal of the retired hooks' reading.
+- An independent review of the removal found that a session running across
+  the update would misread its old events. The fix bumped the mod's events
+  shape tag, restored tests for compaction and for stored older summaries,
+  and fixed wording.
+- Every check passed on a scratch merge: the validator, unit tests on Python
+  3.14 and 3.11, the V1/V2 context comparison, plugin validate, 136 mod
+  tests, and a TypeScript check that added no errors.
+- The maintainer checked the pane live after the merge: the Session tab
+  started empty, as the bumped shape tag intends, and its animations played
+  cleanly.

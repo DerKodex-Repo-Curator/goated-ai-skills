@@ -32,12 +32,13 @@ Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
    - Blocked by: `tickets/archive/031-claude-code-adapter-action-and-closeout-gates.md`,
      `tickets/archive/032-skill-usage-mod-in-repo.md`
    - Enables: measurement of every hold for the trial.
-7. `tickets/033-adapter-real-use-trial.md`
+7. `tickets/archive/033-adapter-real-use-trial.md`
+   - Status: Completed, merged and archived on 2026-11-16 (decision: revise).
    - Blocked by: `tickets/archive/028-discoverable-skill-descriptions.md`,
      `tickets/archive/034-skill-usage-mod-action-holds.md`
    - Enables: the maintainer's keep, revise, or revert decision.
 8. `tickets/039-skill-usage-hold-settlement-module.md`
-   - Blocked by: `tickets/033-adapter-real-use-trial.md` (its legacy removal)
+   - Blocked by: `tickets/archive/033-adapter-real-use-trial.md` (its legacy removal)
    - Enables: hold-outcome fixes in one module instead of inside `summarize`.
 9. `tickets/archive/040-skill-usage-all-time-picture-badges.md`
    - Status: Completed, merged and archived on 2026-11-16.
@@ -46,7 +47,7 @@ Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
    - Enables: an All time picture without per-case badges, and Session badges
      whose colours each mean one thing.
 10. `tickets/041-adapter-review-holds-read-the-change.md`
-   - Blocked by: `tickets/033-adapter-real-use-trial.md` (its keep decision)
+   - Blocked by: `tickets/archive/033-adapter-real-use-trial.md` (its keep decision)
    - Enables: review holds that clear only after the agent reads the change,
      not on a skill load alone; ticket 038 builds on it.
 11. `tickets/042-adapter-fresh-session-routing.md`
@@ -80,10 +81,12 @@ their write scopes do not overlap. Ticket 034 needs both.
 
 ## Ready Frontier
 
-- `tickets/033-adapter-real-use-trial.md`, until it is merged and archived;
-  then `tickets/041-adapter-review-holds-read-the-change.md` and
-  `tickets/039-skill-usage-hold-settlement-module.md`, which touch separate
-  folders.
+- `tickets/041-adapter-review-holds-read-the-change.md`
+- `tickets/039-skill-usage-hold-settlement-module.md`
+
+The two touch separate folders (the adapter and the mod), so they can run in
+parallel. Merge 039 first: 041's small mod change then goes into 039's
+settlement module.
 
 ## Coverage
 

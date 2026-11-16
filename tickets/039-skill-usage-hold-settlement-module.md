@@ -45,7 +45,7 @@ blocked `Stop`.
 
 ## Blocked By
 
-- `tickets/033-adapter-real-use-trial.md`, and its removal of
+- `tickets/archive/033-adapter-real-use-trial.md`, and its removal of
   `LEGACY_MARKERS` and the legacy hook handling from `hooks/classify.ts`.
   If the trial decides to keep the legacy handling, settle with the
   maintainer whether this ticket still runs.

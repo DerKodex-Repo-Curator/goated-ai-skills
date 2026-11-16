@@ -49,7 +49,7 @@ the turn, or by a skip line naming it.
 
 ## Blocked By
 
-- `tickets/033-adapter-real-use-trial.md` (the trial's keep decision)
+- `tickets/archive/033-adapter-real-use-trial.md` (the trial's keep decision)
 
 ## Scope Exclusions
 
