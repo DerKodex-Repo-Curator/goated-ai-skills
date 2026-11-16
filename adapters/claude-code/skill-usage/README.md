@@ -16,12 +16,12 @@ without it.
 | --- | --- |
 | Skill loads and why each loaded: your `/command`, your prompt naming it, a hook, the router's route, the agent, or a subagent | Skill tool calls and slash commands |
 | Route lines, counted by form (`direct`, `continue`, routed) | `goated-route:` lines in replies |
-| Turns that write, by whether a route line came before the first write, only after it, or not at all | The main agent's edits and spawns, the calls the adapter holds like writes |
+| Turns that write, by whether a route line came before the first write, only after it, or not at all | The main agent's edits and spawns, the calls the adapter holds like writes; a call whose result is an error, such as a held one, did not write |
 | Justified skips, with their reasons; a skip declines a justified-skip hold or a hook nudge naming that skill in the same turn | `goated-skip:` lines in replies |
 | The adapter's holds by gate and kind, and each held skill's outcome: loaded, files read, already loaded, declined, not loaded, or waiting | Denied calls whose reason starts `goated-hold: <gate> \| <kind>` |
 | Your overrides, by phrase | The adapter's sentence `recorded your override for this prompt` in hook context (see [Known Limits](#known-limits)) |
 | Reads of skills' reference and other supporting files, and whether the skill had loaded first | `Read` paths and shell commands |
-| Subagent spawns, with type and task, including ones that load no skill | Agent tool calls |
+| Subagent spawns, with type and task, including ones that load no skill | Agent tool calls that ran; a held or failed attempt shows in the log as held but is not counted |
 | A subagent's start message, and its reads of a skill's `SKILL.md` | SubagentStart hook context; a subagent's `Read` calls |
 | Whether the router loaded before any other tool | The session-start router rule of earlier hand-written hooks |
 
@@ -148,6 +148,9 @@ This has not been tested end to end. Keep a backup of both files.
   which mods do receive with text, but the adapter does not send it there
   yet. When the mod loads mid-session, the history it rebuilds from has no
   hook context either, so earlier overrides go uncounted.
+- A slash command counts as a prompt only when it loads a skill. Other
+  commands, such as `/skill-usage` or `/compact`, run without a model turn,
+  so neither they nor their output start a turn in the pane.
 - A writing turn runs from one typed prompt to the next. A message from
   another session that starts a new turn for the adapter joins the running
   turn here, and so does a background result, as it does for the adapter.

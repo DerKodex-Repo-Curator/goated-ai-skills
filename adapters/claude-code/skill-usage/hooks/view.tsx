@@ -1011,6 +1011,7 @@ function feedRow(entry: TimelineEntry): { mark: string; kind: string; runs: Run[
       return { mark: '›', kind: 'You', runs: [{ text: `you typed ${entry.phrases.map(p => `"${p}"`).join(', ')}` }], tone: 'waiting' }
     case 'spawn': {
       const task = entry.description ? `: ${entry.description}` : ''
+      if (entry.isHeld) return { mark: '⑂', kind: 'Spawn', runs: [{ text: `${entry.agentType} held, not started${task}` }], tone: 'dim' }
       return { mark: '⑂', kind: 'Spawn', runs: [{ text: `${entry.agentType} started${task}` }, ...(entry.isSubagent ? [{ text: ' · by a subagent', tone: 'dim' as const }] : [])], tone: 'plain' }
     }
     case 'subagent-start':

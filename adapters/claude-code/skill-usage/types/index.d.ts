@@ -26,11 +26,14 @@ export type UsageEvent = Stamp &
     /** The adapter's notice that it recorded overrides you typed, each phrase lowercased. */
     | { kind: 'override'; phrases: string[] }
     /** An Agent tool call starting a subagent, by the main agent or the subagent `agent`. */
-    | { kind: 'spawn'; agentType: string; description: string; isSubagent?: true; agent?: string }
+    /** `id`: the call's tool_use id, so a refusal of the call (`refused`) can take it back. */
+    | { kind: 'spawn'; id?: string; agentType: string; description: string; isSubagent?: true; agent?: string }
     /** The start message a SubagentStart hook gave the subagent `agent`. */
     | { kind: 'subagent-start'; agent?: string }
     /** A main-agent call the adapter holds like a write: an edit, or a spawn that hands work on. */
-    | { kind: 'write' }
+    | { kind: 'write'; id?: string }
+    /** A call whose result was an error, such as one the adapter held: it did not run, so its spawn or write did not happen. */
+    | { kind: 'refused'; id: string }
     | { kind: 'tool' }
     | { kind: 'compact' }
   )
@@ -108,7 +111,8 @@ export type TimelineEntry = Stamp &
     | { kind: 'ref'; skill: string; file: string; isLoaded: boolean; isSubagent?: true }
     | ({ kind: 'route'; isSubagent?: true } & Route)
     | { kind: 'override'; phrases: string[] }
-    | { kind: 'spawn'; agentType: string; description: string; isSubagent?: true }
+    /** `isHeld`: the call was refused, so no subagent started. */
+    | { kind: 'spawn'; agentType: string; description: string; isHeld?: true; isSubagent?: true }
     | { kind: 'subagent-start' }
     | { kind: 'body'; skill: string; isSubagent: true }
     | { kind: 'compact' }
