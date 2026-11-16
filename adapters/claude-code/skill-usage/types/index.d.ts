@@ -12,11 +12,15 @@ export type UsageEvent = Stamp &
     | { kind: 'load'; id?: string; skill: string; via: 'tool' | 'slash'; isSubagent: boolean }
     /** `isSubagent`: the hook spoke to a subagent, not the main agent; `agent`: which subagent, so its own turn end settles it. */
     /** `holdKind`: an adapter hold (`goated-hold:`), whose `hook` is its gate; `isStop`: it held a `Stop`, not a call. */
-    | { kind: 'nudge'; hook: string; named: string[]; holdKind?: HoldKind; isStop?: true; isSubagent?: true; agent?: string }
+    /** `skipOnly`: the named skills the hold offers only as a skip line, which no load answers. */
+    | { kind: 'nudge'; hook: string; named: string[]; holdKind?: HoldKind; isStop?: true; skipOnly?: string[]; isSubagent?: true; agent?: string }
     /** A `goated-skip: <skill>: <reason>` line in a reply: the agent (or the subagent `agent`) declined a skill for this turn. */
     | { kind: 'skip'; skill: string; reason: string; isSubagent?: true; agent?: string }
-    /** A turn ended: the main agent's, or the subagent `agent`'s. A nudge it leaves open can no longer be followed. */
-    | { kind: 'turn-end'; agent?: string }
+    /**
+     * A turn ended: the main agent's, or the subagent `agent`'s. A nudge it leaves open can no longer be followed.
+     * `reason`: why, as Claude Code says it (`answer`, `aborted` by you, `refusal`, `error`); absent in events kept before it was read.
+     */
+    | { kind: 'turn-end'; agent?: string; reason?: 'answer' | 'aborted' | 'refusal' | 'error' }
     | { kind: 'read'; skills: string[] }
     /** A supporting file of a skill read, such as `references/x.md`, by the main agent or a subagent. */
     | { kind: 'ref'; skill: string; file: string; isSubagent?: true }

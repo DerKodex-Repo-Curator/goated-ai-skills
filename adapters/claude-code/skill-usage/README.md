@@ -64,19 +64,28 @@ clears it. In particular:
 - A `spawn` hold names two ways to write the brief, `handoff` or
   `subagent-driven-development`. It counts once: its row shows "handoff or
   subagent-driven-development" until the agent loads one, then names that one.
-- A hold that holds again in the same turn while it still waits, asking for
-  the same skills or fewer, is one row marked `×N` and counts once in the
-  rates; the adapter holds count each time. What it no longer asks for was
-  met. This is the agent retrying a held call, or the adapter blocking the
-  `Stop` again.
+- A call's hold that holds again in the same turn, asking for nothing its
+  gate's earlier holds did not, is one row marked `×N` and counts once in the
+  rates; the adapter holds count each time. That covers the agent retrying a
+  held call, and a retry held again because the adapter had not yet seen the
+  load or skip line written beside it. What the earlier holds asked and the
+  repeat no longer does was met.
+- A skill a hold offers only as a skip line, such as
+  `verification-before-completion` for the closeout's proof item, is answered
+  by a skip line or by the adapter letting the turn end, never by loading it:
+  the adapter counts a check run, or a read of the red-flags file, not a load.
 - A blocked `Stop` does not end the turn, so the closeout hold waits for the
-  agent's next move. The adapter judges every `Stop`: when the turn ends after
-  the agent replied to the last block, the turn got past the hold, so each
-  item still waiting counts as followed (a skip line still declines its own
-  item). That covers the items no load answers, a check run for the proof
-  item or a fix for unfinished work. Claude Code ends a turn after nine blocks
-  in a row whatever the hook says, so after nine the items still waiting count
-  as not loaded.
+  agent's next move. Every block of the turn joins one closeout row. A block
+  that asks again for an item after a load or a skip line means the adapter
+  did not accept it, so the item waits again and that skip line no longer
+  declines it.
+- When the turn ends as an answer after the agent replied to the last block,
+  the adapter let the `Stop` through, so each item still waiting counts as
+  followed. That covers the items no load answers, a check run for the proof
+  item or a fix for unfinished work. A turn you interrupt, or one an error
+  ends, passes nothing. Claude Code ends a turn after nine blocks in a row
+  whatever the hook says: then what the last block asked counts as not
+  loaded, and what only earlier blocks asked counts as followed.
 
 ## The Pane
 
@@ -191,6 +200,12 @@ This has not been tested end to end. Keep a backup of both files.
   headings, and the `commit` hold for a message that breaks the contract.
 - The nine-block limit is Claude Code's as seen on 2.1.325. If a version
   changes it, a closeout the agent never got past may count as followed.
+- A turn that ends as an answer after a blocked `Stop` counts as passed even
+  when the adapter failed open on the last `Stop` and judged nothing; the
+  mod cannot see that. When the mod rebuilds a session from history, which
+  has no turn ends, it passes no closeout: the next prompt closes the turn
+  and cannot tell a pass from an interruption, so items still waiting count
+  as not loaded.
 - Overrides reach the mod through the adapter's `UserPromptSubmit` hook
   context. A notice reaches a mod as a row with no text, so the notice
   itself is not read. When the mod loads mid-session, the history it
@@ -211,6 +226,11 @@ This has not been tested end to end. Keep a backup of both files.
   follows it a moment later.
 - Two sessions folding the same old sessions into the `older` total at the
   same moment can count them twice. Folding happens only past 300 sessions.
+- A session already folded into `older` and then resumed counts twice: its
+  own key is gone, so the mod rebuilds it from history and stores it again,
+  while `older` still holds its earlier sum, which keeps no per-session
+  parts to take back. Only a session older than the 300 most recent can be
+  folded.
 - The mod judges nothing. Whether a skip reason is specific to the action is
   for you to read in the log.
 

@@ -79,13 +79,13 @@ export type Meaning = 'good' | 'waiting' | 'bad'
 export type Tone = 'plain' | 'dim' | Meaning | 'declined' | 'read'
 /** A paler green than success, readable on a light or a dark theme; no theme key is one. */
 export const DECLINED_COLOR = '#8fcfa8'
+/** Reference reads' pink, between the picture's dark and light pinks, readable on either theme. */
+export const READ_COLOR = '#e0679b'
 /**
  * Theme keys, so the meanings follow the person's theme: green, amber, red. No
  * theme key is pink or pale green, so reference reads and declines take fixed
  * colours between the picture's dark and light ones, readable on either.
  */
-/** Reference reads' pink, between the picture's dark and light pinks, readable on either theme. */
-export const READ_COLOR = '#e0679b'
 export const COLOR: Record<Tone, string | undefined> = { plain: undefined, dim: undefined, good: 'success', waiting: 'warning', bad: 'error', declined: DECLINED_COLOR, read: READ_COLOR }
 export const OUTCOME_TONE: Record<Outcome, Meaning | 'declined'> = { followed: 'good', 'read files': 'good', 'already loaded': 'good', declined: 'declined', ignored: 'bad', pending: 'waiting' }
 /** Outcomes that count as handled: the skill acted on, or declined with a reason. */

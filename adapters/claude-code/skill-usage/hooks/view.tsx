@@ -86,7 +86,11 @@ function title(v: View, text: string, note?: string) {
   )
 }
 
-/** The smallest fill a non-zero part gets, as a share of its bar, so one load in a hundred still shows. */
+/**
+ * The smallest fill a non-zero part gets, as a share of its bar, so a small part
+ * still shows where the surface draws exact widths. A terminal rounds a bar to
+ * whole cells, so on an 8-cell bar a part under about a sixteenth may round away.
+ */
 const MIN_SHARE = 0.03
 
 /**
@@ -429,8 +433,9 @@ export function allTimeTab(v: View, all: AllTime, rows: number) {
 
 /**
  * Your own skills: how many have ever loaded, as a bar, then two lists: those
- * that loaded, most loaded first, each with its share of all their loads as a
- * bar and a percentage; and those that never have, A to Z.
+ * that loaded, most loaded first, each with a bar to scale beside the most
+ * loaded and its share of all their loads as a percentage; and those that
+ * never have, A to Z.
  */
 export function unusedTab(v: View, all: AllTime, avail: Available | null) {
   const { Box } = v.ui

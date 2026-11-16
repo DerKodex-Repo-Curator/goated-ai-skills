@@ -159,11 +159,15 @@ const STOP_BLOCK_LIMIT = 9
  * so the names are taken as they stand, whether or not the session's skill
  * listing has loaded.
  */
-function adapterHoldNamed(gate: string, body: string): string[] {
-  if (gate === 'router-first') return [ROUTER]
-  if (gate === 'route-line') return [ROUTE_LINE]
-  const named = [...body.matchAll(BACKTICKED_SKILL), ...body.matchAll(OFFERED_SKIP)].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
-  return [...new Set(named.flatMap(m => (m[1] && !MARKER_WORDS.has(m[1]) ? [m[1]] : [])))]
+function adapterHoldNamed(gate: string, body: string): { named: string[]; skipOnly: string[] } {
+  if (gate === 'router-first') return { named: [ROUTER], skipOnly: [] }
+  if (gate === 'route-line') return { named: [ROUTE_LINE], skipOnly: [] }
+  const names = (re: RegExp) => [...body.matchAll(re)].flatMap(m => (m[1] && !MARKER_WORDS.has(m[1]) ? [{ skill: m[1], at: m.index ?? 0 }] : []))
+  const loads = names(BACKTICKED_SKILL)
+  const named = [...new Set([...loads, ...names(OFFERED_SKIP)].sort((a, b) => a.at - b.at).map(n => n.skill))]
+  // A skill offered only as a skip line asks for something no load gives: a check run for the closeout's proof item,
+  // a read of the red-flags file for its design item.
+  return { named, skipOnly: named.filter(skill => !loads.some(n => n.skill === skill)) }
 }
 
 /**
@@ -187,13 +191,21 @@ function adapterHold(text: string, isErrorResult: boolean): { gate: string; kind
 /**
  * The hook messages in one piece of hook output, each with the skills it
  * names. Output that carries an adapter hold is that one hold, and its
- * `hook` is its gate; `isStop`: it held a `Stop`, not a call. Otherwise a legacy marked paragraph starts a message,
+ * `hook` is its gate; `isStop`: it held a `Stop`, not a call; `skipOnly`:
+ * the named skills it offers only as a skip line, which no load answers. Otherwise a legacy marked paragraph starts a message,
  * and unmarked paragraphs after it belong to it. `holdsOnly`: the text is an
  * errored tool result, which can quote a marker, so only holds count.
  */
-export function hookNudges(text: string, skills: readonly string[], holdsOnly = false): { hook: string; named: string[]; holdKind?: HoldKind; isStop?: true }[] {
+export function hookNudges(
+  text: string,
+  skills: readonly string[],
+  holdsOnly = false,
+): { hook: string; named: string[]; holdKind?: HoldKind; isStop?: true; skipOnly?: string[] }[] {
   const hold = adapterHold(text, holdsOnly)
-  if (hold) return [{ hook: hold.gate, named: adapterHoldNamed(hold.gate, hold.body), holdKind: hold.kind, ...(hold.isStop ? { isStop: true as const } : {}) }]
+  if (hold) {
+    const { named, skipOnly } = adapterHoldNamed(hold.gate, hold.body)
+    return [{ hook: hold.gate, named, holdKind: hold.kind, ...(hold.isStop ? { isStop: true as const } : {}), ...(skipOnly.length > 0 ? { skipOnly } : {}) }]
+  }
 
   const messages: { hook: string; body: string }[] = []
   for (const paragraph of text.split('\n\n')) {
@@ -582,11 +594,25 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   // `agent`: the subagent it spoke to, absent for the main agent; that loop's turn end settles it.
   // `isStrict`: an adapter hold that only loading the skill clears; a skip line never declines it.
   // `row`: the nudge's log row, which a repeat of the same hold in the turn joins. `isStop`: a hold on a `Stop`.
+  // `isSkipOnly`: a skill the hold offers only as a skip line, which no load answers.
+  // `isSkipRejected`: a blocked `Stop` asked for it after a skip line, so that skip line did not clear it.
   type NudgeRow = TimelineEntry & { kind: 'nudge' }
-  type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; isStop?: true; mark: NudgedSkill; row: NudgeRow }
+  type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; isStop?: true; isSkipOnly?: true; isSkipRejected?: true; mark: NudgedSkill; row: NudgeRow }
   let open: Open[] = []
-  /** Whether an open ask is answered by `skill`; the route hold of earlier hooks is answered by any specialist. */
-  const answers = (n: Open, skill: string) => n.anyOf.includes(skill) || (n.anyOf[0] === ANY_SPECIALIST && skill !== ROUTER)
+  /** Whether an open ask is answered by loading `skill`; the route hold of earlier hooks is answered by any specialist. */
+  const answers = (n: Open, skill: string) => !n.isSkipOnly && (n.anyOf.includes(skill) || (n.anyOf[0] === ANY_SPECIALIST && skill !== ROUTER))
+  // The adapter holds of each loop's running turn, by agent ('' for the main agent) and gate: the row a repeat joins,
+  // and every ask the row made, settled or not.
+  type GateRow = { row: NudgeRow; asks: Open[] }
+  const turnHolds = new Map<string, GateRow>()
+  const gateKey = (hook: string, agent?: string) => `${agent ?? ''}|${hook}`
+  const sameAsk = (n: Open, ask: readonly string[]) => n.anyOf.join(' ') === ask.join(' ')
+  const forgetHolds = (agent?: string) => {
+    for (const key of [...turnHolds.keys()]) if (key.startsWith(`${agent ?? ''}|`)) turnHolds.delete(key)
+  }
+  // The main turn's blocked `Stop`s: how many so far, and the asks the latest one made.
+  let stopBlocks = 0
+  let lastStopAsks: Open[] = []
   // Skip lines written in each loop's running turn, by agent ('' for the main agent) then skill, with their reasons.
   const skipped = new Map<string, Map<string, string>>()
   const skipsOf = (agent?: string) => skipped.get(agent ?? '') ?? new Map<string, string>()
@@ -617,37 +643,81 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
       return false
     })
   }
-  /**
-   * A loop's turn is over: what it left open can no longer be followed, so each is declined (a skip line said why) or
-   * ignored. A hold on a `Stop` is the exception: the adapter judges every `Stop`, so a turn that ended after the agent
-   * answered the last block got past it, by a check run, a fix or a load the hold cannot name, unless Claude Code's
-   * limit on blocks in a row ended it.
-   */
-  const closeTurn = (isInLoop: (n: Open) => boolean, by: UsageEvent) => {
-    const ending = open.filter(n => isInLoop(n) && n.hook !== 'router-rule')
-    for (const n of ending) {
-      const reason = n.isStrict ? undefined : skipReason(n.anyOf, n.agent)
-      if (reason !== undefined) n.mark.reason = reason
-      const isPassed = n.isStop && hasRepliedSinceStop && (n.row.repeats ?? 1) < STOP_BLOCK_LIMIT
-      settle(m => m === n, reason !== undefined ? 'declined' : isPassed ? 'followed' : 'ignored', by)
-    }
+  /** Takes back a settled ask's outcome and opens it again: the adapter asked for it again, so it was not met. */
+  const reopen = (n: Open) => {
+    if (open.includes(n)) return
+    const counts = nudges[n.hook]
+    const was = n.mark.status
+    if (counts?.[was]) counts[was] = (counts[was] ?? 1) - 1
+    if (counts && counts[was] === 0) delete counts[was]
+    if (was === 'declined') n.isSkipRejected = true
+    n.mark.status = 'pending'
+    delete n.mark.at
+    delete n.mark.reason
+    open.push(n)
   }
   /**
-   * An adapter hold asking again, in the same turn, only for what an earlier hold of its gate still waits on: the agent
-   * retried, or a blocked `Stop` blocked again. It joins that hold's row as a repeat and counts once; what the earlier
-   * hold asked and this one no longer does was met. A hold that asks for anything new, or for nothing, is a row of its own.
+   * A loop's turn is over: what it left open can no longer be followed, so each is declined (a skip line said why) or
+   * ignored. A blocked `Stop` is the exception. The adapter judges every `Stop` it is given, so a main turn that ended
+   * as an answer (not interrupted, nor ended by an error) after the agent replied to the last block got past it: what
+   * that block asked was met, by a check run, a fix or a load the hold cannot name. Claude Code ends a turn after
+   * `STOP_BLOCK_LIMIT` blocks whatever the hook says, and then what the last block asked was not met; what an earlier
+   * block asked and the last did not, the adapter judged met. A close at the next prompt (a turn end the mod did not
+   * see, and rebuilt history) cannot tell a pass from an interruption, so it passes nothing.
+   */
+  const closeTurn = (isInLoop: (n: Open) => boolean, by: UsageEvent) => {
+    const isAnswer = by.kind === 'turn-end' && !by.agent && (by.reason === undefined || by.reason === 'answer')
+    const isPassed = isAnswer && hasRepliedSinceStop && stopBlocks < STOP_BLOCK_LIMIT
+    if (isAnswer && stopBlocks >= STOP_BLOCK_LIMIT) for (const n of lastStopAsks) reopen(n)
+    const ending = open.filter(n => isInLoop(n) && n.hook !== 'router-rule')
+    for (const n of ending) {
+      const reason = n.isStrict || n.isSkipRejected ? undefined : skipReason(n.anyOf, n.agent)
+      if (reason !== undefined) n.mark.reason = reason
+      const isMet = n.isStop === true && (isPassed || (isAnswer && !lastStopAsks.includes(n)))
+      settle(m => m === n, reason !== undefined ? 'declined' : isMet ? 'followed' : 'ignored', by)
+    }
+  }
+  /** A new ask on a gate's row, open until something answers it. A blocked `Stop` has judged every skip line before it. */
+  const addAsk = (held: GateRow, e: UsageEvent & { kind: 'nudge' }, ask: string[]): Open => {
+    const mark: NudgedSkill = { skill: ask.join(' or '), status: 'pending' }
+    held.row.skills.push(mark)
+    const n: Open = {
+      hook: e.hook,
+      anyOf: ask,
+      ...(e.agent ? { agent: e.agent } : {}),
+      ...(e.holdKind === 'strict' ? { isStrict: true as const } : {}),
+      ...(e.isStop ? { isStop: true as const, isSkipRejected: true as const } : {}),
+      ...(ask.every(skill => e.skipOnly?.includes(skill)) ? { isSkipOnly: true as const } : {}),
+      mark,
+      row: held.row,
+    }
+    held.asks.push(n)
+    for (const skill of ask) turnNudged.add(skill)
+    open.push(n)
+    return n
+  }
+  /**
+   * An adapter hold of a gate that already held in this turn, asking for nothing its earlier holds did not: it joins
+   * their row as a repeat and counts once. A held call retried while its asks still wait, or held again because the
+   * adapter had not yet seen the load or skip line beside the retry, settles nothing new; what the earlier holds asked
+   * and this one no longer does was met. A blocked `Stop` that blocks again joins the turn's closeout row whatever it
+   * asks: the adapter has seen every reply by then, so an ask it repeats after a load or a skip line was not met, and
+   * opens again. A hold that asks for nothing, or a call's hold that asks for anything new, is a row of its own.
    */
   const joinRepeat = (e: UsageEvent & { kind: 'nudge' }, asks: readonly string[][]): boolean => {
-    const row = open.findLast(n => n.hook === e.hook && n.agent === e.agent)?.row
-    const waiting = open.filter(n => n.row === row)
-    const sameAsk = (n: Open, ask: readonly string[]) => n.anyOf.join(' ') === ask.join(' ')
-    if (!row || asks.length === 0 || !asks.every(ask => waiting.some(n => sameAsk(n, ask)))) return false
-    row.repeats = (row.repeats ?? 1) + 1
-    settle(n => waiting.includes(n) && !asks.some(ask => sameAsk(n, ask)), 'followed', e)
-    for (const ask of asks) {
-      const inReply = answeredInReply(ask, e)
-      if (inReply !== undefined) settle(n => waiting.includes(n) && sameAsk(n, ask), 'followed', e, inReply)
-    }
+    const held = turnHolds.get(gateKey(e.hook, e.agent))
+    if (!held || asks.length === 0) return false
+    const known = (ask: readonly string[]) => held.asks.find(n => sameAsk(n, ask))
+    if (!e.isStop && !asks.every(known)) return false
+    held.row.repeats = (held.row.repeats ?? 1) + 1
+    const asked = asks.map(ask => {
+      const n = known(ask)
+      if (!n) return addAsk(held, e, [...ask])
+      if (e.isStop) reopen(n)
+      return n
+    })
+    if (e.isStop) lastStopAsks = asked
+    else settle(n => held.asks.includes(n) && !asked.includes(n), 'followed', e)
     return true
   }
   /** What the held call's own reply already did for `ask`, which the adapter could not see yet: the answering skill, or none. */
@@ -667,6 +737,9 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         closeTurn(() => true, e)
         tallyWritingTurn()
         skipped.clear()
+        turnHolds.clear()
+        stopBlocks = 0
+        lastStopAsks = []
         turnNamed = new Set(e.named)
         turnNudged = new Set(open.flatMap(n => n.anyOf))
         turnRouter = false
@@ -686,7 +759,10 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
       case 'nudge': {
         if (e.hook === 'router-rule') routerRule = true
         if (e.holdKind) measures.holds[e.holdKind] = (measures.holds[e.holdKind] ?? 0) + 1
-        if (e.isStop) hasRepliedSinceStop = false
+        if (e.isStop) {
+          hasRepliedSinceStop = false
+          stopBlocks += 1
+        }
         // A gate whose skills are alternatives asks once; any other nudge asks for each skill it names.
         const asks = ALTERNATIVE_GATES.has(e.hook) && e.named.length > 1 ? [e.named] : e.named.map(s => [s])
         if (e.holdKind && joinRepeat(e, asks)) break
@@ -700,14 +776,28 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         }
         timeline.push(row)
         const at = e.isEarlier ? {} : { at: e.t }
+        if (e.holdKind) {
+          // An adapter hold's asks are records of the turn, so a repeat of the hold finds them, settled or not.
+          const held: GateRow = { row, asks: [] }
+          if (asks.length > 0) turnHolds.set(gateKey(e.hook, e.agent), held)
+          for (const ask of asks) {
+            const n = addAsk(held, e, ask)
+            const inReply = e.isStop ? undefined : answeredInReply(ask, e)
+            const reason = e.holdKind === 'strict' || e.isStop ? undefined : skipReason(ask, e.agent)
+            if (inReply !== undefined) settle(m => m === n, 'followed', e, inReply)
+            else if (reason !== undefined) {
+              // Declined before it was asked, earlier in the same turn.
+              n.mark.reason = reason
+              settle(m => m === n, 'declined', e)
+            }
+          }
+          if (e.isStop) lastStopAsks = held.asks.slice()
+          break
+        }
         for (const ask of asks) {
           const label = ask.join(' or ')
-          const reason = e.holdKind === 'strict' ? undefined : skipReason(ask, e.agent)
-          const inReply = answeredInReply(ask, e)
-          if (inReply !== undefined) {
-            bump(nudges, e.hook, 'followed')
-            row.skills.push({ skill: inReply, status: 'followed', ...at })
-          } else if (!e.holdKind && e.hook !== 'router-rule' && ask.some(s => loaded.has(s))) {
+          const reason = skipReason(ask, e.agent)
+          if (e.hook !== 'router-rule' && ask.some(s => loaded.has(s))) {
             // Earlier hooks asked once a session; the adapter's holds ask for a load in this turn, so one before does not answer them.
             bump(nudges, e.hook, 'already loaded')
             row.skills.push({ skill: label, status: 'already loaded', ...at })
@@ -719,15 +809,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
             const mark: NudgedSkill = { skill: label, status: 'pending' }
             row.skills.push(mark)
             for (const s of ask) turnNudged.add(s)
-            open.push({
-              hook: e.hook,
-              anyOf: ask,
-              ...(e.agent ? { agent: e.agent } : {}),
-              ...(e.holdKind === 'strict' ? { isStrict: true as const } : {}),
-              ...(e.isStop ? { isStop: true as const } : {}),
-              mark,
-              row,
-            })
+            open.push({ hook: e.hook, anyOf: ask, ...(e.agent ? { agent: e.agent } : {}), mark, row })
           }
         }
         break
@@ -745,6 +827,11 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
       case 'turn-end':
         closeTurn(n => n.agent === e.agent, e)
         skipped.delete(e.agent ?? '')
+        forgetHolds(e.agent)
+        if (!e.agent) {
+          stopBlocks = 0
+          lastStopAsks = []
+        }
         break
       case 'load': {
         if (e.id && failedLoads.has(e.id)) break

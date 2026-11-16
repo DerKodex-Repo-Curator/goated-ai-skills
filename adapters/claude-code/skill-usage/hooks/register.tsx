@@ -69,7 +69,7 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     // Every hook hears a subagent's turn end too: it settles that subagent's nudges. Only the main loop's is saved.
     try {
-      await record($, [{ kind: 'turn-end', t: await $.clock.now(), ...(e.agentId ? { agent: e.agentId } : {}) }])
+      await record($, [{ kind: 'turn-end', t: await $.clock.now(), reason: e.reason, ...(e.agentId ? { agent: e.agentId } : {}) }])
       if (!e.agentId) {
         await persist($, false)
         // Sessions running beside this one store their turns too: reread them, so All time stays current.
