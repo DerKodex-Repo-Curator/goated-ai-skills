@@ -73,6 +73,9 @@ Do not bulk-read the repo when a targeted read will do.
 - `docs/plans/`: dated implementation plans.
 - `docs/agents/`: context routing and the standards profile for this repo.
 - `stack/`: V2 shared policy, registry, schema, templates, and fixtures.
+- `adapters/`: opt-in framework enforcement adapters under ADR 0003, one
+  subfolder per framework, such as `adapters/claude-code/`. Adapters enforce
+  portable contracts and no skill may depend on one.
 - `issues/`: historical V1 PRDs and archived issue handoffs. Do not add new work there or rewrite archived records.
 
 ## GOATED Skill Routing

@@ -125,6 +125,14 @@ installs it. It enforces:
   `goated-route: continue`.
 - **Pipeline gates.** Writes are held until the skills listed in the current
   route's `requires:` have loaded for this task. `direct` exempts the task.
+  The hold is strict: a skill that does not apply is dropped by writing a
+  corrected route line. Spawning an agent or session is held like a write.
+  After compaction the required skills must load again.
+- **Shell writes.** A `Bash` or `PowerShell` command that writes files meets
+  the same gates as an edit: redirects, `tee`, `sed -i`, `Set-Content`,
+  `Out-File`, `Add-Content`, `cp`, `mv`, `rm`, `git apply`, and
+  `git checkout --`. Reads, test runs, and `git status` stay free. Ticket 031
+  delivers this; Ticket 030 holds shell commands only at router-first.
 - **Action gates.** Commit, PR creation, and spawning an agent or session are
   held strictly. Design and security holds accept a justified skip.
 - **Closeout.** After a turn that changed code: fresh proof is required, plus
@@ -248,17 +256,20 @@ Today a subagent that loads no skill leaves the Subagents node blank.
 
 ## Open Questions
 
-- Where the adapter and mod live in the repo (for example `adapters/claude-code/`
-  as a new top-level folder recorded in `AGENTS.md`). Decided in the
-  architecture step. Recommended: a new top-level `adapters/` folder, since the
-  mod is not stack policy.
-- Whether the adapter's rule table (which moments hold for which skills) lives
-  in the adapter or in the registry. Recommended: the adapter, to avoid a
-  registry schema change; revisit when a second framework arrives.
 - How the mod's tests run in CI, if at all. Owner: maintainer, at the mod
   ticket.
-- The exact route-line and skip-line grammar. Settled in architecture, with
-  fixtures.
+
+Resolved:
+
+- **Adapter location** (Ticket 030, 2026-11-15): a new top-level `adapters/`
+  folder, one subfolder per framework. The Claude Code adapter lives in
+  `adapters/claude-code/`, and the mod joins it there in Ticket 032. The folder
+  is not stack policy, so it stays out of `stack/`. Recorded in `AGENTS.md`.
+- **Rule table** (Ticket 030, 2026-11-15): the adapter owns it, in
+  `adapters/claude-code/goated_adapter/gates.py`, so the registry schema does
+  not change. Revisit when a second framework arrives.
+- **Route-line and skip-line grammar**: settled by Ticket 029 in
+  `stack/fixtures/markers/`.
 
 ## Architecture
 
@@ -274,6 +285,48 @@ Accepted seams:
 - **One parser.** One documented contract defines hold-message and marker
   formats (`goated-route`, `goated-skip`, hold names), so the adapter and the
   mod stay in step.
+
+Claude Code adapter structure, settled in Ticket 030:
+
+- **One entry point.** Every hook event runs `goated_hook.py`, which hands the
+  raw hook input to one function. That function dispatches on
+  `hook_event_name`, owns fail-open handling, and is the tests' surface.
+- **Turn reader.** It reads the transcript backward from the end to the latest
+  prompt or compaction boundary, never crossing a compaction boundary. It
+  classifies each prompt from the entry's `origin`, `turnOrigin`, and text
+  wrapper: a person typed it; another session or the app wrote it (a
+  cross-session message, a host brief, any non-`human` origin), which starts a
+  turn but carries no overrides; or it reports background work (a task
+  notification or side-session event), which continues the current turn. A
+  turn yields its successful Skill loads, including a skill the prompt invoked
+  as `/<skill>`, and its route line. Claude Code writes the transcript
+  asynchronously; in live runs the call being judged appeared 54 to 114 ms
+  after its hook started. So the reader waits up to 1.5 seconds for that
+  call's own `tool_use` entry. If it does not appear, the hook fails open with
+  a visible warning. Older unseen turns beyond the 64 MB read limit are given
+  up; only a current turn larger than the limit fails open.
+- **Task state.** A task starts at the turn whose winning route line is not
+  `continue`, and runs through later `continue` turns. Only loads after the
+  route line that starts a task, plus a skill the prompt itself invoked, count
+  for it, so proof never carries over from an earlier task, even in the same
+  turn. Compaction clears the task's loads but keeps its route. Per-session
+  state holds the current task, whether the router loaded since the last
+  compaction, the last turn seen, and the latest user overrides; a file of any
+  other shape is reset. When a turn change is detected, unseen turns back to
+  the last one seen are folded in, so a load that ended a turn still counts.
+- **Rule table.** Write tools (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`)
+  and spawn tools (`Agent`, `mcp__ccd_session__start_session`,
+  `mcp__ccd_session__hand_off_to_session`) meet all three routing gates;
+  command tools (`Bash`, `PowerShell`) meet only router-first until Ticket 031;
+  every other tool is free. All three gates are strict: to drop a required
+  skill, the agent writes a corrected route line (maintainer decision,
+  2026-11-16). Only a bare skill name, or one in a configured GOATED plugin
+  namespace, counts as a load.
+- **Overrides.** The user-prompt hook stores the overrides in the prompt text
+  with its `prompt_id`, ignoring negated phrases. The gates apply them only to
+  the turn that prompt opened, and only when the transcript shows a person
+  typed it.
+- **Subagents.** A hook input carrying `agent_id` skips the routing gates.
 
 ## Rollout
 

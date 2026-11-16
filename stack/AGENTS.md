@@ -108,9 +108,9 @@ Use the registry for cross-skill metadata and the installed
 `using-goated-ai-skills` skill for route selection; it ends routing with a
 `goated-route:` line. Select only justified required and conditional gates.
 
-When the route line or a framework hold names a skill that does not apply,
-write `goated-skip: <skill>: <reason>` on its own line with an action-specific
-reason. Omit ceremonial skip reports.
+When a framework hold names a skill that does not apply, write
+`goated-skip: <skill>: <reason>` on its own line with an action-specific
+reason. To drop a route's skill, re-route instead. Omit ceremonial skip reports.
 
 Re-evaluate the route at controlled checkpoints:
 

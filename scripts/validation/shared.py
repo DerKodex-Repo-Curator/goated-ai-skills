@@ -13,8 +13,17 @@ import yaml
 HEADING_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 
 # Directory names skipped during broad repo scans. This keeps validation focused
-# on public source files and avoids virtualenvs, build output, and private notes.
+# on public source files and avoids virtualenvs, build output, private notes, and
+# agent or editor folders. `.claude/` matters most: agent sessions keep whole
+# worktree checkouts under `.claude/worktrees/`, which would otherwise be scanned
+# as a second copy of the repo. Tracked public dot-folders such as `.github/`
+# and `.out-of-scope/` are still scanned.
 SKIPPED_DIR_NAMES = {
+    ".claude",
+    ".codex",
+    ".cursor",
+    ".vscode",
+    ".idea",
     ".git",
     ".hg",
     ".svn",

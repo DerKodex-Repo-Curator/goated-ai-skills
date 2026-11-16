@@ -21,6 +21,7 @@ CONCERN_CASES = {
     "research": ("validate_knowledge_retrieval_fixtures", {"shared"}),
     "operations": ("validate_setup_scribe_fixtures", {"shared"}),
     "reporting": ("collect_fixture_counts", {"shared"}),
+    "adapters": ("validate_adapter_boundary", {"shared"}),
 }
 
 

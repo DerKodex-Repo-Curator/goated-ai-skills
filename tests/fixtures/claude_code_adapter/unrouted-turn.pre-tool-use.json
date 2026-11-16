@@ -1,0 +1,18 @@
+{
+  "session_id": "0f6a2c1e-4b7d-4e2a-9c3b-5d8e7f6a1b2c-unrouted-turn",
+  "prompt_id": "prompt-unrouted-turn",
+  "transcript_path": "<replaced by the test>",
+  "cwd": "/workspace/example",
+  "permission_mode": "default",
+  "effort": {
+    "level": "high"
+  },
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "/workspace/example/settings.py",
+    "old_string": "load_cfg",
+    "new_string": "load_settings"
+  },
+  "tool_use_id": "toolu_edit01"
+}

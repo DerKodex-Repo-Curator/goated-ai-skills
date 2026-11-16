@@ -43,24 +43,24 @@ snippet, and install, disable and remove docs.
 
 ## Acceptance Criteria
 
-- [ ] Unit tests drive the hooks with recorded hook inputs and transcript
+- [x] Unit tests drive the hooks with recorded hook inputs and transcript
       fixtures, and prove each of these:
-  - [ ] router-first holds and clears;
-  - [ ] a missing route line holds, and `continue` passes;
-  - [ ] `requires:` skills hold until loaded;
-  - [ ] `direct` exempts the task;
-  - [ ] an unchanged retry never passes;
-  - [ ] a load from an earlier task does not satisfy a new one;
-  - [ ] a user-typed override stands the matching hold down, and the same text
+  - [x] router-first holds and clears;
+  - [x] a missing route line holds, and `continue` passes;
+  - [x] `requires:` skills hold until loaded;
+  - [x] `direct` exempts the task;
+  - [x] an unchanged retry never passes;
+  - [x] a load from an earlier task does not satisfy a new one;
+  - [x] a user-typed override stands the matching hold down, and the same text
         written by the agent does not;
-  - [ ] routing gates are skipped in subagents;
-  - [ ] unreadable input fails open with a warning.
-- [ ] The tests run in CI on Python 3.11 and 3.14 with standard-library code
+  - [x] routing gates are skipped in subagents;
+  - [x] unreadable input fails open with a warning.
+- [x] The tests run in CI on Python 3.11 and 3.14 with standard-library code
       only.
-- [ ] The validator ignores the adapter folder, or validates it on purpose, and
+- [x] The validator ignores the adapter folder, or validates it on purpose, and
       no skill depends on the adapter.
-- [ ] Install, disable, and remove docs exist.
-- [ ] Hook latency is measured on Windows and reported.
+- [x] Install, disable, and remove docs exist.
+- [x] Hook latency is measured on Windows and reported.
 
 ## Expected Proof
 

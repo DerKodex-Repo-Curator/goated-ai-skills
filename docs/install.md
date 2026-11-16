@@ -165,6 +165,14 @@ is not loaded, the router still runs from its standalone fallback. On older
 Claude Code versions, or where `AGENTS.md` support is turned off, a `CLAUDE.md`
 containing only `@AGENTS.md` makes Claude Code read the shared file.
 
+### Optional Enforcement Adapter
+
+Skills and the shared policy are advisory text. To have Claude Code hold
+writes and commands until the router and the route's required skills have
+loaded, install the opt-in adapter in `adapters/claude-code/`. Its
+[README](../adapters/claude-code/README.md) covers installing, disabling, and
+removing it. Nothing else in the distribution depends on it.
+
 Use `agent-instructions-integrator` to help create the correct target-project routing instructions.
 
 ## Hermes Notes
