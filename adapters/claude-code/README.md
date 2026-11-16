@@ -192,7 +192,8 @@ backtick in PowerShell). A `Bash` or `PowerShell` command meets the
 - downloads to a file: `curl -o <file>` (also `-sSLo <file>`) or `curl -O`,
   `wget` unless it writes to standard output, or `Invoke-WebRequest -OutFile`;
 - runs `git apply`, `git am`, `git restore`, `git mv`, `git rm`, `git clean`,
-  `git checkout -- <path>`, `git checkout <rev> <path>`, `git reset --hard`, or
+  `git checkout -- <path>`, `git checkout <rev> <path>`,
+  `git checkout --theirs|--ours <path>`, `git reset --hard`, or
   `git stash pop|apply`.
 
 Text inside quotes, heredoc bodies, PowerShell here-strings, and comments is
