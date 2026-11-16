@@ -1,6 +1,6 @@
 # Designing And Planning
 
-Read this when comparing designs, choosing a first slice, deciding between a prototype and real code, clarifying a requirement, or when a problem feels stuck.
+Read this when adding a module or public interface, comparing designs, choosing a first slice, deciding between a prototype and real code, clarifying a requirement, or when a problem feels stuck.
 
 When the `prototype`, `grill-with-docs`, `write-a-spec`, or `writing-plans` skills are installed, they own the procedure for prototypes, clarification, specs, and plans. This file gives the reasoning.
 

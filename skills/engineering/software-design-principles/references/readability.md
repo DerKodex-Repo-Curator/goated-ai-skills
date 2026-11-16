@@ -1,6 +1,6 @@
 # Names, Comments And Obvious Code
 
-Read this when choosing a name, deciding whether and what to comment, or making code obvious to a first-time reader.
+Read this when choosing a name, deciding whether and what to comment, checking comments near a change, or making code obvious to a first-time reader.
 
 These are guidelines for judgement. Project instructions, a project's own standards, and the user's requests take priority. `[PP ...]` and `[APoSD ...]` mark which book an idea comes from.
 

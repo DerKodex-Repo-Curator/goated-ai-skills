@@ -134,6 +134,7 @@ EXPECTED_SUCCESS_OUTPUT = "\n".join(
             "skills/engineering/code-security-review/SKILL.md, "
             "skills/engineering/diagnose/SKILL.md, "
             "skills/engineering/grill-with-docs/SKILL.md, "
+            "skills/engineering/software-design-principles/SKILL.md, "
             "skills/engineering/receiving-code-review/SKILL.md, "
             "skills/engineering/tdd/SKILL.md"
         ),

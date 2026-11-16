@@ -1,6 +1,6 @@
 # Complexity And Modules
 
-Read this when deciding where a module boundary goes, what an interface should expose, whether to split or merge code, or when a term in this skill is unfamiliar.
+Read this when deciding where a module boundary goes, what an interface should expose, whether to split or merge code, whether to add a layer or parameter, or when a term in this skill is unfamiliar.
 
 These are guidelines for judgement. Project instructions, a project's own standards, and the user's requests take priority. `[PP ...]` and `[APoSD ...]` mark which book an idea comes from.
 

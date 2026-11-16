@@ -1,6 +1,6 @@
 # While You Are Coding
 
-Read this when code works for reasons you cannot state, when refactoring, when judging tests as design feedback, or when the question is about speed.
+Read this when code works for reasons you cannot state, when refactoring, when writing tests or judging them as design feedback, when fixing a bug, or when the question is about speed.
 
 When the `tdd`, `diagnose`, `code-refinement`, or `code-security-review` skills are installed, they own the procedure for test-first work, debugging, cleanup, and security review. This file gives the reasoning.
 
