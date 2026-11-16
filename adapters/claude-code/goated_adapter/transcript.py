@@ -74,7 +74,7 @@ def prompt_text_kind(text: str) -> str:
     uses the entry's structured fields, which are more reliable.
     """
 
-    body = REMINDER_RE.sub("", text, count=1)
+    body = REMINDER_RE.sub("", text, count=1).lstrip()
     if body.startswith(NOT_PROMPT_PREFIXES):
         return NOT_PROMPT
     if body.startswith(CONTINUATION_PREFIXES):
@@ -262,9 +262,16 @@ def _opener_kind(entry: dict, sidechain: bool = False) -> str | None:
         return "compaction"
     if entry.get("type") != "user":
         return None
-    if entry.get("isMeta") or entry.get("isCompactSummary"):
+    if entry.get("isCompactSummary"):
         return None
     if bool(entry.get("isSidechain")) != sidechain:
+        return None
+    if (entry.get("origin") or {}).get("kind") == "peer" or entry.get("turnOrigin") == "peer":
+        # A subagent's hand-back or another session's message. Claude Code
+        # records it `isMeta` but starts a new turn with it, as the adapter
+        # does: whatever its text says, nobody typed it here.
+        return MACHINE
+    if entry.get("isMeta"):
         return None
     text = _prompt_text(entry)
     if text is None:
@@ -284,8 +291,8 @@ def _opener_kind(entry: dict, sidechain: bool = False) -> str | None:
         # app or a scheduler acting, so it opens a turn but is not typed.
         return TYPED if origin == "human" and by_text == TYPED else MACHINE
     if turn_origin not in (None, "human", "sdk"):
-        # Seen: `host_synthetic` (desktop-app prompts) and `peer` (another
-        # session). Any origin other than a person or the SDK caller is not typed.
+        # Seen: `host_synthetic` (desktop-app prompts). Any origin other than a
+        # person or the SDK caller is not typed.
         return MACHINE
     return by_text
 

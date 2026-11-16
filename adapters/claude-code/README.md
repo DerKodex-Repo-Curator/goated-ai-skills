@@ -329,13 +329,20 @@ Claude Code also submits prompts nobody typed in this session:
 - **Requests from elsewhere**, such as a subagent's final report, a message
   from another Claude session, a brief from the session that started this
   one, or any prompt whose recorded origin is not a person. They start a new
-  turn, which needs its own route line, and never carry overrides, even when
-  they quote an override phrase: the adapter neither records nor announces
-  one. The user-prompt hook's input does not say where a prompt came from, so
-  the hook recognizes these by their opening text, such as the line `Another
+  turn, which needs its own route line (`goated-route: continue` when it
+  continues the current task), and never carry overrides: not ones they quote,
+  and not ones you typed earlier, which covered only the turn your prompt
+  opened. The adapter neither records nor announces an override for them.
+  The user-prompt hook's input does not say where a prompt came from, so the
+  hook recognizes these by their opening text, such as the line `Another
   Claude session sent a message:` that opens both a subagent's report and
   another session's message. The gates check again against the transcript,
-  where Claude Code marks such a prompt with `origin.kind` `peer`.
+  where Claude Code marks such a prompt with `origin.kind` `peer` (and
+  `isMeta`), so one whose text the hook misses still applies no override.
+
+A prompt you type that starts with a pasted report or message in that shape
+reads as one of those requests, so an override typed after the paste does
+not count. Type the override before the pasted text.
 
 Claude Code shows a short notice when the adapter records an override. The
 same sentence, `GOATED Claude Code adapter: recorded your override for this

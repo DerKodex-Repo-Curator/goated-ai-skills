@@ -87,15 +87,20 @@ class Session:
         with self.transcript.open("a", encoding="utf-8") as handle:
             handle.write(text + "\n")
 
-    def prompt(self, text: str, *, hook: bool = True, **fields) -> str:
+    def prompt(
+        self, text: str, *, hook: bool = True, new_prompt_id: bool = True, **fields
+    ) -> str:
         """Record a typed user prompt; run the user-prompt hook first.
 
         By default the entry carries `origin.kind: human`, as the desktop app
         records typed prompts. Pass `origin=None` for the bare shape `claude -p`
         records, or other `fields` to imitate prompts Claude Code writes itself.
+        With `new_prompt_id=False` the prompt keeps the previous prompt's id, as
+        Claude Code records some prompts that arrive while a turn runs.
         """
 
-        self.prompt_id = str(uuid.uuid4())
+        if new_prompt_id or not self.prompt_id:
+            self.prompt_id = str(uuid.uuid4())
         output = ""
         if hook:
             output = self.hook(
@@ -132,14 +137,24 @@ class Session:
         )
         return output
 
-    def peer(self, text: str, *, handback: bool = False) -> str:
+    def peer(
+        self,
+        text: str,
+        *,
+        handback: bool = False,
+        same_prompt_id: bool = False,
+        first_line: str = "Another Claude session sent a message:",
+    ) -> str:
         """Record a message another agent or session sent, which nobody typed here.
 
         Claude Code submits it as a prompt in this shape: a fixed first line, a
         tag naming the sender, the body, and a closing note. With `handback`, it
         is a subagent's final report (`<agent-message>`, `handback: true`);
         otherwise another session's message (`<cross-session-message>`). The
-        prompt-submit hook sees the same text the transcript records.
+        prompt-submit hook sees the same text the transcript records, whose
+        entry is `isMeta` with a `peer` origin. With `same_prompt_id`, the entry
+        keeps the previous prompt's id, as some recorded peer entries do. Pass
+        another `first_line` to imitate a wrapper the text check does not know.
         """
 
         if handback:
@@ -173,11 +188,15 @@ class Session:
                 "hostInjected": False,
             }
             note = "This came from another Claude session, not typed by your user."
-        wrapped = (
-            f"Another Claude session sent a message:\n<{tag} {attributes}>\n{body}\n"
-            f"</{tag}>\n\n{note}"
+        wrapped = f"{first_line}\n<{tag} {attributes}>\n{body}\n</{tag}>\n\n{note}"
+        return self.prompt(
+            wrapped,
+            new_prompt_id=not same_prompt_id,
+            isMeta=True,
+            origin=origin,
+            promptSource="system",
+            turnOrigin="peer",
         )
-        return self.prompt(wrapped, origin=origin, promptSource="system", turnOrigin="peer")
 
     def notify(self, result: str) -> str:
         """Record a background-task notification, which Claude Code submits as a prompt."""

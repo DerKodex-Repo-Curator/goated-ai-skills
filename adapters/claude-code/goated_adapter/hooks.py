@@ -315,7 +315,7 @@ def _user_prompt_submit(payload: dict, config: Config) -> str:
     such as a task notification, leaves the typed prompt's overrides in place;
     text a subagent, another session, or the app wrote starts a turn with none.
     The gates check again against the transcript, which shows who wrote the
-    prompt.
+    prompt, so a message this text check misses still applies no override.
     """
 
     session_id = payload.get("session_id")
