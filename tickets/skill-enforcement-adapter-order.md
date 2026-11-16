@@ -49,6 +49,29 @@ Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
    - Blocked by: `tickets/033-adapter-real-use-trial.md` (its keep decision)
    - Enables: review holds that clear only after the agent reads the change,
      not on a skill load alone; ticket 038 builds on it.
+11. `tickets/042-adapter-fresh-session-routing.md`
+   - Blocked by: `tickets/041-adapter-review-holds-read-the-change.md`
+   - Enables: `continue` in a session with no task, and loads earlier in the
+     turn counting for the task it starts.
+12. `tickets/043-adapter-out-of-project-holds.md`
+   - Blocked by: `tickets/042-adapter-fresh-session-routing.md`
+   - Enables: no design, security, or closeout holds for files outside the
+     project.
+13. `tickets/044-adapter-closeout-same-command-check.md`
+   - Blocked by: `tickets/043-adapter-out-of-project-holds.md`
+   - Enables: a check in the same command as the write proving it.
+14. `tickets/045-route-and-skip-lines-before-the-call.md`
+   - Blocked by: `tickets/044-adapter-closeout-same-command-check.md`
+   - Enables: route and skip lines the adapter can see on the first try.
+15. `tickets/046-adapter-pipeline-after-compaction.md`
+   - Blocked by: `tickets/045-route-and-skip-lines-before-the-call.md`
+   - Enables: the last route line winning after a compaction.
+
+Tickets 041–046 are the trial's revise fixes (spec, Trial Result). They edit
+the same adapter files and hold texts, so they run one after another, and all
+of them run before Ticket 035 in
+`tickets/adapter-skill-activation-gates-order.md`. The trial's revise decision
+counts as the keep decision those tickets are blocked on.
 
 Tickets 028 and 029 ran in parallel and were merged on 2026-11-15. Ticket 032
 was split on 2026-11-16 so it can run alongside 031: 031 works in
@@ -57,7 +80,10 @@ their write scopes do not overlap. Ticket 034 needs both.
 
 ## Ready Frontier
 
-- `tickets/033-adapter-real-use-trial.md`
+- `tickets/033-adapter-real-use-trial.md`, until it is merged and archived;
+  then `tickets/041-adapter-review-holds-read-the-change.md` and
+  `tickets/039-skill-usage-hold-settlement-module.md`, which touch separate
+  folders.
 
 ## Coverage
 
@@ -73,3 +99,4 @@ their write scopes do not overlap. Ticket 034 needs both.
 - AC8 → 030 (adapter), 032 (mod)
 - AC9 → 033
 - AC10 → 041
+- AC11 → 042, 043, 044, 045, 046

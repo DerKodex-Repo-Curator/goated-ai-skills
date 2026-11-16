@@ -230,7 +230,7 @@ Today a subagent that loads no skill leaves the Subagents node blank.
       R11 lists in its own tests and in one live session.
 - [ ] AC8: Install docs cover enabling, disabling, and removing the adapter and
       the mod.
-- [ ] AC9: After several real sessions with the adapter installed, the mod
+- [x] AC9: After several real sessions with the adapter installed, the mod
       shows all of the following, and the maintainer records keep, revise, or
       revert:
       - zero holds passed without the skill loading or a logged justified skip
@@ -240,6 +240,9 @@ Today a subagent that loads no skill leaves the Subagents node blank.
 - [ ] AC10: A hold whose step reviews or describes the change clears only
       after a read of the change made after its load or reference read and
       after the last change, as R7's change reads say.
+- [ ] AC11: The trial's revise fixes land, as [Trial Result](#trial-result)
+      lists them: fewer holds that come from the adapter's own mechanics, with
+      the AC4 behaviour otherwise unchanged.
 
 ## Proof Surface
 
@@ -374,6 +377,67 @@ Claude Code adapter structure, settled in Ticket 030:
 3. Run several real sessions and judge them against AC9.
 4. Rollback is uninstalling the adapter: skills keep working, and the old
    personal scripts can be restored from the maintainer's machine.
+
+## Trial Result
+
+Ticket 033, 2026-11-16. The adapter and mod were installed from the repo in
+place of the personal hooks, which were disabled but kept. The data covers
+13 real sessions after the install, in this repo and one other project, many
+of them started from another session: 63 turns and 166 holds. Holds were
+counted from the session transcripts, deduplicated by tool-use id, because
+the mod's counting changed during the trial.
+
+| AC9 target | Result |
+| --- | --- |
+| No hold passed without a load, a logged skip, or an override | Met. 104 held calls later passed unchanged, each after a load, route line, or skip line in its turn; the rest were held again or changed by the agent. No workaround was found. No overrides were typed. |
+| Every hook-required skill loaded in the turn it applied | Met. Of 99 skill asks, 85 were loaded in the turn, 12 declined by a justified skip, and 2 dropped by a corrected route line; none went unanswered. |
+| A route line on every turn that writes | Met. All 43 writing turns had a route line before their first write. |
+
+Holds by gate: route-line 64, design 23, closeout 21 (16 turns, at most 3
+blocks in one), pipeline 17, router-first 14, spawn 14, commit 10,
+security 3. Most holds came from the adapter's mechanics, not from skipped
+skills:
+
+- **Route lines.** 26 route-line holds came from a route line written in the
+  same message as the held call (the known limit), and 21 from
+  `goated-route: continue` written in a session with no task yet, mostly
+  sessions started from another session.
+- **Loads before the route line.** About 12 pipeline holds asked again for a
+  skill already loaded earlier in the same turn, before the route line.
+- **Outside the project.** 9 of 23 design holds were on scratch scripts
+  outside the project. The closeout counted relative paths after a `cd` out
+  of the project as project changes.
+- **Closeout proof.** A check run later in the same command as the write
+  did not count, so the closeout held again.
+- **Lost lines.** Once, a skip line written just before a tool call was
+  stored as a narration summary rather than text, so the adapter never saw
+  it.
+- **Compaction.** Once, after a compaction, a pipeline hold kept an earlier
+  task's required skill through a `continue` and a `direct` route line.
+
+The 16 skip reasons were all specific; 5 existed only because a gate fired on
+a scratch file outside the project, and one stated a plan rather than a
+reason. A real-use review also found that review holds clear on a load or
+reference read alone (Ticket 041, AC10).
+
+**Decision: revise.** The maintainer keeps the adapter installed, and it
+counts as kept for the tickets blocked on that decision. The fixes run
+before Ticket 035:
+
+- Ticket 041: review holds need a read of the change.
+- Ticket 042: in a session with no task, `continue` starts one, and loads
+  earlier in the turn count for a task the turn starts.
+- Ticket 043: the design and security gates skip files outside the project,
+  and shell write targets are resolved after a `cd`.
+- Ticket 044: a check later in the same command as the write counts as
+  proof. An ad-hoc `python -c` still does not; a skip line clears it.
+- Ticket 045: the router and hold texts say to write route and skip lines in
+  a message before the gated call.
+- Ticket 046: diagnose and fix the pipeline hold that kept an earlier task's
+  route after a compaction.
+
+The personal hooks stay retired, so the skill-usage mod's reading of their
+messages was removed in Ticket 033.
 
 ## Migration
 
