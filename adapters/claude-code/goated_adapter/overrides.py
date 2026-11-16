@@ -1,4 +1,4 @@
-"""The phrases a user can type to stand a routing hold down for one turn.
+"""The phrases a user can type to stand a hold down for one turn.
 
 Only the user-prompt hook calls this, on the `prompt` field Claude Code passes
 it, and the gates apply the result only to a turn the transcript shows a
@@ -20,6 +20,19 @@ SKILL_SKIP_RE = re.compile(rf"\bskip\s+(?:the\s+)?`?({SKILL})`?(?:\s+skill)?\b",
 NEGATION_RE = re.compile(
     r"(?:\bdon[’']?t|\bdo\s+not|\bnever|\bno\s+need\s+to)\s+(?:\w+\s+)?$", re.IGNORECASE
 )
+# "commit message: <text>", "commit it with the message "<text>"", or a fenced
+# block right after such a phrase. The words between "commit" and "message"
+# stay on one line and short, so prose that merely mentions both is not read.
+COMMIT_MESSAGE_RE = re.compile(
+    r"\bcommit\b[^\n]{0,40}?\bmessage\b(?:[ \t]+(?:is|of))?[ \t]*[:=]?[ \t]*", re.IGNORECASE
+)
+FENCED_RE = re.compile(r"\n?[ \t]*```[^\n]*\n(.*?)\n[ \t]*```", re.DOTALL)
+QUOTED_RES = (
+    re.compile(r'"([^"\n]+)"'),
+    re.compile(r"\u201c([^\u201d\n]+)\u201d"),
+    re.compile(r"`([^`\n]+)`"),
+    re.compile(r"'([^'\n]+)'"),
+)
 HARNESS_BLOCK_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
 NOT_SKILLS = frozenset({"routing", "router"})
 
@@ -28,8 +41,9 @@ def parse_overrides(prompt: str) -> dict:
     """Return the overrides a typed prompt asks for.
 
     The result has `routing` (stand down router-first, route-line, and pipeline
-    holds), `skills` (pipeline requirements to stand down), and `phrases` (the
-    matched text, for the record). Harness-injected `<system-reminder>` blocks
+    holds), `skills` (skills whose holds stand down), `commit_message` (the
+    commit message the user supplied, or None), and `phrases` (the matched
+    text, for the record). Harness-injected `<system-reminder>` blocks
     are not typed by the user and are ignored, as are negated phrases.
     """
 
@@ -43,7 +57,35 @@ def parse_overrides(prompt: str) -> dict:
             continue
         skills.append(skill)
         phrases.append(match.group(0))
-    return {"routing": bool(routing), "skills": skills, "phrases": phrases}
+    message = _commit_message(text)
+    if message is not None:
+        phrases.append("commit message")
+    return {
+        "routing": bool(routing),
+        "skills": skills,
+        "commit_message": message,
+        "phrases": phrases,
+    }
+
+
+def _commit_message(text: str) -> str | None:
+    """Return the commit message the user typed, if a phrase supplies one."""
+
+    for match in COMMIT_MESSAGE_RE.finditer(text):
+        if _negated(text, match.start()):
+            continue
+        rest = text[match.end() :]
+        fenced = FENCED_RE.match(rest)
+        if fenced:
+            return fenced.group(1).strip() or None
+        for quoted in QUOTED_RES:
+            found = quoted.match(rest)
+            if found:
+                return found.group(1).strip() or None
+        line = rest.split("\n", 1)[0].strip()
+        if match.group(0).rstrip().endswith((":", "=")) and line:
+            return line
+    return None
 
 
 def _negated(text: str, start: int) -> bool:

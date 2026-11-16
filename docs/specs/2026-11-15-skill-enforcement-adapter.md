@@ -317,16 +317,42 @@ Claude Code adapter structure, settled in Ticket 030:
 - **Rule table.** Write tools (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`)
   and spawn tools (`Agent`, `mcp__ccd_session__start_session`,
   `mcp__ccd_session__hand_off_to_session`) meet all three routing gates;
-  command tools (`Bash`, `PowerShell`) meet only router-first until Ticket 031;
-  every other tool is free. All three gates are strict: to drop a required
-  skill, the agent writes a corrected route line (maintainer decision,
-  2026-11-16). Only a bare skill name, or one in a configured GOATED plugin
-  namespace, counts as a load.
+  command tools (`Bash`, `PowerShell`) meet router-first, and also route-line
+  and pipeline when they write files (Ticket 031); every other tool is free.
+  All three gates are strict: to drop a required skill, the agent writes a
+  corrected route line (maintainer decision, 2026-11-16). Only a bare skill
+  name, or one in a configured GOATED plugin namespace, counts as a load. The
+  routing rules live in `gates.py`.
+- **Action and closeout gates** (Ticket 031) live in `actions.py`. They keep
+  no state: each decision is a function of the current turn, which the reader
+  now also returns with its skip lines and finished tool calls, plus the
+  turn's typed overrides. That makes an unchanged retry give the same answer
+  and lets a hold stop as soon as the turn shows compliance. Proof counts per
+  turn. Commit, pull-request, and spawn holds are strict; design, security, and
+  closeout holds accept a skip line. The closeout runs on Claude Code's `Stop`
+  hook. Two of its triggers are mechanical stand-ins, documented in the
+  adapter README: a non-test code change asks for `doc-sync`, and a failing
+  last check asks for `handoff`. A code change is a write target inside the
+  project folder, including those of subagents the turn spawned, found
+  through the spawn result's `agentId`.
+- **Shell analysis** lives in `shell.py`: a lexical tokenizer that splits a
+  command into simple commands, understanding quotes, continuations,
+  comments, heredocs, here-strings, `[[ ]]`, and arithmetic, and resolves each
+  command word past wrappers such as `sudo`, `timeout`, and `cmd /c`. Per
+  command it reports the files written, a commit and its own inline message,
+  a pull request, or a check. Commands run through another shell or
+  evaluator are out of reach, as the README's Known Limits say. **Content checks** live in `contracts.py` and test only what
+  the `commit-message` and spawn-brief contracts state plainly.
+- **Hold format.** Every hold's first line is
+  `goated-hold: <gate> | <strict|justified-skip>`; the adapter README fixes the
+  gate names and the pattern the skill-usage mod parses.
 - **Overrides.** The user-prompt hook stores the overrides in the prompt text
-  with its `prompt_id`, ignoring negated phrases. The gates apply them only to
-  the turn that prompt opened, and only when the transcript shows a person
-  typed it.
-- **Subagents.** A hook input carrying `agent_id` skips the routing gates.
+  with its `prompt_id`, ignoring negated phrases, including a commit message
+  the user supplied. The gates apply them only to the turn that prompt opened,
+  and only when the transcript shows a person typed it.
+- **Subagents.** A hook input carrying `agent_id` skips the routing gates and
+  meets the action gates, judged from the subagent's own transcript at
+  `<session-id>/subagents/agent-<agent_id>.jsonl`, with no overrides.
 
 ## Rollout
 

@@ -2,15 +2,16 @@
 
 An optional set of Claude Code hooks that holds writes, spawns, and commands
 until the GOATED router and the skills its route requires have loaded in the
-current task. It enforces the portable contracts in
+current task. It also holds commits, pull requests, spawns, design changes,
+and security-sensitive edits until the skill that owns each has loaded, and
+holds the end of a code-changing turn until it has fresh proof. It enforces
+the portable contracts in
 `skills/agent-workflows/using-goated-ai-skills/SKILL.md`, `stack/AGENTS.md`,
-and `stack/fixtures/markers/README.md`; it adds no rules of its own
+`stack/fixtures/markers/README.md`, and the trigger each skill states; it adds
+no rules of its own
 ([ADR 0003](../../docs/adr/0003-opt-in-framework-enforcement-adapters.md)).
 
 Skills work the same without it. Install it only if you want enforcement.
-
-This release has the **routing gates** (Ticket 030). Commit, PR, spawn-brief,
-design, security, shell-write, and closeout gates arrive in Ticket 031.
 
 ## Requirements
 
@@ -31,7 +32,7 @@ design, security, shell-write, and closeout gates arrive in Ticket 031.
    Windows too.
 3. Use `python` as the command on Windows and `python3` on macOS and Linux, or
    give the full path to an interpreter.
-4. Merge the three entries under `hooks` into a Claude Code settings file:
+4. Merge the four entries under `hooks` into a Claude Code settings file:
    `~/.claude/settings.json` for every project, or a project's
    `.claude/settings.json` for one project. If the file already has a `hooks`
    object, add these entries next to the existing ones rather than replacing
@@ -60,14 +61,14 @@ per call with Git Bash on the Windows machine measured below.
 
 ## Disable
 
-Remove the three adapter entries from the settings file, or move them to a
+Remove the four adapter entries from the settings file, or move them to a
 file Claude Code does not load. Start a new session to be sure the change
 applies. Claude Code's `"disableAllHooks": true` also stops the adapter, along
 with every other hook you have.
 
 ## Remove
 
-1. Remove the three adapter entries from the settings file.
+1. Remove the four adapter entries from the settings file.
 2. Delete the copied `claude-code/` folder.
 3. Delete the state folder `goated-claude-code-adapter/` (see [State](#state)).
 
@@ -75,53 +76,164 @@ Skills keep working unchanged.
 
 ## What It Holds
 
-The rule table lives in [`goated_adapter/gates.py`](goated_adapter/gates.py).
-Every gate is strict: a hold clears only on proof of use or a typed user
-override.
+The routing rules live in [`goated_adapter/gates.py`](goated_adapter/gates.py)
+and the action and closeout rules in
+[`goated_adapter/actions.py`](goated_adapter/actions.py). There are two kinds
+of hold:
 
-| Gate | Holds | Clears when |
-| --- | --- | --- |
-| `router-first` | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction | `using-goated-ai-skills` loads |
-| `route-line` | The first write or spawn after each user prompt until the current turn has a valid `goated-route:` line; also `goated-route: continue` when the session has no task to continue | A valid route line appears in the turn |
-| `pipeline` | Writes and spawns while a `requires:` skill of the current task has not loaded | Each listed skill loads, or a corrected route line drops it |
+- **strict**: clears only on proof of use or a typed user override;
+- **justified-skip**: also clears on a `goated-skip: <skill>: <reason>` line,
+  with a reason of three or more words, in the current turn. The reason stays
+  in the transcript, where the skill-usage mod reads it.
 
-- **Writes** are `Edit`, `Write`, `MultiEdit`, and `NotebookEdit`.
-  **Spawns** are `Agent`, `mcp__ccd_session__start_session`, and
+| Gate | Kind | Holds | Clears when |
+| --- | --- | --- | --- |
+| `router-first` | strict | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction | `using-goated-ai-skills` loads |
+| `route-line` | strict | The first write or spawn after each user prompt until the current turn has a valid `goated-route:` line; also `goated-route: continue` when the session has no task to continue | A valid route line appears in the turn |
+| `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded | Each listed skill loads, or a corrected route line drops it |
+| `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` loads in the turn, and an inline message (or the tool's `message`) passes the [content check](#content-checks) |
+| `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` loads in the turn |
+| `spawn` | strict | Starting an agent or session with a brief | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, all in the turn; and the brief passes the [content check](#content-checks) |
+| `design` | justified-skip | A write adding five or more lines to a code file | `software-design-principles` loads in the turn |
+| `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` loads in the turn |
+| `closeout` | justified-skip | The end of a turn that changed code (a `Stop` hook) | Every item below is met or skipped |
+
+The closeout items, each judged against the turn's last code change. A code
+change is a write tool's file, or a file a shell command writes (its redirect
+target, copy destination, or removed, moved, or edited file), inside the
+project folder; a scratch or temp file elsewhere does not count. A shell write
+whose files the command does not name (`git apply`, `patch`, a download
+without an output name) counts as a change to non-test code. Code a subagent
+changed counts too, at the point the parent spawned it; if the subagent ran a
+check after its own last change, that change is already proved.
+
+| Item | Needed when | Met by | Skip line names |
+| --- | --- | --- | --- |
+| Proof | A change not already proved | A check command run after the last code change: a test runner, linter, type checker, or build tool (`pytest`, `python -m unittest`, `npm test`, `cargo test`, `go vet`, `tsc`, `make check`, and the like, also through `uv run` or `npx`), or a script whose name says test, check, lint, verify, validate, or build (`scripts/validate_skills.py`) | `verification-before-completion` |
+| Unfinished work | The last check after the change failed | `handoff` loads | `handoff` |
+| Docs | A code file outside the tests changed | `doc-sync` loads | `doc-sync` |
+| Design red flags | `software-design-principles` loaded in the turn | `software-design-principles/references/red-flags.md` is read after the last change | `software-design-principles` |
+
+- **Writes** are `Edit`, `Write`, `MultiEdit`, and `NotebookEdit`, and a
+  `Bash` or `PowerShell` command that writes files (see
+  [Shell writes](#shell-writes)). **Spawns** are `Agent` (or `Task`, its name
+  in older Claude Code versions), `mcp__ccd_session__start_session`, and
   `mcp__ccd_session__hand_off_to_session`; they hand work on, so they are held
-  like writes. **Commands** are `Bash` and `PowerShell`. Every other tool,
-  including reads and the Skill tool, is never held.
+  like writes. A session tool call with no brief, such as an offer card, is not
+  a spawn for the `spawn` gate. **Commands** are `Bash` and `PowerShell`.
+  Every other tool, including reads and the Skill tool, is never held.
+- **Code** is a file with a programming-language extension such as `.py`,
+  `.ts`, `.go`, `.ps1`, or `.sh`; the list is `CODE_EXTENSIONS` in
+  `actions.py`. Docs and config files are not code. A test file is one under
+  `tests/`, `test/`, `spec/`, or `__tests__/`, or named `test_*`, `*_test.*`,
+  `*.test.*`, or `*.spec.*`.
 - **A task** starts at the turn whose route line is not `continue` and runs
   through later `goated-route: continue` turns. Only loads after the route line
   that starts a task count for it, so a load from an earlier task never
   satisfies a new one, even within one turn. `goated-route: direct` exempts the
   task from the pipeline gate.
-- **Dropping a required skill.** A `goated-skip` line does not clear a routing
+- **Action and closeout proof is per turn.** A skill loaded in an earlier
+  turn does not cover a commit, spawn, or edit in a later one, even within the
+  same task. Within a turn, a hold stops firing as soon as the turn shows
+  compliance: after `commit-message` loads, every later commit in that turn
+  passes its skill check.
+- **Dropping a required skill.** A `goated-skip` line never clears a strict
   hold. If a route names a skill that does not apply, the agent writes a
   corrected route line without it; the last route line wins, as the shared
   policy says.
 - **Compaction** clears the proof: the router and the task's required skills
   must load again. The route itself carries over, so `goated-route: continue`
-  still works.
+  still works. A compaction also starts a new turn, so action proof restarts.
 - **Proof of use** is a successful Skill-tool load read from the transcript (a
   `Skill` tool call whose result is not an error), or a skill the user invoked
   by typing `/<skill>`. Naming a skill in text is not proof. A load counts by
   its bare name only: `someplugin:tdd` does not satisfy `requires: tdd`. If you
   installed GOATED as a Claude Code plugin, set `GOATED_ADAPTER_SKILL_NAMESPACES`
   to its namespace (comma-separated for several), for example in the settings
-  file's `env` block.
+  file's `env` block. A **required read** is a `Read` tool call on the
+  reference file, under any install folder, whose result is not an error.
 - **No free retry.** Every hold is decided from the transcript, so repeating a
-  held call unchanged gives the same answer until the proof appears.
+  held call unchanged gives the same answer until the proof or skip line
+  appears. A held call is recorded as an error, so it never counts as a change
+  or a check.
 
-A held call returns its reason to the agent. The first line names the gate and
-its kind, and the rest says what to do:
+### Shell writes
+
+The adapter splits a command into its simple commands (joined by `;`, `&&`,
+`||`, `|`, `&`, newlines, parentheses, braces, or `$(`) and reads each one's
+real command word past wrappers (`sudo -u <user>`, `env`, `timeout <n>`,
+`nice`, `nohup`, `xargs`, `cmd /c`), a quoted or full path to the program
+(`"git"`, `& "C:\…\git.exe"`), and line continuations (`\` in bash, a
+backtick in PowerShell). A `Bash` or `PowerShell` command meets the
+`route-line` and `pipeline` gates, like an edit, when one of its commands:
+
+- redirects output into a file (`>`, `>>`, `&>`, `2>`), except into a null
+  device (`/dev/null`, `$null`, `NUL`) or another stream (`2>&1`);
+- runs `tee`, `Tee-Object`, `cp`, `mv`, `rm`, `rmdir`, `touch`, `truncate`,
+  `ln`, `unlink`, `shred`, or `patch`;
+- edits in place with `sed -i` or `perl -i`;
+- runs `Set-Content`, `Add-Content`, `Out-File`, `Clear-Content`, `New-Item`,
+  `Copy-Item`, `Move-Item`, `Remove-Item`, `Rename-Item`, `Export-Csv`, or
+  `Export-Clixml`, or one of the stock Windows PowerShell 5.1 aliases (`sc`,
+  `ac`, `clc`, `del`, `erase`, `copy`, `move`, `ren`, `rd`, `ri`, `mi`, `cpi`,
+  `ni`, `rni`), or a .NET `[IO.File]::Write…` style call;
+- downloads to a file: `curl -o <file>` (also `-sSLo <file>`) or `curl -O`,
+  `wget` unless it writes to standard output, or `Invoke-WebRequest -OutFile`;
+- runs `git apply`, `git am`, `git restore`, `git mv`, `git rm`, `git clean`,
+  `git checkout -- <path>`, `git checkout <rev> <path>`, `git reset --hard`, or
+  `git stash pop|apply`.
+
+Text inside quotes, heredoc bodies, PowerShell here-strings, and comments is
+ignored, as are comparisons inside `[[ ]]` and arithmetic in `$(( ))`, so
+`echo "a > b"`, `[[ $a > $b ]]`, and `ls # a > b` write nothing. Reads, test
+runs, `git status`, and `git checkout <branch>` stay free. Commit and
+pull-request commands are recognized the same way, per command, so
+`echo gh pr create` opens nothing.
+
+### Content checks
+
+Only text in the tool input is checked, and only for what the skill's
+contract states plainly enough to test without judgement
+([`goated_adapter/contracts.py`](goated_adapter/contracts.py)):
+
+- **Commit message.** When the commit itself carries the message inline (`-m`,
+  `--message`, a short-flag cluster such as `-am`, the heredoc fed to that
+  commit's `-F -`, a heredoc in `-m "$(cat <<'EOF' … EOF)"`, or a PowerShell
+  here-string), or an MCP commit tool carries it in `message`, it needs a non-empty subject of at most 72
+  characters, a blank line before any body, and no credential-shaped token. A
+  message in a file (`-F <path>`), reused from another commit (`-c`, `-C`), or
+  from an editor is not checked.
+- **Spawn brief.** The brief needs, as Markdown headings, the sections its
+  template keeps even for an agent that inherits the conversation:
+  `Goal`, `Scope`, and `Done Means` for `handoff`'s spawn brief; `Task`,
+  `Ownership`, and `Required Report Format` for the implementer prompt;
+  `Review Mode`, `Review Inputs`, and `Required Report Format` for the
+  reviewer prompt. A brief passes when it matches a template whose reference
+  was read in the turn.
+
+### Hold messages
+
+Every hold, whether a denied tool call or a blocked `Stop`, returns a reason
+whose first line has one stable format, which the skill-usage mod parses:
 
 ```text
-goated-hold: <gate> | strict
-<what the agent must do>
+goated-hold: <gate> | <kind>
+<what the agent must do, in plain words>
 ```
 
-Ticket 031 adds justified-skip holds and fixes this as the stable format the
-skill-usage mod parses.
+- `<gate>` is one of `router-first`, `route-line`, `pipeline`, `commit`,
+  `pull-request`, `spawn`, `design`, `security`, or `closeout`.
+- `<kind>` is `strict` or `justified-skip`.
+- The first line matches
+  `^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-skip)$`.
+- The lines after it are guidance for the agent and may change between
+  releases; do not parse them.
+
+Claude Code records a denied call as a `tool_result` with `is_error: true`
+whose content carries this reason, and a blocked `Stop` as the reason shown
+to the agent. The outcome of a hold is read from what follows in the
+transcript: the skill load, read, or skip line that cleared it, or the user
+override recorded for the turn.
 
 ## User Overrides
 
@@ -135,7 +247,8 @@ blocks, and a phrase negated just before it, such as "don't skip routing",
 | Typed phrase | Effect for that turn |
 | --- | --- |
 | `skip routing`, `skip the router` | Stands down `router-first`, `route-line`, and `pipeline` |
-| `skip <skill>`, `skip the <skill> skill` | Stands down the `pipeline` requirement for that skill; `skip using-goated-ai-skills` also stands down `router-first` |
+| `skip <skill>`, `skip the <skill> skill` | Stands down every requirement for that skill: in `pipeline`, in an action gate, or in a closeout item. `skip using-goated-ai-skills` also stands down `router-first` |
+| `commit message: <text>`, `commit with the message "<text>"`, or a fenced block right after such a phrase | Stands down the `commit` hold for a commit whose inline message has the same subject line (whitespace aside); a commit with another message, or with none inline, is still held |
 
 Claude Code also submits prompts nobody typed in this session:
 
@@ -154,8 +267,22 @@ change it and this table together.
 
 ## Subagents
 
-A hook call from inside a subagent carries `agent_id`. The routing gates skip
-those calls, because the parent's brief carries the route.
+A hook call from inside a subagent carries `agent_id`. There:
+
+- the routing gates do not apply, because the parent's brief carries the route;
+- the action gates (`commit`, `pull-request`, `spawn`, `design`, `security`)
+  apply, judged from the subagent's own transcript, which Claude Code keeps in
+  `<session-id>/subagents/agent-<agent_id>.jsonl` beside the main one. A
+  subagent must load the skill itself: the parent's loads do not count;
+- no override applies, because nobody types a subagent's prompts;
+- the closeout gate does not run when the subagent stops; the adapter
+  registers no `SubagentStop` hook. Instead, code a subagent changed counts
+  toward the closeout of the parent turn that spawned it. The parent finds the
+  subagent through the `agentId` that Claude Code records in the spawn's
+  result.
+
+If the subagent's transcript cannot be found, the call fails open with a
+warning; at closeout, its changes are left out, with a warning.
 
 ## Session Start Notices
 
@@ -174,7 +301,8 @@ and shows a warning that starts `GOATED Claude Code adapter:` when:
 
 - the hook input is not readable JSON or lacks `session_id` or
   `transcript_path`;
-- the transcript cannot be read, or the current turn alone is larger than the
+- the transcript, or a subagent's own transcript, cannot be read, or the
+  current turn alone is larger than the
   64 MB read limit. Older turns beyond the limit are simply not read, as if
   they had been seen;
 - the transcript has not caught up with the call being judged. Claude Code
@@ -201,7 +329,8 @@ One small JSON file per session in a `goated-claude-code-adapter/` folder:
 
 It holds the current task's route and loads, whether the router loaded, the
 last turn seen, and the latest typed overrides. It holds no prompt or reply
-text beyond the short override phrases. Files are not pruned automatically;
+text beyond the short override phrases and a commit message the user typed.
+The action and closeout gates keep no state: they read the current turn. Files are not pruned automatically;
 deleting the folder between sessions is safe.
 
 ## Latency
@@ -219,7 +348,9 @@ i9-14900K, spawning `goated_hook.py` in exec form, 30 runs each:
 
 The reader reads only the current turn from the end of the file, so
 transcript size barely matters. Most of the cost is interpreter start-up and
-the `json` and `re` imports.
+the `json` and `re` imports. The action and closeout gates (Ticket 031) added
+about 4 ms: on the recorded 20 KB fixture, 30 runs each, the median went from
+60 to 64 ms.
 
 In live headless sessions on the same machine (Claude Code 2.1.325), the call
 being judged was never yet in the transcript when the hook started. Its entry
@@ -229,8 +360,37 @@ budget leaves headroom before the hook fails open.
 
 ## Known Limits
 
-- Until Ticket 031, a file written through `Bash` or `PowerShell` meets only
-  `router-first`. Ticket 031 holds shell commands that write files like edits.
+- Shell analysis is lexical, not a shell. These forms are not seen, so a
+  write in them meets only `router-first` and a commit or pull request in
+  them meets no action gate:
+  - a command run through another shell or evaluator: `bash -c`, `sh -c`,
+    `eval`, `Invoke-Expression`, `Start-Process`, or a heredoc fed to a shell
+    (`bash <<'EOF'`);
+  - command substitution with backticks, or `$(…)` inside double quotes;
+  - a write inside an interpreter or script (`python -c "open(...)"`,
+    `node build.js`), or by an archive tool (`tar -x`, `unzip`);
+  - git aliases (`git ci`), and `gh api` calls that create a pull request
+    (`gh api repos/<owner>/<repo>/pulls`);
+  - MCP tools that commit or open pull requests under names other than those
+    listed in [What It Holds](#what-it-holds).
+
+  An agent working around the holds this way is the case the next item
+  describes.
+- Two closeout triggers are mechanical stand-ins for judgement. "Behavior or
+  interfaces changed" is read as "a non-test code file changed", so a pure
+  refactor still asks for `doc-sync` or a skip line. "Work left unfinished" is
+  read as "the last check after the change failed"; unfinished work with no
+  failing check is not seen.
+- The closeout holds the `Stop` even when Claude Code reports that a `Stop`
+  hook already blocked once (`stop_hook_active`), because a hold never passes
+  on a retry. Each item accepts a skip line, so the agent can always end the
+  turn by writing one. The reply being finished is read from the hook input's
+  `last_assistant_message`; on a Claude Code version without that field, a
+  skip line written only in the final reply may not be seen until the
+  transcript catches up.
+- The design gate judges size by lines added in the tool input, not by what
+  the change does, and does not see shell writes. The security gate judges by
+  path alone.
 - The adapter guards against agents skipping skills, not against an agent
   working to defeat it. An agent with shell access could edit the transcript,
   the state file, or the settings that install the hooks. Defending against
@@ -251,7 +411,8 @@ budget leaves headroom before the hook fails open.
 
 ## Tests
 
-`tests/test_claude_code_adapter.py` in the GOATED source repo drives the
-adapter with hook inputs and transcripts in Claude Code's recorded shape,
+`tests/test_claude_code_adapter.py` (routing gates) and
+`tests/test_claude_code_adapter_actions.py` (action, shell-write, and closeout
+gates) in the GOATED source repo drive the adapter with hook inputs and transcripts in Claude Code's recorded shape,
 including the recorded fixtures in `tests/fixtures/claude_code_adapter/`, and
 checks the adapter's marker parser against `stack/fixtures/markers/lines.yaml`.

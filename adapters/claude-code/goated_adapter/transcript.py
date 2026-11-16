@@ -81,6 +81,23 @@ class TranscriptUnreadable(Exception):
     """The transcript cannot be read well enough to judge the current call."""
 
 
+class Call:
+    """A tool call that has finished in the turn: its name, input, and outcome.
+
+    `ok` is False when the tool result was an error, which includes a call a
+    hook held. `agent_id` is the subagent a spawn started, from the result's
+    `toolUseResult.agentId`, else None.
+    """
+
+    __slots__ = ("name", "input", "ok", "agent_id")
+
+    def __init__(self, name: str, tool_input: dict, ok: bool, agent_id: str | None = None) -> None:
+        self.name = name
+        self.input = tool_input
+        self.ok = ok
+        self.agent_id = agent_id
+
+
 class Turn:
     """What one turn contains that the adapter's gates care about.
 
@@ -90,12 +107,13 @@ class Turn:
     count for a task the turn starts: skills the prompt itself invoked as
     `/<skill>`, plus loads after the winning route line. `route` is the
     winning route line and `malformed` the route-like lines that failed the
-    grammar.
+    grammar. `skips` are the valid `goated-skip` lines, and `calls` the tool
+    calls that finished in this turn, oldest first.
     """
 
     __slots__ = (
         "key", "is_compaction", "typed", "prompt_id", "loads", "task_loads",
-        "route", "malformed", "tool_use_ids",
+        "route", "malformed", "skips", "calls", "tool_use_ids",
     )
 
     def __init__(self, key: str) -> None:
@@ -107,6 +125,8 @@ class Turn:
         self.task_loads: list[str] = []
         self.route: dict | None = None
         self.malformed: list[str] = []
+        self.skips: list[dict] = []
+        self.calls: list[Call] = []
         self.tool_use_ids: set[str] = set()
 
 
@@ -116,6 +136,7 @@ def read_recent_turns(
     since_key: str | None,
     tool_use_id: str | None,
     wait_seconds: float,
+    sidechain: bool = False,
 ) -> list[Turn]:
     """Return recent turns, oldest first, ending with the current turn.
 
@@ -129,11 +150,15 @@ def read_recent_turns(
     When `tool_use_id` is given, the current turn must contain that tool call;
     the reader re-reads for up to `wait_seconds` while the transcript catches
     up, then raises `TranscriptUnreadable`.
+
+    `sidechain` reads a subagent's own transcript, where every entry is a
+    sidechain entry and every prompt was written by the parent agent, so none
+    is typed.
     """
 
     deadline = time.monotonic() + max(wait_seconds, 0.0)
     while True:
-        turns = _read_turns_once(Path(path), since_key)
+        turns = _read_turns_once(Path(path), since_key, sidechain)
         if tool_use_id is None or tool_use_id in turns[-1].tool_use_ids:
             return turns
         if time.monotonic() >= deadline:
@@ -143,7 +168,7 @@ def read_recent_turns(
         time.sleep(POLL_SECONDS)
 
 
-def _read_turns_once(path: Path, since_key: str | None) -> list[Turn]:
+def _read_turns_once(path: Path, since_key: str | None, sidechain: bool) -> list[Turn]:
     try:
         turns: list[Turn] = []
         pending: list[dict] = []
@@ -165,10 +190,10 @@ def _read_turns_once(path: Path, since_key: str | None) -> list[Turn]:
             if not isinstance(entry, dict):
                 continue
             pending.append(entry)
-            kind = _opener_kind(entry)
+            kind = _opener_kind(entry, sidechain)
             if kind not in (TYPED, MACHINE, "compaction"):
                 continue
-            turn = _build_turn(list(reversed(pending)), kind)
+            turn = _build_turn(list(reversed(pending)), kind, sidechain)
             turns.append(turn)
             pending = []
             if (
@@ -183,7 +208,7 @@ def _read_turns_once(path: Path, since_key: str | None) -> list[Turn]:
             # (session-start attachments, or a transcript with no prompt yet)
             # form a turn of their own.
             if pending or not turns:
-                turns.append(_build_turn(list(reversed(pending)), None))
+                turns.append(_build_turn(list(reversed(pending)), None, sidechain))
     except OSError as exc:
         raise TranscriptUnreadable(f"the transcript could not be read ({exc.strerror})")
     return list(reversed(turns))
@@ -218,19 +243,24 @@ def _lines_backward(path: Path):
             yield tail.decode("utf-8", errors="replace")
 
 
-def _opener_kind(entry: dict) -> str | None:
+def _opener_kind(entry: dict, sidechain: bool = False) -> str | None:
     """Return how an entry relates to turns: an opener kind, or None."""
 
     if entry.get("type") == "system" and entry.get("subtype") == "compact_boundary":
         return "compaction"
     if entry.get("type") != "user":
         return None
-    if entry.get("isSidechain") or entry.get("isMeta") or entry.get("isCompactSummary"):
+    if entry.get("isMeta") or entry.get("isCompactSummary"):
+        return None
+    if bool(entry.get("isSidechain")) != sidechain:
         return None
     text = _prompt_text(entry)
     if text is None:
         return None
     by_text = prompt_text_kind(text)
+    if sidechain:
+        # The parent agent wrote every prompt a subagent receives.
+        return MACHINE if by_text in (TYPED, MACHINE) else by_text
     if by_text in (NOT_PROMPT, CONTINUATION):
         return by_text
     origin = (entry.get("origin") or {}).get("kind")
@@ -261,7 +291,7 @@ def _prompt_text(entry: dict) -> str | None:
     return None
 
 
-def _build_turn(entries: list[dict], kind: str | None) -> Turn:
+def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) -> Turn:
     """Summarize one turn's entries, given oldest first, opener included."""
 
     opener = entries[0] if kind else None
@@ -276,9 +306,10 @@ def _build_turn(entries: list[dict], kind: str | None) -> Turn:
         invoked = match.group(1) if match else None
 
     skill_calls: dict[str, str] = {}
+    pending: dict[str, tuple[str, dict]] = {}
     for entry in entries[1:] if opener is not None else entries:
         content = (entry.get("message") or {}).get("content")
-        if not isinstance(content, list) or entry.get("isSidechain"):
+        if not isinstance(content, list) or bool(entry.get("isSidechain")) != sidechain:
             continue
         if entry.get("type") == "assistant":
             for block in content:
@@ -290,9 +321,15 @@ def _build_turn(entries: list[dict], kind: str | None) -> Turn:
                         turn.route = markers.route
                         turn.task_loads = [s for s in turn.loads if s == invoked][:1]
                     turn.malformed.extend(markers.malformed)
+                    turn.skips.extend(markers.skips)
                 elif block.get("type") == "tool_use":
                     tool_id = str(block.get("id", ""))
                     turn.tool_use_ids.add(tool_id)
+                    tool_input = block.get("input")
+                    pending[tool_id] = (
+                        str(block.get("name", "")),
+                        tool_input if isinstance(tool_input, dict) else {},
+                    )
                     if block.get("name") == "Skill":
                         skill = _skill_name((block.get("input") or {}).get("skill"))
                         if skill:
@@ -305,10 +342,19 @@ def _build_turn(entries: list[dict], kind: str | None) -> Turn:
                 turn.task_loads.append(invoked)
                 continue
             for block in content:
+                if not isinstance(block, dict) or block.get("type") != "tool_result":
+                    continue
+                finished = pending.pop(str(block.get("tool_use_id", "")), None)
+                if finished is not None:
+                    result = entry.get("toolUseResult")
+                    agent = result.get("agentId") if isinstance(result, dict) else None
+                    turn.calls.append(Call(
+                        *finished,
+                        ok=not block.get("is_error"),
+                        agent_id=agent if isinstance(agent, str) else None,
+                    ))
                 if (
-                    isinstance(block, dict)
-                    and block.get("type") == "tool_result"
-                    and block.get("tool_use_id") in skill_calls
+                    block.get("tool_use_id") in skill_calls
                     and not block.get("is_error")
                 ):
                     skill = skill_calls.pop(block["tool_use_id"])

@@ -77,6 +77,7 @@ class SessionState:
                 "prompt_id": _expect(overrides.get("prompt_id"), (str, type(None))),
                 "routing": _expect(overrides.get("routing", False), bool),
                 "skills": _string_list(overrides.get("skills", [])),
+                "commit_message": _expect(overrides.get("commit_message"), (str, type(None))),
                 "phrases": _string_list(overrides.get("phrases", [])),
             }
         return state
