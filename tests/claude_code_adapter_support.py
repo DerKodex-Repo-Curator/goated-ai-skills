@@ -344,14 +344,14 @@ class Session:
 
     def run(self, command: str, *, success: bool = True, tool: str = "Bash",
             output: str | None = None) -> dict:
-        """Run a shell command through PreToolUse, then record its result;
-        `output` is the result text when the command was not held."""
+        """Run a shell command through PreToolUse, then record its result as
+        Claude Code does: a held call carries the hold; `output` replaces the
+        text of a call that ran, so a failure's text is given whole."""
 
         tool_use_id, judged = self._judge(tool, {"command": command})
-        ok = success and not reason(judged)
-        text = "ok" if ok else "Exit code 1\nfailed"
-        if output is not None and not reason(judged):
-            text = output if ok else f"Exit code 1\n{output}"
+        held = reason(judged)
+        ok = success and not held
+        text = held or (output if output is not None else "ok" if ok else "Exit code 1\nfailed")
         self._tool_result(tool_use_id, text, is_error=not ok)
         return judged
 

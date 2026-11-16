@@ -43,6 +43,8 @@ export const HOOK: Record<string, string> = {
   security: 'security hold',
   'conflict-resolution': 'conflict-resolution hold',
   closeout: 'closeout hold',
+  // Kept apart from the earlier hooks' `diagnose` key below, so their counts stay their own.
+  'repeated-failure': 'repeated-failure hold',
   'router-rule': 'GOATED router rule',
   'route-hold': 'route check',
   'design-hold': 'design check',

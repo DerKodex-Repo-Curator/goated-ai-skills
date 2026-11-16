@@ -10,6 +10,7 @@ import { expect, test } from 'claude-code/testing'
 import type { UsageEvent } from '../types'
 import { historyEvents, hookEvents, isObservedRow, markerEvents, rowEvents, summarize, toolUseEvents } from '../hooks/classify'
 import type { HistoryMessage, Row } from '../hooks/classify'
+import { hookName } from '../hooks/meaning'
 import { ADAPTER_TEXTS } from './adapter-texts'
 
 const SKILLS = ['using-goated-ai-skills', 'tdd', 'doc-sync', 'commit-message', 'pr-description', 'handoff', 'subagent-driven-development', 'software-design-principles', 'code-security-review', 'resolving-merge-conflicts']
@@ -46,6 +47,8 @@ test('each action hold reads as its gate and kind and names the skills it asks f
     // A shell write is held like a write tool's.
     ['security', 'Bash', ADAPTER_TEXTS.shellWrite, 'justified-skip', ['code-security-review']],
     ['conflict-resolution', 'Edit', ADAPTER_TEXTS.conflictResolution, 'justified-skip', ['resolving-merge-conflicts']],
+    // The quoted check command it names is no skill.
+    ['repeated-failure', 'Edit', ADAPTER_TEXTS.repeatedFailure, 'justified-skip', ['diagnose']],
   ]
   for (const [gate, tool, text, kind, named] of cases) {
     expect(preHold(tool, text, 1)).toEqual([expect.objectContaining({ kind: 'nudge', hook: gate, holdKind: kind, named })])
@@ -235,6 +238,7 @@ for (const [gate, tool, text, skill] of [
   ['security', 'Write', ADAPTER_TEXTS.security, 'code-security-review'],
   ['security', 'Bash', ADAPTER_TEXTS.shellWrite, 'code-security-review'],
   ['conflict-resolution', 'Edit', ADAPTER_TEXTS.conflictResolution, 'resolving-merge-conflicts'],
+  ['repeated-failure', 'Edit', ADAPTER_TEXTS.repeatedFailure, 'diagnose'],
 ] as const) {
   const reason = 'the edit changes one constant and nothing else'
   test(`the ${gate} hold on ${tool} is followed by loading ${skill}, declined by a skip line with its reason, and otherwise ignored`, async () => {
@@ -252,6 +256,13 @@ for (const [gate, tool, text, skill] of [
     expect(ignored.holds).toEqual({ 'justified-skip': 1 })
   })
 }
+
+test('the repeated-failure hold has its own name and counts, apart from the earlier hooks\' diagnose key', async () => {
+  expect(hookName('repeated-failure')).toBe('repeated-failure hold')
+  expect(hookName('diagnose')).toBe('repeated failure')
+  const s = summarize([prompt(), ...preHold('Edit', ADAPTER_TEXTS.repeatedFailure, 2), load('diagnose', 3), turnEnd(4)])
+  expect(s.nudges).toEqual({ 'repeated-failure': { followed: 1 } })
+})
 
 test('a security hold on a file named like a word, as adapters before 034 backticked it, still names only the review skill', async () => {
   const old = ADAPTER_TEXTS.security.replace('"auth.py"', '`login`').replace('a goated-skip line', 'a `goated-skip` line')

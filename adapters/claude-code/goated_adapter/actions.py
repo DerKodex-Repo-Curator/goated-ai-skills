@@ -1,11 +1,12 @@
 """Action gates (commit, pull request, spawn, design, security,
-conflict resolution) and the closeout gate.
+conflict resolution, repeated failure) and the closeout gate.
 
 These enforce skill triggers the skills already state (ADR 0003): commit with
 `commit-message`, open a pull request with `pr-description`, brief a new agent
 with `handoff`'s spawn brief or `subagent-driven-development`, design with
 `software-design-principles`, review sensitive surfaces with
-`code-security-review`, and close a code-changing turn with proof, `doc-sync`,
+`code-security-review`, investigate a check that keeps failing with
+`diagnose`, and close a code-changing turn with proof, `doc-sync`,
 `handoff`, and the design red flags.
 
 Every decision is a pure function of the current turn as the transcript
@@ -46,6 +47,27 @@ SECURITY_SKILL = "code-security-review"
 DOC_SYNC_SKILL = "doc-sync"
 HANDOFF_SKILL = "handoff"
 PROOF_SKILL = "verification-before-completion"
+DIAGNOSE_SKILL = "diagnose"
+# How many failures in a row of one check command, in one turn, make the repeated-failure hold.
+REPEATED_FAILURES = 2
+# A trailing pipe into an output filter, whose arguments hold no further pipe.
+PIPE_TAIL_RE = re.compile(
+    r"\s*\|\s*(?:tail|head|grep|egrep|findstr|more|less|tee|tee-object|select-object|select"
+    r"|select-string|sls|out-host|out-string)\b[^|]*$",
+    re.IGNORECASE,
+)
+STDERR_MERGE_RE = re.compile(r"\s*(?:2|\*)>&1$")
+# A failed call that never ran: a permission refusal, another hook's denial, or an interruption.
+NOT_RUN_RE = re.compile(
+    r"(?:The user doesn[’']t want to|Permission for this \w+ was denied|PreToolUse:\S+ hook error"
+    r"|\[Request interrupted by user)"
+)
+# What test runners, linters, and compilers print when they fail.
+FAILURE_SIGNS_RE = re.compile(
+    r"\b[1-9]\d* (?:failed|failing|errors?|fail)\b|^FAILED\b|^FAIL\b|--- FAIL|npm ERR!"
+    r"|^npm error\b|\berror TS\d+|\berror\[E\d+\]|test result: FAILED|^error: ",
+    re.MULTILINE,
+)
 RED_FLAGS_REFERENCE = "software-design-principles/references/red-flags.md"
 
 # Tools that start another agent, each with the input field that carries the
@@ -221,6 +243,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         for target in command.write_targets:
             if _in_project(target, project, target not in command.unplaced_targets):
                 hold = hold or _security_hold(_norm(target), proof)
+        if command.non_check_writes:
+            hold = hold or _repeated_failure_hold(proof)
         return hold
     if PR_TOOL_RE.match(tool_name):
         return _pr_hold(proof, changes, by_tool=True)
@@ -233,12 +257,14 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         return _spawn_hold(brief, proof) if brief.strip() else None
     if tool_name in FILE_WRITE_TOOLS:
         path = _norm(str(tool_input.get(FILE_WRITE_TOOLS[tool_name]) or ""))
-        # A conflict is open wherever the file lives (a worktree may sit outside
-        # the project folder), as the shell branch above holds every write target.
+        # A conflict is open, and a check keeps failing, wherever the file lives
+        # (a worktree may sit outside the project folder), as the shell branch
+        # above holds every write target for them.
         hold = _conflict_hold([path], tool_input, proof)
-        if hold is not None or not _in_project(path, project):
-            return hold  # A scratch file elsewhere is not the project's design or security.
-        return _security_hold(path, proof) or _design_hold(path, tool_input, proof)
+        if hold is None and _in_project(path, project):
+            # A scratch file elsewhere is not the project's design or security.
+            hold = _security_hold(path, proof) or _design_hold(path, tool_input, proof)
+        return hold or _repeated_failure_hold(proof)
     return None
 
 
@@ -443,6 +469,61 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof) -> Hold | None:
         "on its own line instead. This edit was not applied. "
         + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
     )
+
+
+def _repeated_failure_hold(proof: _Proof) -> Hold | None:
+    """Hold a write once one check command has failed twice in a row in the turn.
+
+    "The same check" is the same command text, whitespace aside (spec G2),
+    without a trailing pipe into output filters (`| tail -20`): a narrowed
+    rerun, such as one test file of a failing suite, is another command. A
+    pass of that check resets its count; other commands between runs do not.
+    Only runs count: a call held, refused, or interrupted never ran.
+    """
+
+    if proof.loaded_or_skipped(DIAGNOSE_SKILL):
+        return None
+    in_a_row: dict[str, int] = {}
+    is_check: dict[str, bool] = {}
+    for call in proof.turn.calls:
+        if call.name not in COMMAND_TOOLS or call.held or NOT_RUN_RE.match(call.output):
+            continue
+        command = str(call.input.get("command") or "")
+        key, piped = _check_key(command)
+        # A pipe's exit code is its last filter's, so a piped run fails by what it prints.
+        failed = bool(FAILURE_SIGNS_RE.search(call.output)) if piped else not call.ok
+        if not failed and key not in in_a_row:
+            continue  # A pass of a command that never failed changes nothing.
+        if key not in is_check:
+            is_check[key] = shell.analyze(command).is_check
+        if is_check[key]:
+            in_a_row[key] = in_a_row.get(key, 0) + 1 if failed else 0
+    repeated = next((k for k, n in in_a_row.items() if n >= REPEATED_FAILURES), None)
+    if repeated is None:
+        return None
+    shown = repeated if len(repeated) <= 80 else repeated[:77] + "..."
+    return Hold(
+        "repeated-failure", JUSTIFIED_SKIP,
+        # The command is quoted, not backticked: backticks name a skill to load.
+        f"The check \"{shown.replace('`', chr(39))}\" has failed {REPEATED_FAILURES} times in "
+        f"a row in this turn. Load `{DIAGNOSE_SKILL}` with the Skill tool in this turn and "
+        "find the root cause before changing more. If the cause is already known, write "
+        f"`goated-skip: {DIAGNOSE_SKILL}: <reason>` on its own line instead. This write was "
+        "not applied. Rerunning the check is not held, and a pass of it resets the count. "
+        + unseen_line_advice("skip line", f"skip {DIAGNOSE_SKILL}"),
+    )
+
+
+def _check_key(command: str) -> tuple[str, bool]:
+    """A check command's identity, whitespace aside and without a trailing pipe
+    into output filters, and whether such a pipe was removed."""
+
+    key = " ".join(command.split())
+    bare = key
+    while (shorter := PIPE_TAIL_RE.sub("", bare)) != bare:
+        bare = shorter
+    piped = bare != key
+    return (STDERR_MERGE_RE.sub("", bare) if piped else bare), piped
 
 
 # Closeout ---------------------------------------------------------------------

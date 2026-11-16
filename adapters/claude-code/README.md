@@ -98,6 +98,7 @@ of hold:
 | `design` | justified-skip | A write adding five or more lines to a code file inside the project folder | `software-design-principles` loads in the turn |
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` loads in the turn |
 | `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an `Edit` or `MultiEdit` whose old text has a `<<<<<<<` or `>>>>>>>` marker at a line start; a write, by a write tool or a shell command such as `git checkout --theirs`, to a file a Read in the turn showed with such a marker; or any write after a git merge, rebase, cherry-pick, revert, or pull whose result in the turn reported a conflict. A finished abort, quit, continue, or skip of that operation, or a finished commit, ends the conflict and drops the Reads before it. Only the turn is read, not the repository, so a conflict opened in an earlier turn is caught only by markers the turn shows: an edit whose old text spans only `=======` and one side, in a file not read this turn, is not held, because `=======` alone is also a heading underline. A conflicting stash pop or apply is not held | `resolving-merge-conflicts` loads in the turn |
+| `repeated-failure` | justified-skip | A write, by a write tool or a shell command, once one check command (as the closeout's Proof item recognises checks) has failed twice in a row in the turn. A shell command is held when any of its simple commands writes and is not itself a check, so `sed -i … && pytest` and `pytest \| tee out.txt` are held, while `pytest > out.txt` is a rerun. "The same check" is the same command text, whitespace aside, without a trailing pipe into output filters (`tail`, `head`, `grep`, `findstr`, `more`, `less`, `tee`, `Select-Object`, `Select-String`, `Out-Host`, `Out-String`) or a `2>&1` before it; so `pytest -q \| tail -20` and `pytest -q \| tail -40` are one check, and a narrowed rerun such as one test file of a failing suite is another. A piped run fails by what it prints (`N failed`, `N errors`, `FAILED (`, `FAIL`, `npm ERR!`, `error TS…`, `test result: FAILED`, and the like), since the exit code is the filter's; any other run fails by its exit code. A pass of the check resets its count; other commands between runs do not. A call that never ran does not count: one the adapter or another hook held, one refused at a permission prompt, or one interrupted | `diagnose` loads in the turn |
 | `closeout` | justified-skip | The end of a turn that changed code, or that loaded `code-security-review` and changed a security-sensitive file (a `Stop` hook) | Every item below is met or skipped |
 
 The closeout items, each judged against the turn's last code change. A code
@@ -105,9 +106,9 @@ change is a write tool's file, or a file a shell command writes (its redirect
 target, copy destination, or removed, moved, or edited file), inside the
 project folder; a scratch or temp file elsewhere does not count. The `design`
 and `security` gates use the same rule, so a scratch script outside the
-project is not held. The `conflict-resolution` gate holds a write wherever
-its file is, since a worktree with a conflict may sit outside the project
-folder.
+project is not held. The `conflict-resolution` and `repeated-failure` gates
+hold a write wherever its file is, since a worktree with a conflict, or the
+code a failing check runs, may sit outside the project folder.
 
 **A file counts as outside the project only when the adapter is certain.**
 When in doubt, it is inside. The project's folders are `CLAUDE_PROJECT_DIR`
@@ -361,8 +362,8 @@ goated-hold: <gate> | <kind>
 ```
 
 - `<gate>` is one of `router-first`, `route-line`, `pipeline`, `commit`,
-  `pull-request`, `spawn`, `design`, `security`, `conflict-resolution`, or
-  `closeout`.
+  `pull-request`, `spawn`, `design`, `security`, `conflict-resolution`,
+  `repeated-failure`, or `closeout`.
 - `<kind>` is `strict` or `justified-skip`.
 - The first line matches
   `^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-skip)$`.
@@ -379,8 +380,8 @@ goated-hold: <gate> | <kind>
 - A hold asks for a load in the current turn. A skill loaded in an earlier
   turn does not answer it.
 - A hold that a route or skip line can clear (`route-line`, `pipeline`,
-  `design`, `security`, `conflict-resolution`) says that a line in the held
-  call's own message is not visible yet, and to make the call again without repeating the line. It says
+  `design`, `security`, `conflict-resolution`, `repeated-failure`) says that
+  a line in the held call's own message is not visible yet, and to make the call again without repeating the line. It says
   this may still fail (see [Known Limits](#known-limits)), and that the user
   can then type the matching override.
 - A hold or closeout item that asks for a [change read](#change-reads) once
@@ -449,7 +450,8 @@ A hook call from inside a subagent carries `agent_id`. There:
 
 - the routing gates do not apply, because the parent's brief carries the route;
 - the action gates (`commit`, `pull-request`, `spawn`, `design`, `security`,
-  `conflict-resolution`) apply, judged from the subagent's own transcript, which Claude Code keeps in
+  `conflict-resolution`, `repeated-failure`) apply, judged from the
+  subagent's own transcript, which Claude Code keeps in
   `<session-id>/subagents/agent-<agent_id>.jsonl` beside the main one. A
   subagent must load the skill itself: the parent's loads do not count;
 - no override applies, because nobody types a subagent's prompts;
@@ -558,8 +560,8 @@ of the call's prompt, which is normally already there.
   rewritten summary, in a thinking block, that drops the line, so the adapter
   never sees it. A bare retry is then held again, and a line written again
   beside a read-only call can be summarized the same way. The
-  route-line, pipeline, design, security, and conflict-resolution holds give
-  the bare retry as worth one try, not as a sure fix, and then point the user to the typed
+  route-line, pipeline, design, security, conflict-resolution, and
+  repeated-failure holds give the bare retry as worth one try, not as a sure fix, and then point the user to the typed
   override: `skip routing`, or `skip <skill>` for a skip line. Reading the
   line from somewhere other than reply text is planned as a separate change.
 

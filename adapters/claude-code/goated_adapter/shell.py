@@ -139,7 +139,9 @@ class ShellCommand:
     that records one (not `--dry-run`); `commit_message` is its message when
     that commit carries it inline, else None. `opens_pr` covers
     `gh pr create|new` and `glab mr create|new`. `is_check` says it runs a
-    test, lint, build, or check. `prints_changes` says it prints changes'
+    test, lint, build, or check; `non_check_writes` says some simple command
+    in it writes and is not itself a check (`sed -i … && pytest`, but not
+    `pytest > out.txt`). `prints_changes` says it prints changes'
     content to the agent: a git diff or show, a patch log, or patches on
     stdout; a listing of names or counts (`--stat`, `--name-only`) does not.
     Only git is read; another version control system's diff is not seen.
@@ -147,7 +149,7 @@ class ShellCommand:
 
     __slots__ = (
         "writes", "write_targets", "unplaced_targets", "unknown_writes", "commit",
-        "commit_message", "opens_pr", "is_check", "prints_changes",
+        "commit_message", "opens_pr", "is_check", "non_check_writes", "prints_changes",
     )
 
     def __init__(self) -> None:
@@ -159,6 +161,7 @@ class ShellCommand:
         self.commit_message: str | None = None
         self.opens_pr = False
         self.is_check = False
+        self.non_check_writes = False
         self.prints_changes = False
 
 
@@ -226,7 +229,8 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
     # Output redirected into a file never reached the agent; a stderr redirect leaves it.
     if prints and not [t for t in segment.out_redirects if t.lower() not in NULL_TARGETS]:
         result.prints_changes = True
-    if _is_check(name, original, args):
+    is_check = _is_check(name, original, args)
+    if is_check:
         result.is_check = True
     for target in filter(None, targets):
         if directory is None and not _is_absolute(target):
@@ -234,6 +238,8 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
         result.write_targets.append(_from_directory(directory, target))
     if targets or unknown:
         result.writes = True
+        if not is_check:
+            result.non_check_writes = True
     if unknown:
         result.unknown_writes = True
     return next_directory

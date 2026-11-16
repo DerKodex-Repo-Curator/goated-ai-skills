@@ -125,6 +125,13 @@ def _adapter_texts() -> dict[str, str]:
             routed("shell-write").call("Bash", {"command": "echo requests >> requirements.txt"})
         )
 
+        failing = routed("repeated-failure")
+        failing.run("pytest -q", success=False)
+        failing.run("pytest -q", success=False)
+        texts["repeatedFailure"] = reason(
+            failing.call("Edit", {"file_path": "src/export.py", "old_string": "a", "new_string": "b"})
+        )
+
         closing = routed("closeout")
         closing.say("goated-skip: software-design-principles: one mechanical constant change")
         closing.call("Write", _write("src/export.py"))
@@ -214,6 +221,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "design": "design | justified-skip",
             "security": "security | justified-skip",
             "shellWrite": "security | justified-skip",
+            "repeatedFailure": "repeated-failure | justified-skip",
             "closeout": "closeout | justified-skip",
             "closeoutUnfinished": "closeout | justified-skip",
             "commitContract": "commit | strict",
@@ -240,6 +248,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "shellWrite": "skip code-security-review",
             "securityNoExtension": "skip code-security-review",
             "conflictResolution": "skip resolving-merge-conflicts",
+            "repeatedFailure": "skip diagnose",
         }
         for key, way_out in ways_out.items():
             with self.subTest(key=key):
