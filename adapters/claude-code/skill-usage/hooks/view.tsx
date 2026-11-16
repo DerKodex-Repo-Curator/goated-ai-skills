@@ -77,12 +77,19 @@ function line(v: View, text: string, tone: Tone = 'plain') {
   return words(v, [{ text }], tone, true)
 }
 
+/** A table's heading: its name in bold, and a dim note beside it that wraps under itself in a narrow pane rather than being cut. */
 function title(v: View, text: string, note?: string) {
   const { Box, Text } = v.ui
   return (
-    <Box marginTop={1} flexDirection="row" gap={1}>
-      <Text bold>{text}</Text>
-      {note && <Text dimColor wrap="truncate-end">{note}</Text>}
+    <Box marginTop={1} flexDirection="row" gap={1} alignItems="flex-start">
+      <Box flexShrink={0}>
+        <Text bold>{text}</Text>
+      </Box>
+      {note && (
+        <Box flexShrink={1} minWidth={0}>
+          <Text dimColor wrap="wrap">{note}</Text>
+        </Box>
+      )}
     </Box>
   )
 }
