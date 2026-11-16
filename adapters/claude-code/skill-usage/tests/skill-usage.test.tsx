@@ -1520,9 +1520,9 @@ test('a hold that held again reads once with how many times, and one that asks f
   const rows = (await ui.findAll({ type: 'Text', text: /→ ./ })).map(t => t.text)
   await ui.unmount()
   expect(rows).toEqual([
-    'pull-request hold → asked for a fix, not a skill',
+    'pull-request hold → asked to read the change',
     'spawn hold → asked for the brief template or its headings',
-    'commit hold → asked to fix the commit message',
+    'commit hold → asked to read the change or fix the commit message',
     'route-line hold ×3 → a route line loaded',
   ])
 })

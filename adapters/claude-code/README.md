@@ -91,12 +91,12 @@ of hold:
 | `router-first` | strict | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction | `using-goated-ai-skills` loads |
 | `route-line` | strict | The first write or spawn after each user prompt until the current turn has a valid `goated-route:` line; also `goated-route: continue` when the session has no task to continue | A valid route line appears in the turn |
 | `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded | Each listed skill loads, or a corrected route line drops it |
-| `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` loads in the turn, and an inline message (or the tool's `message`) passes the [content check](#content-checks) |
-| `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` loads in the turn |
+| `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` loads in the turn, and an inline message (or the tool's `message`) passes the [content check](#content-checks); then a [change read](#change-reads) after the load and the last code change |
+| `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` loads in the turn; then a [change read](#change-reads) after the load and the last code change |
 | `spawn` | strict | Starting an agent or session with a brief | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, all in the turn; and the brief passes the [content check](#content-checks) |
 | `design` | justified-skip | A write adding five or more lines to a code file | `software-design-principles` loads in the turn |
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` loads in the turn |
-| `closeout` | justified-skip | The end of a turn that changed code (a `Stop` hook) | Every item below is met or skipped |
+| `closeout` | justified-skip | The end of a turn that changed code, or that loaded `code-security-review` and changed a security-sensitive file (a `Stop` hook) | Every item below is met or skipped |
 
 The closeout items, each judged against the turn's last code change. A code
 change is a write tool's file, or a file a shell command writes (its redirect
@@ -111,8 +111,9 @@ check after its own last change, that change is already proved.
 | --- | --- | --- | --- |
 | Proof | A change not already proved | A check command run after the last code change: a test runner, linter, type checker, or build tool (`pytest`, `python -m unittest`, `npm test`, `cargo test`, `go vet`, `tsc`, `make check`, and the like, also through `uv run` or `npx`), or a script whose name says test, check, lint, verify, validate, or build (`scripts/validate_skills.py`) | `verification-before-completion` |
 | Unfinished work | The last check after the change failed | `handoff` loads | `handoff` |
-| Docs | A code file outside the tests changed | `doc-sync` loads | `doc-sync` |
-| Design red flags | `software-design-principles` loaded in the turn | `software-design-principles/references/red-flags.md` is read after the last change | `software-design-principles` |
+| Docs | A code file outside the tests changed | `doc-sync` loads, then a [change read](#change-reads) after the load and the last code change | `doc-sync` |
+| Design red flags | `software-design-principles` loaded in the turn | `software-design-principles/references/red-flags.md` is read after the last change, then a [change read](#change-reads) after that read | `software-design-principles` |
+| Security | `code-security-review` loaded in the turn and a security-sensitive file (the `security` gate's paths, code or not) changed | A [change read](#change-reads) after the load and the last sensitive change | `code-security-review` |
 
 - **Writes** are `Edit`, `Write`, `MultiEdit`, and `NotebookEdit`, and a
   `Bash` or `PowerShell` command that writes files (see
@@ -190,6 +191,34 @@ runs, `git status`, and `git checkout <branch>` stay free. Commit and
 pull-request commands are recognized the same way, per command, so
 `echo gh pr create` opens nothing.
 
+### Change reads
+
+A hold whose step reviews or describes the change needs the change itself in
+front of the agent, not only the skill: the closeout's Docs, Design, and
+Security items, the commit, and the pull request. A **change read** is a
+finished call, made after the item's skill load or red-flags read and after
+the last code change, that is one of:
+
+- a command that prints the changes' content: `git diff`, `git show`, a patch
+  log (`git log -p`), `git stash show -p`, or `git format-patch --stdout`,
+  under any wrapper or through a pipe (`git diff | head`). A listing of names
+  or counts does not count: `--stat`, `--shortstat`, `--numstat`,
+  `--dirstat`, `--summary`, `--name-only`, `--name-status`, `--raw`,
+  `--check`, `-s`, or `--no-patch`, unless `-p` or `--patch` asks for the
+  patch too. Neither does `--quiet`, `--output=<file>`, or output redirected
+  into a file;
+- a `Read` of a file the turn changed (any project file, code or not).
+
+A read chained in the same command as the commit has not finished when the
+commit is judged, so it does not count. Only git is read: another version
+control system's diff is not seen, so read a changed file instead. A skip
+line, where the item accepts one, a typed skill skip, and a commit message
+the user typed still clear each hold without a change read.
+
+A change read can be met by a token read, such as a diff piped through
+`head -1`: the rule puts the change in front of the agent, it does not prove
+the agent reviewed it.
+
 ### Content checks
 
 Only text in the tool input is checked, and only for what the skill's
@@ -238,13 +267,17 @@ goated-hold: <gate> | <kind>
   `subagent-driven-development`, either of which answers it.
 - A hold asks for a load in the current turn. A skill loaded in an earlier
   turn does not answer it.
+- A hold or closeout item that asks for a [change read](#change-reads) once
+  its skill has loaded names that skill without backticks, or only in its
+  skip line, since no load answers it: the commit and pull-request holds name
+  no skill, and the closeout offers the skill only as a skip line.
 
 Claude Code records a denied call as a `tool_result` with `is_error: true`
 whose content carries this reason, and a blocked `Stop` as the reason shown
 to the agent. Claude Code 2.1.325 wraps that reason as `Stop hook blocking
 error from command: "<command>": <reason>`, so the hold line follows the
 wrapper on the same line. The outcome of a hold is read from what follows in the
-transcript: the skill load, read, or skip line that cleared it, or the user
+transcript: the skill load, read, change read, or skip line that cleared it, or the user
 override recorded for the turn.
 
 ## User Overrides

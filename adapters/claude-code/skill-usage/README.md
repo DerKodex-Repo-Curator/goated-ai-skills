@@ -69,7 +69,10 @@ clears it. In particular:
 - A skill a hold offers only as a skip line, such as
   `verification-before-completion` for the closeout's proof item, is answered
   by a skip line or by the adapter letting the turn end, never by loading it:
-  the adapter counts a check run, or a read of the red-flags file, not a load.
+  the adapter counts a check run, a read of the red-flags file, or a read of
+  the change (its diff, or a changed file), not a load. A closeout item whose
+  skill already loaded asks for that read of the change, so it names the
+  skill only as a skip line.
 - A blocked `Stop` does not end the turn, so the closeout hold waits for the
   agent's next move. Every block of the turn joins one closeout row. A block
   that asks again for an item after a load or a skip line means the adapter
@@ -77,8 +80,9 @@ clears it. In particular:
   declines it.
 - When the turn ends as an answer after the agent replied to the last block,
   the adapter let the `Stop` through, so each item still waiting counts as
-  followed. That covers the items no load answers, a check run for the proof
-  item or a fix for unfinished work. A turn you interrupt, or one an error
+  followed. That covers the items no load answers: a check run for the proof
+  item, a fix for unfinished work, or a read of the change for the docs,
+  design, and security items. A turn you interrupt, or one an error
   ends, passes nothing. Claude Code ends a turn after nine blocks in a row
   whatever the hook says: then what the last block asked counts as not
   loaded, and what only earlier blocks asked counts as followed.
@@ -212,7 +216,9 @@ This has not been tested end to end. Keep a backup of both files.
   names it backticks allow. A hold that names no skill counts by gate and
   kind with no per-skill result, and its row says what it asked for instead:
   the `spawn` holds that ask for a template read or for missing brief
-  headings, and the `commit` hold for a message that breaks the contract.
+  headings, the `commit` hold for a message that breaks the contract, and
+  the `commit` and `pull-request` holds that ask, once their skill loaded,
+  for a read of the change.
 - The nine-block limit is Claude Code's as seen on 2.1.325. If a version
   changes it, a closeout the agent never got past may count as followed.
 - A turn that ends as an answer after a blocked `Stop` counts as passed even

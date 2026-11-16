@@ -15,6 +15,13 @@ as the turn shows compliance. Proof counts only within the current turn
 
 Strict holds clear only on proof or a user override. Justified-skip holds also
 clear on a `goated-skip: <skill>: <reason>` line in the current turn.
+
+Holds whose step reviews or describes the change (the closeout's design,
+docs, and security items, the commit, and the pull request) also need a
+change read (spec R7): a finished call, after the skill load or reference
+read and after the last code change, that put the change's content in front
+of the agent. That is a command printing the diff, or a Read of a file the
+turn changed. It shows the agent the change; it cannot prove a review.
 """
 
 from __future__ import annotations
@@ -25,7 +32,7 @@ import re
 from . import contracts, shell
 from .gates import COMMAND_TOOLS, STRICT, Hold, goated_skill_name
 from .markers import parse_reply
-from .transcript import Turn
+from .transcript import Turn, skill_name
 
 JUSTIFIED_SKIP = "justified-skip"
 
@@ -57,6 +64,12 @@ COMMIT_TOOL_RE = re.compile(
 )
 FILE_WRITE_TOOLS = {"Edit": "file_path", "Write": "file_path", "MultiEdit": "file_path",
                     "NotebookEdit": "notebook_path"}
+# How a hold asks for a change read. No command is backticked: the skill-usage
+# mod reads a backticked name as a skill to load.
+CHANGE_READ = (
+    "print its diff with a git diff or git show command, or Read a file you changed; "
+    "a listing of names or counts, such as --stat or --name-only, does not count"
+)
 # An edit adding at least this many lines is a design change, not a tiny fix.
 DESIGN_MIN_LINES = 5
 
@@ -101,6 +114,7 @@ class _Proof:
     def __init__(self, turn: Turn, overrides: dict, namespaces: tuple[str, ...],
                  extra_text: str = "") -> None:
         self.turn = turn
+        self.namespaces = namespaces
         self.loads = {goated_skill_name(raw, namespaces) for raw in turn.loads} - {None}
         self.skips = {skip["skill"] for skip in turn.skips}
         if extra_text:
@@ -117,12 +131,30 @@ class _Proof:
     def loaded_or_skipped(self, skill: str) -> bool:
         return self.loaded(skill) or skill in self.skips
 
-    def read(self, reference: str, after: int = -1) -> bool:
-        return any(
-            index > after and call.name == "Read" and call.ok
+    def load_index(self, skill: str) -> int | None:
+        """Where in the turn's calls `skill` first loaded: -1 when the prompt
+        invoked it as `/<skill>`, None when it did not load."""
+
+        if skill not in self.loads:
+            return None
+        for index, call in enumerate(self.turn.calls):
+            if call.name == "Skill" and call.ok and goated_skill_name(
+                skill_name(call.input.get("skill")), self.namespaces
+            ) == skill:
+                return index
+        return -1
+
+    def read_index(self, reference: str, after: int = -1) -> int | None:
+        """Where the first finished Read of `reference` after call `after` is, if any."""
+
+        return next((
+            index for index, call in enumerate(self.turn.calls)
+            if index > after and call.name == "Read" and call.ok
             and _ends_with_path(str(call.input.get("file_path") or ""), reference)
-            for index, call in enumerate(self.turn.calls)
-        )
+        ), None)
+
+    def read(self, reference: str, after: int = -1) -> bool:
+        return self.read_index(reference, after) is not None
 
 
 def is_action_tool(tool_name: str) -> bool:
@@ -136,23 +168,27 @@ def is_action_tool(tool_name: str) -> bool:
 
 
 def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
-                 namespaces: tuple[str, ...] = ()) -> Hold | None:
-    """Return the action hold for this call, if any; the call's own entry is not yet proof."""
+                 namespaces: tuple[str, ...] = (), cwd: str | None = None) -> Hold | None:
+    """Return the action hold for this call, if any; the call's own entry is not yet proof.
+
+    `cwd` is the project folder: only changes to files inside it are the
+    turn's changes a change read must follow.
+    """
 
     proof = _Proof(turn, overrides, namespaces)
     if tool_name in COMMAND_TOOLS:
         command = shell.analyze(str(tool_input.get("command") or ""))
-        hold = _commit_hold(command.commit_message, proof) if command.commit else None
+        hold = _commit_hold(command.commit_message, proof, cwd) if command.commit else None
         if hold is None and command.opens_pr:
-            hold = _pr_hold(proof)
+            hold = _pr_hold(proof, cwd)
         for target in command.write_targets:
             hold = hold or _security_hold(_norm(target), proof)
         return hold
     if PR_TOOL_RE.match(tool_name):
-        return _pr_hold(proof)
+        return _pr_hold(proof, cwd)
     if COMMIT_TOOL_RE.match(tool_name):
         message = tool_input.get("message")
-        return _commit_hold(message if isinstance(message, str) else None, proof)
+        return _commit_hold(message if isinstance(message, str) else None, proof, cwd)
     if tool_name in SPAWN_BRIEF_FIELDS:
         brief = str(tool_input.get(SPAWN_BRIEF_FIELDS[tool_name]) or "")
         return _spawn_hold(brief, proof) if brief.strip() else None
@@ -162,8 +198,9 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     return None
 
 
-def _commit_hold(message: str | None, proof: _Proof) -> Hold | None:
-    """Hold a commit until `commit-message` loads; `message` is its inline text, if known."""
+def _commit_hold(message: str | None, proof: _Proof, cwd: str | None) -> Hold | None:
+    """Hold a commit until `commit-message` loads, its inline message (`message`,
+    if known) keeps the contract, and the change is read after the load."""
 
     supplied = proof.overrides.get("commit_message")
     if supplied and message is not None and (
@@ -179,22 +216,43 @@ def _commit_hold(message: str | None, proof: _Proof) -> Hold | None:
             "goated-skip line does not clear it. A commit message the user typed in "
             "their prompt stands it down when the commit uses that message.",
         )
-    if message is None or COMMIT_SKILL in proof.user_skips:
+    if COMMIT_SKILL in proof.user_skips:
         return None
-    problems = contracts.commit_message_problems(message)
-    if not problems:
+    problems = contracts.commit_message_problems(message) if message is not None else []
+    if problems:
+        return Hold(
+            "commit", STRICT,
+            # No backticks: this hold asks for a fix, not a load, and backticks name a skill to load.
+            f"The commit message breaks the {COMMIT_SKILL} contract: "
+            + "; ".join(problems) + ". Fix the message and run the commit again.",
+        )
+    if _Changes(proof.turn, {}, cwd).read_after(proof.load_index(COMMIT_SKILL)):
         return None
     return Hold(
         "commit", STRICT,
-        # No backticks: this hold asks for a fix, not a load, and backticks name a skill to load.
-        f"The commit message breaks the {COMMIT_SKILL} contract: "
-        + "; ".join(problems) + ". Fix the message and run the commit again.",
+        f"Read the change before committing it, after loading the {COMMIT_SKILL} skill "
+        f"and after your last code change: {CHANGE_READ}. Then check that the message "
+        "describes it and run the commit again. The whole command was held, so rerun "
+        "any steps chained before it too; a read chained in the same command has not "
+        "finished, so it does not count. This hold is strict: a goated-skip line does "
+        "not clear it.",
     )
 
 
-def _pr_hold(proof: _Proof) -> Hold | None:
-    if proof.loaded(PR_SKILL):
+def _pr_hold(proof: _Proof, cwd: str | None) -> Hold | None:
+    if PR_SKILL in proof.user_skips:
         return None
+    if proof.loaded(PR_SKILL):
+        if _Changes(proof.turn, {}, cwd).read_after(proof.load_index(PR_SKILL)):
+            return None
+        return Hold(
+            "pull-request", STRICT,
+            f"Read the change before opening the pull request, after loading the {PR_SKILL} "
+            f"skill and after your last code change: {CHANGE_READ}. Then check that the "
+            "title and body describe it and open the pull request again. The whole "
+            "command was held, so rerun any steps chained before it too. This hold is "
+            "strict: a goated-skip line does not clear it.",
+        )
     return Hold(
         "pull-request", STRICT,
         f"Load the `{PR_SKILL}` skill with the Skill tool in this turn and draft the "
@@ -280,9 +338,12 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     command (proof). It also needs `doc-sync` when non-test code changed,
     `handoff` when the last check after the change failed (work left
     unfinished), and a read of the design red flags after the change when
-    `software-design-principles` was loaded. Each item accepts a skip line;
-    `final_text` is the reply being finished, which may not be in the
-    transcript yet.
+    `software-design-principles` was loaded. A turn that loaded
+    `code-security-review` and changed a security-sensitive file, code or
+    not, needs a security review. The doc-sync, design, and security items
+    each also need a change read after their load or red-flags read. Each
+    item accepts a skip line; `final_text` is the reply being finished, which
+    may not be in the transcript yet.
 
     `subagents` maps the agent id of each subagent this turn spawned to its
     turns. Their code changes count as made at the spawn; a subagent that ran
@@ -290,14 +351,39 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     inside `cwd`, the project folder, count; a scratch file elsewhere does not.
     """
 
-    changes = list(_code_changes(turn, subagents or {}, cwd))
-    if not changes:
-        return None
-    last = changes[-1].index
-    unproven = [c.index for c in changes if not c.proven]
+    changes = _Changes(turn, subagents or {}, cwd)
     proof = _Proof(turn, overrides, namespaces, final_text)
+    items = _code_items(changes, proof) if changes.code else []
+    sensitive = changes.sensitive
+    if sensitive and SECURITY_SKILL in proof.loads and not proof.skipped(SECURITY_SKILL):
+        last_sensitive = sensitive[-1][0]
+        if not changes.read_after(max(proof.load_index(SECURITY_SKILL), last_sensitive)):
+            categories = ", ".join(dict.fromkeys(category for _, category in sensitive))
+            items.append(
+                f"- Security: a security-sensitive file changed ({categories}). After loading "
+                f"the {SECURITY_SKILL} skill and after the last sensitive change, read the "
+                f"change itself and review it: {CHANGE_READ}. Or, if it crosses no trust "
+                f"boundary, write `goated-skip: {SECURITY_SKILL}: <reason>`."
+            )
+    if not items:
+        return None
+    what = "changed code" if changes.code else "changed a security-sensitive file"
+    return Hold(
+        "closeout", JUSTIFIED_SKIP,
+        f"Before finishing this turn, which {what}:\n" + "\n".join(items)
+        + "\nA skip line must name the skill and give a reason of three or more words.",
+    )
+
+
+def _code_items(changes: "_Changes", proof: _Proof) -> list[str]:
+    """The closeout items a code change needs: proof, a handoff for a failed
+    check, doc-sync, and the design red flags, each with what is missing."""
+
+    code = changes.code
+    last = code[-1].index
+    unproven = [c.index for c in code if not c.proven]
     items = []
-    checks = _checks(turn.calls[max(unproven, default=last) + 1 :])
+    checks = _checks(proof.turn.calls[max(unproven, default=last) + 1 :])
     # Loading a verification skill is not proof; a check run, or a skip, is.
     if unproven and not checks and not proof.skipped(PROOF_SKILL):
         items.append(
@@ -311,56 +397,110 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
             f"`{HANDOFF_SKILL}` and leave a handoff for what remains, or write "
             f"`goated-skip: {HANDOFF_SKILL}: <reason>`."
         )
-    non_test = any(not TEST_PATH_RE.search(path) for change in changes for path in change.paths)
-    if non_test and not proof.loaded_or_skipped(DOC_SYNC_SKILL):
-        items.append(
-            f"- Docs: code changed. Load `{DOC_SYNC_SKILL}` and check whether durable docs "
-            "now drift, or, if behavior and interfaces did not change, write "
-            f"`goated-skip: {DOC_SYNC_SKILL}: <reason>`."
-        )
-    if DESIGN_SKILL in proof.loads and not proof.read(RED_FLAGS_REFERENCE, after=last) and (
-        not proof.skipped(DESIGN_SKILL)
-    ):
-        items.append(
-            f"- Design: read `{RED_FLAGS_REFERENCE}` with the Read tool after your last "
-            "change and scan the diff against it, or write "
-            f"`goated-skip: {DESIGN_SKILL}: <reason>`."
-        )
-    if not items:
-        return None
-    return Hold(
-        "closeout", JUSTIFIED_SKIP,
-        "Before finishing this turn, which changed code:\n" + "\n".join(items)
-        + "\nA skip line must name the skill and give a reason of three or more words.",
+    non_test = any(
+        not TEST_PATH_RE.search(path) for change in code for path in change.code_paths
     )
+    if non_test and not proof.skipped(DOC_SYNC_SKILL):
+        loaded = proof.load_index(DOC_SYNC_SKILL)
+        if loaded is None:
+            items.append(
+                f"- Docs: code changed. Load `{DOC_SYNC_SKILL}`, then read the change itself "
+                f"and check whether durable docs now drift: {CHANGE_READ}. Or, if behavior "
+                f"and interfaces did not change, write `goated-skip: {DOC_SYNC_SKILL}: <reason>`."
+            )
+        elif not changes.read_after(loaded):
+            # The skill is loaded, so it is named only in the skip line: no load answers this.
+            items.append(
+                f"- Docs: after loading the {DOC_SYNC_SKILL} skill and after your last code "
+                f"change, read the change itself and check whether durable docs now drift: "
+                f"{CHANGE_READ}. Or write `goated-skip: {DOC_SYNC_SKILL}: <reason>`."
+            )
+    if DESIGN_SKILL in proof.loads and not proof.skipped(DESIGN_SKILL):
+        flags = proof.read_index(RED_FLAGS_REFERENCE, after=last)
+        if flags is None:
+            items.append(
+                f"- Design: read `{RED_FLAGS_REFERENCE}` with the Read tool after your last "
+                f"change, then read the change itself and scan it against them: {CHANGE_READ}. "
+                f"Or write `goated-skip: {DESIGN_SKILL}: <reason>`."
+            )
+        elif not changes.read_after(flags):
+            items.append(
+                "- Design: after reading the red flags, read the change itself and scan it "
+                f"against them, not your memory of it: {CHANGE_READ}. Or write "
+                f"`goated-skip: {DESIGN_SKILL}: <reason>`."
+            )
+    return items
 
 
 class _Change:
-    """A finished call that changed code: where in the turn, which files, and
-    whether a subagent already proved it."""
+    """A finished call that changed files: where in the turn, which project
+    files, which of them are code, and whether a subagent already proved the
+    code it changed."""
 
-    __slots__ = ("index", "paths", "proven")
+    __slots__ = ("index", "paths", "code_paths", "proven")
 
     def __init__(self, index: int, paths: list[str], proven: bool = False) -> None:
         self.index = index
         self.paths = paths
+        self.code_paths = [p for p in paths if _is_code_change(p)]
         self.proven = proven
+
+
+class _Changes:
+    """What one turn changed, and whether a later call read the change.
+
+    `code` lists the changes to code, in order; `sensitive` lists each change
+    to a security-sensitive file as (call index, category), in order. Changes
+    a spawned subagent made count as made at its spawn.
+    """
+
+    def __init__(self, turn: Turn, subagents: dict, cwd: str | None) -> None:
+        self.turn = turn
+        changes = list(_changes(turn, subagents, cwd))
+        self.code = [c for c in changes if c.code_paths]
+        self.sensitive = [
+            (c.index, category) for c in changes for path in c.paths
+            if (category := security_category(path)) is not None
+        ]
+        self.paths = [p for c in changes for p in c.paths if p != UNNAMED_FILES]
+
+    def read_after(self, after: int) -> bool:
+        """True when a finished call after call `after` and after the last code
+        change printed the diff or read a file the turn changed."""
+
+        after = max(after, self.code[-1].index if self.code else -1)
+        return any(
+            index > after and call.ok and self._shows_change(call)
+            for index, call in enumerate(self.turn.calls)
+        )
+
+    def _shows_change(self, call) -> bool:
+        if call.name in COMMAND_TOOLS:
+            return shell.analyze(str(call.input.get("command") or "")).prints_changes
+        if call.name == "Read":
+            read = str(call.input.get("file_path") or "")
+            return any(_same_file(read, path) for path in self.paths)
+        return False
 
 
 # Stands for files a shell write changed without naming them (`git apply`).
 UNNAMED_FILES = "<files the command does not name>"
 
 
-def _code_changes(turn: Turn, subagents: dict, cwd: str | None):
-    """Yield a `_Change` for each finished call that changed code, in order."""
+def _is_code_change(path: str) -> bool:
+    return path == UNNAMED_FILES or is_code(path)
+
+
+def _changes(turn: Turn, subagents: dict, cwd: str | None):
+    """Yield a `_Change` for each finished call that changed project files, in order."""
 
     for index, call in enumerate(turn.calls):
         if call.ok and call.agent_id in subagents and call.name in SPAWN_BRIEF_FIELDS:
             calls = [c for sub_turn in subagents[call.agent_id] for c in sub_turn.calls]
             changed = [_changed_paths(c, cwd) for c in calls]
             if any(changed):
-                last = max(i for i, paths in enumerate(changed) if paths)
-                proven = bool(_checks(calls[last + 1 :]))
+                code = [i for i, paths in enumerate(changed) if any(map(_is_code_change, paths))]
+                proven = bool(code) and bool(_checks(calls[code[-1] + 1 :]))
                 yield _Change(index, [p for paths in changed for p in paths], proven)
             continue
         paths = _changed_paths(call, cwd)
@@ -369,7 +509,7 @@ def _code_changes(turn: Turn, subagents: dict, cwd: str | None):
 
 
 def _changed_paths(call, cwd: str | None) -> list[str]:
-    """The project code files one finished call changed; only real write targets count."""
+    """The project files one finished call changed; only real write targets count."""
 
     if not call.ok:
         return []
@@ -381,7 +521,7 @@ def _changed_paths(call, cwd: str | None) -> list[str]:
         targets, unnamed = command.write_targets, command.unknown_writes
     else:
         return []
-    paths = [_norm(t) for t in targets if is_code(_norm(t)) and _in_project(t, cwd)]
+    paths = [_norm(t) for t in targets if t and _in_project(t, cwd)]
     return paths + ([UNNAMED_FILES] if unnamed else [])
 
 
@@ -434,6 +574,14 @@ def _subject(message: str) -> str:
 
 def _norm(path: str) -> str:
     return path.replace("\\", "/")
+
+
+def _same_file(read: str, changed: str) -> bool:
+    """True when two paths, either relative, name the same file; judged from
+    the text alone, so a relative path matches any file it ends."""
+
+    a, b = (_norm(p).lower().removeprefix("./") for p in (read, changed))
+    return bool(a and b) and (a == b or a.endswith("/" + b) or b.endswith("/" + a))
 
 
 def _ends_with_path(path: str, suffix: str) -> bool:

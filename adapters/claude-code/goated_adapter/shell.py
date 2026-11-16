@@ -54,6 +54,18 @@ UNKNOWN_TARGET_COMMANDS = frozenset({"patch"})
 DOWNLOADERS = frozenset({"curl", "wget", "invoke-webrequest", "iwr", "invoke-restmethod", "irm"})
 GIT_UNKNOWN_TARGET_SUBCOMMANDS = frozenset({"apply", "am", "clean"})
 GIT_GLOBAL_WITH_VALUE = frozenset({"-c", "-C", "--git-dir", "--work-tree", "--namespace"})
+# Change reads (spec R7): git subcommands that print the changes' content by
+# default, the options that ask for it explicitly, and the options that print
+# names, counts, nothing, or into a file instead (matched as prefixes, so
+# `--stat=80` counts as `--stat`).
+GIT_PATCH_BY_DEFAULT = frozenset({"diff", "show"})
+GIT_PATCH_FLAGS = frozenset({"-p", "-u", "--patch"})
+GIT_NO_PATCH_FLAGS = (
+    "--stat", "--shortstat", "--numstat", "--dirstat", "--compact-summary", "--summary",
+    "--name-only", "--name-status", "--no-patch", "--check", "--raw",
+)
+# Options that print nothing to the agent, even beside a patch option.
+GIT_SILENT_FLAGS = ("--quiet", "--output")
 
 # Wrappers that run the next word as the command, with the options of each
 # that take a value.
@@ -122,12 +134,15 @@ class ShellCommand:
     that records one (not `--dry-run`); `commit_message` is its message when
     that commit carries it inline, else None. `opens_pr` covers
     `gh pr create|new` and `glab mr create|new`. `is_check` says it runs a
-    test, lint, build, or check.
+    test, lint, build, or check. `prints_changes` says it prints changes'
+    content to the agent: a git diff or show, a patch log, or patches on
+    stdout; a listing of names or counts (`--stat`, `--name-only`) does not.
+    Only git is read; another version control system's diff is not seen.
     """
 
     __slots__ = (
         "writes", "write_targets", "unknown_writes", "commit", "commit_message",
-        "opens_pr", "is_check",
+        "opens_pr", "is_check", "prints_changes",
     )
 
     def __init__(self) -> None:
@@ -138,6 +153,7 @@ class ShellCommand:
         self.commit_message: str | None = None
         self.opens_pr = False
         self.is_check = False
+        self.prints_changes = False
 
 
 def analyze(command: str) -> ShellCommand:
@@ -180,6 +196,9 @@ def _add_segment(result: ShellCommand, segment: "_Segment") -> None:
             message = _commit_message(rest, segment.heredocs)
             if message is not None:
                 result.commit_message = message
+        if not targets and _git_prints_changes(sub, rest):
+            # Output redirected into a file never reached the agent.
+            result.prints_changes = True
     elif name in ("gh", "glab"):
         rest = _skip_options(args, {"-R", "--repo"})
         noun = "pr" if name == "gh" else "mr"
@@ -555,6 +574,24 @@ def _git_writes(sub: str, rest: list[str]) -> tuple[list[str], bool]:
     if sub == "stash":
         return [], bool(rest) and rest[0] in {"pop", "apply"}
     return [], False
+
+
+def _git_prints_changes(sub: str, rest: list[str]) -> bool:
+    """True when `git <sub> <rest>` prints changes' content: a diff or show
+    without a listing-only option, a log or stash show with a patch option, or
+    format-patch to stdout."""
+
+    if any(a.startswith(GIT_SILENT_FLAGS) for a in rest):
+        return False
+    patch = any(a in GIT_PATCH_FLAGS for a in rest)
+    if sub == "stash":
+        return rest[:1] == ["show"] and patch
+    if sub in GIT_PATCH_BY_DEFAULT:
+        listing = any(a == "-s" or a.startswith(GIT_NO_PATCH_FLAGS) for a in rest)
+        return patch or not listing
+    if sub == "log":
+        return patch
+    return sub == "format-patch" and "--stdout" in rest
 
 
 def _drop_values(args: list[str], takes_value: set[str]) -> list[str]:

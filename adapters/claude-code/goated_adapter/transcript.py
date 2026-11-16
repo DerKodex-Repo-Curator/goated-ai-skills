@@ -340,7 +340,7 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                         tool_input if isinstance(tool_input, dict) else {},
                     )
                     if block.get("name") == "Skill":
-                        skill = _skill_name((block.get("input") or {}).get("skill"))
+                        skill = skill_name((block.get("input") or {}).get("skill"))
                         if skill:
                             skill_calls[tool_id] = skill
         elif entry.get("type") == "user":
@@ -377,7 +377,7 @@ def _starts_skill_body(content: list) -> bool:
     return isinstance(first, dict) and str(first.get("text", "")).startswith(SKILL_BODY_PREFIX)
 
 
-def _skill_name(value: object) -> str:
+def skill_name(value: object) -> str:
     """Normalize a Skill-tool argument such as `/tdd args` to `tdd`, keeping any
     `namespace:` prefix for the gates to judge."""
 
