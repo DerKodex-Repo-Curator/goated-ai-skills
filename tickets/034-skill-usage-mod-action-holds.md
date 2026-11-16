@@ -49,15 +49,52 @@ Found in the 2026-11-16 live checks of Tickets 031 and 032:
 
 ## Acceptance Criteria
 
-- [ ] Mod tests cover each Ticket 031 hold type and outcome, including
+- [x] Mod tests cover each Ticket 031 hold type and outcome, including
       strict holds, which a skip line never satisfies.
 - [ ] One live session with the adapter enabled shows a strict hold, a
       justified-skip hold that was declined, and the end-of-turn hold in the
-      pane.
+      pane. (Headless runs show all three in the mod's store; the
+      maintainer's pane check is pending.)
 - [ ] The decision on retiring the personal hooks' hold texts is recorded.
 - [ ] An adapter test shows a typed override yields the override sentence in
       `additionalContext`, and the live session shows the override in the
-      pane.
+      pane. (The adapter test passes, and a headless run counts the
+      override; the pane check is pending.)
+
+## Progress (2026-11-16)
+
+What the two live-check findings turned out to be:
+
+- **The extra "ignored" skills.** They were not a second read through the
+  personal-hook marker table. Strict hold texts say a `` `goated-skip` ``
+  line does not clear them, and the mod took that backticked word for a
+  skill, which never loads. The `spawn` hold also names `handoff` and
+  `subagent-driven-development` as alternatives, so the one not loaded was
+  counted as ignored. The mod now leaves the grammar's own words out, and
+  treats the spawn hold's skills as alternatives.
+- **The missing closeout hold.** A blocked `Stop` reaches a mod as
+  `Stop hook blocking error from command: "<command>": <reason>` inside a
+  reminder, in live rows and in history, so the hold line was not the first
+  line. The mod now reads it there. Claude Code also writes the reason as a
+  `note` row; the mod does not observe that door, so the hold counts once.
+
+Also changed: a `route-line` hold that repeats after a route line written in
+the same message (the known transcript-timing limit) now counts as followed.
+The adapter's `UserPromptSubmit` hook returns the override sentence as
+`additionalContext`. `tests/adapter-texts.ts` now carries every hold text the
+adapter emits, and `tests/adapter-holds.test.tsx` covers each gate's
+outcomes.
+
+Left as known limits (mod README): holds that name no skill by its bare name
+(the spawn template-read and heading holds) count by gate and kind only, and
+the closeout proof item, which asks for a check run, has no per-skill result.
+
+Found, outside this ticket's scope: in headless Haiku runs the closeout
+gate's proof item blocked `Stop` up to Claude Code's limit of nine in a row,
+even after the agent ran `python -c` checks and wrote a
+`goated-skip: verification-before-completion:` line. The adapter ignores
+`stop_hook_active` (a Ticket 031 decision). This needs a look before or
+during Ticket 033.
 
 ## Expected Proof
 

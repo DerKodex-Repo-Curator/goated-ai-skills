@@ -227,11 +227,16 @@ goated-hold: <gate> | <kind>
 - The first line matches
   `^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-skip)$`.
 - The lines after it are guidance for the agent and may change between
-  releases; do not parse them.
+  releases; do not parse their wording. They backtick each skill they ask
+  for by its bare name, which is all the skill-usage mod reads from them.
+  Other backticked text, such as `goated-skip`, a file path, or a heading,
+  is not a skill name.
 
 Claude Code records a denied call as a `tool_result` with `is_error: true`
 whose content carries this reason, and a blocked `Stop` as the reason shown
-to the agent. The outcome of a hold is read from what follows in the
+to the agent. Claude Code 2.1.325 wraps that reason as `Stop hook blocking
+error from command: "<command>": <reason>`, so the hold line follows the
+wrapper on the same line. The outcome of a hold is read from what follows in the
 transcript: the skill load, read, or skip line that cleared it, or the user
 override recorded for the turn.
 
@@ -262,7 +267,11 @@ Claude Code also submits prompts nobody typed in this session:
   line, and never carry overrides.
 
 Claude Code shows a short notice when the adapter records an override. The
-phrase set lives in [`goated_adapter/overrides.py`](goated_adapter/overrides.py);
+same sentence, `GOATED Claude Code adapter: recorded your override for this
+prompt: "<phrase>"`, also goes into the turn's context as the hook's
+`additionalContext`. A notice reaches a Claude Code mod with no text, so the
+[skill-usage mod](skill-usage/README.md) counts overrides from that context.
+The phrase set lives in [`goated_adapter/overrides.py`](goated_adapter/overrides.py);
 change it and this table together.
 
 ## Subagents

@@ -133,19 +133,44 @@ export function skillsBackticked(text: string, skills: readonly string[]): strin
 // result's first line, `PreToolUse:<Tool> hook error: goated-hold: …`. A hold line anywhere else, such as in a failing
 // command's output, is not one.
 const ADAPTER_HOLD = /^(?:\S+ hook error: )?goated-hold:[ \t]+([a-z0-9]+(?:-[a-z0-9]+)*)[ \t]+\|[ \t]+(strict|justified-skip)[ \t]*$/
+// A blocked Stop carries its reason in Claude Code's own sentence, either as the hook's blocking error (a reminder, in
+// live rows and in history) or as plain feedback. Only the reason's first line is read, as for any hold.
+const STOP_BLOCKED = /^Stop hook blocking error from command: ".*": (goated-hold:.*)$/
+const STOP_FEEDBACK = /^Stop hook feedback:[ \t]*$/
 const BACKTICKED_SKILL = /`([a-z0-9]+(?:-[a-z0-9]+)*)`/g
+/** The grammar's own words, which holds backtick too (`goated-skip` does not clear it); they are no skills. */
+const MARKER_WORDS = new Set(['goated-hold', 'goated-route', 'goated-skip'])
 /** The adapter's gate for a route's required skills. */
 const PIPELINE_GATE = 'pipeline'
+/** Gates whose named skills are alternatives: the spawn hold asks for `handoff` or `subagent-driven-development`. */
+const ALTERNATIVE_GATES = new Set(['spawn'])
 
 /**
  * What an adapter hold asks for: the router, a route line, or every skill its
- * text backticks. The adapter backticks only skill names, so the names are
- * taken as they stand, whether or not the session's skill listing has loaded.
+ * text backticks. The adapter backticks only skill names (and the grammar's own
+ * words, left out here), so the names are taken as they stand, whether or not
+ * the session's skill listing has loaded.
  */
 function adapterHoldNamed(gate: string, body: string): string[] {
   if (gate === 'router-first') return [ROUTER]
   if (gate === 'route-line') return [ROUTE_LINE]
-  return [...new Set([...body.matchAll(BACKTICKED_SKILL)].flatMap(m => (m[1] ? [m[1]] : [])))]
+  return [...new Set([...body.matchAll(BACKTICKED_SKILL)].flatMap(m => (m[1] && !MARKER_WORDS.has(m[1]) ? [m[1]] : [])))]
+}
+
+/** The adapter hold in a piece of hook output: its reason's first line and the lines after it, or none. */
+function adapterHold(text: string): { gate: string; kind: HoldKind; body: string } | null {
+  let lines = text.trimStart().split('\n')
+  if (lines[0]?.trim() === '<system-reminder>') lines = lines.slice(1)
+  let first = (lines[0] ?? '').trim()
+  if (STOP_FEEDBACK.test(first)) {
+    lines = lines.slice(1)
+    first = (lines[0] ?? '').trim()
+  } else {
+    const blocked = STOP_BLOCKED.exec(first)?.[1]
+    if (blocked) first = blocked.trim()
+  }
+  const hold = ADAPTER_HOLD.exec(first)
+  return hold ? { gate: hold[1] ?? '', kind: hold[2] as HoldKind, body: lines.slice(1).join('\n') } : null
 }
 
 /**
@@ -156,9 +181,8 @@ function adapterHoldNamed(gate: string, body: string): string[] {
  * holds, for errored tool results, where other text can quote a marker.
  */
 export function hookNudges(text: string, skills: readonly string[], holdsOnly = false): { hook: string; named: string[]; holdKind?: HoldKind }[] {
-  const [first = '', ...body] = text.trimStart().split('\n')
-  const hold = ADAPTER_HOLD.exec(first.trim())
-  if (hold) return [{ hook: hold[1] ?? '', named: adapterHoldNamed(hold[1] ?? '', body.join('\n')), holdKind: hold[2] as HoldKind }]
+  const hold = adapterHold(text)
+  if (hold) return [{ hook: hold.gate, named: adapterHoldNamed(hold.gate, hold.body), holdKind: hold.kind }]
 
   const messages: { hook: string; body: string }[] = []
   for (const paragraph of text.split('\n\n')) {
@@ -514,7 +538,8 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   // Each open nudge points at its skill's status on the nudge's own log row, so settling it updates that row.
   // `agent`: the subagent it spoke to, absent for the main agent; that loop's turn end settles it.
   // `isStrict`: an adapter hold that only loading the skill clears; a skip line never declines it.
-  type Open = { hook: string; skill: string; agent?: string; isStrict?: true; mark: NudgedSkill }
+  // `rest`: the other skills one hold names as alternatives (the spawn hold), each of which one followed skill clears.
+  type Open = { hook: string; skill: string; agent?: string; isStrict?: true; mark: NudgedSkill; rowSkills: NudgedSkill[]; rest?: Open[] }
   let open: Open[] = []
   // Skip lines written in each loop's running turn, by agent ('' for the main agent) then skill, with their reasons.
   const skipped = new Map<string, Map<string, string>>()
@@ -525,13 +550,16 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
 
   // `by`: the event that settled it, whose time the row keeps so the picture can show the moment; a rebuilt event has no real time.
   const settle = (matches: (n: Open) => boolean, outcome: Outcome, by?: UsageEvent) => {
-    open = open.filter(n => {
-      if (!matches(n)) return true
+    const settled = open.filter(matches)
+    // A followed alternative leaves the others unasked: they come off the hold's row and out of the counts.
+    const cleared = new Set(outcome === 'followed' || outcome === 'read files' ? settled.flatMap(n => n.rest ?? []).filter(o => !settled.includes(o)) : [])
+    for (const n of settled) {
       bump(nudges, n.hook, outcome)
       n.mark.status = outcome
       if (by && !by.isEarlier) n.mark.at = by.t
-      return false
-    })
+    }
+    for (const o of cleared) o.rowSkills.splice(o.rowSkills.indexOf(o.mark), 1)
+    open = open.filter(n => !settled.includes(n) && !cleared.has(n))
   }
   /** A loop's turn is over: what it left open can no longer be followed, so each is declined (a skip line said why) or ignored. */
   const closeTurn = (isInLoop: (n: Open) => boolean, by: UsageEvent) => {
@@ -569,9 +597,14 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
           ...(e.isSubagent ? { isSubagent: true as const } : {}),
         }
         timeline.push(row)
+        const asked: Open[] = []
         for (const skill of e.named) {
           const reason = e.holdKind === 'strict' ? undefined : skipsOf(e.agent).get(skill)
-          if (loaded.has(skill) && e.hook !== 'router-rule') {
+          if (skill === ROUTE_LINE && isTurnRouted && !e.agent) {
+            // Claude Code records a call only after its hold returns, so a route line written beside the call is seen first.
+            bump(nudges, e.hook, 'followed')
+            row.skills.push({ skill, status: 'followed', ...(e.isEarlier ? {} : { at: e.t }) })
+          } else if (loaded.has(skill) && e.hook !== 'router-rule') {
             bump(nudges, e.hook, 'already loaded')
             row.skills.push({ skill, status: 'already loaded', ...(e.isEarlier ? {} : { at: e.t }) })
           } else if (reason !== undefined) {
@@ -582,9 +615,12 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
             const mark: NudgedSkill = { skill, status: 'pending' }
             row.skills.push(mark)
             turnNudged.add(skill)
-            open.push({ hook: e.hook, skill, ...(e.agent ? { agent: e.agent } : {}), ...(e.holdKind === 'strict' ? { isStrict: true as const } : {}), mark })
+            const next: Open = { hook: e.hook, skill, ...(e.agent ? { agent: e.agent } : {}), ...(e.holdKind === 'strict' ? { isStrict: true as const } : {}), mark, rowSkills: row.skills }
+            asked.push(next)
+            open.push(next)
           }
         }
+        if (ALTERNATIVE_GATES.has(e.hook)) for (const n of asked) n.rest = asked.filter(o => o !== n)
         break
       }
       case 'skip': {

@@ -18,8 +18,8 @@ without it.
 | Route lines, counted by form (`direct`, `continue`, routed) | `goated-route:` lines in replies |
 | Turns that write, by whether a route line came before the first write, only after it, or not at all | The main agent's edits and spawns, the calls the adapter holds like writes; a call whose result is an error, such as a held one, did not write |
 | Justified skips, with their reasons; a skip declines a justified-skip hold or a hook nudge naming that skill in the same turn | `goated-skip:` lines in replies |
-| The adapter's holds by gate and kind, and each held skill's outcome: loaded, files read, already loaded, declined, not loaded, or waiting | Denied calls whose reason starts `goated-hold: <gate> \| <kind>` |
-| Your overrides, by phrase | The adapter's sentence `recorded your override for this prompt` in hook context (see [Known Limits](#known-limits)) |
+| The adapter's holds by gate and kind, and each held skill's outcome: loaded, files read, already loaded, declined, not loaded, or waiting | Denied calls whose reason starts `goated-hold: <gate> \| <kind>`, and the blocked `Stop` that carries the closeout hold |
+| Your overrides, by phrase | The adapter's sentence `recorded your override for this prompt` in its hook context |
 | Reads of skills' reference and other supporting files, and whether the skill had loaded first | `Read` paths and shell commands |
 | Subagent spawns, with type and task, including ones that load no skill | Agent tool calls that ran; a held or failed attempt shows in the log as held but is not counted |
 | A subagent's start message, and its reads of a skill's `SKILL.md` | SubagentStart hook context; a subagent's `Read` calls |
@@ -34,14 +34,29 @@ installs ran before the adapter (`ROUTE CHECK`, `DESIGN HOLD`, `COMMIT CHECK`,
 and others in `hooks/classify.ts`). It will keep reading them until the
 adapter replaces those hooks.
 
-Holds reach a session as denied tool calls. The pane counts a hold as
-followed when the agent then loads the skill (or reads its files), and as not
-loaded when the turn ends without that. A `justified-skip` hold also counts as
-declined when a skip line names the skill in the same turn; a `strict` hold
-never does, because only loading the skill clears it. A `pipeline` hold also
-counts as followed for a skill that a corrected route line drops, as the
-hold tells the agent to do. A `router-first` hold asks for the router, and a
-`route-line` hold asks for a route line.
+Holds reach a session as denied tool calls, and the closeout hold as a
+blocked `Stop`. The mod reads each hold's gate and kind from its first line,
+and the skills it asks for from the skill names its text backticks. The pane
+counts a held skill as followed when the agent then loads it (or reads its
+files), and as not loaded when the turn ends without that. A
+`justified-skip` hold (`design`, `security`, `closeout`) also counts as
+declined when a skip line names the skill in the same turn, before or after
+the hold; a `strict` hold (`router-first`, `route-line`, `pipeline`,
+`commit`, `pull-request`, `spawn`) never does, because only loading the skill
+clears it. In particular:
+
+- A `router-first` hold asks for the router, and a `route-line` hold asks
+  for a route line. A `route-line` hold that comes after a route line written
+  in the same turn counts as followed: Claude Code records a call only after
+  its hold returns, so a line written beside the held call is not visible to
+  the adapter yet, and the agent only has to make the call again.
+- A `pipeline` hold also counts as followed for a skill that a corrected route
+  line drops, as the hold tells the agent to do.
+- A `spawn` hold names two ways to write the brief, `handoff` or
+  `subagent-driven-development`; loading either follows it, and the other
+  drops off the hold's row.
+- A blocked `Stop` does not end the turn, so the closeout hold waits for the
+  agent's next move; each time the adapter blocks again is its own hold.
 
 ## The Pane
 
@@ -139,15 +154,19 @@ This has not been tested end to end. Keep a backup of both files.
 
 ## Known Limits
 
-- The adapter's justified-skip holds and its action and closeout holds are
-  read only as far as their `goated-hold:` first line and backticked skill
-  names allow.
-- Overrides are not counted yet. The adapter shows your override as a notice,
-  and a notice reaches a mod as a row with no text (checked on Claude Code
-  2.1.325). The mod reads the same sentence from the adapter's hook context,
-  which mods do receive with text, but the adapter does not send it there
-  yet. When the mod loads mid-session, the history it rebuilds from has no
-  hook context either, so earlier overrides go uncounted.
+- A hold is read only as far as its `goated-hold:` first line and the skill
+  names it backticks allow. A hold that names no skill counts by gate and
+  kind with no per-skill result, such as the `spawn` holds that ask for a
+  template read or for missing brief headings. A `commit` hold for a message
+  that breaks the contract names `commit-message`, so once it has loaded the
+  pane shows that hold as already loaded, not as whether the message was
+  fixed. The closeout hold's proof item asks for a check to run,
+  which is no skill, so only the skills its other items name (`doc-sync`,
+  `handoff`) get a result.
+- Overrides reach the mod through the adapter's hook context. A notice
+  reaches a mod as a row with no text (checked on Claude Code 2.1.325), so
+  the notice itself is not read. When the mod loads mid-session, the history
+  it rebuilds from has no hook context, so earlier overrides go uncounted.
 - A slash command counts as a prompt only when it loads a skill. Other
   commands, such as `/skill-usage` or `/compact`, run without a model turn,
   so neither they nor their output start a turn in the pane.
