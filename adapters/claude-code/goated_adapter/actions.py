@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
+from typing import NamedTuple
 import re
 
 from . import contracts, shell
@@ -175,27 +176,27 @@ def is_action_tool(tool_name: str) -> bool:
 
 
 def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
-                 namespaces: tuple[str, ...] = (), cwd: str | None = None,
+                 namespaces: tuple[str, ...] = (), project: Project | None = None,
                  subagents: Callable[[], dict] | None = None) -> Hold | None:
     """Return the action hold for this call, if any; the call's own entry is not yet proof.
 
-    `cwd` is the project folder: only files inside it meet the design and
-    security gates, and only changes to them are the turn's changes a change
-    read must follow. `subagents` returns the turns
+    `project` says which files are the project's (see `find_project`): only files
+    inside it meet the design and security gates, and only changes to them
+    are the turn's changes a change read must follow. `subagents` returns the turns
     of each subagent this turn spawned, as `check_closeout` takes them; it is
     called only when a commit or pull request needs its change read, since
     reading their transcripts takes time.
     """
 
     proof = _Proof(turn, overrides, namespaces)
-    changes = lambda: _Changes(turn, subagents() if subagents else {}, cwd)
+    changes = lambda: _Changes(turn, subagents() if subagents else {}, project)
     if tool_name in COMMAND_TOOLS:
         command = shell.analyze(str(tool_input.get("command") or ""))
         hold = _commit_hold(command.commit_message, proof, changes) if command.commit else None
         if hold is None and command.opens_pr:
             hold = _pr_hold(proof, changes)
         for target in command.write_targets:
-            if _in_project(target, cwd):
+            if _in_project(target, project):
                 hold = hold or _security_hold(_norm(target), proof)
         return hold
     if PR_TOOL_RE.match(tool_name):
@@ -209,7 +210,7 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         return _spawn_hold(brief, proof) if brief.strip() else None
     if tool_name in FILE_WRITE_TOOLS:
         path = _norm(str(tool_input.get(FILE_WRITE_TOOLS[tool_name]) or ""))
-        if not _in_project(path, cwd):
+        if not _in_project(path, project):
             return None  # A scratch file elsewhere is not the project's design or security.
         return _security_hold(path, proof) or _design_hold(path, tool_input, proof)
     return None
@@ -365,7 +366,7 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof) -> Hold | None:
 
 def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = (),
                    final_text: str = "", subagents: dict | None = None,
-                   cwd: str | None = None) -> Hold | None:
+                   project: Project | None = None) -> Hold | None:
     """Return the closeout hold for a turn about to end, if any.
 
     A turn that changed code needs, after its last code change, a check
@@ -382,10 +383,10 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     `subagents` maps the agent id of each subagent this turn spawned to its
     turns. Their code changes count as made at the spawn; a subagent that ran
     a check after its own last change has already proved them. Only files
-    inside `cwd`, the project folder, count; a scratch file elsewhere does not.
+    inside `project` count (see `find_project`); a scratch file elsewhere does not.
     """
 
-    changes = _Changes(turn, subagents or {}, cwd)
+    changes = _Changes(turn, subagents or {}, project)
     proof = _Proof(turn, overrides, namespaces, final_text)
     items = _code_items(changes, proof) if changes.code else []
     sensitive = changes.sensitive
@@ -490,9 +491,9 @@ class _Changes:
     subagent made count as made at its spawn.
     """
 
-    def __init__(self, turn: Turn, subagents: dict, cwd: str | None) -> None:
+    def __init__(self, turn: Turn, subagents: dict, project: Project | None) -> None:
         self.turn = turn
-        changes = list(_changes(turn, subagents, cwd))
+        changes = list(_changes(turn, subagents, project))
         self.code = [c for c in changes if c.code_paths]
         self.sensitive = [
             (c.index, category) for c in changes for path in c.paths
@@ -527,24 +528,24 @@ def _is_code_change(path: str) -> bool:
     return path == UNNAMED_FILES or is_code(path)
 
 
-def _changes(turn: Turn, subagents: dict, cwd: str | None):
+def _changes(turn: Turn, subagents: dict, project: Project | None):
     """Yield a `_Change` for each finished call that changed project files, in order."""
 
     for index, call in enumerate(turn.calls):
         if call.ok and call.agent_id in subagents and call.name in SPAWN_BRIEF_FIELDS:
             calls = [c for sub_turn in subagents[call.agent_id] for c in sub_turn.calls]
-            changed = [_changed_paths(c, cwd) for c in calls]
+            changed = [_changed_paths(c, project) for c in calls]
             if any(changed):
                 code = [i for i, paths in enumerate(changed) if any(map(_is_code_change, paths))]
                 proven = bool(code) and bool(_checks(calls[code[-1] + 1 :]))
                 yield _Change(index, [p for paths in changed for p in paths], proven)
             continue
-        paths = _changed_paths(call, cwd)
+        paths = _changed_paths(call, project)
         if paths:
             yield _Change(index, paths)
 
 
-def _changed_paths(call, cwd: str | None) -> list[str]:
+def _changed_paths(call, project: Project | None) -> list[str]:
     """The project files one finished call changed; only real write targets count."""
 
     if not call.ok:
@@ -557,22 +558,89 @@ def _changed_paths(call, cwd: str | None) -> list[str]:
         targets, unnamed = command.write_targets, command.unknown_writes
     else:
         return []
-    paths = [_norm(t) for t in targets if t and _in_project(t, cwd)]
+    paths = [_norm(t) for t in targets if t and _in_project(t, project)]
     return paths + ([UNNAMED_FILES] if unnamed else [])
 
 
-def _in_project(path: str, cwd: str | None) -> bool:
-    """True when `path` is `cwd`, the project folder, or under it; with no
-    `cwd`, always. A relative path is taken from `cwd` and a leading `~` is
-    the user's home; decided without touching the disk."""
+class Project(NamedTuple):
+    """The project folder (`root`) and the folder the session works in
+    (`cwd`), which relative paths start from; `find_project` finds them."""
+
+    root: str
+    cwd: str
+
+
+def find_project(cwd: str | None, project_dir: str | None = None) -> Project | None:
+    """Return the project for a hook input's `cwd`, or None when it names none.
+
+    The root is `project_dir` (Claude Code's `CLAUDE_PROJECT_DIR`) when set;
+    else the nearest folder at or above `cwd` that holds a `.git` entry, so a
+    session that changed folder below its checkout still has the whole
+    checkout as its project; else `cwd` itself.
+    """
 
     if not cwd:
+        return None
+    if project_dir:
+        return Project(project_dir, cwd)
+    folder = os.path.abspath(cwd)
+    while True:
+        if os.path.exists(os.path.join(folder, ".git")):
+            return Project(folder, cwd)
+        parent = os.path.dirname(folder)
+        if parent == folder:
+            return Project(cwd, cwd)
+        folder = parent
+
+
+def _in_project(path: str, project: Project | None) -> bool:
+    """True when `path` is the project's root or under it; with no project, always.
+
+    A relative path is taken from the session's folder, a leading `~` is the
+    user's home, and on Windows a Git Bash drive path (`/c/x`) is `C:/x`. A
+    rooted path with no drive, such as `/tmp/x`, is on the session's drive, as
+    Windows takes it. Touches the disk only to expand Windows 8.3 short names.
+    """
+
+    if project is None:
         return True
-    root = os.path.normcase(os.path.abspath(cwd))
-    # `join` keeps a path that is already absolute, and on Windows gives a
-    # rooted one, such as `/tmp/x`, the project's drive.
-    full = os.path.normcase(os.path.abspath(os.path.join(cwd, os.path.expanduser(path))))
+    root = _comparable(project.root)
+    full = _comparable(os.path.join(_native(project.cwd), _native(os.path.expanduser(path))))
     return full == root or full.startswith(root.rstrip(os.sep) + os.sep)
+
+
+# Git Bash names a Windows drive as a one-letter top folder: `/c/Users` is `C:/Users`.
+GIT_BASH_DRIVE_RE = re.compile(r"^[/\\]([A-Za-z])(?=[/\\]|$)")
+
+
+def _native(path: str) -> str:
+    if os.name != "nt":
+        return path
+    return GIT_BASH_DRIVE_RE.sub(lambda m: m.group(1).upper() + ":/", path, count=1)
+
+
+def _comparable(path: str) -> str:
+    return os.path.normcase(_long_path(os.path.abspath(path)))
+
+
+def _long_path(path: str) -> str:
+    """On Windows, absolute `path` with its 8.3 short names (`PROGRA~1`)
+    expanded, as far as its folders exist; elsewhere, or with no `~`, as is."""
+
+    if os.name != "nt" or "~" not in path:
+        return path
+    import ctypes  # Only Windows short names need it; most hook calls never get here.
+
+    buffer = ctypes.create_unicode_buffer(32768)
+    head, missing = path, []
+    while True:
+        if ctypes.windll.kernel32.GetLongPathNameW(head, buffer, len(buffer)):
+            return os.path.join(buffer.value, *reversed(missing))
+        parent, name = os.path.split(head)
+        if not name or parent == head:
+            return path  # No part of it exists, so nothing can be expanded.
+        missing.append(name)
+        head = parent
 
 
 def _checks(calls) -> list:

@@ -102,13 +102,18 @@ The closeout items, each judged against the turn's last code change. A code
 change is a write tool's file, or a file a shell command writes (its redirect
 target, copy destination, or removed, moved, or edited file), inside the
 project folder; a scratch or temp file elsewhere does not count. The project
-folder is the folder the hook input names as the session's working folder; a
-relative path is taken from it, and a shell write target from any `cd` earlier
-in its command (see [Shell writes](#shell-writes)). The `design` and `security`
-gates use the same rule, so a scratch script outside the project is never
-held. A shell write
-whose files the command does not name (`git apply`, `patch`, a download
-without an output name) counts as a change to non-test code. Code a subagent
+folder is `CLAUDE_PROJECT_DIR` when Claude Code sets it; otherwise the nearest
+folder at or above the session's working folder (the hook input's `cwd`) that
+holds a `.git` entry; otherwise the working folder itself. So a session that
+changed folder below its checkout still counts the whole checkout. A relative
+path is taken from the working folder, and a shell write target from any `cd`
+earlier in its command (see [Shell writes](#shell-writes)). On Windows a Git
+Bash drive path such as `/c/work` is read as `C:/work`, a rooted path with no
+drive such as `/tmp` is on the working folder's drive, and 8.3 short names
+such as `PROGRA~1` are expanded where the folders exist. The `design` and
+`security` gates use the same rule, so a scratch script outside the project is
+never held. A shell write whose files the command does not name (`git apply`,
+`patch`, a download without an output name) counts as a change to non-test code. Code a subagent
 changed counts too, at the point the parent spawned it; if the subagent ran a
 check after its own last change, that change is already proved.
 
@@ -211,12 +216,12 @@ moves that folder, so `cd /elsewhere && mv a.py b.py` moves
 `/elsewhere/a.py`, outside the project, and `cd sub && mv a.py b.py` moves
 `sub/a.py`, inside it. A `cd` to an absolute path, a drive path, or a path
 under `~` replaces the folder; a relative one is joined to it. A `cd` the
-analysis cannot follow (to a variable, `cd -`, a bare `cd`, `popd`, or
-`Pop-Location`) leaves later targets as written, taken from the project
-folder, until a later `cd` to an absolute path. Only a `cd` in the same
-command is followed, not one in an earlier call, and only its words are read:
-a `cd` inside a subshell such as `(cd x && …)` still moves the folder for the
-later commands in this one.
+analysis cannot follow leaves later targets as written, so they count as
+inside the project, until a later `cd` to an absolute path. That is a `cd` to
+a variable, `cd -`, a bare `cd`, `popd`, or `Pop-Location`, and any `cd` that
+may not carry over: one inside `( )` or `$( )`, in a pipeline (`cd x | …`), in
+the background, or on either side of `||`, since it may have failed. Only a
+`cd` in the same command is followed, not one in an earlier call.
 
 ### Change reads
 

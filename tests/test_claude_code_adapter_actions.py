@@ -7,6 +7,7 @@ entry point with hook inputs and a transcript in Claude Code's recorded shape
 
 from __future__ import annotations
 
+import os
 import re
 import tempfile
 import unittest
@@ -488,6 +489,8 @@ class OutOfProjectTests(AdapterTestCase):
 
     def test_a_sensitive_write_outside_the_project_skips_the_security_gate(self) -> None:
         s = self.routed()
+        # A rooted path with no drive, such as `/tmp/...`, is outside: on
+        # Windows it is taken on the project's drive, where `/tmp` is not the project.
         for path in (f"{self.outside}/.env", "/tmp/scratch/auth/login.py"):
             with self.subTest(path=path):
                 edit = {"file_path": path, "old_string": "a", "new_string": "b"}
@@ -526,6 +529,101 @@ class OutOfProjectTests(AdapterTestCase):
             with self.subTest(command=command):
                 held = self.changed_by(command, tool)
                 self.assertEqual(closeout_line(held), "goated-hold: closeout | justified-skip")
+
+    def assert_security_held(self, s: Session, command: str, held: bool = True) -> None:
+        with self.subTest(command=command):
+            output = s.run(command)
+            if held:
+                self.assertEqual(hold_line(output), "goated-hold: security | justified-skip")
+            else:
+                self.assertEqual(decision(output), "pass")
+
+    def test_a_cd_that_does_not_carry_over_leaves_the_target_inside(self) -> None:
+        s = self.routed()
+        for command in (
+            f'(cd "{self.outside}") ; echo K=1 > .env',
+            f'cd "{self.outside}" || echo K=1 > .env',
+            f'cd "{self.outside}" | true; echo K=1 > .env',
+            f'true | cd "{self.outside}"; echo K=1 > .env',
+            f'here=$(cd "{self.outside}" && pwd); echo K=1 > .env',
+        ):
+            self.assert_security_held(s, command)
+        self.assert_security_held(s, f'cd "{self.outside}" && echo K=1 > .env', held=False)
+        self.assert_security_held(s, f'(cd x) ; cd "{self.outside}"; echo K=1 > .env', held=False)
+
+    @unittest.skipUnless(os.name == "nt", "Git Bash drive paths exist only on Windows")
+    def test_git_bash_drive_paths_are_read_as_windows_paths(self) -> None:
+        s = self.routed()
+
+        def git_bash(path: str) -> str:
+            path = path.replace("\\", "/")
+            return "/" + path[0].lower() + path[2:]
+
+        inside, outside = git_bash(self.inside), git_bash(self.outside)
+        self.assert_security_held(s, f"echo K=1 > {inside}/.env")
+        self.assert_security_held(s, f"cd {inside} && echo K=1 > .env")
+        self.assert_security_held(s, f"echo K=1 > {outside}/.env", held=False)
+        self.assert_security_held(s, f"cd {outside} && echo K=1 > .env", held=False)
+        edit = {"file_path": f"{inside}/.env", "old_string": "a", "new_string": "b"}
+        self.assertEqual(hold_line(s.call("Edit", edit)), "goated-hold: security | justified-skip")
+        edit = {"file_path": f"{outside}/.env", "old_string": "a", "new_string": "b"}
+        self.assertEqual(decision(s.call("Edit", edit)), "pass")
+
+    @unittest.skipUnless(os.name == "nt", "8.3 short names exist only on Windows")
+    def test_a_short_and_a_long_name_for_the_project_match(self) -> None:
+        import ctypes
+
+        buffer = ctypes.create_unicode_buffer(32768)
+        short = buffer.value if ctypes.windll.kernel32.GetShortPathNameW(
+            str(self.root), buffer, len(buffer)) else ""
+        long = buffer.value if ctypes.windll.kernel32.GetLongPathNameW(
+            str(self.root), buffer, len(buffer)) else ""
+        if not short or not long or short.lower() == long.lower():
+            self.skipTest("this folder has no distinct 8.3 short name")
+        other = long if str(self.root).lower() == short.lower() else short
+        s = self.routed()
+        project = self.session.project.relative_to(self.root).as_posix()
+        edit = {"file_path": f"{other}/{project}/.env", "old_string": "a", "new_string": "b"}
+        self.assertEqual(hold_line(s.call("Edit", edit)), "goated-hold: security | justified-skip")
+        edit = {"file_path": f"{other}/scratch/.env", "old_string": "a", "new_string": "b"}
+        self.assertEqual(decision(s.call("Edit", edit)), "pass")
+
+    def test_the_project_dir_setting_beats_a_session_folder_below_it(self) -> None:
+        s = self.routed()
+        s.config.project_dir = self.inside
+        s.cwd = self.session.project / "adapters"
+        ci = {"file_path": f"{self.inside}/.github/workflows/ci.yml", "old_string": "a",
+              "new_string": "b"}
+
+        self.assertEqual(hold_line(s.call("Edit", ci)), "goated-hold: security | justified-skip")
+        held = s.call("Write", write(f"{self.inside}/tools/build.py", lines=40))
+        self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
+        # Relative paths still start from the session's folder.
+        self.assert_security_held(s, "echo K=1 > ../.env")
+        self.assert_security_held(s, "echo K=1 > ../../.env", held=False)
+
+    def test_the_git_top_level_is_the_project_when_no_setting_names_one(self) -> None:
+        s = self.routed()
+        (self.session.project / ".git").mkdir(parents=True)
+        (self.session.project / "adapters").mkdir()
+        s.cwd = self.session.project / "adapters"
+        manifest = {"file_path": f"{self.inside}/pyproject.toml", "old_string": "a",
+                    "new_string": "b"}
+
+        self.assertEqual(hold_line(s.call("Edit", manifest)), "goated-hold: security | justified-skip")
+        outside = {"file_path": f"{self.outside}/pyproject.toml", "old_string": "a",
+                   "new_string": "b"}
+        self.assertEqual(decision(s.call("Edit", outside)), "pass")
+
+    def test_with_no_setting_or_git_folder_the_session_folder_is_the_project(self) -> None:
+        s = self.routed()
+        s.cwd = self.session.project / "adapters"
+        manifest = {"file_path": f"{self.inside}/pyproject.toml", "old_string": "a",
+                    "new_string": "b"}
+
+        self.assertEqual(decision(s.call("Edit", manifest)), "pass")
+        manifest["file_path"] = f"{self.inside}/adapters/pyproject.toml"
+        self.assertEqual(hold_line(s.call("Edit", manifest)), "goated-hold: security | justified-skip")
 
     def test_an_unresolvable_cd_leaves_the_target_inside(self) -> None:
         for tool, command in (

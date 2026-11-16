@@ -182,7 +182,8 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
     name, original, args = _resolve(segment.words)
     next_directory = directory
     if name in CHANGE_DIRECTORY:
-        next_directory = _change_directory(name, args, directory)
+        # A `cd` that runs apart, or may not run, leaves the folder unknown.
+        next_directory = None if segment.isolated else _change_directory(name, args, directory)
     elif name in TARGETS_ARE_ARGS:
         targets += _ps_paths(args) if name.count("-") else _positional(args)
     elif name in TARGET_IS_LAST_ARG:
@@ -235,9 +236,10 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
 # A write target is relative to the folder its segment runs in. A `cd` earlier
 # in the same command moves that folder, so `cd /elsewhere && mv a b` writes
 # `/elsewhere/a`. The directory is "" before any `cd`, a path once a `cd` is
-# followed, and None once one cannot be: a variable, `cd -`, `popd`, or a bare
-# `cd`. An unknown directory leaves targets as written. Only the words are
-# read: a `cd` inside a subshell or pipeline still counts for later segments.
+# followed, and None once one cannot be: a variable, `cd -`, `popd`, a bare
+# `cd`, or a `cd` that runs apart or may not run (see `_Segment.isolated`). An
+# unknown directory leaves targets as written, so the gates take them as
+# inside the project; a later `cd` to an absolute path makes it known again.
 
 CHANGE_DIRECTORY = frozenset(
     {"cd", "chdir", "pushd", "popd", "set-location", "sl", "push-location", "pop-location"}
@@ -274,15 +276,18 @@ def _is_absolute(path: str) -> bool:
 class _Segment:
     """One simple command: its words, the files it redirects output into
     (`out_redirects`: those that take its standard output), and the bodies of
-    heredocs it opened."""
+    heredocs it opened. `isolated` says a change it makes to the shell, such
+    as a `cd`, may not reach later commands: it runs inside `( )` or `$( )`,
+    in a pipeline, in the background, or on either side of `||`."""
 
-    __slots__ = ("words", "redirects", "out_redirects", "heredocs")
+    __slots__ = ("words", "redirects", "out_redirects", "heredocs", "isolated")
 
     def __init__(self) -> None:
         self.words: list[str] = []
         self.redirects: list[str] = []
         self.out_redirects: list[str] = []
         self.heredocs: list[str] = []
+        self.isolated = False
 
 
 def _segments(command: str) -> list[_Segment]:
@@ -294,6 +299,8 @@ def _segments(command: str) -> list[_Segment]:
     redirect_stdout = False  # that redirect takes standard output
     in_test = False  # inside [[ ]], where < and > compare
     pending: list[tuple[str, bool, _Segment]] = []  # heredocs waiting for their body
+    depth = 0  # how many `(` or `$(` are open
+    before = ""  # the separator that ended the previous segment
     i, n = 0, len(text)
 
     def end_word() -> None:
@@ -314,13 +321,19 @@ def _segments(command: str) -> list[_Segment]:
             in_test = False
         current.words.append(value)
 
-    def end_segment() -> None:
-        nonlocal current, in_test
+    def end_segment(after: str = "") -> None:
+        """End the current segment at separator `after`."""
+
+        nonlocal current, in_test, before
         end_word()
         if current.words or current.redirects or current.heredocs:
+            current.isolated = (
+                depth > 0 or before in ("|", "||") or after in ("|", "||", "&")
+            )
             segments.append(current)
         current = _Segment()
         in_test = False
+        before = after
 
     while i < n:
         c = text[i]
@@ -339,7 +352,7 @@ def _segments(command: str) -> list[_Segment]:
                 body, i = _heredoc_body(text, i, delimiter, strip_tabs)
                 owner.heredocs.append(body)
             pending = []
-            end_segment()
+            end_segment("\n")
         elif c == "#" and word is None:
             end = text.find("\n", i)
             i = n if end < 0 else end
@@ -404,11 +417,17 @@ def _segments(command: str) -> list[_Segment]:
             i += 1  # `&>file`: the `>` is handled next
             word = ["&"]
         elif c == "$" and text.startswith("(", i + 1):
-            end_segment()
+            end_segment("$(")
+            depth += 1
             i += 2
         elif c in SEPARATORS:
-            end_segment()
-            i += 2 if text.startswith(("&&", "||"), i) else 1
+            separator = text[i : i + 2] if text.startswith(("&&", "||"), i) else c
+            end_segment(separator)
+            if c == "(":
+                depth += 1
+            elif c == ")":
+                depth = max(0, depth - 1)
+            i += len(separator)
         else:
             word = (word or []) + [c]
             i += 1

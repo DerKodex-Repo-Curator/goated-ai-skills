@@ -45,6 +45,9 @@ class Session:
         # Inside the fake home, so instruction-file lookups never leave the
         # temporary folder.
         self.project = root / "home" / "work" / "project"
+        # The hook input's `cwd`: the folder the session works in, which a
+        # test may move below the project.
+        self.cwd = self.project
         self.prompt_id: str | None = None
         self._last_uuid: str | None = None
         self._counter = 0
@@ -385,7 +388,7 @@ class Session:
         payload = {
             "session_id": self.session_id,
             "transcript_path": str(self.hook_transcript),
-            "cwd": str(self.project),
+            "cwd": str(self.cwd),
             "hook_event_name": event,
         }
         if self.prompt_id and "prompt_id" not in fields:
