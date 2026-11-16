@@ -128,6 +128,22 @@ def _adapter_texts() -> dict[str, str]:
         contract.load("commit-message")
         texts["commitContract"] = reason(contract.call("Bash", {"command": f'git commit -m "{"x" * 80}"'}))
 
+        # Holds whose step reviews or describes the change, once the skill is loaded: they ask for a change read.
+        texts["commitRead"] = reason(contract.call("Bash", {"command": 'git commit -m "Add export"'}))
+        described = routed("pull-request-read")
+        described.load("pr-description")
+        texts["pullRequestRead"] = reason(
+            described.call("Bash", {"command": 'gh pr create --title "Add export" --body "Adds it."'})
+        )
+        reviewed = routed("closeout-change-read")
+        reviewed.load("software-design-principles")
+        reviewed.load("code-security-review")
+        reviewed.load("doc-sync")
+        reviewed.call("Write", _write("src/auth.py"))
+        reviewed.run("pytest -q")
+        reviewed.read("/skills/software-design-principles/references/red-flags.md")
+        texts["closeoutChangeRead"] = _stop_reason(reviewed)
+
         headings = routed("spawn-headings")
         headings.brief_with_handoff()
         texts["spawnHeadings"] = reason(headings.call("Agent", {"prompt": "Audit the exporter."}))

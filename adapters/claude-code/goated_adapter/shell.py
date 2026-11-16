@@ -54,6 +54,20 @@ UNKNOWN_TARGET_COMMANDS = frozenset({"patch"})
 DOWNLOADERS = frozenset({"curl", "wget", "invoke-webrequest", "iwr", "invoke-restmethod", "irm"})
 GIT_UNKNOWN_TARGET_SUBCOMMANDS = frozenset({"apply", "am", "clean"})
 GIT_GLOBAL_WITH_VALUE = frozenset({"-c", "-C", "--git-dir", "--work-tree", "--namespace"})
+# Change reads (spec R7): git subcommands that print the changes' content by
+# default, the options that ask for it explicitly, and the options that print
+# names, counts, nothing, or into a file instead (matched as prefixes, so
+# `--stat=80` counts as `--stat`).
+GIT_PATCH_BY_DEFAULT = frozenset({"diff", "show"})
+GIT_PATCH_FLAGS_RE = re.compile(r"-p|-u|-U\d*|--patch(?:-with-(?:stat|raw))?|--unified(?:=\d+)?")
+GIT_NO_PATCH_FLAGS = (
+    "--stat", "--shortstat", "--numstat", "--dirstat", "--compact-summary", "--summary",
+    "--name-only", "--name-status", "--no-patch", "--check", "--raw",
+)
+# Options that print nothing to the agent, even beside a patch option.
+GIT_SILENT_FLAGS_RE = re.compile(r"--quiet|--output(?:=.*)?")
+# `gh pr diff` and `glab mr diff` print a pull or merge request's patch.
+FORGE_DIFFS = {"gh": "pr", "glab": "mr"}
 
 # Wrappers that run the next word as the command, with the options of each
 # that take a value.
@@ -122,12 +136,15 @@ class ShellCommand:
     that records one (not `--dry-run`); `commit_message` is its message when
     that commit carries it inline, else None. `opens_pr` covers
     `gh pr create|new` and `glab mr create|new`. `is_check` says it runs a
-    test, lint, build, or check.
+    test, lint, build, or check. `prints_changes` says it prints changes'
+    content to the agent: a git diff or show, a patch log, or patches on
+    stdout; a listing of names or counts (`--stat`, `--name-only`) does not.
+    Only git is read; another version control system's diff is not seen.
     """
 
     __slots__ = (
         "writes", "write_targets", "unknown_writes", "commit", "commit_message",
-        "opens_pr", "is_check",
+        "opens_pr", "is_check", "prints_changes",
     )
 
     def __init__(self) -> None:
@@ -138,6 +155,7 @@ class ShellCommand:
         self.commit_message: str | None = None
         self.opens_pr = False
         self.is_check = False
+        self.prints_changes = False
 
 
 def analyze(command: str) -> ShellCommand:
@@ -154,6 +172,7 @@ def analyze(command: str) -> ShellCommand:
 def _add_segment(result: ShellCommand, segment: "_Segment") -> None:
     targets = [t for t in segment.redirects if t.lower() not in NULL_TARGETS]
     unknown = False
+    prints = False
     name, original, args = _resolve(segment.words)
     if name in TARGETS_ARE_ARGS:
         targets += _ps_paths(args) if name.count("-") else _positional(args)
@@ -180,11 +199,18 @@ def _add_segment(result: ShellCommand, segment: "_Segment") -> None:
             message = _commit_message(rest, segment.heredocs)
             if message is not None:
                 result.commit_message = message
-    elif name in ("gh", "glab"):
+        if _git_prints_changes(sub, rest):
+            prints = True
+    elif name in FORGE_DIFFS:
         rest = _skip_options(args, {"-R", "--repo"})
-        noun = "pr" if name == "gh" else "mr"
+        noun = FORGE_DIFFS[name]
         if rest[:1] == [noun] and rest[1:2] in (["create"], ["new"]):
             result.opens_pr = True
+        if rest[:2] == [noun, "diff"] and "--name-only" not in rest:
+            prints = True
+    # Output redirected into a file never reached the agent; a stderr redirect leaves it.
+    if prints and not [t for t in segment.out_redirects if t.lower() not in NULL_TARGETS]:
+        result.prints_changes = True
     if _is_check(name, original, args):
         result.is_check = True
     result.write_targets += [t for t in targets if t]
@@ -198,14 +224,16 @@ def _add_segment(result: ShellCommand, segment: "_Segment") -> None:
 
 
 class _Segment:
-    """One simple command: its words, the files it redirects output into, and
-    the bodies of heredocs it opened."""
+    """One simple command: its words, the files it redirects output into
+    (`out_redirects`: those that take its standard output), and the bodies of
+    heredocs it opened."""
 
-    __slots__ = ("words", "redirects", "heredocs")
+    __slots__ = ("words", "redirects", "out_redirects", "heredocs")
 
     def __init__(self) -> None:
         self.words: list[str] = []
         self.redirects: list[str] = []
+        self.out_redirects: list[str] = []
         self.heredocs: list[str] = []
 
 
@@ -215,6 +243,7 @@ def _segments(command: str) -> list[_Segment]:
     current = _Segment()
     word: list[str] | None = None
     redirect_next = False  # the next word is a redirect target
+    redirect_stdout = False  # that redirect takes standard output
     in_test = False  # inside [[ ]], where < and > compare
     pending: list[tuple[str, bool, _Segment]] = []  # heredocs waiting for their body
     i, n = 0, len(text)
@@ -227,6 +256,8 @@ def _segments(command: str) -> list[_Segment]:
         word = None
         if redirect_next:
             current.redirects.append(value)
+            if redirect_stdout:
+                current.out_redirects.append(value)
             redirect_next = False
             return
         if value == "[[":
@@ -302,12 +333,14 @@ def _segments(command: str) -> list[_Segment]:
                 i += 2
         elif c in "<>" and not in_test:
             fd_prefix = word is not None and all(ch.isdigit() or ch in "&*" for ch in word)
+            fd = "".join(word) if fd_prefix and word is not None else ""
             if fd_prefix:
                 word = None
             end_word()
             i = _redirect(text, i, c)
             if c == ">" and not text.startswith("&", i):
                 redirect_next = True
+                redirect_stdout = fd in ("", "1", "&", "*")
             elif text.startswith("&", i):
                 i = _skip_fd(text, i)
             else:
@@ -555,6 +588,24 @@ def _git_writes(sub: str, rest: list[str]) -> tuple[list[str], bool]:
     if sub == "stash":
         return [], bool(rest) and rest[0] in {"pop", "apply"}
     return [], False
+
+
+def _git_prints_changes(sub: str, rest: list[str]) -> bool:
+    """True when `git <sub> <rest>` prints changes' content: a diff or show
+    without a listing-only option, a log, whatchanged, or stash show with a
+    patch option, or format-patch to stdout."""
+
+    if any(GIT_SILENT_FLAGS_RE.fullmatch(a) for a in rest):
+        return False
+    patch = any(GIT_PATCH_FLAGS_RE.fullmatch(a) for a in rest)
+    if sub == "stash":
+        return rest[:1] == ["show"] and patch
+    if sub in GIT_PATCH_BY_DEFAULT:
+        listing = any(a == "-s" or a.startswith(GIT_NO_PATCH_FLAGS) for a in rest)
+        return patch or not listing
+    if sub in ("log", "whatchanged"):
+        return patch
+    return sub == "format-patch" and "--stdout" in rest
 
 
 def _drop_values(args: list[str], takes_value: set[str]) -> list[str]:

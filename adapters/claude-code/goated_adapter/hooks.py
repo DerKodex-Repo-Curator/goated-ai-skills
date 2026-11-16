@@ -151,7 +151,10 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
     hold = gates.check_routing(state, tool_name, tool_input, current, overrides)
     if hold is None:
         hold = actions.check_action(
-            tool_name, tool_input, current, overrides, config.skill_namespaces
+            tool_name, tool_input, current, overrides, config.skill_namespaces,
+            str(payload.get("cwd") or "") or None,
+            # Unreadable subagent transcripts count as no changes, as at closeout.
+            lambda: _spawned_subagents(current, transcript_path)[0],
         )
     warnings = [state_warning, _save(store, session_id, state)]
     return _with_warnings(_deny(hold), warnings)
@@ -181,7 +184,10 @@ def _subagent_pre_tool_use(
         )
     except TranscriptUnreadable as exc:
         raise _FailOpen(f"in a subagent, {exc}") from exc
-    hold = actions.check_action(tool_name, tool_input, turns[-1], {}, config.skill_namespaces)
+    hold = actions.check_action(
+        tool_name, tool_input, turns[-1], {}, config.skill_namespaces,
+        str(payload.get("cwd") or "") or None,
+    )
     return _with_warnings(_deny(hold), [])
 
 

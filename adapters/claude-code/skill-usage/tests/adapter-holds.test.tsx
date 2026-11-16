@@ -56,6 +56,8 @@ test('holds that ask for a read, missing headings or a message fix name no skill
     ['Agent', ADAPTER_TEXTS.spawnRead, 'spawn'],
     ['Agent', ADAPTER_TEXTS.spawnHeadings, 'spawn'],
     ['Bash', ADAPTER_TEXTS.commitContract, 'commit'],
+    ['Bash', ADAPTER_TEXTS.commitRead, 'commit'],
+    ['Bash', ADAPTER_TEXTS.pullRequestRead, 'pull-request'],
   ] as const) {
     expect(preHold(tool, text, 1)).toEqual([{ kind: 'nudge', t: 1, hook: gate, named: [], holdKind: 'strict' }])
     const s = summarize([prompt(), ...preHold(tool, text, 2), turnEnd(3)])
@@ -289,6 +291,14 @@ test('a turn that ends after the agent answered a blocked Stop passed the closeo
   expect(skipped.nudges).toEqual({ closeout: { declined: 1, followed: 1 } })
   // With no reply after the block, the turn did not get past it.
   expect(summarize([prompt(), response(1), ...stopHold(2), results(2), turnEnd(3)]).nudges).toEqual({ closeout: { ignored: 2 } })
+})
+
+test('closeout items that ask for a read of the change offer their skills only as skip lines, and a passed Stop meets them', async () => {
+  // The skills are loaded, so each item asks for a read of the change, which no load answers.
+  const named = ['doc-sync', 'software-design-principles', 'code-security-review']
+  expect(stopHold(1, ADAPTER_TEXTS.closeoutChangeRead)).toEqual([{ kind: 'nudge', t: 1, hook: 'closeout', named, holdKind: 'justified-skip', isStop: true, skipOnly: named }])
+  const passed = summarize([prompt(), response(1), ...stopHold(2, ADAPTER_TEXTS.closeoutChangeRead), results(2), response(3), turnEnd(4)])
+  expect(passed.nudges).toEqual({ closeout: { followed: 3 } })
 })
 
 test('a turn that ends after nine blocked Stops in a row hit the Claude Code limit: what was still asked counts as not followed', async () => {

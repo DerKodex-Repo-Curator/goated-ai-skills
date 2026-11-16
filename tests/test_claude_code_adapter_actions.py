@@ -138,6 +138,7 @@ class CommitHoldTests(AdapterTestCase):
         self.assertIn("commit-message", reason(held))
 
         s.load("commit-message")
+        s.run("git diff")
         self.assertEqual(decision(s.call("Bash", commit("Add CSV export"))), "pass")
 
     def test_an_unchanged_retry_never_passes(self) -> None:
@@ -155,6 +156,7 @@ class CommitHoldTests(AdapterTestCase):
     def test_a_load_in_an_earlier_turn_does_not_satisfy_a_later_commit(self) -> None:
         s = self.routed()
         s.load("commit-message")
+        s.run("git diff")
         self.assertEqual(decision(s.call("Bash", commit("Add CSV export"))), "pass")
 
         s.prompt("Commit the follow-up too.")
@@ -164,6 +166,7 @@ class CommitHoldTests(AdapterTestCase):
     def test_the_hold_does_not_refire_after_compliance(self) -> None:
         s = self.routed()
         s.load("commit-message")
+        s.run("git diff")
 
         self.assertEqual(decision(s.call("Bash", commit("Add CSV export"))), "pass")
         self.assertEqual(decision(s.call("Bash", commit("Add export docs"))), "pass")
@@ -194,6 +197,7 @@ class CommitMessageContentTests(AdapterTestCase):
     def loaded(self) -> Session:
         s = self.routed()
         s.load("commit-message")
+        s.run("git diff")
         return s
 
     def test_a_message_breaking_the_contract_is_held(self) -> None:
@@ -288,6 +292,7 @@ class PullRequestHoldTests(AdapterTestCase):
         self.assertEqual(decision(s.call("Bash", command)), "deny")
 
         s.load("pr-description")
+        s.run("git diff")
         self.assertEqual(decision(s.call("Bash", command)), "pass")
 
     def test_a_pr_tool_is_held_too(self) -> None:
@@ -298,6 +303,7 @@ class PullRequestHoldTests(AdapterTestCase):
             hold_line(s.call(tool, {"title": "x"})), "goated-hold: pull-request | strict"
         )
         s.load("pr-description")
+        s.run("git diff")
         self.assertEqual(decision(s.call(tool, {"title": "x"})), "pass")
 
     def test_other_gh_commands_stay_free(self) -> None:
@@ -463,6 +469,7 @@ class SubagentActionTests(AdapterTestCase):
         a = self.agent
         a.prompt("Implement the export.", hook=False)
         a.load("commit-message")
+        a._tool_result(a._tool_use("Bash", {"command": "git diff --cached"}), "ok")
 
         self.assertEqual(decision(self.sub_call("Bash", commit("Add export"))), "pass")
 
@@ -517,6 +524,7 @@ class CloseoutTests(AdapterTestCase):
         self.assertIn("doc-sync", held["reason"])
 
         s.load("doc-sync")
+        s.run("git diff")
         self.assertEqual(stop(s), {})
 
     def test_check_commands_count_as_proof_and_reads_do_not(self) -> None:
@@ -573,6 +581,7 @@ class CloseoutTests(AdapterTestCase):
         s = self.changed()
         s.run("pytest -q", success=False)
         s.load("doc-sync")
+        s.run("git diff")
 
         held = stop(s)
         self.assertIn("handoff", held["reason"])
@@ -581,6 +590,13 @@ class CloseoutTests(AdapterTestCase):
 
     def test_test_only_changes_do_not_need_doc_sync(self) -> None:
         s = self.changed("tests/test_export.py")
+        s.run("pytest -q")
+
+        self.assertEqual(stop(s), {})
+
+    def test_a_test_change_written_beside_a_doc_does_not_need_doc_sync(self) -> None:
+        s = self.routed()
+        s.run("sed -i 's/1/2/' tests/test_export.py notes.md")
         s.run("pytest -q")
 
         self.assertEqual(stop(s), {})
@@ -609,6 +625,7 @@ class CloseoutTests(AdapterTestCase):
         held = stop(s)
         self.assertIn("red-flags.md", held["reason"])
         s.read(red_flags)
+        s.run("git diff")
         self.assertEqual(stop(s), {})
 
     def test_a_user_typed_skill_skip_stands_its_item_down(self) -> None:
@@ -628,6 +645,303 @@ class CloseoutTests(AdapterTestCase):
 
         s.prompt("Thanks. What does the exporter do?")
         self.assertEqual(stop(s), {})
+
+
+RED_FLAGS = "/opt/goated/skills/software-design-principles/references/red-flags.md"
+DIFF = "git diff"
+
+
+class ChangeReadTests(AdapterTestCase):
+    """Holds whose step reviews or describes the change need a change read (spec R7, AC10)."""
+
+    def designed(self) -> Session:
+        """A turn that applied design, changed code, proved it, and read the red flags after."""
+
+        s = self.routed()
+        s.load("software-design-principles")
+        s.call("Write", write("src/export.py"))
+        s.run("pytest -q")
+        s.say("goated-skip: doc-sync: internal constant with no documented behavior")
+        s.read(RED_FLAGS)
+        return s
+
+    def test_a_red_flags_read_alone_does_not_clear_the_design_item(self) -> None:
+        s = self.designed()
+
+        held = stop(s)
+        self.assertEqual(closeout_line(held), "goated-hold: closeout | justified-skip")
+        self.assertIn("- Design:", held["reason"])
+        s.run(DIFF)
+        self.assertEqual(stop(s), {})
+
+    def test_a_change_read_before_the_red_flags_read_does_not_count(self) -> None:
+        s = self.routed()
+        s.load("software-design-principles")
+        s.call("Write", write("src/export.py"))
+        s.run("pytest -q")
+        s.say("goated-skip: doc-sync: internal constant with no documented behavior")
+        s.run(DIFF)
+        s.read(RED_FLAGS)
+
+        self.assertIn("- Design:", stop(s)["reason"])
+
+    def test_a_change_read_before_the_last_change_does_not_count(self) -> None:
+        s = self.routed()
+        s.say("goated-skip: software-design-principles: one mechanical constant change")
+        s.load("doc-sync")
+        s.call("Write", write("src/export.py"))
+        s.run(DIFF)
+        s.call("Edit", {"file_path": "src/export.py", "old_string": "a", "new_string": "b"})
+        s.run("pytest -q")
+
+        self.assertIn("- Docs:", stop(s)["reason"])
+        s.read("src/export.py")
+        self.assertEqual(stop(s), {})
+
+    def test_listings_do_not_count_and_a_read_of_a_changed_file_does(self) -> None:
+        for tool, command, counts in (
+            ("Bash", "git diff --stat", False),
+            ("Bash", "git diff --name-only HEAD", False),
+            ("Bash", "git diff --name-status", False),
+            ("Bash", "git diff --quiet", False),
+            ("Bash", "git show --stat HEAD", False),
+            ("Bash", "git log --oneline -3", False),
+            ("Bash", "git status", False),
+            ("Bash", "git diff > change.patch", False),
+            ("Read", "src/other.py", False),
+            ("Bash", "git diff", True),
+            ("Bash", "git --no-pager diff --cached -- src/export.py", True),
+            ("Bash", "git diff --stat -p", True),
+            ("Bash", "git show HEAD", True),
+            ("Bash", "git log -p -1", True),
+            ("Bash", "git diff --output=change.patch", False),
+            ("Bash", "git diff --output-indicator-new=+", True),
+            ("Bash", "git log --patch-with-stat -1", True),
+            ("Bash", "git log -U3 -1", True),
+            ("Bash", "git log --unified=5 -1", True),
+            ("Bash", "git whatchanged -p -1", True),
+            ("Bash", "git whatchanged -1", False),
+            ("Bash", "gh pr diff 12", True),
+            ("Bash", "gh pr view 12", False),
+            ("Bash", "glab mr diff", True),
+            ("Bash", "git diff 2>err.txt", True),
+            ("Bash", "git diff 1>out.txt", False),
+            ("PowerShell", "git diff HEAD | Select-Object -First 200", True),
+            ("Read", "src/export.py", True),
+        ):
+            with self.subTest(command=command):
+                s = self.fresh()
+                s.prompt("Bump it.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.say("goated-skip: software-design-principles: one mechanical constant change")
+                s.load("doc-sync")
+                s.call("Write", write("src/export.py"))
+                s.run("pytest -q")
+                if tool == "Read":
+                    s.read(command)
+                else:
+                    s.run(command, tool=tool)
+                self.assertEqual(stop(s) == {}, counts)
+
+    def test_the_docs_item_needs_a_change_read_after_the_load(self) -> None:
+        s = self.routed()
+        s.say("goated-skip: software-design-principles: one mechanical constant change")
+        s.call("Write", write("src/export.py"))
+        s.run("pytest -q")
+        s.run(DIFF)
+        s.load("doc-sync")
+
+        held = stop(s)
+        self.assertIn("- Docs:", held["reason"])
+        self.assertNotIn("`doc-sync`", held["reason"])  # Loaded: offered only as a skip line.
+        s.run(DIFF)
+        self.assertEqual(stop(s), {})
+
+    def sensitive(self) -> Session:
+        s = self.routed()
+        s.load("code-security-review")
+        s.say("goated-skip: software-design-principles: one mechanical constant change")
+        s.say("goated-skip: doc-sync: internal constant with no documented behavior")
+        s.call("Write", write("src/auth.py"))
+        s.run("pytest -q")
+        return s
+
+    def test_a_loaded_security_review_needs_a_change_read(self) -> None:
+        s = self.sensitive()
+
+        held = stop(s)
+        self.assertIn("- Security:", held["reason"])
+        self.assertIn("auth", held["reason"])
+        s.read("src/auth.py")
+        self.assertEqual(stop(s), {})
+
+    def test_a_sensitive_file_that_is_not_code_needs_it_too(self) -> None:
+        s = self.routed()
+        s.load("code-security-review")
+        s.call("Edit", {"file_path": ".env", "old_string": "A=1", "new_string": "A=2"})
+
+        self.assertIn("- Security:", stop(s)["reason"])
+        s.run("git diff .env")
+        self.assertEqual(stop(s), {})
+
+    def test_a_security_skip_needs_no_change_read(self) -> None:
+        s = self.routed()
+        s.say("goated-skip: code-security-review: renames a local variable only")
+        s.say("goated-skip: software-design-principles: one mechanical constant change")
+        s.say("goated-skip: doc-sync: internal constant with no documented behavior")
+        s.call("Write", write("src/auth.py"))
+        s.run("pytest -q")
+
+        self.assertEqual(stop(s), {})
+
+    def test_a_skip_line_clears_a_loaded_items_change_read(self) -> None:
+        s = self.sensitive()
+        final = "goated-skip: code-security-review: reviewed the auth change in full earlier"
+
+        self.assertEqual(stop(s, final), {})
+
+    def test_a_user_typed_skip_clears_the_items(self) -> None:
+        s = self.session
+        s.prompt("Bump the constant, and skip doc-sync.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        s.say("goated-skip: software-design-principles: one mechanical constant change")
+        s.call("Write", write("src/export.py"))
+        s.run("pytest -q")
+
+        self.assertEqual(stop(s), {})
+
+    def test_the_commit_hold_needs_a_change_read_after_the_load(self) -> None:
+        s = self.routed()
+        s.run(DIFF)
+        s.load("commit-message")
+
+        held = s.call("Bash", commit("Add CSV export"))
+        self.assertEqual(hold_line(held), "goated-hold: commit | strict")
+        self.assertNotIn("`", reason(held).split("\n", 1)[1])
+        s.run("git diff --cached --stat")
+        self.assertEqual(decision(s.call("Bash", commit("Add CSV export"))), "deny")
+        s.run("git diff --cached")
+        self.assertEqual(decision(s.call("Bash", commit("Add CSV export"))), "pass")
+
+    def test_a_commit_needs_the_change_read_after_the_last_change(self) -> None:
+        s = self.routed()
+        s.say("goated-skip: software-design-principles: one mechanical constant change")
+        s.load("commit-message")
+        s.run(DIFF)
+        s.call("Write", write("src/export.py"))
+
+        self.assertEqual(decision(s.call("Bash", commit("Add CSV export"))), "deny")
+        s.read("src/export.py")
+        self.assertEqual(decision(s.call("Bash", commit("Add CSV export"))), "pass")
+
+    def test_a_message_less_commit_needs_a_change_read_too(self) -> None:
+        s = self.routed()
+        s.load("commit-message")
+
+        self.assertEqual(decision(s.call("Bash", {"command": "git commit -F msg.txt"})), "deny")
+        s.run("git show")
+        self.assertEqual(decision(s.call("Bash", {"command": "git commit -F msg.txt"})), "pass")
+
+    def test_user_typed_commit_overrides_need_no_change_read(self) -> None:
+        for prompt in ('Commit this with the message "Fix export rounding".',
+                       "Commit it and skip commit-message this time."):
+            with self.subTest(prompt=prompt):
+                s = self.fresh()
+                s.prompt(prompt)
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                self.assertEqual(decision(s.call("Bash", commit("Fix export rounding"))), "pass")
+
+    def test_the_pull_request_hold_needs_a_change_read_after_the_load(self) -> None:
+        s = self.routed()
+        command = {"command": "gh pr create --title 'Add export' --body-file body.md"}
+        s.load("pr-description")
+
+        held = s.call("Bash", command)
+        self.assertEqual(hold_line(held), "goated-hold: pull-request | strict")
+        self.assertNotIn("`", reason(held).split("\n", 1)[1])
+        s.run("git diff main...HEAD --name-only")
+        self.assertEqual(decision(s.call("Bash", command)), "deny")
+        s.run("git diff main...HEAD")
+        self.assertEqual(decision(s.call("Bash", command)), "pass")
+        self.assertEqual(decision(s.call("mcp__github__create_pull_request", {"title": "x"})), "pass")
+
+    def test_the_pull_request_text_says_a_chained_or_parallel_read_does_not_count(self) -> None:
+        s = self.routed()
+        s.load("pr-description")
+
+        text = reason(s.call("Bash", {"command": "gh pr create --title x --body y"}))
+        self.assertIn("chained", text)
+        self.assertIn("parallel", text)
+
+    def test_a_turn_that_changed_nothing_is_told_a_diff_is_the_way(self) -> None:
+        s = self.routed()
+        s.load("commit-message")
+
+        text = reason(s.call("Bash", commit("Add CSV export")))
+        self.assertIn("changed no file", text)
+        self.assertNotIn("Read a file you changed", text)
+
+    def test_mcp_commit_and_pr_tools_pass_when_the_turn_changed_no_project_file(self) -> None:
+        # Outside a git checkout no diff can run and no changed file exists to Read, so a strict hold
+        # with no exit would be a dead end; the change is in the tool's own input.
+        for tool, tool_input, skill in (
+            ("mcp__github__push_files", {"message": "Add export", "files": []}, "commit-message"),
+            ("mcp__github__create_or_update_file", {"message": "Add export", "path": "a.py"},
+             "commit-message"),
+            ("mcp__github__create_pull_request", {"title": "x"}, "pr-description"),
+        ):
+            with self.subTest(tool=tool):
+                s = self.fresh()
+                s.prompt("Push it.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.load(skill)
+                self.assertEqual(decision(s.call(tool, tool_input)), "pass")
+                s.say("goated-skip: software-design-principles: one mechanical constant change")
+                s.call("Write", write("src/export.py"))
+                self.assertEqual(decision(s.call(tool, tool_input)), "deny")
+                s.read("src/export.py")
+                self.assertEqual(decision(s.call(tool, tool_input)), "pass")
+
+    def test_a_read_before_a_later_non_code_change_does_not_clear_a_commit(self) -> None:
+        s = self.routed()
+        s.load("commit-message")
+        s.read("README.md")
+        s.call("Edit", {"file_path": "README.md", "old_string": "a", "new_string": "b"})
+
+        self.assertEqual(decision(s.call("Bash", commit("Update the readme"))), "deny")
+        s.read("README.md")
+        self.assertEqual(decision(s.call("Bash", commit("Update the readme"))), "pass")
+
+    def test_the_security_item_counts_from_the_last_sensitive_change(self) -> None:
+        s = self.routed()
+        s.load("code-security-review")
+        s.call("Edit", {"file_path": ".env", "old_string": "A=1", "new_string": "A=2"})
+        s.read(".env")
+        s.say("goated-skip: software-design-principles: one mechanical constant change")
+        s.call("Write", write("src/util.py"))
+        s.run("pytest -q")
+        s.say("goated-skip: doc-sync: internal constant with no documented behavior")
+
+        self.assertEqual(stop(s), {})
+
+    def test_a_subagents_changes_count_for_the_commit_hold(self) -> None:
+        s = self.routed()
+        s.load("commit-message")
+        s.run(DIFF)
+        s.brief_with_handoff()
+        agent = s.subagent("c1")
+        agent.prompt("Implement it.", hook=False)
+        agent.call("Edit", {"file_path": "src/app.py", "old_string": "a", "new_string": "b"},
+                   agent_id="c1", agent_type="general-purpose")
+        self.assertEqual(decision(s.spawn("c1", BRIEF)), "pass")
+
+        self.assertEqual(decision(s.call("Bash", commit("Add export"))), "deny")
+        s.read("src/app.py")
+        self.assertEqual(decision(s.call("Bash", commit("Add export"))), "pass")
 
 
 class HoldFormatTests(AdapterTestCase):
@@ -669,6 +983,7 @@ class ReviewRegressionTests(AdapterTestCase):
     def loaded(self, prompt: str = "Do the task.") -> Session:
         s = self.routed(prompt=prompt)
         s.load("commit-message")
+        s.run("git diff")
         return s
 
     def held_line(self, tool: str, command: str, setup=None) -> str:
@@ -751,6 +1066,7 @@ class ReviewRegressionTests(AdapterTestCase):
         s.call("Edit", {"file_path": str(s.project / "src" / "app.py"),
                         "old_string": "a", "new_string": "b"})
         s.load("doc-sync")
+        s.run("git diff")
         return s
 
     # Item 5: proof is a check command, not any command naming "test" or "build".
@@ -876,6 +1192,7 @@ class ReviewRegressionTests(AdapterTestCase):
         self.assertIn("doc-sync", held["reason"])
         s.run("pytest -q")
         s.load("doc-sync")
+        s.run("git diff")
         self.assertEqual(stop(s), {})
 
     def test_a_subagent_that_ran_its_own_check_proved_its_change(self) -> None:
@@ -907,6 +1224,7 @@ class ReviewRegressionTests(AdapterTestCase):
         held = s.call(tool, {"message": "Add export", "files": []})
         self.assertEqual(hold_line(held), "goated-hold: commit | strict")
         s.load("commit-message")
+        s.run("git diff")
         self.assertEqual(decision(s.call(tool, {"message": self.LONG, "files": []})), "deny")
         self.assertEqual(decision(s.call(tool, {"message": "Add export", "files": []})), "pass")
 

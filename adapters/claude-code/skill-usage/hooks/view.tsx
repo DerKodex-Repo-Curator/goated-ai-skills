@@ -232,9 +232,13 @@ function feedRow(entry: TimelineEntry): { mark: string; kind: string; runs: Run[
   }
 }
 
-/** What an adapter hold that names no skill asks for instead: a fix to the call it held. */
+/**
+ * What an adapter hold that names no skill asks for instead: a fix to the call it held, or, once the skill loaded, a
+ * read of the change (its diff, or a changed file) before the commit or pull request describes it.
+ */
 const FIX_ASKED: Record<string, string> = {
-  commit: 'asked to fix the commit message',
+  commit: 'asked to read the change or fix the commit message',
+  'pull-request': 'asked to read the change',
   spawn: 'asked for the brief template or its headings',
 }
 
