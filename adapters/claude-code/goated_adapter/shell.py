@@ -130,7 +130,10 @@ class ShellCommand:
 
     `writes` says it writes, copies, moves, or deletes files. `write_targets`
     are the files it names as written (redirect targets, copy destinations,
-    removed or moved files, in-place edits), and `unknown_writes` says some
+    removed or moved files, in-place edits), each joined to any `cd` before
+    it in the command that can be followed (see `_change_directory`).
+    `unplaced_targets` are the relative ones written from a folder the
+    command left unknown, so where they are cannot be said. `unknown_writes` says some
     write's files cannot be read from the command (`git apply`, `patch`, a
     download without an output name). `commit` is True for a `git commit`
     that records one (not `--dry-run`); `commit_message` is its message when
@@ -143,13 +146,14 @@ class ShellCommand:
     """
 
     __slots__ = (
-        "writes", "write_targets", "unknown_writes", "commit", "commit_message",
-        "opens_pr", "is_check", "prints_changes",
+        "writes", "write_targets", "unplaced_targets", "unknown_writes", "commit",
+        "commit_message", "opens_pr", "is_check", "prints_changes",
     )
 
     def __init__(self) -> None:
         self.writes = False
         self.write_targets: list[str] = []
+        self.unplaced_targets: list[str] = []
         self.unknown_writes = False
         self.commit = False
         self.commit_message: str | None = None
@@ -162,19 +166,30 @@ def analyze(command: str) -> ShellCommand:
     """Return what `command` does; never raises on odd input."""
 
     result = ShellCommand()
+    directory: str | None = ""
     for segment in _segments(command):
-        _add_segment(result, segment)
+        directory = _add_segment(result, segment, directory)
+        if segment.after not in AND_THEN and directory != "":
+            directory = None  # What runs next runs even if a `cd` before it failed.
     if DOTNET_WRITE_RE.search(command):
         result.writes = result.unknown_writes = True
     return result
 
 
-def _add_segment(result: ShellCommand, segment: "_Segment") -> None:
+def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | None) -> str | None:
+    """Add one segment's facts to `result`, its write targets taken from
+    `directory` (see `_change_directory`); return the directory later
+    segments run in."""
+
     targets = [t for t in segment.redirects if t.lower() not in NULL_TARGETS]
     unknown = False
     prints = False
     name, original, args = _resolve(segment.words)
-    if name in TARGETS_ARE_ARGS:
+    next_directory = directory
+    if name in CHANGE_DIRECTORY:
+        followed = segment.chained and segment.after in AND_THEN
+        next_directory = _change_directory(name, args, directory) if followed else None
+    elif name in TARGETS_ARE_ARGS:
         targets += _ps_paths(args) if name.count("-") else _positional(args)
     elif name in TARGET_IS_LAST_ARG:
         positional = _ps_paths(args) if name.count("-") else _positional(args)
@@ -213,28 +228,127 @@ def _add_segment(result: ShellCommand, segment: "_Segment") -> None:
         result.prints_changes = True
     if _is_check(name, original, args):
         result.is_check = True
-    result.write_targets += [t for t in targets if t]
+    for target in filter(None, targets):
+        if directory is None and not _is_absolute(target):
+            result.unplaced_targets.append(target)
+        result.write_targets.append(_from_directory(directory, target))
     if targets or unknown:
         result.writes = True
     if unknown:
         result.unknown_writes = True
+    return next_directory
+
+
+# Directory changes ---------------------------------------------------------------
+#
+# A write target is relative to the folder its segment runs in. A `cd` earlier
+# in the same command moves that folder, so `cd /elsewhere && mv a b` writes
+# `/elsewhere/a`. Only a `cd` that is certain to have run, and to name its
+# folder, is followed: one in the command's leading `&&` chain (see
+# `_Segment.chained`), not run in a pipeline or the background, to a plain path.
+# The directory is "" before any `cd`, a path once one is followed, and None,
+# for the rest of the command, once a `cd` cannot be followed or a separator
+# other than `&&` follows a `cd` that was. Relative targets written from an
+# unknown directory are unplaced: the gates count them as inside the project.
+
+# A plain folder change, and its aliases: the only one followed.
+FOLLOWED_CHANGE = frozenset({"cd", "chdir", "set-location", "sl"})
+# Every folder change. The folder stacks are never followed: `pushd -n` does not
+# move, `pushd +1` rotates, and `popd` returns to a folder the command does not name.
+CHANGE_DIRECTORY = FOLLOWED_CHANGE | {"pushd", "popd", "push-location", "pop-location"}
+# Separators after which the next command runs only if this one succeeded ("":
+# the command's end).
+AND_THEN = ("&&", "")
+DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]")
+# Characters a shell expands, so a path holding one names no folder for certain.
+EXPANDED_CHARS = frozenset("$`%*?[{(")
+
+
+def _change_directory(name: str, args: list[str], directory: str | None) -> str | None:
+    """Return the directory after `name args`, a `cd` certain to have run in
+    `directory`, or None when that folder cannot be named."""
+
+    if directory is None or name not in FOLLOWED_CHANGE:
+        return None
+    path = _change_target(name, args)
+    if path is None or not _plain(path):
+        return None
+    if not _is_absolute(path) and not _explicitly_relative(path):
+        return None  # Bash may find a bare name such as `sub` through CDPATH instead.
+    return _from_directory(directory, path)
+
+
+def _change_target(name: str, args: list[str]) -> str | None:
+    """The one folder argument of a `cd` or `Set-Location` that has no other
+    argument or option (bar `--`, or `-Path`/`-LiteralPath` naming the folder),
+    else None. A `-` or `+` argument, such as `cd -` or `cd +1`, is not a folder."""
+
+    rest = args
+    if name in ("cd", "chdir") and args[:1] == ["--"]:
+        rest = args[1:]
+    elif name in ("set-location", "sl") and args:
+        option, colon, value = args[0].partition(":")
+        if option.lower() in ("-path", "-literalpath"):
+            rest = [value] + args[1:] if colon else args[1:]
+    if len(rest) != 1 or rest[0][:1] in ("-", "+", ""):
+        return None
+    return rest[0]
+
+
+def _explicitly_relative(path: str) -> bool:
+    return path in (".", "..") or path.startswith(("./", "../", ".\\", "..\\"))
+
+
+def _plain(path: str) -> bool:
+    """True when `path` names one folder as written: no expansion, and `~`
+    only as the user's home (`~-`, `~+`, and `~user` name others)."""
+
+    if any(ch in EXPANDED_CHARS for ch in path):
+        return False
+    return not path.startswith("~") or path == "~" or path[1] in "/\\"
+
+
+def _from_directory(directory: str | None, path: str) -> str:
+    """`path` as seen from where the command started, when it was written in `directory`."""
+
+    if not directory or _is_absolute(path):
+        return path
+    return directory.rstrip("/\\") + "/" + path
+
+
+def _is_absolute(path: str) -> bool:
+    return path.startswith(("/", "\\", "~")) or bool(DRIVE_RE.match(path))
 
 
 # Tokenizing --------------------------------------------------------------------
 
 
+# Words that open or continue a compound command, which runs its parts only on
+# a condition, and `!`, which inverts a command's status: after `! cd x`, an
+# `&&` runs exactly when the `cd` failed.
+SHELL_KEYWORDS = frozenset(
+    {"if", "then", "else", "elif", "do", "while", "until", "for", "select", "!"}
+)
+
+
 class _Segment:
     """One simple command: its words, the files it redirects output into
-    (`out_redirects`: those that take its standard output), and the bodies of
-    heredocs it opened."""
+    (`out_redirects`: those that take its standard output), the bodies of
+    heredocs it opened, and `after`, the separator that ended it ("" at the
+    command's end). `chained` says it is in the command's leading `&&` chain:
+    every separator before it is `&&`, and no compound command, group, or
+    script block (`if`, a loop, `case`, `( )`, `{ }`, `$( )`) opened before
+    or at it."""
 
-    __slots__ = ("words", "redirects", "out_redirects", "heredocs")
+    __slots__ = ("words", "redirects", "out_redirects", "heredocs", "after", "chained")
 
     def __init__(self) -> None:
         self.words: list[str] = []
         self.redirects: list[str] = []
         self.out_redirects: list[str] = []
         self.heredocs: list[str] = []
+        self.after = ""
+        self.chained = False
 
 
 def _segments(command: str) -> list[_Segment]:
@@ -246,6 +360,7 @@ def _segments(command: str) -> list[_Segment]:
     redirect_stdout = False  # that redirect takes standard output
     in_test = False  # inside [[ ]], where < and > compare
     pending: list[tuple[str, bool, _Segment]] = []  # heredocs waiting for their body
+    chain = True  # every separator so far is `&&`
     i, n = 0, len(text)
 
     def end_word() -> None:
@@ -266,11 +381,19 @@ def _segments(command: str) -> list[_Segment]:
             in_test = False
         current.words.append(value)
 
-    def end_segment() -> None:
-        nonlocal current, in_test
+    def end_segment(after: str = "") -> None:
+        """End the current segment at separator `after`."""
+
+        nonlocal current, in_test, chain
         end_word()
         if current.words or current.redirects or current.heredocs:
+            if current.words[:1] and current.words[0] in SHELL_KEYWORDS:
+                chain = False
+            current.chained = chain
+            current.after = after
             segments.append(current)
+        if after not in AND_THEN:
+            chain = False
         current = _Segment()
         in_test = False
 
@@ -291,7 +414,7 @@ def _segments(command: str) -> list[_Segment]:
                 body, i = _heredoc_body(text, i, delimiter, strip_tabs)
                 owner.heredocs.append(body)
             pending = []
-            end_segment()
+            end_segment("\n")
         elif c == "#" and word is None:
             end = text.find("\n", i)
             i = n if end < 0 else end
@@ -356,11 +479,12 @@ def _segments(command: str) -> list[_Segment]:
             i += 1  # `&>file`: the `>` is handled next
             word = ["&"]
         elif c == "$" and text.startswith("(", i + 1):
-            end_segment()
+            end_segment("$(")
             i += 2
         elif c in SEPARATORS:
-            end_segment()
-            i += 2 if text.startswith(("&&", "||"), i) else 1
+            separator = text[i : i + 2] if text.startswith(("&&", "||"), i) else c
+            end_segment(separator)
+            i += len(separator)
         else:
             word = (word or []) + [c]
             i += 1
@@ -431,7 +555,7 @@ def _resolve(words: list[str]) -> tuple[str, str, list[str]]:
     while i < len(words):
         word = words[i]
         name = _bare(word)
-        if re.match(r"^[A-Za-z_]\w*=", word) or word in ("{", "}", "!"):
+        if re.match(r"^[A-Za-z_]\w*=", word) or word in ("{", "}", "!") or word in SHELL_KEYWORDS:
             i += 1
         elif name in WRAPPERS:
             i += 1

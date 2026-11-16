@@ -94,17 +94,47 @@ of hold:
 | `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` loads in the turn, and an inline message (or the tool's `message`) passes the [content check](#content-checks); then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
 | `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` loads in the turn; then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
 | `spawn` | strict | Starting an agent or session with a brief | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, all in the turn; and the brief passes the [content check](#content-checks) |
-| `design` | justified-skip | A write adding five or more lines to a code file | `software-design-principles` loads in the turn |
-| `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` loads in the turn |
+| `design` | justified-skip | A write adding five or more lines to a code file inside the project folder | `software-design-principles` loads in the turn |
+| `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` loads in the turn |
 | `closeout` | justified-skip | The end of a turn that changed code, or that loaded `code-security-review` and changed a security-sensitive file (a `Stop` hook) | Every item below is met or skipped |
 
 The closeout items, each judged against the turn's last code change. A code
 change is a write tool's file, or a file a shell command writes (its redirect
 target, copy destination, or removed, moved, or edited file), inside the
-project folder; a scratch or temp file elsewhere does not count. A shell write
-whose files the command does not name (`git apply`, `patch`, a download
-without an output name) counts as a change to non-test code. Code a subagent
-changed counts too, at the point the parent spawned it; if the subagent ran a
+project folder; a scratch or temp file elsewhere does not count. The `design`
+and `security` gates use the same rule, so a scratch script outside the
+project is not held.
+
+**A file counts as outside the project only when the adapter is certain.**
+When in doubt, it is inside. The project's folders are `CLAUDE_PROJECT_DIR`
+when Claude Code sets it, the session's working folder (the hook input's
+`cwd`), and the nearest folder at or above either that holds a `.git` entry,
+so a session that changed folder below its checkout still counts the whole
+checkout. A file is outside only when it is under none of them in any way the
+path can be read, with symbolic links and junctions resolved too:
+
+- A relative path is taken from the working folder; a shell write target is
+  taken from a `cd` before it only as [Shell writes](#shell-writes) says, and
+  counts as inside when its folder is unknown.
+- A leading `~` or `~/` is your home folder, read both as your profile folder
+  and as `HOME`. On Windows, 8.3 short names such
+  as `PROGRA~1` are expanded where the folders exist.
+- On Windows, a one-letter top folder naming a drive that exists is Git
+  Bash's name for that drive (`/c/work` is `C:/work`); it may also be a folder
+  on any drive the project's folders use, and each reading is checked. The
+  same applies to a project folder given in Git Bash form. Any other path
+  rooted with no drive, such as `/tmp/x`, counts as inside: Git Bash mounts
+  `/tmp` as your temp folder and `/` as its install folder, and you may add
+  mounts of your own.
+- These count as inside, since the adapter does not read them: a path holding
+  a variable or glob (`$`, `%`, a backtick, `*`, `?`), `~-`, `~+`, or another
+  user's `~name`, device paths (`\\?\`, `//?/`, `\\.\`), network paths
+  (`\\server\share`), a drive-relative path such as `C:x`, and, on Windows, a
+  folder or file name ending in a dot or space.
+
+A shell write whose files the command does not name (`git apply`, `patch`, a
+download without an output name) counts as a change to non-test code. Code a
+subagent changed counts too, at the point the parent spawned it; if the subagent ran a
 check after its own last change, that change is already proved.
 
 | Item | Needed when | Met by | Skip line names |
@@ -199,6 +229,43 @@ ignored, as are comparisons inside `[[ ]]` and arithmetic in `$(( ))`, so
 runs, `git status`, and `git checkout <branch>` stay free. Commit and
 pull-request commands are recognized the same way, per command, so
 `echo gh pr create` opens nothing.
+
+A write target is read from the folder its command runs in, and a `cd` moves
+that folder only when the adapter is certain it ran and where it went.
+**Only a plain `cd` in the command's leading `&&` chain is followed**: the
+first command, or one joined to everything before it by `&&` alone. Plain
+means `cd`, `chdir`, `Set-Location`, or `sl` with exactly one folder argument
+and no option other than `--` (or `-Path`/`-LiteralPath` naming that folder),
+to an absolute path, a drive path, `~` or a path under it, or a path starting
+`./` or `../` from a folder already known. So `cd /elsewhere && mv a.py b.py`
+moves `/elsewhere/a.py`, outside the project, and `cd ./sub && mv a.py b.py`
+moves `sub/a.py`, inside it.
+
+Anything else makes the folder unknown for the rest of the command, and
+nothing later makes it known again. Relative targets written from an unknown
+folder count as inside the project, so `cd sub && mv a.py b.py` still changes
+the project. That is:
+
+- a `cd` to a bare relative name such as `sub`, which bash may find through
+  `CDPATH` instead;
+- a `cd` to a variable, a glob, a command substitution, `-`, `~-`, `~+`, or
+  `+N`, with an option such as `-P`, with more than one argument, and a bare
+  `cd`;
+- any `pushd`, `popd`, `Push-Location`, or `Pop-Location`, since the folder
+  stack can leave the folder unmoved (`pushd -n`) or rotate it (`pushd +1`);
+- a command starting with `!`, since a failed `cd` then lets the `&&` after
+  it run;
+- a `cd` after `;`, a newline, `||`, `|`, or `&`, or that is followed by `|`,
+  `||`, or `&`, since it may have failed, never run, or run apart;
+- a `cd` inside `( )`, `{ }`, `$( )`, `case`, `if`, a loop, or a PowerShell
+  script block;
+- any separator other than `&&` after a followed `cd`, since what runs next
+  runs even if that `cd` failed.
+
+PowerShell 5.1 has no `&&`, and `;` is not a safe chain, so there a
+`Set-Location` before a write leaves the write's relative targets counted as
+inside; in PowerShell 7, `Set-Location <absolute path> && …` is followed. Only
+a `cd` in the same command is followed, not one in an earlier call.
 
 ### Change reads
 
@@ -500,6 +567,20 @@ of the call's prompt, which is normally already there.
   `last_assistant_message`; on a Claude Code version without that field, a
   skip line written only in the final reply may not be seen until the
   transcript catches up.
+- Whether a file is inside the project is read from paths, not from a shell
+  or the disk's full layout, so the adapter counts a file as outside only when
+  it is certain, and every limit here fails toward holding:
+  - Git Bash mounts (`/tmp` is your temp folder, `/` is the Git install
+    folder, and any mount you add) are not read, so on Windows a path rooted
+    with no drive letter, other than Git Bash's `/c/` drive form, counts as
+    inside the project. A Git Bash write to `/tmp/...` is held like a project
+    write.
+  - `CDPATH` is not read, so a `cd` to a bare relative name makes the folder
+    unknown, and the writes after it count as inside.
+  - `~` is read both as your profile folder and as `HOME` when that is set
+    (Git Bash may point it elsewhere); a `~/...` path inside the project under
+    either reading counts as inside. A shell's `HOME` that differs from the
+    one Claude Code passes to hooks is not seen.
 - The design gate judges size by lines added in the tool input, not by what
   the change does, and does not see shell writes. The security gate judges by
   path alone.

@@ -28,6 +28,8 @@ from .transcript import (
 
 STATE_DIR_ENV = "GOATED_ADAPTER_STATE_DIR"
 NAMESPACES_ENV = "GOATED_ADAPTER_SKILL_NAMESPACES"
+# Claude Code sets this to the project's root folder in a hook's environment.
+PROJECT_DIR_ENV = "CLAUDE_PROJECT_DIR"
 STATE_DIR_NAME = "goated-claude-code-adapter"
 AGENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 # A turn key no turn has, so the reader returns every turn back to the start
@@ -52,11 +54,12 @@ class Config:
     `lag_wait_seconds` bounds how long a PreToolUse call waits for the
     transcript to show the call being judged. `skill_namespaces` lists plugin
     namespaces whose `ns:skill` loads count as GOATED skills, for a GOATED
-    distribution installed as a plugin. `from_environment` gives the installed
+    distribution installed as a plugin. `project_dir` is the project's root
+    folder, when Claude Code names one. `from_environment` gives the installed
     defaults; tests pass their own.
     """
 
-    __slots__ = ("state_dir", "home", "lag_wait_seconds", "skill_namespaces")
+    __slots__ = ("state_dir", "home", "lag_wait_seconds", "skill_namespaces", "project_dir")
 
     def __init__(
         self,
@@ -64,11 +67,13 @@ class Config:
         home: Path | None = None,
         lag_wait_seconds: float = 1.5,
         skill_namespaces: tuple[str, ...] = (),
+        project_dir: str | None = None,
     ) -> None:
         self.state_dir = Path(state_dir)
         self.home = Path(home) if home is not None else Path.home()
         self.lag_wait_seconds = lag_wait_seconds
         self.skill_namespaces = tuple(skill_namespaces)
+        self.project_dir = project_dir
 
     @classmethod
     def from_environment(cls) -> "Config":
@@ -77,6 +82,7 @@ class Config:
         return cls(
             state_dir=Path(override) if override else _default_state_root() / STATE_DIR_NAME,
             skill_namespaces=tuple(n.strip() for n in namespaces.split(",") if n.strip()),
+            project_dir=os.environ.get(PROJECT_DIR_ENV) or None,
         )
 
 
@@ -96,6 +102,12 @@ def _default_state_root() -> Path:
         if value:
             return Path(value)
     return Path.home() / "AppData" / "Local" / "Temp"
+
+
+def _project(payload: dict, config: Config) -> actions.Project | None:
+    """The project whose files the action and closeout gates count."""
+
+    return actions.find_project(str(payload.get("cwd") or "") or None, config.project_dir)
 
 
 class _FailOpen(Exception):
@@ -152,7 +164,7 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
     if hold is None:
         hold = actions.check_action(
             tool_name, tool_input, current, overrides, config.skill_namespaces,
-            str(payload.get("cwd") or "") or None,
+            _project(payload, config),
             # Unreadable subagent transcripts count as no changes, as at closeout.
             lambda: _spawned_subagents(current, transcript_path)[0],
         )
@@ -186,7 +198,7 @@ def _subagent_pre_tool_use(
         raise _FailOpen(f"in a subagent, {exc}") from exc
     hold = actions.check_action(
         tool_name, tool_input, turns[-1], {}, config.skill_namespaces,
-        str(payload.get("cwd") or "") or None,
+        _project(payload, config),
     )
     return _with_warnings(_deny(hold), [])
 
@@ -241,7 +253,7 @@ def _stop(payload: dict, config: Config) -> str:
         config.skill_namespaces,
         str(payload.get("last_assistant_message") or ""),
         subagents,
-        str(payload.get("cwd") or "") or None,
+        _project(payload, config),
     )
     warnings = [state_warning, _save(store, session_id, state)]
     if unread:

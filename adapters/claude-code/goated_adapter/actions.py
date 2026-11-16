@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
+from typing import NamedTuple
 import re
 
 from . import contracts, shell
@@ -175,26 +176,28 @@ def is_action_tool(tool_name: str) -> bool:
 
 
 def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
-                 namespaces: tuple[str, ...] = (), cwd: str | None = None,
+                 namespaces: tuple[str, ...] = (), project: Project | None = None,
                  subagents: Callable[[], dict] | None = None) -> Hold | None:
     """Return the action hold for this call, if any; the call's own entry is not yet proof.
 
-    `cwd` is the project folder: only changes to files inside it are the
-    turn's changes a change read must follow. `subagents` returns the turns
+    `project` says which files are the project's (see `find_project`): only files
+    inside it meet the design and security gates, and only changes to them
+    are the turn's changes a change read must follow. `subagents` returns the turns
     of each subagent this turn spawned, as `check_closeout` takes them; it is
     called only when a commit or pull request needs its change read, since
     reading their transcripts takes time.
     """
 
     proof = _Proof(turn, overrides, namespaces)
-    changes = lambda: _Changes(turn, subagents() if subagents else {}, cwd)
+    changes = lambda: _Changes(turn, subagents() if subagents else {}, project)
     if tool_name in COMMAND_TOOLS:
         command = shell.analyze(str(tool_input.get("command") or ""))
         hold = _commit_hold(command.commit_message, proof, changes) if command.commit else None
         if hold is None and command.opens_pr:
             hold = _pr_hold(proof, changes)
         for target in command.write_targets:
-            hold = hold or _security_hold(_norm(target), proof)
+            if _in_project(target, project, target not in command.unplaced_targets):
+                hold = hold or _security_hold(_norm(target), proof)
         return hold
     if PR_TOOL_RE.match(tool_name):
         return _pr_hold(proof, changes, by_tool=True)
@@ -207,6 +210,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         return _spawn_hold(brief, proof) if brief.strip() else None
     if tool_name in FILE_WRITE_TOOLS:
         path = _norm(str(tool_input.get(FILE_WRITE_TOOLS[tool_name]) or ""))
+        if not _in_project(path, project):
+            return None  # A scratch file elsewhere is not the project's design or security.
         return _security_hold(path, proof) or _design_hold(path, tool_input, proof)
     return None
 
@@ -361,7 +366,7 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof) -> Hold | None:
 
 def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = (),
                    final_text: str = "", subagents: dict | None = None,
-                   cwd: str | None = None) -> Hold | None:
+                   project: Project | None = None) -> Hold | None:
     """Return the closeout hold for a turn about to end, if any.
 
     A turn that changed code needs, after its last code change, a check
@@ -378,10 +383,10 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     `subagents` maps the agent id of each subagent this turn spawned to its
     turns. Their code changes count as made at the spawn; a subagent that ran
     a check after its own last change has already proved them. Only files
-    inside `cwd`, the project folder, count; a scratch file elsewhere does not.
+    inside `project` count (see `find_project`); a scratch file elsewhere does not.
     """
 
-    changes = _Changes(turn, subagents or {}, cwd)
+    changes = _Changes(turn, subagents or {}, project)
     proof = _Proof(turn, overrides, namespaces, final_text)
     items = _code_items(changes, proof) if changes.code else []
     sensitive = changes.sensitive
@@ -486,9 +491,9 @@ class _Changes:
     subagent made count as made at its spawn.
     """
 
-    def __init__(self, turn: Turn, subagents: dict, cwd: str | None) -> None:
+    def __init__(self, turn: Turn, subagents: dict, project: Project | None) -> None:
         self.turn = turn
-        changes = list(_changes(turn, subagents, cwd))
+        changes = list(_changes(turn, subagents, project))
         self.code = [c for c in changes if c.code_paths]
         self.sensitive = [
             (c.index, category) for c in changes for path in c.paths
@@ -523,48 +528,199 @@ def _is_code_change(path: str) -> bool:
     return path == UNNAMED_FILES or is_code(path)
 
 
-def _changes(turn: Turn, subagents: dict, cwd: str | None):
+def _changes(turn: Turn, subagents: dict, project: Project | None):
     """Yield a `_Change` for each finished call that changed project files, in order."""
 
     for index, call in enumerate(turn.calls):
         if call.ok and call.agent_id in subagents and call.name in SPAWN_BRIEF_FIELDS:
             calls = [c for sub_turn in subagents[call.agent_id] for c in sub_turn.calls]
-            changed = [_changed_paths(c, cwd) for c in calls]
+            changed = [_changed_paths(c, project) for c in calls]
             if any(changed):
                 code = [i for i, paths in enumerate(changed) if any(map(_is_code_change, paths))]
                 proven = bool(code) and bool(_checks(calls[code[-1] + 1 :]))
                 yield _Change(index, [p for paths in changed for p in paths], proven)
             continue
-        paths = _changed_paths(call, cwd)
+        paths = _changed_paths(call, project)
         if paths:
             yield _Change(index, paths)
 
 
-def _changed_paths(call, cwd: str | None) -> list[str]:
+def _changed_paths(call, project: Project | None) -> list[str]:
     """The project files one finished call changed; only real write targets count."""
 
     if not call.ok:
         return []
     if call.name in FILE_WRITE_TOOLS:
         targets = [str(call.input.get(FILE_WRITE_TOOLS[call.name]) or "")]
-        unnamed = False
+        unnamed, unplaced = False, []
     elif call.name in COMMAND_TOOLS:
         command = shell.analyze(str(call.input.get("command") or ""))
         targets, unnamed = command.write_targets, command.unknown_writes
+        unplaced = command.unplaced_targets
     else:
         return []
-    paths = [_norm(t) for t in targets if t and _in_project(t, cwd)]
+    paths = [_norm(t) for t in targets if t and _in_project(t, project, t not in unplaced)]
     return paths + ([UNNAMED_FILES] if unnamed else [])
 
 
-def _in_project(path: str, cwd: str | None) -> bool:
-    """True for a relative path, or one under `cwd`; decided without touching the disk."""
+class Project(NamedTuple):
+    """Where the project is: `roots`, the folders whose files count as the
+    project's, in comparable form, and `cwd`, the session's folder as the
+    hook input names it, which relative paths start from."""
 
-    if not cwd or not (os.path.isabs(path) or path.startswith(("/", "\\"))):
+    roots: tuple[str, ...]
+    cwd: str
+
+
+def find_project(cwd: str | None, project_dir: str | None = None) -> Project | None:
+    """Return the project for a hook input's `cwd`, or None, when every file
+    counts as inside: `cwd` is missing, or a folder below cannot be read for certain.
+
+    A file is outside only when it is outside every root, so each candidate
+    root is one: `project_dir` (Claude Code's `CLAUDE_PROJECT_DIR`), `cwd`,
+    each in every reading it could have (see `_readings`), and the nearest
+    folder at or above each that holds a `.git` entry. So a session that
+    changed folder below its checkout still has the whole checkout.
+    """
+
+    if not cwd:
+        return None
+    roots: list[str] = []
+    for folder in filter(None, (project_dir, cwd)):
+        readings = _readings(folder, drives=())
+        if readings is None:
+            return None
+        roots += readings
+    roots += [top for top in map(_git_top, roots) if top]
+    return Project(tuple(dict.fromkeys(roots)), cwd)
+
+
+def _git_top(folder: str) -> str | None:
+    while True:
+        if os.path.exists(os.path.join(folder, ".git")):
+            return folder
+        parent = os.path.dirname(folder)
+        if parent == folder:
+            return None
+        folder = parent
+
+
+def _in_project(path: str, project: Project | None, placed: bool = True) -> bool:
+    """True unless `path` is certainly outside the project: when in doubt, inside.
+
+    With no project, every path is inside, and so is a relative path that is
+    not `placed` (a shell wrote it from a folder the command left unknown).
+    A relative path is taken from the session's folder. A path is outside
+    only when none of its readings (see `_readings`) is a root or under one,
+    even with symbolic links and junctions resolved in both; a path with no
+    certain reading is inside. Touches the disk only to expand Windows 8.3
+    short names and, for a path that looks outside, to resolve links.
+    """
+
+    if project is None or not placed:
         return True
-    root = os.path.normcase(os.path.abspath(cwd))
-    full = os.path.normcase(os.path.abspath(path))
-    return full == root or full.startswith(root.rstrip(os.sep) + os.sep)
+    rooted = path.startswith(("/", "\\", "~")) or (os.name == "nt" and DRIVE_RE.match(path))
+    if not rooted:
+        path = project.cwd.rstrip("/\\") + "/" + path
+    drives = {os.path.splitdrive(root)[0] for root in project.roots}
+    readings = _readings(path, drives)
+    if readings is None or _under_any(readings, project.roots):
+        return True
+    # A link may lead into the project from outside it, or out of a root.
+    return _under_any(_resolved(readings), _resolved(project.roots))
+
+
+def _under_any(paths, roots) -> bool:
+    return any(
+        full == root or full.startswith(root.rstrip(os.sep) + os.sep)
+        for full in paths for root in roots
+    )
+
+
+def _resolved(paths) -> list[str]:
+    return [os.path.normcase(os.path.realpath(path)) for path in paths]
+
+
+DRIVE_RE = re.compile(r"^[A-Za-z]:")
+# Git Bash names a Windows drive as a one-letter top folder: `/c/Users` is `C:/Users`.
+GIT_BASH_DRIVE_RE = re.compile(r"^/([A-Za-z])(?=/|$)")
+# Characters a shell or Windows expands, so a path holding one names no file for certain.
+EXPANDED_CHARS = frozenset("$`%*?")
+
+
+def _readings(path: str, drives) -> list[str] | None:
+    """Every file absolute `path` may name, in comparable form, or None when
+    it cannot be read for certain.
+
+    None for a path a shell expands (a variable, a glob), one under `~-`,
+    `~+`, or another user's `~name`, and the Windows forms this does not
+    normalize: device paths (`\\\\?\\`, `//?/`, `\\\\.\\`), network paths, a
+    drive-relative `C:x`, and a name ending in a dot or space. A leading `~`
+    is the user's home, read as both the profile folder and `HOME`.
+
+    On Windows, a path rooted with no drive is None unless its top folder is
+    one letter naming a drive that exists, Git Bash's form for it (`/c/x` is
+    `C:/x`). Git Bash mounts other folders, such as `/tmp` as the temp folder
+    and `/` as its install folder, and a user may add mounts, so no other
+    rooted path is certain. Such a path may also be a folder on any of
+    `drives` or the process's own drive, so those are readings too.
+    """
+
+    if any(ch in EXPANDED_CHARS for ch in path):
+        return None
+    if path.startswith("~"):
+        if path != "~" and path[1] not in "/\\":
+            return None
+        # `HOME`, which Git Bash sets, may differ from the profile folder Python reads.
+        home = os.environ.get("HOME") or ""
+        if home.startswith("~"):
+            return None
+        homes = {os.path.expanduser("~"), home or os.path.expanduser("~")}
+        each = [_readings(home + path[1:], drives) for home in sorted(homes)]
+        return None if None in each else [r for readings in each for r in readings]
+    slashed = path.replace("\\", "/")
+    if slashed.startswith("//"):
+        return None
+    readings = [path]
+    if os.name == "nt":
+        if DRIVE_RE.match(slashed) and slashed[2:3] != "/":
+            return None
+        if any(part.endswith((".", " ")) and part not in (".", "..")
+               for part in slashed.split("/")):
+            return None  # Windows drops a name's trailing dots and spaces, not always alike.
+        if slashed.startswith("/"):
+            git_bash = GIT_BASH_DRIVE_RE.match(slashed)
+            drive = git_bash.group(1).upper() + ":" if git_bash else ""
+            if not drive or not os.path.exists(drive + "/"):
+                return None
+            on_drives = set(drives) | {os.path.splitdrive(os.getcwd())[0]}
+            readings = [d + slashed for d in sorted(on_drives)]
+            readings.append(drive + (slashed[2:] or "/"))
+    return [_comparable(reading) for reading in readings]
+
+
+def _comparable(path: str) -> str:
+    return os.path.normcase(_long_path(os.path.abspath(path)))
+
+
+def _long_path(path: str) -> str:
+    """On Windows, absolute `path` with its 8.3 short names (`PROGRA~1`)
+    expanded, as far as its folders exist; elsewhere, or with no `~`, as is."""
+
+    if os.name != "nt" or "~" not in path:
+        return path
+    import ctypes  # Only Windows short names need it; most hook calls never get here.
+
+    buffer = ctypes.create_unicode_buffer(32768)
+    head, missing = path, []
+    while True:
+        if ctypes.windll.kernel32.GetLongPathNameW(head, buffer, len(buffer)):
+            return os.path.join(buffer.value, *reversed(missing))
+        parent, name = os.path.split(head)
+        if not name or parent == head:
+            return path  # No part of it exists, so nothing can be expanded.
+        missing.append(name)
+        head = parent
 
 
 def _checks(calls) -> list:
