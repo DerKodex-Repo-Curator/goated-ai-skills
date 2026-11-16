@@ -118,7 +118,7 @@ unsafe.
 
 ## Public Boundary
 
-Do not add private personal context, private project names, credentials, client data, handles, sensitive personal domains, or private workflow assumptions to public main. Put private planning in `.local/`, which is ignored.
+Do not add private personal context, private project names, credentials, client data, handles, sensitive personal domains, or private workflow assumptions to public main. Put private planning in `.local/`, which is ignored. The one exception is the maintainer's public GitHub handle, which may appear as author or owner attribution, such as in plugin manifests.
 
 Public docs may mention private forks or private deployments generically, but they must not depend on private content.
 

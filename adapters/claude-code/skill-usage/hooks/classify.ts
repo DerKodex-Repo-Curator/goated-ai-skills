@@ -837,6 +837,43 @@ export function addSession(total: AllTime | null, s: SessionSummary): AllTime {
   return out
 }
 
+/** Adds the totals `from` into a copy of `into`: the same sums `addSession` makes, for many sessions at once. */
+function addTotals(into: AllTime | null, from: AllTime | null): AllTime | null {
+  if (!from) return into
+  if (!into) return copy(from)
+  const out = copy(into)
+  out.sessions += from.sessions
+  addCounts(out.loads, from.loads)
+  addCounts(out.nudges, from.nudges)
+  addFlat(out.router, from.router)
+  addLastUsed(out.lastUsed, from.lastUsed)
+  addRefs((out.refs ??= {}), from.refs)
+  out.refsUnloaded = (out.refsUnloaded ?? 0) + (from.refsUnloaded ?? 0)
+  addMeasures(out, from)
+  return out
+}
+
+/**
+ * The all-time totals of the stored sessions other than `exclude` (the running
+ * one, which the pane adds live), plus `older`, the total of sessions folded
+ * before. Only the newest `cap` others stay stored one by one: the rest are `folded`
+ * into the new `older`, so a session past the cap still counts. The caller
+ * stores `older` and then removes the folded keys.
+ */
+export function allTimeOf(
+  stored: readonly (readonly [key: string, value: { t: number; summary: SessionSummary }])[],
+  older: AllTime | null,
+  cap: number,
+  exclude: string,
+): { total: AllTime | null; older: AllTime | null; folded: string[] } {
+  // The running session is never folded, even an old one resumed: it is stored again at its next turn.
+  const newest = stored.filter(([key]) => key !== exclude).sort(([, a], [, b]) => b.t - a.t)
+  const sum = (list: typeof newest) => list.reduce<AllTime | null>((acc, [, v]) => addSession(acc, closeOpen(v.summary)), null)
+  const past = newest.slice(cap)
+  const nextOlder = addTotals(older, sum(past))
+  return { total: addTotals(nextOlder, sum(newest.slice(0, cap))), older: nextOlder, folded: past.map(([key]) => key) }
+}
+
 /**
  * One session's summary from two stretches of it: what was stored before a
  * resume (`earlier`) and what was observed since. The earlier router status

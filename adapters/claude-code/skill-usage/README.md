@@ -71,7 +71,15 @@ clears it. In particular:
   the holds went, the router rule, and route lines, writing turns, adapter
   holds, overrides, and subagents. Below them is an activity log, newest first, with per-hold
   and per-skill tables.
-- **All time**: the same totals across stored sessions.
+- **All time**: the same totals across every stored session, reread after
+  each turn, so sessions running beside this one count as they go.
+
+In the tables, each hook's bar is split by what became of its holds:
+followed in green, declined with a reason in pale green, not followed in red.
+Its rate is the share **handled**, followed or declined, of the holds that
+settled, so a justified skip never lowers it. Each skill's and reference
+file's bar is its count to scale beside the table's largest; a count has no
+limit, so none is drawn as a ring that fills.
 - **Unused**: your own skills by how often they loaded, and those that never
   have.
 
@@ -139,8 +147,10 @@ a new session to be sure the change applies.
 The mod keeps one summary per session in its own plugin store: counts,
 skill names, hold gates, override phrases, reference file paths within
 skills, and skip reasons. It keeps no prompt or reply text beyond those
-phrases and reasons. It keeps the 300 most recent sessions. Within a session,
-the event list lives in session state and is capped at 5,000 events.
+phrases and reasons. It keeps the 300 most recent sessions one by one and
+folds older ones into a single total under the key `older`, so All time
+still counts them. Within a session, the event list lives in session state
+and is capped at 5,000 events.
 
 Summaries saved by earlier versions of the mod still read: fields added since
 are optional, so an older summary simply has none of them.
@@ -182,6 +192,13 @@ This has not been tested end to end. Keep a backup of both files.
   turn here, and so does a background result, as it does for the adapter.
 - Only the subagent start message of the hand-written hooks
   (`DELEGATED AGENT`) is recognized; the adapter does not send one yet.
+- A hold still waiting when the session ends counts as not followed. That
+  includes a session you resume later: the turn it waited in is over. A mod
+  reloaded mid-turn, such as by a plugin update, starts its events afresh, so
+  a hold waiting at that moment also counts as not followed, even if the agent
+  follows it a moment later.
+- Two sessions folding the same old sessions into the `older` total at the
+  same moment can count them twice. Folding happens only past 300 sessions.
 - The mod judges nothing. Whether a skip reason is specific to the action is
   for you to read in the log.
 

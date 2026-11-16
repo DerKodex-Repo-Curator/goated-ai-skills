@@ -1,5 +1,6 @@
 {
   "name": "goated-skill-usage",
-  "owner": { "name": "GOATED AI Skills" },
+  "description": "The GOATED AI Skills skill-usage mod: a pane showing which skills load, why, and what became of each adapter hold",
+  "owner": { "name": "ZakkFromSource" },
   "plugins": [{ "name": "skill-usage", "source": "./" }]
 }
