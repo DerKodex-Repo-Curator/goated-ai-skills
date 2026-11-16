@@ -59,6 +59,9 @@ repository state on disk, so the gate stays a pure function of the turn.
 - `tickets/archive/033-adapter-real-use-trial.md` (the trial's keep decision)
 - `tickets/046-adapter-pipeline-after-compaction.md`, the last of the trial's
   revise fixes (041–046), which edit the same files
+- `tickets/052-adapter-design-citations-at-closeout.md`, the last of the
+  design reference reads tickets (051–052), which edit the same files
+  (`actions.py` and the hold texts)
 
 ## Scope Exclusions
 

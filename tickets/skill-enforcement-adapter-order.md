@@ -86,6 +86,10 @@ was split on 2026-11-16 so it can run alongside 031: 031 works in
 `adapters/claude-code/goated_adapter/` and 032 in the mod's own folder, so
 their write scopes do not overlap. Ticket 034 needs both.
 
+Tickets 051 and 052 from `tickets/design-reference-reads-order.md` edit the
+same adapter files, so they follow 046 and come before Ticket 035. Ticket 050
+there edits the mod after 047.
+
 ## Ready Frontier
 
 - `tickets/047-adapter-overrides-from-other-agents.md`
