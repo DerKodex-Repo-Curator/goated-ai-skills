@@ -102,3 +102,19 @@ Also:
       five TypeScript warnings main has at `fad2fc8`; 141 mod tests pass;
       322 unit tests OK on the default Python and 3.11, 2 skipped; every
       route meets the 10% reduction target.)
+
+## Closeout
+
+Completed, merged and archived on 2026-11-16.
+
+- Merged as `fb0fb18`. A follow-up, merged as `d82d1ea`, wraps a table
+  heading's note instead of cutting it off, so the All time References
+  heading shows its full read-before-loading count. It added a test, for 142
+  mod tests in all.
+- Every check passed on a scratch merge before each merge: the validator, the
+  unit tests on Python 3.14 and 3.11, the context comparison, and
+  `claude plugin validate .` and `claude plugin test .`.
+- The maintainer checked both tabs live in the pane after `/reload-plugins`:
+  All time draws no badges, its References heading wraps in full, and the
+  Session badges show in their new colours.
+- Nothing the mod counts changed, so the Ticket 033 trial data is unaffected.

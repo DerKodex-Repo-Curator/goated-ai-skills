@@ -39,9 +39,10 @@ Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
 8. `tickets/039-skill-usage-hold-settlement-module.md`
    - Blocked by: `tickets/033-adapter-real-use-trial.md` (its legacy removal)
    - Enables: hold-outcome fixes in one module instead of inside `summarize`.
-9. `tickets/040-skill-usage-all-time-picture-badges.md`
+9. `tickets/archive/040-skill-usage-all-time-picture-badges.md`
+   - Status: Completed, merged and archived on 2026-11-16.
    - Blocked by: none. It changes only what the pane draws, not what the mod
-     counts, so it can land during the 033 trial.
+     counts, so it landed during the 033 trial.
    - Enables: an All time picture without per-case badges, and Session badges
      whose colours each mean one thing.
 
@@ -53,7 +54,6 @@ their write scopes do not overlap. Ticket 034 needs both.
 ## Ready Frontier
 
 - `tickets/033-adapter-real-use-trial.md`
-- `tickets/040-skill-usage-all-time-picture-badges.md`
 
 ## Coverage
 
