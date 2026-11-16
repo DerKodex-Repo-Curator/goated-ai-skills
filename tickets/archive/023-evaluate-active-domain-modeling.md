@@ -9,6 +9,10 @@
 HITL — the maintainer must accept or reject a new public skill after reviewing
 the overlap evidence.
 
+## Work State
+
+Completed with a maintainer **NO-GO** decision and archived on 2026-11-16.
+
 ## What To Build
 
 Evaluate whether GOATED loses settled terminology or consequential domain
@@ -39,18 +43,18 @@ go/revise/no-go recommendation for a separate `domain-modeling` skill.
 
 ## Acceptance Criteria
 
-- [ ] Current ownership is mapped by trigger, read behavior, candidate update,
+- [x] Current ownership is mapped by trigger, read behavior, candidate update,
       write behavior, approval, and output.
-- [ ] Pressure scenarios cover a newly coined term, overloaded language,
+- [x] Pressure scenarios cover a newly coined term, overloaded language,
       code-versus-glossary contradiction, reversible design choice, and
       ADR-worthy decision.
-- [ ] RED evidence distinguishes actual loss or ceremony from hypothetical
+- [x] RED evidence distinguishes actual loss or ceremony from hypothetical
       concern.
-- [ ] Remedies compare refining current skills, adding a reference primitive,
+- [x] Remedies compare refining current skills, adding a reference primitive,
       and adding an independently invokable skill.
-- [ ] The recommendation states invocation value, context cost, overlap risk,
+- [x] The recommendation states invocation value, context cost, overlap risk,
       write boundary, and standalone behavior.
-- [ ] The maintainer records go, revise, or no-go.
+- [x] The maintainer records go, revise, or no-go.
 
 ## Expected Proof
 
@@ -79,3 +83,24 @@ go/revise/no-go recommendation for a separate `domain-modeling` skill.
 - Do not rewrite project `CONTEXT.md` or create ADRs merely to run the
   evaluation.
 - Do not assume `CONTEXT.md` must be glossary-only.
+
+## Acceptance Evidence
+
+- [`docs/domain-modeling-decision-report.md`](../../docs/domain-modeling-decision-report.md)
+  records the ownership matrix, the reusable `shoplite` scenario packet, five
+  live current-stack runs with inspected diffs, the remedy comparison, and the
+  maintainer decision.
+- The disposable fixture copies lived outside the repository and were not
+  committed.
+
+## Decision Result
+
+The maintainer selected **NO-GO** on 2026-11-16. All five pressure scenarios
+(newly coined term, overloaded language, code-versus-glossary contradiction,
+reversible choice, ADR-worthy decision) ended well under the current stack,
+with no lost term or decision and no ceremony. The narrow inline term and ADR
+write already lives in `grill-with-docs` from the lean-skills update, so a
+separate skill would add catalog cost and overlap without an observed gap.
+
+Ticket 024 is not authorized. Reopen active domain modeling only with
+real-use evidence of loss, through a new approved scope.
