@@ -715,6 +715,22 @@ class SharedPolicyNoticeTests(AdapterTestCase):
         self.assertFalse(any("attacker-host" in path for path in opened), opened)
         self.assertFalse(any("elsewhere" in path for path in opened), opened)
 
+    def test_an_import_through_a_link_is_not_opened(self) -> None:
+        from goated_adapter import policy
+
+        project = self.session.project
+        project.mkdir(parents=True)
+        outside = self.root / "elsewhere"
+        outside.mkdir()
+        (outside / "policy.md").write_text(self.POLICY, encoding="utf-8")
+        try:
+            (project / "linked").symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("this platform does not allow creating symlinks here")
+        (project / "CLAUDE.md").write_text("@linked/policy.md\n", encoding="utf-8")
+
+        self.assertFalse(policy.shared_policy_loaded(project, self.root / "home"))
+
     def test_missing_router_skill_is_warned_about_at_session_start(self) -> None:
         (self.router_skill / "SKILL.md").unlink()
 

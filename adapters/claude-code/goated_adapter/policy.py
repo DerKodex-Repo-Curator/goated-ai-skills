@@ -91,10 +91,19 @@ def _allowed_import(target: str, base: Path, roots) -> Path | None:
     for root in roots:
         root_abs = os.path.normcase(os.path.abspath(root))
         try:
-            if os.path.commonpath([absolute, root_abs]) == root_abs:
-                return Path(absolute)
+            if os.path.commonpath([absolute, root_abs]) != root_abs:
+                continue
         except ValueError:  # different drives
             continue
+        # A link below the root could point anywhere, a network share included;
+        # `lstat` checks each step without following it.
+        relative_parts = Path(absolute).relative_to(Path(root_abs)).parts
+        step = Path(root_abs)
+        for part in relative_parts:
+            step = step / part
+            if step.is_symlink():
+                return None
+        return Path(absolute)
     return None
 
 
