@@ -25,7 +25,7 @@ decision in the spec.
 ## Recommended First Reads
 
 - The spec's Acceptance Criteria, Rollout, and Risks sections.
-- The adapter and mod install docs from Tickets 030–032.
+- The adapter and mod install docs from Tickets 030–032 and 034.
 
 ## Acceptance Criteria
 
@@ -42,7 +42,7 @@ decision in the spec.
 ## Blocked By
 
 - `tickets/archive/028-discoverable-skill-descriptions.md`
-- `tickets/032-skill-usage-mod-in-repo.md`
+- `tickets/034-skill-usage-mod-action-holds.md`
 
 ## Scope Exclusions
 

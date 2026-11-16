@@ -87,7 +87,7 @@ instead of copying them.
 
 ## Blocked By
 
-- `tickets/030-claude-code-adapter-routing-gates.md`
+- `tickets/archive/030-claude-code-adapter-routing-gates.md`
 
 ## Scope Exclusions
 
