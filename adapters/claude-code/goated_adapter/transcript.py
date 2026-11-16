@@ -112,7 +112,9 @@ class Turn:
     carry overrides; `prompt_id` is that prompt's id. `loads` lists raw names
     of skills loaded successfully, in order. `task_loads` lists the loads that
     count for a task the turn starts: skills the prompt itself invoked as
-    `/<skill>`, plus loads after the winning route line. `route` is the
+    `/<skill>`, plus loads made after the last earlier route line in the turn
+    that started a task (not `continue`), or since the turn began when there is
+    none. `route` is the
     winning route line and `malformed` the route-like lines that failed the
     grammar. `skips` are the valid `goated-skip` lines, and `calls` the tool
     calls that finished in this turn, oldest first.
@@ -331,6 +333,9 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
 
     skill_calls: dict[str, str] = {}
     pending: dict[str, tuple[str, dict]] = {}
+    # Loads since the last route line in this turn that started a task: a task
+    # a later route line starts may use them, the earlier task's loads not.
+    since_task_start: list[str] = []
     for entry in entries[1:] if opener is not None else entries:
         content = (entry.get("message") or {}).get("content")
         if not isinstance(content, list) or bool(entry.get("isSidechain")) != sidechain:
@@ -343,7 +348,12 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                     markers = parse_reply(str(block.get("text", "")))
                     if markers.route is not None:
                         turn.route = markers.route
-                        turn.task_loads = [s for s in turn.loads if s == invoked][:1]
+                        turn.task_loads = [
+                            *[s for s in turn.loads if s == invoked][:1],
+                            *since_task_start,
+                        ]
+                        if markers.route["form"] != "continue":
+                            since_task_start = []
                     turn.malformed.extend(markers.malformed)
                     turn.skips.extend(markers.skips)
                 elif block.get("type") == "tool_use":
@@ -363,6 +373,7 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                 # its body as a meta entry, which proves the load.
                 turn.loads.append(invoked)
                 turn.task_loads.append(invoked)
+                since_task_start.append(invoked)
                 continue
             for block in content:
                 if not isinstance(block, dict) or block.get("type") != "tool_result":
@@ -383,6 +394,7 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                     skill = skill_calls.pop(block["tool_use_id"])
                     turn.loads.append(skill)
                     turn.task_loads.append(skill)
+                    since_task_start.append(skill)
     return turn
 
 

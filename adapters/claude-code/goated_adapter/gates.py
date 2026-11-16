@@ -77,11 +77,17 @@ def fold_turns(
         if ROUTER_SKILL in loads:
             state.router_loaded = True
         route = turn.route
-        if route is not None and route["form"] != "continue":
-            # A new route starts a new task. Only loads after its route line
-            # (or a skill the prompt invoked) count; earlier proof is dropped.
+        starts_task = route is not None and (
+            route["form"] != "continue" or (state.task is None and not state.task_unknown)
+        )
+        if starts_task:
+            # A new route starts a new task, and so does `continue` in a session
+            # with no task, such as one started from another session; that task
+            # requires no skills. Only this turn's loads since the last earlier
+            # task's route line (or a skill the prompt invoked) count.
             task_loads = [goated_skill_name(raw, namespaces) for raw in turn.task_loads]
             state.task = Task(route=route, started_turn=turn.key, loads=_unique(task_loads))
+            state.task_unknown = False
         elif state.task is not None:
             state.task.loads = _unique([*state.task.loads, *loads])
         state.last_turn = turn.key
@@ -124,11 +130,13 @@ def check_routing(
     if turn.route is None:
         return Hold("route-line", STRICT, _route_line_instruction(turn))
     if turn.route["form"] == "continue" and state.task is None:
+        # Only after a reset: otherwise folding the turn started a task.
         return Hold(
             "route-line",
             STRICT,
-            "`goated-route: continue` was written, but this session has no current "
-            "task to continue. Write the route line the router selects for this task.",
+            "`goated-route: continue` was written, but the adapter's saved state was "
+            "reset, so it cannot tell which task continues. Write the route line the "
+            "router selects for this task.",
         )
     task = state.task
     if task is None or task.route["form"] != "route":
@@ -145,10 +153,10 @@ def check_routing(
         "pipeline",
         STRICT,
         f"The current route requires {names} before the first write or spawn. "
-        "Load each with the Skill tool and follow it; only loads after the route "
-        "line that started this task count, so load again if you loaded it "
-        "earlier. If one does not apply, write a corrected route line without "
-        "it; the last route line wins.",
+        "Load each with the Skill tool and follow it. A load earlier in this turn "
+        "counts unless another task's route line came after it; a load in an "
+        "earlier turn does not, so load it again. If one does not apply, write a "
+        "corrected route line without it; the last route line wins.",
     )
 
 
@@ -157,7 +165,8 @@ def _route_line_instruction(turn: Turn) -> str:
         "Before the first write or spawn after a user prompt, end routing with a "
         "route line on its own line, as the router's output contract defines: "
         "`goated-route: direct`, `goated-route: <intensity> | requires: <skills>`, "
-        "or `goated-route: continue` when this prompt continues the current task. "
+        "or `goated-route: continue` when this prompt continues the current task "
+        "or, in a session with no task yet, work begun elsewhere. "
         "Claude Code records a message only after this check, so a route line in "
         "the same message as this call is not visible yet: if you wrote one there, "
         "make the call again."

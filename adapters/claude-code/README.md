@@ -89,7 +89,7 @@ of hold:
 | Gate | Kind | Holds | Clears when |
 | --- | --- | --- | --- |
 | `router-first` | strict | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction | `using-goated-ai-skills` loads |
-| `route-line` | strict | The first write or spawn after each user prompt until the current turn has a valid `goated-route:` line; also `goated-route: continue` when the session has no task to continue | A valid route line appears in the turn |
+| `route-line` | strict | The first write or spawn after each user prompt until the current turn has a valid `goated-route:` line; also `goated-route: continue` after a [state reset](#failing-open) lost the task | A valid route line appears in the turn |
 | `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded | Each listed skill loads, or a corrected route line drops it |
 | `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` loads in the turn, and an inline message (or the tool's `message`) passes the [content check](#content-checks); then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
 | `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` loads in the turn; then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
@@ -129,10 +129,12 @@ check after its own last change, that change is already proved.
   `tests/`, `test/`, `spec/`, or `__tests__/`, or named `test_*`, `*_test.*`,
   `*.test.*`, or `*.spec.*`.
 - **A task** starts at the turn whose route line is not `continue` and runs
-  through later `goated-route: continue` turns. Only loads after the route line
-  that starts a task count for it, so a load from an earlier task never
-  satisfies a new one, even within one turn. `goated-route: direct` exempts the
-  task from the pipeline gate.
+  through later `goated-route: continue` turns. In a session with no task yet,
+  such as one started from another session to continue work begun there,
+  `goated-route: continue` starts a task that requires no skills. Loads made
+  earlier in the turn that starts a task count for it, unless another task's
+  route line came between the load and its own; a load in an earlier turn
+  never counts. `goated-route: direct` exempts the task from the pipeline gate.
 - **Action and closeout proof is per turn.** A skill loaded in an earlier
   turn does not cover a commit, spawn, or edit in a later one, even within the
   same task. Within a turn, a hold stops firing as soon as the turn shows
@@ -400,7 +402,9 @@ and shows a warning that starts `GOATED Claude Code adapter:` when:
   is writable by others, because planted state there could make holds pass.
 
 Saved state that cannot be read, or has an unexpected shape, is reset with a
-warning; a reset can only re-hold, never pass. If saving state fails, for
+warning; a reset can only re-hold, never pass. Because the reset state cannot
+tell whether the session had a task, `goated-route: continue` stays held until
+a full route line starts one. If saving state fails, for
 example while a parallel hook has the file open on Windows, the hold decision
 still stands and a warning says the state was not saved.
 
@@ -414,8 +418,8 @@ One small JSON file per session in a `goated-claude-code-adapter/` folder:
 - on Windows, under the per-user temporary folder (`%TEMP%`);
 - anywhere you choose with `GOATED_ADAPTER_STATE_DIR`.
 
-It holds the current task's route and loads, whether the router loaded, the
-last turn seen, and the latest typed overrides. It holds no prompt or reply
+It holds the current task's route and loads, whether a reset lost the task,
+whether the router loaded, the last turn seen, and the latest typed overrides. It holds no prompt or reply
 text beyond the short override phrases and a commit message the user typed.
 The action and closeout gates keep no state: they read the current turn. Files are not pruned automatically;
 deleting the folder between sessions is safe.

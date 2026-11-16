@@ -1,8 +1,9 @@
 """Per-session adapter state, one small JSON file per Claude Code session.
 
 State holds only what the transcript's current turn cannot answer on its own:
-the current task and its proof, whether the router loaded since the last
-compaction, the last turn seen, and the latest user overrides. Apart from the
+the current task and its proof, whether a reset lost the task, whether the
+router loaded since the last compaction, the last turn seen, and the latest
+user overrides. Apart from the
 short override phrases a user typed, it holds no prompt or reply text.
 """
 
@@ -36,12 +37,17 @@ class Task:
 class SessionState:
     """Everything the adapter remembers about one session between hook calls."""
 
-    __slots__ = ("router_loaded", "last_turn", "task", "overrides", "policy_notice_shown")
+    __slots__ = (
+        "router_loaded", "last_turn", "task", "task_unknown", "overrides", "policy_notice_shown",
+    )
 
     def __init__(self) -> None:
         self.router_loaded = False
         self.last_turn: str | None = None
         self.task: Task | None = None
+        # True after unreadable state was reset: the session may have had a
+        # task, so `continue` cannot start one until a full route line does.
+        self.task_unknown = False
         self.overrides: dict = {}
         self.policy_notice_shown = False
 
@@ -50,6 +56,7 @@ class SessionState:
             "router_loaded": self.router_loaded,
             "last_turn": self.last_turn,
             "task": self.task.to_json() if self.task else None,
+            "task_unknown": self.task_unknown,
             "overrides": self.overrides,
             "policy_notice_shown": self.policy_notice_shown,
         }
@@ -64,6 +71,7 @@ class SessionState:
         state.router_loaded = _expect(data.get("router_loaded", False), bool)
         state.policy_notice_shown = _expect(data.get("policy_notice_shown", False), bool)
         state.last_turn = _expect(data.get("last_turn"), (str, type(None)))
+        state.task_unknown = _expect(data.get("task_unknown", False), bool)
         task = _expect(data.get("task"), (dict, type(None)))
         if task is not None:
             state.task = Task(
@@ -96,11 +104,12 @@ def _string_list(value) -> list:
 
 
 def _valid_route(route) -> dict:
-    """A task's route is `direct` or a `requires:` route; `continue` never starts one."""
+    """A task's route is `direct`, a `requires:` route, or `continue` when that
+    started the session's first task, with no required skills."""
 
     route = _expect(route, dict)
-    if route.get("form") == "direct":
-        return {"form": "direct"}
+    if route.get("form") in ("direct", "continue"):
+        return {"form": route["form"]}
     if route.get("form") == "route":
         requires = _string_list(route.get("requires"))
         if requires:
@@ -131,7 +140,8 @@ class StateStore:
         """Return the session's state and a warning when stored state was unusable.
 
         A missing file is a new session. An unreadable or corrupt file starts
-        fresh, which can only re-hold, never pass, and says so.
+        fresh, which can only re-hold, never pass, and says so: the fresh state
+        marks the task unknown, so `continue` cannot start one.
         """
 
         self._ensure_private_directory()
@@ -141,7 +151,9 @@ class StateStore:
         try:
             return SessionState.from_json(json.loads(path.read_text(encoding="utf-8"))), None
         except (OSError, ValueError):
-            return SessionState(), "its saved session state was unreadable and was reset"
+            state = SessionState()
+            state.task_unknown = True
+            return state, "its saved session state was unreadable and was reset"
 
     def save(self, session_id: str, state: SessionState) -> None:
         """Write state atomically so a concurrent hook never reads half a file."""
