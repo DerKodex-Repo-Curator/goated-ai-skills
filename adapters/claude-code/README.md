@@ -249,6 +249,14 @@ budget leaves headroom before the hook fails open.
   re-derives its turn from the transcript, so a lost update can cause a repeat
   hold, never a pass.
 
+## Measuring It
+
+The optional [skill-usage mod](skill-usage/README.md) in `skill-usage/` shows
+the adapter's holds and their outcomes, your overrides, route and skip lines,
+reference reads, and subagent activity in a pane beside the chat. It installs
+and uninstalls on its own, displays only, and the adapter works the same
+without it.
+
 ## Tests
 
 `tests/test_claude_code_adapter.py` in the GOATED source repo drives the
