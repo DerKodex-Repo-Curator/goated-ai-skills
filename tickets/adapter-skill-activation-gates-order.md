@@ -24,7 +24,9 @@ skill-enforcement order, edit the same files and run before 035. Ticket
 
 ## Ready Frontier
 
-- None until `tickets/046-adapter-pipeline-after-compaction.md` lands. Ticket
+- None until `tickets/052-adapter-design-citations-at-closeout.md` lands
+  (after `tickets/046-adapter-pipeline-after-compaction.md`; see
+  `tickets/design-reference-reads-order.md`). Ticket
   033 recorded a revise decision on 2026-11-16, which keeps the adapter
   installed and counts as the keep decision these tickets wait for.
 
