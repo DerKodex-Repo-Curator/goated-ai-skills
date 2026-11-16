@@ -158,7 +158,7 @@ condition first arises while writing:
     something the signature does not. Inside functions, comment only intent
     and surprises. Never restate the code. `readability.md#comments`
     When a user or project asks for denser comments, or the readers are
-    beginner-to-intermediate programmers, follow
+    programmers at a beginner or intermediate level, follow
     `readability.md#reader-first-comments` instead.
 13. Open and close each resource in the same place. `errors.md#resources`
 14. Avoid shared changeable state. If it must exist, give it one owner.

@@ -96,13 +96,13 @@ Obscurity is one of the two causes of complexity (`#complexity-symptoms`). This 
 
 > **Where the books agree and differ.** Both say comments should explain *why*, and both say a comment that restates the code is a DRY violation. They differ on quantity. Ousterhout wants a comment on every class, function and field. Thomas and Hunt warn against commenting everything mechanically. See Where the books differ (`#differences`).
 
-> **Writing for newer programmers?** When a user or project asks for denser comments, or the code's readers are beginner-to-intermediate programmers, use Reader-first comments (`#reader-first-comments`) in place of the amount set here.
+> **Writing for beginner or intermediate programmers?** When a user or project asks for denser comments, or the code's readers are programmers at a beginner or intermediate level, use Reader-first comments (`#reader-first-comments`) in place of the amount set here.
 
 <!-- id: #reader-first-comments -->
 
 ### Reader-first comments (opt-in)
 
-**Rule:** When a user or project asks for it, or when the code's readers are beginner-to-intermediate programmers, comment more densely so a newer programmer can follow the code without outside help. Otherwise the default in `#comments` stands.
+**Rule:** When a user or project asks for it, or when the code's readers are programmers at a beginner or intermediate level, comment more densely so they can follow the code without outside help. Otherwise the default in `#comments` stands.
 
 Everything in `#comments` still holds: a comment must say something the code beside it does not. This profile only raises how many places get a comment.
 
@@ -119,13 +119,17 @@ Everything in `#comments` still holds: a comment must say something the code bes
 **Example**
 
 ```python
-MAX_BLANK_RUN = 1  # Most blank lines allowed in a row. Why the limit is one is not recorded.
+# Most blank lines allowed in a row. One blank line is all it takes to
+# separate two paragraphs, so any blank line after the first is extra.
+MAX_BLANK_RUN = 1
 
 
 def find_extra_blank_lines(path: str) -> list[int]:
     """List the line numbers of blank lines that go over MAX_BLANK_RUN.
 
-    Line numbers start at 1, as in a text editor. A line holding only spaces counts as blank.
+    A style check uses this to point at gaps that are wider than needed.
+    Line numbers start at 1, as in a text editor. A line holding only spaces
+    counts as blank.
     """
     # Line numbers to report, in the order they appear in the file.
     extra_lines = []
