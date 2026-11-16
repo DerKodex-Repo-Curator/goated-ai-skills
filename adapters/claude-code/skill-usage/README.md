@@ -20,13 +20,35 @@ without it.
 | Justified skips, with their reasons; a skip declines a justified-skip hold naming that skill in the same turn | `goated-skip:` lines in replies |
 | The adapter's holds by gate and kind, and each held skill's outcome: loaded, files read, declined, not loaded, or waiting | Denied calls whose reason starts `goated-hold: <gate> \| <kind>`, and the blocked `Stop` that carries the closeout hold |
 | Your overrides, by phrase | The adapter's sentence `recorded your override for this prompt` in its hook context |
-| Reads of skills' reference and other supporting files, and whether the skill had loaded first | `Read` paths and shell commands |
+| Reads of skills' reference and other supporting files, whether the skill had loaded first, and when in the turn: before its first code change, between two, after the last, or in a turn with no code change | `Read` paths and shell commands; code changes are edit tool calls on a code file, by the main agent or a subagent, that ran |
+| Design-reads lines: in how many replies each reference file was declared (a reply's lines add up to one set of files, each counted once), and how many lines declared `none` | `goated-design-reads:` lines in replies |
 | Subagent spawns, with type and task, including ones that load no skill | Agent tool calls that ran; a held or failed attempt shows in the log as held but is not counted |
 | A subagent's reads of a skill's `SKILL.md` | A subagent's `Read` calls |
 
-Both route and skip lines are read with the marker grammar in
+Route, skip and design-reads lines are read with the marker grammar in
 `stack/fixtures/markers/README.md`, and the mod's tests check that reading
-against `lines.yaml` there.
+against `lines.yaml` and `design-reads.yaml` there.
+
+A code change is what the adapter counts as one where the mod can see it: an
+`Edit`, `Write`, `MultiEdit` or `NotebookEdit` call on a file whose extension
+the adapter lists as code. A turn runs from one typed prompt to the next, so a
+read's moment settles when the next prompt arrives; until then a read after
+the latest change counts as after the last. The mod counts a little
+differently from the adapter in these cases:
+
+- It does not see files a shell command writes, nor which files lie outside
+  the project.
+- It counts a subagent's code change when the subagent makes it, where the
+  adapter counts it at the spawn. A background subagent's change that arrives
+  after your next prompt counts in that later turn.
+- A mod that joins a session late rebuilds the main conversation from its
+  history, but not the subagents' calls, so their earlier code changes are
+  missed.
+
+Versions of the mod before moments were recorded stored no code changes, so a
+session's turns recorded before an upgrade or reload have no moment: their
+reads, like reads in summaries stored by those versions, show as not timed.
+Only turns whose prompt this version recorded are timed.
 
 Summaries stored by earlier versions of the mod may still show a GOATED
 router rule line, start messages, or already loaded counts in All time.
@@ -119,7 +141,8 @@ this session:
 - Subagents, blue: subagents started.
 
 All time draws no badges; its lines and tables carry those totals, and the
-References table's heading counts reads made before their skill loaded.
+References table's heading counts reads made before their skill loaded. Under
+each file, the References table counts its reads by moment in their turn.
 
 In the tables, each hook's bar is split by what became of its holds:
 followed in green, declined with a reason in pale green, not followed in red.
@@ -273,11 +296,13 @@ claude plugin test .
 claude plugin validate .
 ```
 
-The tests in `tests/goated-adapter.test.tsx` read two generated modules:
-`tests/marker-fixtures.ts`, from `stack/fixtures/markers/lines.yaml`, and
-`tests/adapter-texts.ts`, the hold reasons and override context the adapter
-produces when the generator drives it. In the GOATED source repo,
-`tests/test_skill_usage_mod.py` fails when either copy drifts. Regenerate it with
+The tests read three generated modules: `tests/marker-fixtures.ts`, from
+`stack/fixtures/markers/lines.yaml`; `tests/design-reads-fixtures.ts`, from
+`stack/fixtures/markers/design-reads.yaml`; and `tests/adapter-texts.ts`, the
+hold reasons and override context the adapter produces when the generator
+drives it. In the GOATED source repo, `tests/test_skill_usage_mod.py` fails
+when any copy drifts, or when the mod's list of code file extensions differs
+from the adapter's. Regenerate the modules with
 `uv run python tests/test_skill_usage_mod.py --write` from the repo root.
 
 CI runs that drift check on every change. The `Skill-usage mod` workflow

@@ -29,7 +29,9 @@ const MAX_SESSIONS = 300
 const OWN_SOURCES = new Set(['userSettings', 'projectSettings'])
 
 // Bump the shape tag whenever what a stored event means changes: a reload then drops the session's events instead of
-// misreading them. `events-2`: Ticket 033 stopped reading the retired hand-written hooks.
+// misreading them. `events-2`: Ticket 033 stopped reading the retired hand-written hooks. Ticket 050 added code
+// changes without a bump: events stored before it hold none, so their prompts lack `isTimed` and their turns' reads
+// count with no moment, while a bump would drop the session's events with no history read to rebuild them.
 const events = atom({ plugin: 'skill-usage', key: 'events' } as const, [], { shape: 'events-2' })
 const owner = atom({ plugin: 'skill-usage', key: 'owner' } as const, null)
 const backfilled = atom({ plugin: 'skill-usage', key: 'backfilled' } as const, null)

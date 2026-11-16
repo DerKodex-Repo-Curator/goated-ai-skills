@@ -10,10 +10,14 @@
 import type {
   AllTime,
   Counts,
+  DesignReadCounts,
+  DesignReads,
   HoldKind,
   Measures,
   Origin,
   Outcome,
+  RefMoment,
+  RefMoments,
   Refs,
   Route,
   SessionSummary,
@@ -30,6 +34,8 @@ export { ROUTE_LINE }
 export const NO_SUBAGENTS: Readonly<SubagentCounts> = { spawns: 0, starts: 0, bodyReads: 0 }
 /** Writing-turn counts before any turn wrote. */
 export const NO_WRITING_TURNS: Readonly<WritingTurns> = { routed: 0, late: 0, none: 0 }
+/** Design-reads counts before any line was written, each a fresh object to add into. */
+const noDesignReads = (): DesignReadCounts => ({ files: {}, none: 0 })
 
 export const ORIGINS: readonly Origin[] = ['user-slash', 'user-named', 'hook-nudged', 'router-routed', 'self-initiated', 'subagent']
 export const OUTCOMES: readonly Outcome[] = ['followed', 'read files', 'already loaded', 'declined', 'ignored', 'pending']
@@ -186,10 +192,10 @@ export const short = (skill: string) => skill.split(':').pop() ?? skill
 export function promptEvents(text: string, skills: readonly string[], t: number): UsageEvent[] {
   if (text.trimStart().startsWith('<local-command-')) return []
   const command = /<command-name>\/?([\w:.-]+)<\/command-name>/.exec(text)?.[1]
-  if (!command) return [{ kind: 'prompt', t, named: skillsNamed(text, skills) }]
+  if (!command) return [{ kind: 'prompt', t, named: skillsNamed(text, skills), isTimed: true }]
   if (!skills.includes(short(command))) return []
   return [
-    { kind: 'prompt', t, named: [] },
+    { kind: 'prompt', t, named: [], isTimed: true },
     { kind: 'load', t, skill: short(command), via: 'slash', isSubagent: false },
   ]
 }
@@ -202,12 +208,27 @@ const SPAWN_TOOLS = new Set(['Agent', 'Task'])
 // What the adapter holds like a write (adapters/claude-code/README.md): edits, and spawns, which hand work on.
 const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', ...SPAWN_TOOLS, 'mcp__ccd_session__start_session', 'mcp__ccd_session__hand_off_to_session'])
 
+// What the adapter counts as a code file, by extension: its `CODE_EXTENSIONS` (goated_adapter/actions.py), copied
+// here because the mod cannot import it. tests/test_skill_usage_mod.py fails when the two lists differ.
+const CODE_EXTENSIONS = new Set(
+  '.py .js .jsx .ts .tsx .mjs .cjs .go .rs .java .kt .kts .swift .c .h .cpp .hpp .cc .cs .rb .php .scala .ps1 .psm1 .sh .bash .lua .dart .vue .svelte .sql .ex .exs .clj .fs .zig .r .jl .ipynb'.split(' '),
+)
+// The edit tools and the input naming the file each changes: the adapter's `FILE_WRITE_TOOLS`.
+const FILE_EDIT_TOOLS: Record<string, string> = { Edit: 'file_path', Write: 'file_path', MultiEdit: 'file_path', NotebookEdit: 'notebook_path' }
+
+/** Whether a path names a code file, as the adapter's `is_code` judges it: by the extension of its last part. */
+function isCodeFile(path: string): boolean {
+  const p = path.replace(/\\/g, '/')
+  const dot = p.lastIndexOf('.')
+  return dot > p.lastIndexOf('/') && CODE_EXTENSIONS.has(p.slice(dot).toLowerCase())
+}
+
 /**
  * The events of one assistant message's tool calls: skill loads, subagent
- * spawns, writes, reads into a skill's folder, reads of a skill's supporting
- * files. A subagent's calls count only as skill loads, spawns,
- * supporting-file reads and reads of a SKILL.md (`body`); `agent` names that
- * subagent.
+ * spawns, writes, code changes, reads into a skill's folder, reads of a
+ * skill's supporting files. A subagent's calls count only as skill loads,
+ * spawns, code changes, supporting-file reads and reads of a SKILL.md
+ * (`body`); `agent` names that subagent.
  */
 export function toolUseEvents(
   uses: readonly { id?: string; name: string; input: Record<string, unknown> }[],
@@ -227,6 +248,8 @@ export function toolUseEvents(
       const spawn = { agentType: String(input.subagent_type || 'general-purpose'), description: String(input.description ?? '') }
       events.push({ kind: 'spawn', t, ...ofCall, ...spawn, ...(isSubagent ? { isSubagent: true as const } : {}), ...ofAgent })
     }
+    const edited = FILE_EDIT_TOOLS[name]
+    if (edited && isCodeFile(String(input[edited] ?? ''))) events.push({ kind: 'change', t, ...ofCall, ...(isSubagent ? { isSubagent: true as const } : {}) })
     const target = String((name === 'Read' ? input.file_path : input.command) ?? '')
     const refs: UsageEvent[] = skillFiles(target).map(f => ({ kind: 'ref', t, ...f, ...(isSubagent ? { isSubagent: true as const } : {}) }))
     if (isSubagent) {
@@ -246,11 +269,14 @@ export function toolUseEvents(
 const SKILL = '[a-z0-9]+(?:-[a-z0-9]+)*'
 const ROUTE_RE = new RegExp(`^goated-route:[ \\t]+(?:(direct|continue)|(lightweight|standard|full)[ \\t]+\\|[ \\t]+requires:[ \\t]+(${SKILL}(?:[ \\t]*,[ \\t]*${SKILL})*))$`)
 const SKIP_RE = new RegExp(`^goated-skip:[ \\t]+(${SKILL}):[ \\t]+(\\S.*)$`)
+const FILE = `${SKILL}\\.md`
+const DESIGN_READS_RE = new RegExp(`^goated-design-reads:[ \\t]+(?:none:[ \\t]+(\\S.*)|(${FILE}(?:[ \\t]*,[ \\t]*${FILE})*))$`)
 // A candidate marker line, compared case-insensitively: one that fails the grammar is malformed.
-const MARKER_PREFIX = /^goated-(route|skip):/i
+const MARKER_PREFIX = /^goated-(route|skip|design-reads):/i
 const FENCE = /^(```|~~~)/
 /** The grammar's floor for a reason: at least three words. */
 const MIN_REASON_WORDS = 3
+const isReason = (reason: string) => reason.split(/\s+/).length >= MIN_REASON_WORDS
 
 type Skip = { skill: string; reason: string }
 
@@ -277,19 +303,32 @@ function readRoute(line: string): Route | null {
 function readSkip(line: string): Skip | null {
   const m = SKIP_RE.exec(line)
   const reason = m?.[2]?.trim() ?? ''
-  if (!m?.[1] || reason.split(/\s+/).length < MIN_REASON_WORDS) return null
+  if (!m?.[1] || !isReason(reason)) return null
   return { skill: m[1], reason }
+}
+
+function readDesignReads(line: string): DesignReads | null {
+  const m = DESIGN_READS_RE.exec(line)
+  if (!m) return null
+  if (m[2]) {
+    const files = m[2].split(',').map(s => s.trim())
+    return new Set(files).size === files.length ? { form: 'files', files } : null
+  }
+  const reason = m[1]?.trim() ?? ''
+  return isReason(reason) ? { form: 'none', reason } : null
 }
 
 /**
  * The marker lines of one reply, as the grammar reads them: the winning route
- * (the last valid route line), every skip line, and each candidate line that
- * starts like a marker but fails the grammar. Only whole lines outside fenced
- * code count, each unwrapped from at most one pair of backticks.
+ * (the last valid route line), every skip line, every design-reads line, and
+ * each candidate line that starts like a marker but fails the grammar. Only
+ * whole lines outside fenced code count, each unwrapped from at most one pair
+ * of backticks.
  */
-export function markerLines(text: string): { route: Route | null; skips: Skip[]; malformed: string[] } {
+export function markerLines(text: string): { route: Route | null; skips: Skip[]; designReads: DesignReads[]; malformed: string[] } {
   let route: Route | null = null
   const skips: Skip[] = []
+  const designReads: DesignReads[] = []
   const malformed: string[] = []
   let isInFence = false
   for (const raw of text.split(LINE_BREAK)) {
@@ -309,16 +348,31 @@ export function markerLines(text: string): { route: Route | null; skips: Skip[];
       const found = readSkip(line)
       if (found) skips.push(found)
       else malformed.push(line)
+    } else if (kind === 'design-reads') {
+      const found = readDesignReads(line)
+      if (found) designReads.push(found)
+      else malformed.push(line)
     }
   }
-  return { route, skips, malformed }
+  return { route, skips, designReads, malformed }
 }
 
-/** The marker events of one reply: its winning route, then each skip line. `agent`: the subagent that wrote it. */
+/**
+ * The marker events of one reply: its winning route, then each skip line, then
+ * its design-reads lines as one event, declaring the union of their files (a
+ * later line adds files and never removes any). `agent`: the subagent that
+ * wrote it.
+ */
 export function markerEvents(text: string, t: number, agent?: string): UsageEvent[] {
-  const { route, skips } = markerLines(text)
+  const { route, skips, designReads } = markerLines(text)
   const loop = agent ? { isSubagent: true as const, agent } : {}
-  return [...(route ? [{ kind: 'route' as const, t, ...route, ...loop }] : []), ...skips.map(k => ({ kind: 'skip' as const, t, ...k, ...loop }))]
+  const files = [...new Set(designReads.flatMap(d => (d.form === 'files' ? d.files : [])))]
+  const noneReasons = designReads.flatMap(d => (d.form === 'none' ? [d.reason] : []))
+  return [
+    ...(route ? [{ kind: 'route' as const, t, ...route, ...loop }] : []),
+    ...skips.map(k => ({ kind: 'skip' as const, t, ...k, ...loop })),
+    ...(designReads.length > 0 ? [{ kind: 'design-reads' as const, t, files, noneReasons, ...loop }] : []),
+  ]
 }
 
 /** A message of the main conversation in Messages API form, as `$.session.messages({ as: 'api' })` gives it. */
@@ -467,14 +521,22 @@ export function rowEvents(
  * nudge, and a readable timeline. A nudge still open at the end is `pending`
  * while the session runs; once it has ended (`isFinal`) it was `ignored`.
  * What became of each hold is the hold settlement's (`hooks/holds.ts`); this
- * keeps loads, routes, references, writing turns and subagents.
+ * keeps loads, routes, references and when in their turn each was read,
+ * design-reads lines, writing turns and subagents.
  */
 export function summarize(events: readonly UsageEvent[], isFinal = false): SessionSummary & { timeline: TimelineEntry[] } {
   const loads: SessionSummary['loads'] = {}
   const lastUsed: Record<string, number> = {}
   const refs: Refs = {}
   let refsUnloaded = 0
-  const measures: Required<Omit<Measures, 'holds'>> = { routes: {}, writingTurns: { ...NO_WRITING_TURNS }, overrides: {}, subagents: { ...NO_SUBAGENTS } }
+  const refMoments: RefMoments = {}
+  const measures: Required<Omit<Measures, 'holds'>> = {
+    routes: {},
+    writingTurns: { ...NO_WRITING_TURNS },
+    overrides: {},
+    subagents: { ...NO_SUBAGENTS },
+    designReads: noDesignReads(),
+  }
   const holds = holdSettlement()
   // The running typed-prompt turn: whether the main agent wrote a route line yet, and, once it wrote, how that write stood.
   // A turn ends only at the next typed prompt, so a background result that wakes the agent stays in the turn, as the adapter treats it.
@@ -490,8 +552,25 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
     turnWrites = null
     pendingWrites.clear()
   }
-  // Skill calls whose result was an error: they loaded nothing. A refusal arrives after its call, so it is looked up ahead.
-  const failedLoads = new Set(events.flatMap(e => (e.kind === 'refused' ? [e.id] : [])))
+  // Calls whose result was an error: a Skill call loaded nothing, an edit changed nothing. A refusal arrives after its
+  // call, so it is looked up ahead.
+  const refusedCalls = new Set(events.flatMap(e => (e.kind === 'refused' ? [e.id] : [])))
+  // The running turn's reference reads, each with how many code changes came before it, and the turn's code changes so
+  // far. A read's moment depends on changes still to come, so the reads settle when the turn ends. Only a turn whose
+  // prompt this version recorded is timed: an earlier version stored no code changes, and a log trimmed mid-turn lost
+  // its turn's prompt, so those reads count in `refs` with no moment.
+  let isTurnTimed = false
+  let turnReads: { skill: string; file: string; changesBefore: number }[] = []
+  let turnChanges = 0
+  const settleReadMoments = () => {
+    for (const r of turnReads) {
+      const counts = ((refMoments[r.skill] ??= {})[r.file] ??= {})
+      const moment = momentOf(r.changesBefore, turnChanges)
+      counts[moment] = (counts[moment] ?? 0) + 1
+    }
+    turnReads = []
+    turnChanges = 0
+  }
   // Spawn log rows by tool_use id, so a refusal of the call marks its row held and takes it out of the count.
   const spawnRows = new Map<string, { isHeld?: true }>()
   const timeline: TimelineEntry[] = []
@@ -500,12 +579,14 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   let turnRouter = false
 
   for (const e of events) {
-    if (e.kind === 'load' && e.id && failedLoads.has(e.id)) continue
+    if ((e.kind === 'load' || e.kind === 'change') && e.id && refusedCalls.has(e.id)) continue
     const holdRow = holds.observe(e)
     if (holdRow) timeline.push(holdRow)
     switch (e.kind) {
       case 'prompt':
         tallyWritingTurn()
+        settleReadMoments()
+        isTurnTimed = e.isTimed === true
         turnNamed = new Set(e.named)
         turnRouter = false
         timeline.push({ ...stamp(e), kind: 'prompt' })
@@ -540,6 +621,11 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         timeline.push({ ...stamp(e), kind: 'route', ...route, ...(e.isSubagent ? { isSubagent: true as const } : {}) })
         break
       }
+      case 'design-reads':
+        for (const file of e.files) measures.designReads.files[file] = (measures.designReads.files[file] ?? 0) + 1
+        measures.designReads.none += e.noneReasons.length
+        timeline.push({ ...stamp(e), kind: 'design-reads', files: e.files, noneReasons: e.noneReasons, ...(e.isSubagent ? { isSubagent: true as const } : {}) })
+        break
       case 'override':
         for (const phrase of e.phrases) measures.overrides[phrase] = (measures.overrides[phrase] ?? 0) + 1
         timeline.push({ ...stamp(e), kind: 'override', phrases: e.phrases })
@@ -560,9 +646,13 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         files[e.file] = (files[e.file] ?? 0) + 1
         const isLoaded = loaded.has(e.skill)
         if (!isLoaded) refsUnloaded += 1
+        if (isTurnTimed) turnReads.push({ skill: e.skill, file: e.file, changesBefore: turnChanges })
         timeline.push({ ...stamp(e), kind: 'ref', skill: e.skill, file: e.file, isLoaded, ...(e.isSubagent ? { isSubagent: true as const } : {}) })
         break
       }
+      case 'change':
+        turnChanges += 1
+        break
       case 'write':
         if (e.id) pendingWrites.set(e.id, isTurnRouted)
         // A write with no call id (events kept before ids were recorded) cannot be refused, so it counts at once.
@@ -585,8 +675,19 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   }
   const { nudges, holds: held } = holds.finish(isFinal)
   tallyWritingTurn()
+  settleReadMoments()
 
-  return { loads, nudges, lastUsed, refs, refsUnloaded, ...measures, holds: held, timeline, router: 'off' }
+  return { loads, nudges, lastUsed, refs, refsUnloaded, refMoments, ...measures, holds: held, timeline, router: 'off' }
+}
+
+/**
+ * A read's moment in a turn that made `changes` code changes, `changesBefore` of them before the read. While the turn
+ * is open, a read after its latest change counts as after the last; a later change makes it between.
+ */
+function momentOf(changesBefore: number, changes: number): RefMoment {
+  if (changes === 0) return 'no-change'
+  if (changesBefore === 0) return 'before'
+  return changesBefore === changes ? 'after' : 'between'
 }
 
 function addFlat(into: Record<string, number | undefined>, from: Record<string, number | undefined> | undefined) {
@@ -600,6 +701,9 @@ function addMeasures(into: Measures, from: Measures) {
   addFlat((into.holds ??= {}), from.holds)
   addFlat((into.overrides ??= {}), from.overrides)
   addFlat((into.subagents ??= { ...NO_SUBAGENTS }), from.subagents)
+  const reads = (into.designReads ??= noDesignReads())
+  addFlat(reads.files, from.designReads?.files)
+  reads.none += from.designReads?.none ?? 0
 }
 
 function addCounts<K extends string>(into: Record<string, Counts<K>>, from: Record<string, Counts<K>>) {
@@ -611,11 +715,11 @@ function addCounts<K extends string>(into: Record<string, Counts<K>>, from: Reco
   }
 }
 
-function addRefs(into: Refs, from: Refs | undefined) {
-  for (const [skill, files] of Object.entries(from ?? {})) {
-    const target = (into[skill] ??= {})
-    for (const [file, n] of Object.entries(files)) target[file] = (target[file] ?? 0) + n
-  }
+/** Adds `from`'s reference reads into `into`: by file, before their skill loaded, and by moment. Either may predate any of them. */
+function addReads(into: Pick<SessionSummary, 'refs' | 'refsUnloaded' | 'refMoments'>, from: Pick<SessionSummary, 'refs' | 'refsUnloaded' | 'refMoments'>) {
+  for (const [skill, files] of Object.entries(from.refs ?? {})) addFlat(((into.refs ??= {})[skill] ??= {}), files)
+  into.refsUnloaded = (into.refsUnloaded ?? 0) + (from.refsUnloaded ?? 0)
+  for (const [skill, files] of Object.entries(from.refMoments ?? {})) addCounts(((into.refMoments ??= {})[skill] ??= {}), files)
 }
 
 function addLastUsed(into: Record<string, number>, from: Record<string, number>) {
@@ -633,8 +737,7 @@ export function addSession(total: AllTime | null, s: SessionSummary): AllTime {
   addCounts(out.nudges, s.nudges)
   out.router[s.router] = (out.router[s.router] ?? 0) + 1
   addLastUsed(out.lastUsed, s.lastUsed)
-  addRefs((out.refs ??= {}), s.refs)
-  out.refsUnloaded = (out.refsUnloaded ?? 0) + (s.refsUnloaded ?? 0)
+  addReads(out, s)
   addMeasures(out, s)
   return out
 }
@@ -649,8 +752,7 @@ function addTotals(into: AllTime | null, from: AllTime | null): AllTime | null {
   addCounts(out.nudges, from.nudges)
   addFlat(out.router, from.router)
   addLastUsed(out.lastUsed, from.lastUsed)
-  addRefs((out.refs ??= {}), from.refs)
-  out.refsUnloaded = (out.refsUnloaded ?? 0) + (from.refsUnloaded ?? 0)
+  addReads(out, from)
   addMeasures(out, from)
   return out
 }
@@ -687,8 +789,7 @@ export function mergeSummaries(earlier: SessionSummary | null, later: SessionSum
   addCounts(out.loads, later.loads)
   addCounts(out.nudges, later.nudges)
   addLastUsed(out.lastUsed, later.lastUsed)
-  addRefs((out.refs ??= {}), later.refs)
-  out.refsUnloaded = (out.refsUnloaded ?? 0) + (later.refsUnloaded ?? 0)
+  addReads(out, later)
   addMeasures(out, later)
   return out
 }
