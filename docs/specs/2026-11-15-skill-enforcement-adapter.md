@@ -320,9 +320,10 @@ Claude Code adapter structure, settled in Ticket 030:
   Older unseen turns beyond the 64 MB read limit are given
   up; only a current turn larger than the limit fails open.
 - **Task state.** A task starts at a route line that is not `continue`, and
-  runs through later `continue` turns. Route lines in one turn with no
-  finished write or spawn between them are one task, corrected, and a
-  `continue` after them in the same turn keeps it. In a session with no task,
+  runs through later `continue` turns. Route lines in one turn with no write
+  or spawn that ran between them (a held call or a failed edit did not run; a
+  failed shell write or spawn did) are one task, corrected, and a `continue`
+  after them in the same turn keeps it. In a session with no task,
   a turn whose only route lines are `continue` starts a task with no required
   skills (Ticket 042). A task counts a skill the prompt invoked, the turn's
   loads after its first route line, and earlier loads in the turn unless

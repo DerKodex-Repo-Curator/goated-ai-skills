@@ -425,6 +425,54 @@ class PipelineTests(AdapterTestCase):
         self.assertEqual(decision(held), "deny")
         self.assertIn("`tdd`", reason(held))
 
+    def test_a_failed_shell_write_between_route_lines_still_starts_another_task(
+        self,
+    ) -> None:
+        s = self.session
+        s.prompt("Add CSV export.")
+        s.load(ROUTER)
+        s.load("tdd")
+        s.say("goated-route: direct")
+        s.run("echo done > notes.txt && false", success=False)
+        s.say("Next, the importer.\n\ngoated-route: lightweight | requires: tdd")
+
+        held = s.call("Edit")
+        self.assertEqual(decision(held), "deny")
+        self.assertIn("`tdd`", reason(held))
+
+    def test_a_held_shell_write_between_route_lines_does_not_split_the_task(self) -> None:
+        s = self.session
+        s.prompt("Add CSV export.")
+        s.load(ROUTER)
+        s.load("tdd")
+        s.say("goated-route: standard | requires: tdd, doc-sync")
+        self.assertEqual(decision(s.call("Bash", {"command": "echo x > out.csv"})), "deny")
+        s.say("doc-sync does not apply.\n\ngoated-route: lightweight | requires: tdd")
+
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+    def test_a_load_before_another_tasks_correction_does_not_count(self) -> None:
+        s = self.session
+        s.prompt("Add CSV export.")
+        s.load(ROUTER)
+        s.say("goated-route: standard | requires: tdd, doc-sync")
+        s.load("tdd")
+        s.say("Only a typo after all.\n\ngoated-route: direct")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+        s.say("Now the importer.\n\ngoated-route: lightweight | requires: tdd")
+        held = s.call("Edit")
+        self.assertEqual(decision(held), "deny")
+        self.assertIn("`tdd`", reason(held))
+
+    def test_a_load_after_another_tasks_last_route_line_counts(self) -> None:
+        s = self.start("goated-route: direct")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+        s.load("tdd")
+        s.say("Now the importer.\n\ngoated-route: lightweight | requires: tdd")
+
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
     def test_a_skill_the_user_invoked_with_a_slash_command_counts(self) -> None:
         s = self.session
         s.slash("tdd", "add the CSV export")

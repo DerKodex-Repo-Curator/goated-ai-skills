@@ -104,25 +104,38 @@ def _task_started_in(turn: Turn) -> tuple[dict, list[str]] | None:
     """Return the route and raw loads of the task `turn` starts, or None.
 
     Every route line that is not `continue` starts a task, but lines with no
-    finished write or spawn between them are one task, corrected; the last
-    line is its route. Its loads are the skill the prompt invoked plus this
-    turn's loads since the previous task's first route line, or since the turn
-    began. A `continue` line keeps whatever task the turn already started.
+    write or spawn between them (see `_did_work`) are one task, corrected; the
+    last line is its route. Its loads are the skill the prompt invoked plus
+    this turn's loads since the previous task's last route line, or since the
+    turn began. A `continue` line keeps whatever task the turn already started.
     """
 
     starts = [mark for mark in turn.route_marks if mark.route["form"] != "continue"]
     if not starts:
         return None
-    firsts = [starts[0]]
-    for before, mark in zip(starts, starts[1:]):
-        between = turn.calls[before.calls_before:mark.calls_before]
-        if any(call.ok and writes_like_an_edit(call.name, call.input) for call in between):
-            firsts.append(mark)
-    since = firsts[-2].loads_before if len(firsts) > 1 else 0
+    first = 0  # Index in `starts` of the current task's first route line.
+    for index in range(1, len(starts)):
+        between = turn.calls[starts[index - 1].calls_before:starts[index].calls_before]
+        if any(_did_work(call) for call in between):
+            first = index
+    since = starts[first - 1].loads_before if first else 0
     loads = turn.loads[since:]
     if turn.invoked_load:
         loads = [turn.invoked_load, *loads]
     return starts[-1].route, loads
+
+
+def _did_work(call) -> bool:
+    """True for a write or spawn that ran, so a later route line is a new task.
+
+    A failed edit wrote nothing, but a shell command or spawn that ended in an
+    error may still have written or handed off work. A call this adapter held
+    never ran.
+    """
+
+    if call.held or not writes_like_an_edit(call.name, call.input):
+        return False
+    return call.ok or call.name not in WRITE_TOOLS
 
 
 def writes_like_an_edit(tool_name: str, tool_input: dict) -> bool:

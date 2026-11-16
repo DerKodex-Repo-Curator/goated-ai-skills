@@ -129,12 +129,14 @@ check after its own last change, that change is already proved.
   `tests/`, `test/`, `spec/`, or `__tests__/`, or named `test_*`, `*_test.*`,
   `*.test.*`, or `*.spec.*`.
 - **A task** starts at a route line that is not `continue` and runs through
-  later `goated-route: continue` turns. Route lines in one turn with no
-  finished write or spawn between them are one task, corrected: the last one
-  is its route. A `continue` after such a line in the same turn keeps that
-  task. In a session with no task yet, such as one started from another
-  session to continue work begun there, a turn whose only route lines are
-  `continue` starts a task that requires no skills.
+  later `goated-route: continue` turns. Route lines in one turn with no write
+  or spawn that ran between them are one task, corrected: the last one is its
+  route. A call the adapter held never ran, and neither did an edit that
+  failed; a shell write or spawn that ended in an error counts as run. A
+  `continue` after such a line in the same turn keeps that task. In a session
+  with no task yet, such as one started from another session to continue work
+  begun there, a turn whose only route lines are `continue` starts a task that
+  requires no skills.
   `goated-route: direct` exempts the task from the pipeline gate.
 - **Loads that count for a task** are the ones made earlier in the turn that
   starts it, unless another task's route line came between the load and the

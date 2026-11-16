@@ -66,6 +66,9 @@ NOT_PROMPT = "not-prompt"
 REMINDER_RE = re.compile(r"\A\s*(?:<system-reminder>.*?</system-reminder>\s*)+", re.DOTALL)
 COMMAND_NAME_RE = re.compile(r"<command-name>/([^<\s]+)</command-name>")
 SKILL_BODY_PREFIX = "Base directory for this skill:"
+# A call this adapter held: Claude Code 2.1.3xx records the deny reason as
+# `PreToolUse:<tool> hook error: <reason>`, and the reason opens with the hold line.
+HOLD_RESULT_RE = re.compile(r"(?:PreToolUse:\S+ hook error: )?goated-hold: ")
 
 
 def prompt_text_kind(text: str) -> str:
@@ -93,16 +96,25 @@ class Call:
     """A tool call that has finished in the turn: its name, input, and outcome.
 
     `ok` is False when the tool result was an error, which includes a call a
-    hook held. `agent_id` is the subagent a spawn started, from the result's
+    hook held; `held` is True only when this adapter held it, so it never ran.
+    `agent_id` is the subagent a spawn started, from the result's
     `toolUseResult.agentId`, else None.
     """
 
-    __slots__ = ("name", "input", "ok", "agent_id")
+    __slots__ = ("name", "input", "ok", "held", "agent_id")
 
-    def __init__(self, name: str, tool_input: dict, ok: bool, agent_id: str | None = None) -> None:
+    def __init__(
+        self,
+        name: str,
+        tool_input: dict,
+        ok: bool,
+        agent_id: str | None = None,
+        held: bool = False,
+    ) -> None:
         self.name = name
         self.input = tool_input
         self.ok = ok
+        self.held = held
         self.agent_id = agent_id
 
 
@@ -400,6 +412,8 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                         *finished,
                         ok=not block.get("is_error"),
                         agent_id=agent if isinstance(agent, str) else None,
+                        held=bool(block.get("is_error"))
+                        and bool(HOLD_RESULT_RE.match(_result_text(block))),
                     ))
                 if (
                     block.get("tool_use_id") in skill_calls
@@ -413,6 +427,17 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
 def _starts_skill_body(content: list) -> bool:
     first = content[0] if content else None
     return isinstance(first, dict) and str(first.get("text", "")).startswith(SKILL_BODY_PREFIX)
+
+
+def _result_text(block: dict) -> str:
+    """A tool result's text, whether recorded as a string or as text blocks."""
+
+    content = block.get("content")
+    if isinstance(content, list):
+        return "".join(
+            str(part.get("text", "")) for part in content if isinstance(part, dict)
+        )
+    return str(content or "")
 
 
 def skill_name(value: object) -> str:
