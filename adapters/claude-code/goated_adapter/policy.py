@@ -47,17 +47,32 @@ def shared_policy_loaded(cwd: Path, home: Path) -> bool:
 def router_skill_installed(cwd: Path, home: Path, skill: str) -> bool:
     """Return True when Claude Code can find `skill` as a user, project, or plugin skill."""
 
+    return skill in installed_skill_names(cwd, home)
+
+
+def installed_skill_names(cwd: Path, home: Path) -> frozenset[str]:
+    """Return the bare names of every user, project, and plugin skill Claude Code can find.
+
+    A skill is a folder holding `SKILL.md` under `~/.claude/skills/`, under
+    `.claude/skills/` in `cwd` or a parent up to `home`, or under a `skills/`
+    folder inside `~/.claude/plugins/`.
+    """
+
     user_dir = home / ".claude"
-    candidates = [user_dir / "skills" / skill / "SKILL.md"]
-    candidates += [d / ".claude" / "skills" / skill / "SKILL.md" for d in _project_dirs(cwd, home)]
-    if any(path.is_file() for path in candidates):
-        return True
-    plugins = user_dir / "plugins"
-    for depth in PLUGIN_SKILL_DEPTHS:
-        pattern = "/".join(["*"] * depth + ["skills", skill, "SKILL.md"])
-        if next(plugins.glob(pattern), None) is not None:
-            return True
-    return False
+    roots = [user_dir / "skills", *(d / ".claude" / "skills" for d in _project_dirs(cwd, home))]
+    names = set()
+    try:
+        for root in roots:
+            if root.is_dir():
+                names.update(p.parent.name for p in root.glob("*/SKILL.md"))
+        plugins = user_dir / "plugins"
+        if plugins.is_dir():
+            for depth in PLUGIN_SKILL_DEPTHS:
+                pattern = "/".join(["*"] * depth + ["skills", "*", "SKILL.md"])
+                names.update(p.parent.name for p in plugins.glob(pattern))
+    except OSError:
+        pass  # An unreadable folder hides only its own skills.
+    return frozenset(names)
 
 
 def _instruction_files(cwd: Path, home: Path):

@@ -14,8 +14,8 @@ import re
 from pathlib import Path
 
 from . import actions, gates
-from .overrides import parse_overrides
-from .policy import router_skill_installed, shared_policy_loaded
+from .overrides import GOATED_SKILLS, parse_overrides
+from .policy import installed_skill_names, router_skill_installed, shared_policy_loaded
 from .state import StateStore, StateUnsafe
 from .transcript import (
     CONTINUATION,
@@ -140,7 +140,7 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
         turns = read_recent_turns(
             transcript_path,
             since_key=state.last_turn,
-            tool_use_id=payload.get("tool_use_id"),
+            prompt_id=_prompt_id(payload),
             wait_seconds=config.lag_wait_seconds,
         )
     except TranscriptUnreadable as exc:
@@ -176,8 +176,7 @@ def _subagent_pre_tool_use(
         turns = read_recent_turns(
             path,
             since_key=None,
-            tool_use_id=payload.get("tool_use_id"),
-            wait_seconds=config.lag_wait_seconds,
+            wait_seconds=0.0,
             sidechain=True,
         )
     except TranscriptUnreadable as exc:
@@ -204,7 +203,6 @@ def _spawned_subagents(turn, transcript_path: str) -> tuple[dict, list[str]]:
             found[agent_id] = read_recent_turns(
                 _subagent_transcript(transcript_path, agent_id),
                 since_key=ALL_TURNS,
-                tool_use_id=None,
                 wait_seconds=0.0,
                 sidechain=True,
             )
@@ -221,7 +219,10 @@ def _stop(payload: dict, config: Config) -> str:
     state, state_warning = store.load(session_id)
     try:
         turns = read_recent_turns(
-            transcript_path, since_key=state.last_turn, tool_use_id=None, wait_seconds=0.0
+            transcript_path,
+            since_key=state.last_turn,
+            prompt_id=_prompt_id(payload),
+            wait_seconds=config.lag_wait_seconds,
         )
     except TranscriptUnreadable as exc:
         raise _FailOpen(str(exc)) from exc
@@ -244,6 +245,11 @@ def _stop(payload: dict, config: Config) -> str:
         )
     output = {"decision": "block", "reason": hold.message()} if hold else {}
     return _with_warnings(output, warnings)
+
+
+def _prompt_id(payload: dict) -> str | None:
+    value = payload.get("prompt_id")
+    return value if isinstance(value, str) and value else None
 
 
 def _deny(hold) -> dict:
@@ -313,7 +319,12 @@ def _user_prompt_submit(payload: dict, config: Config) -> str:
         return ""
     store = StateStore(config.state_dir)
     state, state_warning = store.load(session_id)
-    found = parse_overrides(prompt) if kind == TYPED else parse_overrides("")
+    if kind == TYPED:
+        cwd = Path(str(payload.get("cwd") or "."))
+        known = installed_skill_names(cwd, config.home) or GOATED_SKILLS
+        found = parse_overrides(prompt, known)
+    else:
+        found = parse_overrides("")
     state.overrides = {"prompt_id": payload.get("prompt_id"), **found}
 
     notes = [state_warning, _save(store, session_id, state)]

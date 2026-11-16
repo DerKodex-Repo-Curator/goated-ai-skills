@@ -247,7 +247,7 @@ blocks, and a phrase negated just before it, such as "don't skip routing",
 | Typed phrase | Effect for that turn |
 | --- | --- |
 | `skip routing`, `skip the router` | Stands down `router-first`, `route-line`, and `pipeline` |
-| `skip <skill>`, `skip the <skill> skill` | Stands down every requirement for that skill: in `pipeline`, in an action gate, or in a closeout item. `skip using-goated-ai-skills` also stands down `router-first` |
+| `skip <skill>`, `skip the <skill> skill` | Stands down every requirement for that skill: in `pipeline`, in an action gate, or in a closeout item. `skip using-goated-ai-skills` also stands down `router-first`. `<skill>` must be a skill Claude Code can find (user, project, or plugin skills); when none can be found, a GOATED registry skill name. So "skip line" or "skip the first two lines" is not an override |
 | `commit message: <text>`, `commit with the message "<text>"`, or a fenced block right after such a phrase | Stands down the `commit` hold for a commit whose inline message has the same subject line (whitespace aside); a commit with another message, or with none inline, is still held |
 
 Claude Code also submits prompts nobody typed in this session:
@@ -305,9 +305,9 @@ and shows a warning that starts `GOATED Claude Code adapter:` when:
   current turn alone is larger than the
   64 MB read limit. Older turns beyond the limit are simply not read, as if
   they had been seen;
-- the transcript has not caught up with the call being judged. Claude Code
-  writes the transcript asynchronously, so the hook waits up to 1.5 seconds
-  for the call's own `tool_use` entry first (see [Latency](#latency));
+- the transcript does not show the prompt the call belongs to (its
+  `prompt_id`) within 1.5 seconds. The call itself need not be there: it is
+  judged from the hook input (see [Latency](#latency));
 - the adapter hits an internal error;
 - on macOS and Linux, its state folder is a link, belongs to another user, or
   is writable by others, because planted state there could make holds pass.
@@ -352,13 +352,20 @@ the `json` and `re` imports. The action and closeout gates (Ticket 031) added
 about 4 ms: on the recorded 20 KB fixture, 30 runs each, the median went from
 60 to 64 ms.
 
-In live headless sessions on the same machine (Claude Code 2.1.325), the call
-being judged was never yet in the transcript when the hook started. Its entry
-appeared 54 to 114 ms later, over 7 main-agent calls, so a held-or-passed
-`PreToolUse` call costs roughly the figures above plus that wait. The 1.5-second
-budget leaves headroom before the hook fails open.
+The hook never waits for the call it judges, which it takes from its input:
+in an interactive session (Claude Code 2.1.325) the assistant message holding
+the call is recorded only after `PreToolUse` returns, and in headless runs it
+appeared 54 to 114 ms after the hook started. The only wait is for the entry
+of the call's prompt, which is normally already there.
 
 ## Known Limits
+
+- The hook sees nothing of the assistant message that makes the call it
+  judges. In an interactive session Claude Code records that message only
+  after the hook returns, so a route line or skip line written in the same
+  message, and sibling calls made alongside it (a Skill load included), do not
+  count yet. The agent then makes the call again in a later message, by which
+  time the earlier one is recorded. The route-line hold says so.
 
 - Shell analysis is lexical, not a shell. These forms are not seen, so a
   write in them meets only `router-first` and a commit or pull request in

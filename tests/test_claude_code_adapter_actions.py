@@ -909,3 +909,124 @@ class ReviewRegressionTests(AdapterTestCase):
         s.load("commit-message")
         self.assertEqual(decision(s.call(tool, {"message": self.LONG, "files": []})), "deny")
         self.assertEqual(decision(s.call(tool, {"message": "Add export", "files": []})), "pass")
+
+
+class InteractiveRecordingTests(AdapterTestCase):
+    """In an interactive session Claude Code records the assistant message
+    holding a call only after PreToolUse returns, so the hook judges the call
+    from its input alone. Headless runs often record it first; both orders
+    must give the same answers."""
+
+    def gate_lines(self, record_before_hook: bool) -> list[str]:
+        s = self.fresh()
+        s.record_before_hook = record_before_hook
+        s.prompt("Do the task.")
+        lines = [hold_line(s.call("Bash"))]
+        s.load(ROUTER)
+        lines.append(hold_line(s.call("Edit")))
+        s.say("goated-route: standard | requires: tdd")
+        lines.append(hold_line(s.call("Edit")))
+        s.load("tdd")
+        lines.append(hold_line(s.call("Bash", commit("Add export"))))
+        lines.append(hold_line(s.call("Bash", {"command": "gh pr create --fill"})))
+        lines.append(hold_line(s.call("Agent", {"prompt": BRIEF})))
+        lines.append(hold_line(s.call("Write", write("src/export.py"))))
+        lines.append(hold_line(s.call("Edit", {"file_path": ".env", "new_string": "x"})))
+        s.say("goated-skip: software-design-principles: one mechanical constant change")
+        self.assertEqual(decision(s.call("Write", write("src/export.py"))), "pass")
+        lines.append(closeout_line(stop(s)))
+        return lines
+
+    def test_every_gate_holds_a_call_the_transcript_does_not_show_yet(self) -> None:
+        lines = self.gate_lines(record_before_hook=False)
+
+        self.assertEqual(lines, [
+            "goated-hold: router-first | strict",
+            "goated-hold: route-line | strict",
+            "goated-hold: pipeline | strict",
+            "goated-hold: commit | strict",
+            "goated-hold: pull-request | strict",
+            "goated-hold: spawn | strict",
+            "goated-hold: design | justified-skip",
+            "goated-hold: security | justified-skip",
+            "goated-hold: closeout | justified-skip",
+        ])
+        self.assertEqual(lines, self.gate_lines(record_before_hook=True))
+
+    def test_parallel_calls_recorded_after_both_hooks_are_each_judged(self) -> None:
+        s = self.routed()
+
+        commit_out, design_out = s.parallel([
+            ("Bash", commit("Add export")),
+            ("Write", write("src/export.py")),
+        ])
+        self.assertEqual(hold_line(commit_out), "goated-hold: commit | strict")
+        self.assertEqual(hold_line(design_out), "goated-hold: design | justified-skip")
+        for output in (commit_out, design_out):
+            self.assertNotIn("systemMessage", output)
+
+    def test_a_sibling_load_in_the_same_message_does_not_count(self) -> None:
+        s = self.routed()
+
+        _, held = s.parallel([
+            ("Skill", {"skill": "commit-message"}),
+            ("Bash", commit("Add export")),
+        ])
+        self.assertEqual(hold_line(held), "goated-hold: commit | strict")
+
+    def test_a_subagent_call_not_yet_recorded_is_judged(self) -> None:
+        self.session.prompt("Delegate it.")
+        agent = self.session.subagent("c1")
+        agent.prompt("Implement it.", hook=False)
+
+        held = agent.call("Bash", commit("Add export"), agent_id="c1", agent_type="general-purpose")
+        self.assertEqual(hold_line(held), "goated-hold: commit | strict")
+
+    def test_a_stop_without_its_prompt_recorded_fails_open(self) -> None:
+        s = self.routed()
+        s.call("Edit", {"file_path": "src/app.py", "old_string": "a", "new_string": "b"})
+
+        output = parse(s.hook("Stop", stop_hook_active=False, prompt_id="prompt-not-recorded"))
+        self.assertNotIn("decision", output)
+        self.assertIn("allowed without checks", output.get("systemMessage", ""))
+
+
+class SkillSkipPhraseTests(AdapterTestCase):
+    """`skip <name>` is an override only when `<name>` is a skill."""
+
+    def test_skip_followed_by_an_ordinary_word_is_not_an_override(self) -> None:
+        from goated_adapter.overrides import parse_overrides
+
+        for prompt in (
+            "If it does not apply, decline it with a goated-skip line instead of loading the skill.",
+            "Skip the first two lines of the log.",
+            "skip line 3",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertEqual(parse_overrides(prompt)["skills"], [])
+
+    def test_a_prompt_naming_no_skill_records_no_override(self) -> None:
+        s = self.session
+        notice = s.prompt("Decline it with a goated-skip line instead of loading the skill.")
+
+        self.assertEqual(notice, "")
+
+    def test_installed_skills_decide_which_names_count(self) -> None:
+        skill = self.session.config.home / ".claude" / "skills" / "my-review"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text("# My Review\n", encoding="utf-8")
+        s = self.session
+
+        self.assertIn("Skip my-review", s.prompt("Skip my-review this time."))
+        # With skills found, a GOATED name that is not installed does not count.
+        self.assertEqual(s.prompt("Skip tdd this time."), "")
+
+    def test_the_fallback_list_matches_the_registry(self) -> None:
+        import yaml
+        from claude_code_adapter_support import REPO_ROOT
+        from goated_adapter.overrides import GOATED_SKILLS
+
+        registry = yaml.safe_load(
+            (REPO_ROOT / "stack" / "goated-stack.yaml").read_text(encoding="utf-8")
+        )
+        self.assertEqual(GOATED_SKILLS, {skill["name"] for skill in registry["skills"]})

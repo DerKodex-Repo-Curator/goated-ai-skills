@@ -35,16 +35,36 @@ QUOTED_RES = (
 )
 HARNESS_BLOCK_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
 NOT_SKILLS = frozenset({"routing", "router"})
+# The GOATED registry's skill names (`stack/goated-stack.yaml`), used when no
+# installed skill can be found. A test keeps this list equal to the registry.
+GOATED_SKILLS = frozenset(
+    {
+        "agent-instructions-integrator", "architecture-design-map", "caveman",
+        "code-refinement", "code-security-review", "commit-message", "context-matrix-map",
+        "design-codebase-architecture", "diagnose", "doc-sync", "documentation-cleanup",
+        "documentation-writer", "framework-agnostic-skill-creator", "goated-prompt",
+        "grill-me", "grill-with-docs", "handoff", "knowledge-retrieval", "learning-capture",
+        "pr-description", "project-context-calibration", "project-standards-calibration",
+        "prototype", "receiving-code-review", "resolving-merge-conflicts", "retrospective",
+        "review-codebase-architecture", "session-start-progressive-disclosure",
+        "setup-scribe", "software-design-principles", "source-grounded-research",
+        "spec-to-tickets", "standards-and-spec-review", "subagent-driven-development",
+        "tdd", "using-goated-ai-skills", "verification-before-completion", "wayfinder",
+        "write-a-spec", "writing-plans",
+    }
+)
 
 
-def parse_overrides(prompt: str) -> dict:
+def parse_overrides(prompt: str, known_skills: frozenset[str] = GOATED_SKILLS) -> dict:
     """Return the overrides a typed prompt asks for.
 
     The result has `routing` (stand down router-first, route-line, and pipeline
     holds), `skills` (skills whose holds stand down), `commit_message` (the
     commit message the user supplied, or None), and `phrases` (the matched
-    text, for the record). Harness-injected `<system-reminder>` blocks
-    are not typed by the user and are ignored, as are negated phrases.
+    text, for the record). `skip <name>` counts only when `<name>` is in
+    `known_skills`, so "skip line" or "skip the first two lines" is not an
+    override. Harness-injected `<system-reminder>` blocks are not typed by
+    the user and are ignored, as are negated phrases.
     """
 
     text = HARNESS_BLOCK_RE.sub(" ", prompt or "")
@@ -53,7 +73,10 @@ def parse_overrides(prompt: str) -> dict:
     skills: list[str] = []
     for match in SKILL_SKIP_RE.finditer(text):
         skill = match.group(1).lower()
-        if skill in NOT_SKILLS or skill in skills or _negated(text, match.start()):
+        if (
+            skill in NOT_SKILLS or skill not in known_skills or skill in skills
+            or _negated(text, match.start())
+        ):
             continue
         skills.append(skill)
         phrases.append(match.group(0))
