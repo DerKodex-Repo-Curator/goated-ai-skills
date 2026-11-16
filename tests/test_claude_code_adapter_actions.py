@@ -484,7 +484,97 @@ class RepeatedFailureTests(AdapterTestCase):
         s = self.failed_twice()
 
         self.assertEqual(decision(s.run(CHECK, success=False)), "pass")
-        self.assertEqual(decision(s.call("Bash", {"command": "git diff"})), "pass")
+        self.assertEqual(decision(s.run(f"{CHECK} > test-output.txt", success=False)), "pass")
+        self.assertEqual(decision(s.call("Bash", {"command": "cat src/export.py"})), "pass")
+
+    def test_a_write_chained_with_the_check_is_held(self) -> None:
+        for command in (
+            f"sed -i 's/a/b/' src/export.py && {CHECK}",
+            f"cat > src/export.py <<'EOF'\nprint('x')\nEOF\n{CHECK}",
+            f"{CHECK} | tee test-output.txt",
+        ):
+            with self.subTest(command=command):
+                self.session = self.fresh()
+                s = self.failed_twice()
+                self.assertEqual(decision(s.call("Bash", {"command": command})), "deny")
+
+    def test_a_piped_check_fails_by_what_it_prints(self) -> None:
+        for output in (
+            "FAILED tests/test_export.py::test_round\n1 failed, 3 passed in 0.2s",
+            "Ran 4 tests in 0.1s\n\nFAILED (failures=1)",
+            "src/export.ts(3,1): error TS2304: Cannot find name 'x'.",
+            "npm ERR! Test failed.",
+            "Tests:       1 failed, 4 passed, 5 total",
+        ):
+            with self.subTest(output=output):
+                self.session = self.fresh()
+                s = self.routed()
+                # The pipe's exit code is the filter's, so the run records as a success.
+                s.run("pytest -q 2>&1 | tail -20", output=output)
+                s.run("pytest -q 2>&1 | tail -40", output=output)
+                held = s.call("Edit", FIX)
+                self.assertEqual(hold_line(held), "goated-hold: repeated-failure | justified-skip")
+                self.assertIn('"pytest -q"', reason(held))
+
+    def test_a_piped_check_that_prints_no_failure_is_a_pass(self) -> None:
+        s = self.routed()
+        s.run("pytest -q 2>&1 | tail -20", output="1 failed, 3 passed in 0.2s")
+        s.run("pytest -q 2>&1 | tail -20", output="4 passed in 0.2s")
+        s.run("pytest -q 2>&1 | tail -20", output="1 failed, 3 passed in 0.2s")
+
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass")
+
+    def test_powershell_checks_and_writes_count(self) -> None:
+        s = self.routed()
+        command = "uv run pytest -q | Select-Object -Last 20"
+        s.run(command, tool="PowerShell", output="2 failed, 1 passed in 0.3s")
+        s.run(command, tool="PowerShell", output="2 failed, 1 passed in 0.3s")
+
+        write = {"command": "Set-Content -Path src/export.py -Value 'x'"}
+        self.assertEqual(decision(s.call("PowerShell", write)), "deny")
+
+    def test_a_held_check_is_not_a_failure(self) -> None:
+        s = self.session
+        s.prompt("Fix the exporter.")
+        self.assertEqual(decision(s.run(f"echo x > out.txt; {CHECK}")), "deny")
+        self.assertEqual(decision(s.run(f"echo x > out.txt; {CHECK}")), "deny")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass")
+
+    def test_a_refused_or_interrupted_check_is_not_a_failure(self) -> None:
+        for text in (
+            "The user doesn't want to proceed with this tool use. The tool use was rejected.",
+            "Permission for this action was denied by the Claude Code auto mode classifier.",
+            "Permission for this command was denied by a built-in Claude Code safety check.",
+            "PreToolUse:Bash hook error: blocked by another hook",
+            "[Request interrupted by user for tool use]",
+        ):
+            with self.subTest(text=text):
+                self.session = self.fresh()
+                s = self.routed()
+                s.run(CHECK, success=False, output=text)
+                s.run(CHECK, success=False, output=text)
+                self.assertEqual(decision(s.call("Edit", FIX)), "pass")
+
+    def test_a_pass_between_failures_resets_the_count(self) -> None:
+        s = self.routed()
+        s.run(CHECK, success=False)
+        s.run(CHECK)
+        s.run(CHECK, success=False)
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass", "fail, pass, fail")
+
+        s.run(CHECK, success=False)
+        self.assertEqual(decision(s.call("Edit", FIX)), "deny", "then a second failure in a row")
+
+    def test_another_check_passing_does_not_reset_the_count(self) -> None:
+        s = self.routed()
+        s.run(CHECK, success=False)
+        s.run("uv run ruff check .")
+        s.run(CHECK, success=False)
+
+        self.assertEqual(decision(s.call("Edit", FIX)), "deny")
 
     def test_whitespace_alone_does_not_make_a_different_command(self) -> None:
         s = self.failed_twice("pytest -q", other="pytest   -q ")
@@ -577,6 +667,17 @@ class SubagentActionTests(AdapterTestCase):
         a._tool_result(a._tool_use("Bash", {"command": "git diff --cached"}), "ok")
 
         self.assertEqual(decision(self.sub_call("Bash", commit("Add export"))), "pass")
+
+    def test_a_check_failing_twice_in_a_subagent_holds_its_write(self) -> None:
+        a = self.agent
+        a.prompt("Implement the export.", hook=False)
+        for _ in range(2):
+            a._tool_result(a._tool_use("Bash", {"command": "pytest -q"}), "Exit code 1\n1 failed",
+                           is_error=True)
+
+        held = self.sub_call("Edit", {"file_path": "src/export.py", "old_string": "a",
+                                      "new_string": "b"})
+        self.assertEqual(hold_line(held), "goated-hold: repeated-failure | justified-skip")
 
     def test_a_parent_load_does_not_clear_a_subagent_hold(self) -> None:
         self.session.load("commit-message")

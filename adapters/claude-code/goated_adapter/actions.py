@@ -47,8 +47,26 @@ DOC_SYNC_SKILL = "doc-sync"
 HANDOFF_SKILL = "handoff"
 PROOF_SKILL = "verification-before-completion"
 DIAGNOSE_SKILL = "diagnose"
-# How many failures of one check command, in one turn, make the repeated-failure hold.
+# How many failures in a row of one check command, in one turn, make the repeated-failure hold.
 REPEATED_FAILURES = 2
+# A trailing pipe into an output filter, whose arguments hold no further pipe.
+PIPE_TAIL_RE = re.compile(
+    r"\s*\|\s*(?:tail|head|grep|egrep|findstr|more|less|tee|tee-object|select-object|select"
+    r"|select-string|sls|out-host|out-string)\b[^|]*$",
+    re.IGNORECASE,
+)
+STDERR_MERGE_RE = re.compile(r"\s*(?:2|\*)>&1$")
+# A failed call that never ran: a permission refusal, another hook's denial, or an interruption.
+NOT_RUN_RE = re.compile(
+    r"(?:The user doesn[’']t want to|Permission for this \w+ was denied|PreToolUse:\S+ hook error"
+    r"|\[Request interrupted by user)"
+)
+# What test runners, linters, and compilers print when they fail.
+FAILURE_SIGNS_RE = re.compile(
+    r"\b[1-9]\d* (?:failed|failing|errors?|fail)\b|^FAILED\b|^FAIL\b|--- FAIL|npm ERR!"
+    r"|^npm error\b|\berror TS\d+|\berror\[E\d+\]|test result: FAILED|^error: ",
+    re.MULTILINE,
+)
 RED_FLAGS_REFERENCE = "software-design-principles/references/red-flags.md"
 
 # Tools that start another agent, each with the input field that carries the
@@ -200,7 +218,7 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
             hold = _pr_hold(proof, changes)
         for target in command.write_targets:
             hold = hold or _security_hold(_norm(target), proof)
-        if command.writes and not command.is_check:
+        if command.non_check_writes:
             hold = hold or _repeated_failure_hold(proof)
         return hold
     if PR_TOOL_RE.match(tool_name):
@@ -366,27 +384,33 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof) -> Hold | None:
 
 
 def _repeated_failure_hold(proof: _Proof) -> Hold | None:
-    """Hold a write once one check command has failed twice in the turn.
+    """Hold a write once one check command has failed twice in a row in the turn.
 
-    "The same check" is the same command text, whitespace aside (spec G2): a
-    narrowed rerun, such as one test file of a failing suite, is another
-    command. A call the adapter held never ran, so it is no failure.
+    "The same check" is the same command text, whitespace aside (spec G2),
+    without a trailing pipe into output filters (`| tail -20`): a narrowed
+    rerun, such as one test file of a failing suite, is another command. A
+    pass of that check resets its count; other commands between runs do not.
+    Only runs count: a call held, refused, or interrupted never ran.
     """
 
     if proof.loaded_or_skipped(DIAGNOSE_SKILL):
         return None
-    failures: dict[str, int] = {}
-    repeated = None
+    in_a_row: dict[str, int] = {}
+    is_check: dict[str, bool] = {}
     for call in proof.turn.calls:
-        if call.name not in COMMAND_TOOLS or call.ok or call.held:
+        if call.name not in COMMAND_TOOLS or call.held or NOT_RUN_RE.match(call.output):
             continue
         command = str(call.input.get("command") or "")
-        key = " ".join(command.split())
-        if key and shell.analyze(command).is_check:
-            failures[key] = failures.get(key, 0) + 1
-            if failures[key] == REPEATED_FAILURES:
-                repeated = key
-                break
+        key, piped = _check_key(command)
+        # A pipe's exit code is its last filter's, so a piped run fails by what it prints.
+        failed = bool(FAILURE_SIGNS_RE.search(call.output)) if piped else not call.ok
+        if not failed and key not in in_a_row:
+            continue  # A pass of a command that never failed changes nothing.
+        if key not in is_check:
+            is_check[key] = shell.analyze(command).is_check
+        if is_check[key]:
+            in_a_row[key] = in_a_row.get(key, 0) + 1 if failed else 0
+    repeated = next((k for k, n in in_a_row.items() if n >= REPEATED_FAILURES), None)
     if repeated is None:
         return None
     shown = repeated if len(repeated) <= 80 else repeated[:77] + "..."
@@ -394,11 +418,24 @@ def _repeated_failure_hold(proof: _Proof) -> Hold | None:
         "repeated-failure", JUSTIFIED_SKIP,
         # The command is quoted, not backticked: backticks name a skill to load.
         f"The check \"{shown.replace('`', chr(39))}\" has failed {REPEATED_FAILURES} times in "
-        f"this turn. Load `{DIAGNOSE_SKILL}` with the Skill tool in this turn and find the "
-        "root cause before changing more. If the cause is already known, write "
+        f"a row in this turn. Load `{DIAGNOSE_SKILL}` with the Skill tool in this turn and "
+        "find the root cause before changing more. If the cause is already known, write "
         f"`goated-skip: {DIAGNOSE_SKILL}: <reason>` on its own line instead, then make the "
-        "write again. This write was not applied; rerunning the check is not held.",
+        "write again. This write was not applied. Rerunning the check is not held, and a "
+        "pass of it resets the count.",
     )
+
+
+def _check_key(command: str) -> tuple[str, bool]:
+    """A check command's identity, whitespace aside and without a trailing pipe
+    into output filters, and whether such a pipe was removed."""
+
+    key = " ".join(command.split())
+    bare = key
+    while (shorter := PIPE_TAIL_RE.sub("", bare)) != bare:
+        bare = shorter
+    piped = bare != key
+    return (STDERR_MERGE_RE.sub("", bare) if piped else bare), piped
 
 
 # Closeout ---------------------------------------------------------------------
