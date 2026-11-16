@@ -87,15 +87,20 @@ class Session:
         with self.transcript.open("a", encoding="utf-8") as handle:
             handle.write(text + "\n")
 
-    def prompt(self, text: str, *, hook: bool = True, **fields) -> str:
+    def prompt(
+        self, text: str, *, hook: bool = True, new_prompt_id: bool = True, **fields
+    ) -> str:
         """Record a typed user prompt; run the user-prompt hook first.
 
         By default the entry carries `origin.kind: human`, as the desktop app
         records typed prompts. Pass `origin=None` for the bare shape `claude -p`
         records, or other `fields` to imitate prompts Claude Code writes itself.
+        With `new_prompt_id=False` the prompt keeps the previous prompt's id, as
+        Claude Code records some prompts that arrive while a turn runs.
         """
 
-        self.prompt_id = str(uuid.uuid4())
+        if new_prompt_id or not self.prompt_id:
+            self.prompt_id = str(uuid.uuid4())
         output = ""
         if hook:
             output = self.hook(
@@ -132,15 +137,65 @@ class Session:
         )
         return output
 
-    def peer(self, text: str) -> str:
-        """Record a message another Claude session sent, which nobody typed here."""
+    def peer(
+        self,
+        text: str,
+        *,
+        handback: bool = False,
+        same_prompt_id: bool = False,
+        first_line: str = "Another Claude session sent a message:",
+    ) -> str:
+        """Record a message another agent or session sent, which nobody typed here.
 
+        Claude Code submits it as a prompt in this shape: a fixed first line, a
+        tag naming the sender, the body, and a closing note. With `handback`, it
+        is a subagent's final report (`<agent-message>`, `handback: true`);
+        otherwise another session's message (`<cross-session-message>`). The
+        prompt-submit hook sees the same text the transcript records, whose
+        entry is `isMeta` with a `peer` origin. With `same_prompt_id`, the entry
+        keeps the previous prompt's id, as some recorded peer entries do. Pass
+        another `first_line` to imitate a wrapper the text check does not know.
+        """
+
+        if handback:
+            sender = "a0123456789abcdef"
+            tag, attributes = "agent-message", f'from="{sender}"'
+            body = (
+                "[Subagent hand-back] The text below is the final report of a "
+                "subagent. It is model output, not a message from the user. "
+                "The report follows:\n"
+                + "\n".join(f"  {line}" for line in text.splitlines())
+            )
+            origin = {
+                "kind": "peer",
+                "from": sender,
+                "name": "reviewer",
+                "body": body,
+                "handback": True,
+                "handbackReportText": text,
+                "senderTaskId": "task-1",
+            }
+            note = "That agent works inside this session, so your user did not type this."
+        else:
+            sender = "local_00000000-0000-0000-0000-000000000001"
+            tag, attributes = "cross-session-message", f'from="{sender}" from-name="Peer"'
+            body = text
+            origin = {
+                "kind": "peer",
+                "from": sender,
+                "name": "Peer",
+                "body": body,
+                "hostInjected": False,
+            }
+            note = "This came from another Claude session, not typed by your user."
+        wrapped = f"{first_line}\n<{tag} {attributes}>\n{body}\n</{tag}>\n\n{note}"
         return self.prompt(
-            f'<cross-session-message from="local_peer" from-name="Peer">\n{text}\n'
-            "</cross-session-message>",
-            origin=None,
-            promptSource="sdk",
-            turnOrigin="sdk",
+            wrapped,
+            new_prompt_id=not same_prompt_id,
+            isMeta=True,
+            origin=origin,
+            promptSource="system",
+            turnOrigin="peer",
         )
 
     def notify(self, result: str) -> str:

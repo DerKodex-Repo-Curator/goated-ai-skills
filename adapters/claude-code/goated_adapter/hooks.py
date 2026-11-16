@@ -310,10 +310,12 @@ def _session_start(payload: dict, config: Config) -> str:
 def _user_prompt_submit(payload: dict, config: Config) -> str:
     """Record the overrides the user typed; they apply to this prompt's turn only.
 
-    The hook sees only the prompt text. Text that continues the turn, such as a
-    task notification, leaves the typed prompt's overrides in place; text
-    another session or the app wrote starts a turn with none. The gates check
-    again against the transcript, which shows who wrote the prompt.
+    The hook sees only the prompt text: its input names no source, and the
+    prompt's transcript entry is not yet written. Text that continues the turn,
+    such as a task notification, leaves the typed prompt's overrides in place;
+    text a subagent, another session, or the app wrote starts a turn with none.
+    The gates check again against the transcript, which shows who wrote the
+    prompt, so a message this text check misses still applies no override.
     """
 
     session_id = payload.get("session_id")
