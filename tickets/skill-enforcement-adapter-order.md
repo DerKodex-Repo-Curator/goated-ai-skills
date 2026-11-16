@@ -76,6 +76,11 @@ Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
    - Blocked by: None
    - Enables: the last route line winning after a compaction, and the
      compaction handling Ticket 051 builds on.
+17. `tickets/053-adapter-route-and-skip-lines-from-tool-input.md`
+   - Blocked by: `tickets/045-route-and-skip-lines-before-the-call.md`,
+     `tickets/046-adapter-pipeline-after-compaction.md`
+   - Enables: route and skip lines the adapter always sees, from tool input,
+     after 045 found that a message's text can be saved without them.
 
 Tickets 041–046 are the trial's revise fixes (spec, Trial Result), and 047
 fixes an R8 gap found in real use after the trial. 041, 047 and 042 ran one
@@ -102,7 +107,7 @@ Ticket 050 there edited the mod after 047.
 - `tickets/045-route-and-skip-lines-before-the-call.md`
 - `tickets/046-adapter-pipeline-after-compaction.md`
 
-Ticket 044 follows 043.
+Ticket 044 follows 043, and 053 follows 045 and 046.
 
 ## Coverage
 
@@ -119,4 +124,4 @@ Ticket 044 follows 043.
 - AC8 → 030 (adapter), 032 (mod)
 - AC9 → 033
 - AC10 → 041
-- AC11 → 042, 043, 044, 045, 046
+- AC11 → 042, 043, 044, 045, 046, 053
