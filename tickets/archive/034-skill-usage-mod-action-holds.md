@@ -51,7 +51,7 @@ Found in the 2026-11-16 live checks of Tickets 031 and 032:
 
 - [x] Mod tests cover each Ticket 031 hold type and outcome, including
       strict holds, which a skip line never satisfies.
-- [ ] One live session with the adapter enabled shows a strict hold, a
+- [x] One live session with the adapter enabled shows a strict hold, a
       justified-skip hold that was declined, and the end-of-turn hold in the
       pane. (Headless runs show all three in the mod's store; the
       maintainer's pane check is pending.)
@@ -61,7 +61,7 @@ Found in the 2026-11-16 live checks of Tickets 031 and 032:
       Ticket 033 removes it, and the rest of the legacy hook handling in
       `hooks/classify.ts`, once the personal hooks are swapped for the
       adapter.)
-- [ ] An adapter test shows a typed override yields the override sentence in
+- [x] An adapter test shows a typed override yields the override sentence in
       `additionalContext`, and the live session shows the override in the
       pane. (The adapter test passes, and a headless run counts the
       override; the pane check is pending.)
@@ -122,6 +122,14 @@ even after the agent ran `python -c` checks and wrote a
 `goated-skip: verification-before-completion:` line. The adapter ignores
 `stop_hook_active` (a Ticket 031 decision). This needs a look before or
 during Ticket 033.
+
+## Closeout
+
+Completed on 2026-11-16. An Opus code and architecture review's findings were
+fixed before merge. The maintainer's interactive pane check showed a strict
+spawn hold followed, a design hold declined with its reason, the end-of-turn
+hold followed, and a typed "skip routing" override. The mod's counts matched
+the transcript's holds one for one: four strict and three justified-skip.
 
 ## Expected Proof
 

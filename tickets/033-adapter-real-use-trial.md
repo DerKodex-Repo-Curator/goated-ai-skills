@@ -47,7 +47,7 @@ tests and README mentions (maintainer decision recorded in Ticket 034,
 ## Blocked By
 
 - `tickets/archive/028-discoverable-skill-descriptions.md`
-- `tickets/034-skill-usage-mod-action-holds.md`
+- `tickets/archive/034-skill-usage-mod-action-holds.md`
 
 ## Scope Exclusions
 
