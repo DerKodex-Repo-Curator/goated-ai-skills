@@ -651,14 +651,13 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         for (const phrase of e.phrases) measures.overrides[phrase] = (measures.overrides[phrase] ?? 0) + 1
         timeline.push({ ...stamp(e), kind: 'override', phrases: e.phrases })
         break
-      case 'spawn':
+      case 'spawn': {
         measures.subagents.spawns += 1
-        {
-          const spawnRow: TimelineEntry & { kind: 'spawn' } = { ...stamp(e), kind: 'spawn', agentType: e.agentType, description: e.description, ...(e.isSubagent ? { isSubagent: true as const } : {}) }
-          timeline.push(spawnRow)
-          if (e.id) spawnRows.set(e.id, spawnRow)
-        }
+        const spawnRow: TimelineEntry & { kind: 'spawn' } = { ...stamp(e), kind: 'spawn', agentType: e.agentType, description: e.description, ...(e.isSubagent ? { isSubagent: true as const } : {}) }
+        timeline.push(spawnRow)
+        if (e.id) spawnRows.set(e.id, spawnRow)
         break
+      }
       case 'subagent-start':
         measures.subagents.starts += 1
         timeline.push({ ...stamp(e), kind: 'subagent-start' })
@@ -673,6 +672,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
       }
       case 'write':
         if (e.id) pendingWrites.set(e.id, isTurnRouted)
+        // A write with no call id (events kept before ids were recorded) cannot be refused, so it counts at once.
         else turnWrites ??= isTurnRouted ? 'routed' : 'none'
         break
       case 'refused': {
