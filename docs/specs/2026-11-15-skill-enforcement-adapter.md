@@ -299,11 +299,13 @@ Claude Code adapter structure, settled in Ticket 030:
   turn but carries no overrides; or it reports background work (a task
   notification or side-session event), which continues the current turn. A
   turn yields its successful Skill loads, including a skill the prompt invoked
-  as `/<skill>`, and its route line. Claude Code writes the transcript
-  asynchronously; in live runs the call being judged appeared 54 to 114 ms
-  after its hook started. So the reader waits up to 1.5 seconds for that
-  call's own `tool_use` entry. If it does not appear, the hook fails open with
-  a visible warning. Older unseen turns beyond the 64 MB read limit are given
+  as `/<skill>`, and its route line. The call being judged comes from the hook
+  input, never from the transcript: in an interactive session Claude Code
+  records the assistant message holding it only after PreToolUse returns
+  (live check, 2026-11-16), so its text and sibling calls are unseen. The
+  reader waits up to 1.5 seconds only for the entry of the call's prompt
+  (`prompt_id`), and fails open with a visible warning if it does not appear.
+  Older unseen turns beyond the 64 MB read limit are given
   up; only a current turn larger than the limit fails open.
 - **Task state.** A task starts at the turn whose winning route line is not
   `continue`, and runs through later `continue` turns. Only loads after the

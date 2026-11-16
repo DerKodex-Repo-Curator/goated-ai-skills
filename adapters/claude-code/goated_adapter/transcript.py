@@ -113,7 +113,7 @@ class Turn:
 
     __slots__ = (
         "key", "is_compaction", "typed", "prompt_id", "loads", "task_loads",
-        "route", "malformed", "skips", "calls", "tool_use_ids",
+        "route", "malformed", "skips", "calls", "prompt_ids",
     )
 
     def __init__(self, key: str) -> None:
@@ -127,15 +127,15 @@ class Turn:
         self.malformed: list[str] = []
         self.skips: list[dict] = []
         self.calls: list[Call] = []
-        self.tool_use_ids: set[str] = set()
+        self.prompt_ids: set[str] = set()
 
 
 def read_recent_turns(
     path: str | os.PathLike,
     *,
     since_key: str | None,
-    tool_use_id: str | None,
-    wait_seconds: float,
+    prompt_id: str | None = None,
+    wait_seconds: float = 0.0,
     sidechain: bool = False,
 ) -> list[Turn]:
     """Return recent turns, oldest first, ending with the current turn.
@@ -147,9 +147,13 @@ def read_recent_turns(
     Reading never crosses a compaction boundary. It raises
     `TranscriptUnreadable` only when the current turn itself cannot be read.
 
-    When `tool_use_id` is given, the current turn must contain that tool call;
-    the reader re-reads for up to `wait_seconds` while the transcript catches
-    up, then raises `TranscriptUnreadable`.
+    When `prompt_id` is given, the current turn must hold an entry of that
+    prompt: the reader re-reads for up to `wait_seconds` while the transcript
+    catches up, then raises `TranscriptUnreadable`. It never waits for the
+    call being judged. In an interactive session Claude Code records the
+    assistant message holding that call, with any text and sibling calls in
+    it, only after PreToolUse returns, so callers take the call from the hook
+    input instead.
 
     `sidechain` reads a subagent's own transcript, where every entry is a
     sidechain entry and every prompt was written by the parent agent, so none
@@ -159,11 +163,12 @@ def read_recent_turns(
     deadline = time.monotonic() + max(wait_seconds, 0.0)
     while True:
         turns = _read_turns_once(Path(path), since_key, sidechain)
-        if tool_use_id is None or tool_use_id in turns[-1].tool_use_ids:
+        current = turns[-1]
+        if prompt_id is None or current.is_compaction or prompt_id in current.prompt_ids:
             return turns
         if time.monotonic() >= deadline:
             raise TranscriptUnreadable(
-                "the transcript does not yet show the current tool call"
+                "the transcript does not yet show the prompt this call belongs to"
             )
         time.sleep(POLL_SECONDS)
 
@@ -300,6 +305,11 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
     turn.typed = kind == TYPED
     if opener is not None and opener.get("promptId"):
         turn.prompt_id = str(opener["promptId"])
+    # Every prompt the turn holds, including background results that continue
+    # it; Claude Code marks user entries only.
+    turn.prompt_ids = {
+        str(e["promptId"]) for e in entries if e.get("type") == "user" and e.get("promptId")
+    }
     invoked = None
     if opener is not None and kind in (TYPED, MACHINE):
         match = COMMAND_NAME_RE.search(_prompt_text(opener) or "")
@@ -324,7 +334,6 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                     turn.skips.extend(markers.skips)
                 elif block.get("type") == "tool_use":
                     tool_id = str(block.get("id", ""))
-                    turn.tool_use_ids.add(tool_id)
                     tool_input = block.get("input")
                     pending[tool_id] = (
                         str(block.get("name", "")),

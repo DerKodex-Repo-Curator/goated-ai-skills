@@ -157,7 +157,10 @@ def _route_line_instruction(turn: Turn) -> str:
         "Before the first write or spawn after a user prompt, end routing with a "
         "route line on its own line, as the router's output contract defines: "
         "`goated-route: direct`, `goated-route: <intensity> | requires: <skills>`, "
-        "or `goated-route: continue` when this prompt continues the current task."
+        "or `goated-route: continue` when this prompt continues the current task. "
+        "Claude Code records a message only after this check, so a route line in "
+        "the same message as this call is not visible yet: if you wrote one there, "
+        "make the call again."
     )
     if turn.malformed:
         quoted = "; ".join(f"`{line}`" for line in turn.malformed)

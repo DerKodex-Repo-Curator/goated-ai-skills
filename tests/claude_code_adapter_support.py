@@ -52,6 +52,7 @@ class Session:
         # names the parent's transcript.
         self.sidechain = False
         self.hook_transcript = self.transcript
+        self.record_before_hook = False
 
     def subagent(self, agent_id: str) -> "Session":
         """A subagent of this session, writing where Claude Code puts its transcript."""
@@ -173,26 +174,58 @@ class Session:
             }
         )
 
-    def _tool_use(self, name: str, tool_input: dict) -> str:
+    def _new_id(self) -> str:
         self._counter += 1
-        tool_use_id = f"toolu_{self._counter:04d}"
-        self._append(
-            {
-                "type": "assistant",
-                "message": {
-                    "role": "assistant",
-                    "content": [
-                        {
-                            "type": "tool_use",
-                            "id": tool_use_id,
-                            "name": name,
-                            "input": tool_input,
-                        }
-                    ],
-                },
-            }
-        )
+        return f"toolu_{self._counter:04d}"
+
+    def _tool_use(self, name: str, tool_input: dict, tool_use_id: str | None = None) -> str:
+        tool_use_id = tool_use_id or self._new_id()
+        self._tool_uses([(tool_use_id, name, tool_input)])
         return tool_use_id
+
+    def _tool_uses(self, calls) -> None:
+        """Record one assistant message holding these (id, name, input) calls."""
+
+        content = [
+            {"type": "tool_use", "id": tool_id, "name": name, "input": tool_input}
+            for tool_id, name, tool_input in calls
+        ]
+        self._append({"type": "assistant", "message": {"role": "assistant", "content": content}})
+
+    def _judge(self, tool: str, tool_input: dict, **fields) -> tuple[str, dict]:
+        """Run PreToolUse for a new call, recording its tool_use as Claude Code does.
+
+        An interactive session records the assistant message holding the call
+        only after PreToolUse returns, so by default the hook sees a transcript
+        without it. `record_before_hook` imitates a headless run, where the
+        entry is often already there.
+        """
+
+        tool_use_id = self._new_id()
+        if self.record_before_hook:
+            self._tool_use(tool, tool_input, tool_use_id)
+        output = parse(self.hook(
+            "PreToolUse", tool_name=tool, tool_input=tool_input, tool_use_id=tool_use_id, **fields
+        ))
+        if not self.record_before_hook:
+            self._tool_use(tool, tool_input, tool_use_id)
+        return tool_use_id, output
+
+    def parallel(self, calls: list[tuple[str, dict]]) -> list[dict]:
+        """Judge calls made in one assistant message before any of it is recorded."""
+
+        ids = [self._new_id() for _ in calls]
+        outputs = [
+            parse(self.hook(
+                "PreToolUse", tool_name=tool, tool_input=tool_input, tool_use_id=tool_id
+            ))
+            for tool_id, (tool, tool_input) in zip(ids, calls)
+        ]
+        self._tool_uses([(i, tool, tool_input) for i, (tool, tool_input) in zip(ids, calls)])
+        for tool_id, output in zip(ids, outputs):
+            held = reason(output)
+            self._tool_result(tool_id, held or "ok", is_error=bool(held))
+        return outputs
 
     def _tool_result(
         self, tool_use_id: str, content: str, *, is_error: bool = False, extra=None
@@ -254,24 +287,15 @@ class Session:
     def run(self, command: str, *, success: bool = True, tool: str = "Bash") -> dict:
         """Run a shell command through PreToolUse, then record its result."""
 
-        tool_input = {"command": command}
-        tool_use_id = self._tool_use(tool, tool_input)
-        output = self.hook(
-            "PreToolUse", tool_name=tool, tool_input=tool_input, tool_use_id=tool_use_id
-        )
-        held = parse(output).get("hookSpecificOutput", {}).get("permissionDecision") == "deny"
-        ok = success and not held
+        tool_use_id, output = self._judge(tool, {"command": command})
+        ok = success and not reason(output)
         self._tool_result(tool_use_id, "ok" if ok else "Exit code 1\nfailed", is_error=not ok)
-        return parse(output)
+        return output
 
     def spawn(self, agent_id: str, brief: str, tool: str = "Agent") -> dict:
         """Start a subagent: PreToolUse, then the result naming its agent id."""
 
-        tool_input = {"prompt": brief}
-        tool_use_id = self._tool_use(tool, tool_input)
-        output = parse(self.hook(
-            "PreToolUse", tool_name=tool, tool_input=tool_input, tool_use_id=tool_use_id
-        ))
+        tool_use_id, output = self._judge(tool, {"prompt": brief})
         held = reason(output)
         self._tool_result(
             tool_use_id, held or "Agent report.", is_error=bool(held),
@@ -315,21 +339,13 @@ class Session:
         return run_hook(json.dumps(payload), self.config)
 
     def call(self, tool: str, tool_input: dict | None = None, **fields) -> dict:
-        """Record a tool_use and run PreToolUse for it; return parsed output."""
+        """Run PreToolUse for a new call and record it; return the parsed output."""
 
-        tool_input = tool_input or default_input(tool)
-        tool_use_id = self._tool_use(tool, tool_input)
-        output = self.hook(
-            "PreToolUse",
-            tool_name=tool,
-            tool_input=tool_input,
-            tool_use_id=tool_use_id,
-            **fields,
-        )
+        tool_use_id, output = self._judge(tool, tool_input or default_input(tool), **fields)
         # Claude Code records a held call as an error result carrying the reason.
-        held = reason(parse(output))
+        held = reason(output)
         self._tool_result(tool_use_id, held or "ok", is_error=bool(held))
-        return parse(output)
+        return output
 
 
 def default_input(tool: str) -> dict:

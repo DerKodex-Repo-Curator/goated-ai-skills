@@ -507,15 +507,26 @@ class FailOpenTests(AdapterTestCase):
 
         self.assert_fails_open(parse(output))
 
-    def test_a_transcript_that_has_not_caught_up_fails_open(self) -> None:
+    def test_a_call_not_yet_in_the_transcript_is_still_judged(self) -> None:
         s = self.session
         s.prompt("Fix it.")
         output = parse(
             s.hook("PreToolUse", tool_name="Edit", tool_input={}, tool_use_id="toolu_unseen")
         )
 
+        self.assertEqual(decision(output), "deny")
+        self.assertNotIn("systemMessage", output)
+
+    def test_a_transcript_without_the_calls_prompt_fails_open(self) -> None:
+        s = self.session
+        s.prompt("Fix it.")
+        output = parse(s.hook(
+            "PreToolUse", tool_name="Edit", tool_input={}, tool_use_id="toolu_unseen",
+            prompt_id="prompt-not-yet-recorded",
+        ))
+
         self.assert_fails_open(output)
-        self.assertIn("does not yet show the current tool call", output["systemMessage"])
+        self.assertIn("does not yet show the prompt", output["systemMessage"])
 
     def test_missing_session_id_fails_open(self) -> None:
         payload = {"hook_event_name": "PreToolUse", "tool_name": "Edit"}
