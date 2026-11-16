@@ -179,24 +179,43 @@ plus deleted, is this adapter's mechanical stand-in for "large", as the
 conventions, the policy's other reasons, are left to the router.
 
 The transcript does not hold a branch's size, so this gate is the one place
-the adapter runs a command. When a pull-request call would otherwise be held
+the adapter runs commands. When a pull-request call would otherwise be held
 by `pr-review` (the `pull-request` gate passed, and no load, change read, or
-skip line has cleared `pr-review`), the adapter runs, in the hook's working
-folder:
+skip line has cleared `pr-review`), the adapter asks git, in the hook's
+working folder, which of the candidate refs below exist (`git for-each-ref`),
+then measures the first base and head found:
 
 ```text
-git diff --shortstat --no-ext-diff --no-textconv <base>...HEAD --
+git diff --shortstat --no-ext-diff --no-textconv <base>...<head> --
 ```
 
-`<base>` is the branch the pull request merges into: `--base` or `-B` on `gh
-pr create`, `--target-branch` or `-b` on `glab mr create`, or an MCP tool's
-`base` or `target_branch` input, tried as `origin/<base>` and then as the
-local branch. Without one, it is the remote's default branch, `origin/HEAD`,
-which a clone records. If no base is found, git is missing or fails, the
-folder is not a git checkout, the base would read as an option, or git takes
-longer than two seconds, the size is unknown and `pr-review` does not hold.
-Only committed work on `HEAD` counts, which is what the pull request opens.
-The cost is in [Latency](#latency).
+- `<base>` is the branch the pull request merges into: `--base` or `-B` on
+  `gh pr create`, `--target-branch` or `-b` on `glab mr create`, or an MCP
+  tool's `base` or `target_branch` input, found as `origin/<base>` or else the
+  local branch. Without one, it is the first that exists of `origin/HEAD`,
+  `origin/main`, `origin/master`, `main`, and `master`.
+- `<head>` is the branch it merges from: `--head` or `-H` on `gh`,
+  `--source-branch` or `-s` on `glab`, or an MCP tool's `head` or
+  `source_branch` input, found as the local branch or else `origin/<head>`.
+  Without one, it is the checked-out `HEAD`. Only committed work counts,
+  which is what the pull request opens.
+- An MCP tool that names an `owner` and `repo` is measured only when they
+  match the checkout's `origin` URL (one more git call). Aimed at another
+  repository, or from a folder with no `origin`, the tool is not measured:
+  this checkout says nothing about that repository's branches.
+
+Values of the command's other options are never read as options, so
+`--description "-bump deps"` names no base. Every name reaches git inside a
+full ref name (`refs/…`), so none can read as a git option.
+
+When the size cannot be measured, `pr-review` does not hold: no base or head
+is found (a head from another fork, `owner:branch`, or a branch not yet
+fetched), git is missing or fails, the folder is not a git checkout, or git's
+calls take longer than two seconds in all. This gate fails open, like the
+rest of the adapter: holding on an unknown size would hold every pull request
+from a fork or another clone, whatever its size, and a justified-skip hold
+that fires without evidence teaches agents to skip it. The cost is in
+[Latency](#latency).
 
 ### Shell writes
 
@@ -496,13 +515,15 @@ on the same machine with git 2.55, in-process through `run_hook`, 30 runs each:
 
 | Case | Median | p90 |
 | --- | --- | --- |
-| No checkout at the hook's folder | 4 ms | 6 ms |
-| One git call (`origin/<base>` or `origin/HEAD` found), 450 changed lines | 30 ms | 36 ms |
-| The same, 20,000 changed lines | 31 ms | 37 ms |
-| Two git calls (no remote branch, so the local base is tried), 450 lines | 62 ms | 66 ms |
+| No checkout at the hook's folder | 3 ms | 3 ms |
+| `gh pr create --base main`, 450 changed lines (two git calls) | 34 ms | 36 ms |
+| `gh pr create --fill`, 450 changed lines (two git calls) | 35 ms | 39 ms |
+| The same, 20,000 changed lines | 40 ms | 44 ms |
+| An MCP tool naming `owner` and `repo`, 450 changed lines (three git calls) | 62 ms | 75 ms |
 
-So a pull request's hook call costs about 30 ms more, 60 ms when the base
-exists only locally, and every other call costs nothing more.
+So a pull request's hook call costs about 35 ms more, about 60 ms for an MCP
+tool that names its repository, and at most two seconds when git hangs.
+Every other call costs nothing more.
 
 The hook never waits for the call it judges, which it takes from its input:
 in an interactive session (Claude Code 2.1.325) the assistant message holding

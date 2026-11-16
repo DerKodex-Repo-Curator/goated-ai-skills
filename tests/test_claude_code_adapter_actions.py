@@ -428,23 +428,94 @@ class PullRequestReviewTests(AdapterTestCase):
         held = s.call(tool, {"title": "x", "base": "main", "head": "feature"})
         self.assertEqual(hold_line(held), "goated-hold: pr-review | justified-skip")
 
+    def fresh_described(self, **repo) -> Session:
+        """Like `described`, in a session of its own, with `git_branch_with_change` options."""
+
+        s = self.fresh()
+        s.prompt("Open the pull request.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        git_branch_with_change(s.project, repo.pop("changed_lines", 450), **repo)
+        s.load("pr-description")
+        s.run("git diff main...feature")
+        return s
+
+    def test_it_still_holds_once_the_pull_request_gate_passes(self) -> None:
+        s = self.routed()
+        git_branch_with_change(s.project, 500)
+
+        self.assertEqual(hold_line(s.call("Bash", OPEN_PR)), "goated-hold: pull-request | strict")
+        s.load("pr-description")
+        s.run("git diff main...HEAD")
+        self.assertEqual(hold_line(s.call("Bash", OPEN_PR)), "goated-hold: pr-review | justified-skip")
+
+    def test_without_a_base_each_usual_default_branch_is_tried(self) -> None:
+        fill = {"command": "gh pr create --fill"}
+        cases = (
+            ("origin/HEAD", {"remote_head": True}),
+            ("origin/main", {"remote_branches": ("main",)}),
+            ("origin/master", {"base": "master", "remote_branches": ("master",)}),
+            ("local main", {}),
+            ("local master", {"base": "master"}),
+        )
+        for name, repo in cases:
+            with self.subTest(base=name):
+                s = self.fresh_described(**repo)
+                self.assertEqual(hold_line(s.call("Bash", fill)),
+                                 "goated-hold: pr-review | justified-skip")
+
+    def test_a_named_head_is_measured_instead_of_the_checked_out_branch(self) -> None:
+        tool = "mcp__github__create_pull_request"
+        for name, call in (
+            ("pr tool", (tool, {"title": "x", "base": "main", "head": "feature"})),
+            ("gh --head", ("Bash", {"command": "gh pr create --base main --head feature --fill"})),
+            ("gh -H", ("Bash", {"command": "gh pr create -B main -H feature --fill"})),
+            ("glab --source-branch", ("Bash", {"command": "glab mr create -b main --source-branch feature"})),
+            ("remote-only head", ("Bash", {"command": "gh pr create --base main --head pushed --fill"})),
+        ):
+            with self.subTest(case=name):
+                s = self.fresh_described(stay_on_base=True)
+                if name == "remote-only head":
+                    import subprocess
+                    subprocess.run(["git", "update-ref", "refs/remotes/origin/pushed", "feature"],
+                                   cwd=s.project, check=True)
+                self.assertEqual(hold_line(s.call(*call)), "goated-hold: pr-review | justified-skip")
+        # Without a head, the checked-out base is measured against itself: nothing changed.
+        s = self.fresh_described(stay_on_base=True)
+        self.assertEqual(decision(s.call(tool, {"title": "x", "base": "main"})), "pass")
+
+    def test_a_pr_tool_aimed_at_another_repository_is_not_measured(self) -> None:
+        tool = "mcp__github__create_pull_request"
+        pr = {"title": "x", "owner": "acme", "repo": "export", "base": "main", "head": "feature"}
+        for url, held in (
+            ("https://github.com/acme/export.git", True),
+            ("git@github.com:Acme/Export.git", True),
+            ("https://github.com/other/export.git", False),
+            (None, False),
+        ):
+            with self.subTest(origin=url):
+                s = self.fresh_described(origin_url=url)
+                self.assertEqual(decision(s.call(tool, pr)), "deny" if held else "pass")
+
+    def test_option_values_are_not_read_as_options(self) -> None:
+        # glab's -b is the target branch; inside --description's value it is just text.
+        s = self.fresh_described(remote_head=True)
+        command = {"command": 'glab mr create --description "-bump deps" --title x'}
+        self.assertEqual(hold_line(s.call("Bash", command)), "goated-hold: pr-review | justified-skip")
+
     def test_no_hold_when_the_size_cannot_be_measured(self) -> None:
         cases = (
-            # No --base and no origin/HEAD: no base to measure against.
-            ("no base", False, {"command": "gh pr create --fill"}),
+            # No base flag, and none of origin/HEAD, origin/main, origin/master, main, or master.
+            ("no base", {"base": "trunk"}, {"command": "gh pr create --fill"}),
             # A base git would read as an option is never passed to it.
-            ("option-like base", False, {"command": "gh pr create --base=--output=x.txt --fill"}),
-            ("unknown base", False, {"command": "gh pr create --base nowhere --fill"}),
+            ("option-like base", {}, {"command": "gh pr create --base=--output=x.txt --fill"}),
+            ("unknown base", {}, {"command": "gh pr create --base nowhere --fill"}),
+            # A head that is neither a local branch nor origin/<head> fails open.
+            ("unknown head", {}, {"command": "gh pr create --base main --head someone:fork --fill"}),
         )
-        for name, remote_head, command in cases:
+        for name, repo, command in cases:
             with self.subTest(case=name):
-                s = self.fresh()
-                s.prompt("Open the pull request.")
-                s.load(ROUTER)
-                s.say("goated-route: direct")
-                git_branch_with_change(s.project, 450, remote_head=remote_head)
-                s.load("pr-description")
-                s.run("git diff main...HEAD")
+                s = self.fresh_described(**repo)
                 self.assertEqual(decision(s.call("Bash", command)), "pass")
                 self.assertFalse((s.project / "x.txt").exists())
 

@@ -68,8 +68,24 @@ GIT_NO_PATCH_FLAGS = (
 GIT_SILENT_FLAGS_RE = re.compile(r"--quiet|--output(?:=.*)?")
 # `gh pr diff` and `glab mr diff` print a pull or merge request's patch.
 FORGE_DIFFS = {"gh": "pr", "glab": "mr"}
-# The options that name the branch a pull or merge request merges into.
-PR_BASE_OPTIONS = {"gh": ("--base", "-B"), "glab": ("--target-branch", "-b")}
+# The options of `gh pr create` and `glab mr create` that take a value, by the
+# branch each names: "base" (merged into), "head" (merged from), or None. A
+# value is never read as an option, so `--description "-bump deps"` names no
+# base.
+PR_VALUE_OPTIONS = {
+    "gh": {
+        "--base": "base", "-B": "base", "--head": "head", "-H": "head",
+        **dict.fromkeys(("--assignee", "-a", "--body", "-b", "--body-file", "-F", "--label",
+                         "-l", "--milestone", "-m", "--project", "-p", "--recover",
+                         "--reviewer", "-r", "--template", "-T", "--title", "-t")),
+    },
+    "glab": {
+        "--target-branch": "base", "-b": "base", "--source-branch": "head", "-s": "head",
+        **dict.fromkeys(("--assignee", "-a", "--description", "-d", "--related-issue", "-i",
+                         "--label", "-l", "--milestone", "-m", "--reviewer",
+                         "--target-project", "--title", "-t")),
+    },
+}
 
 # Wrappers that run the next word as the command, with the options of each
 # that take a value.
@@ -137,8 +153,9 @@ class ShellCommand:
     download without an output name). `commit` is True for a `git commit`
     that records one (not `--dry-run`); `commit_message` is its message when
     that commit carries it inline, else None. `opens_pr` covers
-    `gh pr create|new` and `glab mr create|new`; `pr_base` is the base
-    branch such a command names (`--base`/`-B` for gh, `--target-branch`/`-b`
+    `gh pr create|new` and `glab mr create|new`; `pr_base` and `pr_head` are
+    the branches such a command names to merge into and from (`--base`/`-B`
+    and `--head`/`-H` for gh, `--target-branch`/`-b` and `--source-branch`/`-s`
     for glab), else None. `is_check` says it runs a
     test, lint, build, or check. `prints_changes` says it prints changes'
     content to the agent: a git diff or show, a patch log, or patches on
@@ -148,7 +165,7 @@ class ShellCommand:
 
     __slots__ = (
         "writes", "write_targets", "unknown_writes", "commit", "commit_message",
-        "opens_pr", "pr_base", "is_check", "prints_changes",
+        "opens_pr", "pr_base", "pr_head", "is_check", "prints_changes",
     )
 
     def __init__(self) -> None:
@@ -159,6 +176,7 @@ class ShellCommand:
         self.commit_message: str | None = None
         self.opens_pr = False
         self.pr_base: str | None = None
+        self.pr_head: str | None = None
         self.is_check = False
         self.prints_changes = False
 
@@ -211,7 +229,9 @@ def _add_segment(result: ShellCommand, segment: "_Segment") -> None:
         noun = FORGE_DIFFS[name]
         if rest[:1] == [noun] and rest[1:2] in (["create"], ["new"]):
             result.opens_pr = True
-            result.pr_base = _option_value(rest[2:], PR_BASE_OPTIONS[name]) or result.pr_base
+            branches = _pr_branches(rest[2:], PR_VALUE_OPTIONS[name])
+            result.pr_base = branches.get("base") or result.pr_base
+            result.pr_head = branches.get("head") or result.pr_head
         if rest[:2] == [noun, "diff"] and "--name-only" not in rest:
             prints = True
     # Output redirected into a file never reached the agent; a stderr redirect leaves it.
@@ -499,19 +519,30 @@ def _ps_paths(args: list[str]) -> list[str]:
     return named + positional
 
 
-def _option_value(args: list[str], names: tuple[str, ...]) -> str | None:
-    """The value of the last of `names` in `args`, as `--name value`, `--name=value`, or `-Xvalue`."""
+def _pr_branches(args: list[str], value_options: dict) -> dict[str, str]:
+    """The branches a pull-request command's `args` name, by role ("base",
+    "head"), the last of each winning. An option takes its value as the next
+    word, after `=`, or attached to a short option (`-Bmain`); a value is
+    never read as an option."""
 
-    value = None
-    for i, arg in enumerate(args):
-        if arg in names and i + 1 < len(args):
-            value = args[i + 1]
-        for name in names:
-            if name.startswith("--") and arg.startswith(name + "="):
-                value = arg[len(name) + 1:]
-            elif not name.startswith("--") and arg.startswith(name) and len(arg) > len(name):
-                value = arg[len(name):]
-    return value
+    branches: dict[str, str] = {}
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        i += 1
+        if arg in value_options:
+            name, value = arg, args[i] if i < len(args) else None
+            i += 1
+        elif arg.startswith("--") and "=" in arg:
+            name, value = arg.split("=", 1)
+        elif not arg.startswith("--") and arg[:2] in value_options and len(arg) > 2:
+            name, value = arg[:2], arg[2:]
+        else:
+            continue
+        role = value_options.get(name)
+        if role and value is not None:
+            branches[role] = value
+    return branches
 
 
 def _skip_options(args: list[str], takes_value: set[str]) -> list[str]:

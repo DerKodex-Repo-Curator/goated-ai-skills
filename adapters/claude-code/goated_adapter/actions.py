@@ -34,6 +34,7 @@ import os
 from collections.abc import Callable
 import re
 import subprocess
+import time
 
 from . import contracts, shell
 from .gates import COMMAND_TOOLS, STRICT, Hold, goated_skill_name
@@ -89,8 +90,14 @@ DESIGN_MIN_LINES = 5
 # plus deleted, is large enough to review before it lands: the adapter's
 # stand-in for the skill's "large" (adapter README, Large pull requests).
 REVIEW_MIN_LINES = 400
-# How long the size check may take before it gives up and holds nothing.
+# How long the size check's git calls may take in all before it gives up and
+# holds nothing.
 SIZE_TIMEOUT_SECONDS = 2.0
+# Where a pull request merges into when it names no base, in order of preference.
+DEFAULT_BASE_REFS = (
+    "refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master",
+    "refs/heads/main", "refs/heads/master",
+)
 
 CODE_EXTENSIONS = frozenset(
     ".py .js .jsx .ts .tsx .mjs .cjs .go .rs .java .kt .kts .swift .c .h .cpp .hpp .cc .cs "
@@ -205,14 +212,13 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         hold = _commit_hold(command.commit_message, proof, changes) if command.commit else None
         if hold is None and command.opens_pr:
             hold = _pr_hold(proof, changes) or _pr_review_hold(
-                command.pr_base, cwd, proof, changes)
+                lambda: changed_lines(cwd, command.pr_base, command.pr_head), proof, changes)
         for target in command.write_targets:
             hold = hold or _security_hold(_norm(target), proof)
         return hold
     if PR_TOOL_RE.match(tool_name):
-        base = tool_input.get("base") or tool_input.get("target_branch")
         return _pr_hold(proof, changes, by_tool=True) or _pr_review_hold(
-            base if isinstance(base, str) else None, cwd, proof, changes, by_tool=True)
+            lambda: _tool_changed_lines(tool_input, cwd), proof, changes, by_tool=True)
     if COMMIT_TOOL_RE.match(tool_name):
         message = tool_input.get("message")
         return _commit_hold(message if isinstance(message, str) else None, proof, changes,
@@ -280,12 +286,13 @@ def _pr_hold(proof: _Proof, changes: Callable[[], "_Changes"],
     )
 
 
-def _pr_review_hold(base: str | None, cwd: str | None, proof: _Proof,
+def _pr_review_hold(size_of: Callable[[], int | None], proof: _Proof,
                     changes: Callable[[], "_Changes"], by_tool: bool = False) -> Hold | None:
-    """Hold a pull request that changes `REVIEW_MIN_LINES` or more lines against
-    `base` until `standards-and-spec-review` loads and the change is read after
-    it, or a skip line names it. Checked after the `pull-request` gate passes,
-    and measured only when the turn's proof would not already clear it."""
+    """Hold a pull request that changes `REVIEW_MIN_LINES` or more lines, as
+    `size_of` measures it (None: unknown), until `standards-and-spec-review`
+    loads and the change is read after it, or a skip line names it. Checked
+    after the `pull-request` gate passes; `size_of` runs only when the turn's
+    proof would not already clear it."""
 
     if proof.skipped(REVIEW_SKILL):
         return None
@@ -297,7 +304,7 @@ def _pr_review_hold(base: str | None, cwd: str | None, proof: _Proof,
         )
         if hold is None:
             return None
-    size = changed_lines(cwd, base)
+    size = size_of()
     if size is None or size < REVIEW_MIN_LINES:
         return None
     return hold or Hold(
@@ -312,32 +319,90 @@ def _pr_review_hold(base: str | None, cwd: str | None, proof: _Proof,
     )
 
 
-def changed_lines(cwd: str | None, base: str | None) -> int | None:
-    """Lines added plus deleted on HEAD since it left `base`, as git reports
-    them; None when that cannot be measured.
+def _tool_changed_lines(tool_input: dict, cwd: str | None) -> int | None:
+    """`changed_lines` for an MCP pull-request tool's input: its `base` or
+    `target_branch`, its `head` or `source_branch`, and, for a GitHub-style
+    tool, the `owner` and `repo` it is aimed at."""
 
-    `base` is the branch the pull request merges into, tried on the remote
-    first (`origin/<base>`), then locally; without one, the remote's default
-    branch (`origin/HEAD`). One git call, two when the remote has no such
-    branch. A base that git would read as an option is refused, and external
-    diff and text-conversion programs are switched off, so only git runs.
+    def text(*keys: str) -> str | None:
+        value = next((tool_input[k] for k in keys if tool_input.get(k)), None)
+        return value if isinstance(value, str) else None
+
+    owner, repo = text("owner"), text("repo")
+    return changed_lines(cwd, text("base", "target_branch"), text("head", "source_branch"),
+                         f"{owner}/{repo}" if owner and repo else None)
+
+
+def changed_lines(cwd: str | None, base: str | None, head: str | None = None,
+                  repository: str | None = None) -> int | None:
+    """Lines added plus deleted on `head` since it left `base`, as git in `cwd`
+    reports them; None when that cannot be measured.
+
+    `base` is the branch the pull request merges into, found as `origin/<base>`
+    or the local branch; without one, the first of `DEFAULT_BASE_REFS` that
+    exists. `head` is the branch it merges from, found as the local branch or
+    `origin/<head>`; without one, the checked-out `HEAD`. A base or head that
+    is in neither place, such as another fork's branch, is unknown.
+    `repository` ("owner/repo") is the repository a tool aims at: unless it is
+    the checkout's `origin`, this checkout says nothing about its size.
+
+    Two git calls, three with `repository`, within `SIZE_TIMEOUT_SECONDS` in
+    all. Every name reaches git inside a full ref name (`refs/...`), so none
+    reads as an option, and external diff and text-conversion programs are
+    switched off, so only git runs.
     """
 
-    if not cwd or (base is not None and (not base or base.startswith("-"))):
+    if not cwd:
         return None
-    for revision in ([f"origin/{base}", base] if base else ["origin/HEAD"]):
-        try:
-            result = subprocess.run(
-                ["git", "-c", "core.fsmonitor=false", "diff", "--shortstat", "--no-ext-diff",
-                 "--no-textconv", f"{revision}...HEAD", "--"],
-                cwd=cwd, capture_output=True, text=True, timeout=SIZE_TIMEOUT_SECONDS,
-                env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
-            )
-        except (OSError, subprocess.SubprocessError):
-            return None  # No git, no such folder, or too slow: no hold.
-        if result.returncode == 0:
-            return sum(int(n) for n in re.findall(r"(\d+) (?:insertion|deletion)", result.stdout))
-    return None
+    deadline = time.monotonic() + SIZE_TIMEOUT_SECONDS
+    if repository is not None:
+        url = _git(["config", "--get", "remote.origin.url"], cwd, deadline)
+        if url is None or not _names_repository(url, repository):
+            return None
+    base_refs = ((f"refs/remotes/origin/{base}", f"refs/heads/{base}") if base
+                 else DEFAULT_BASE_REFS)
+    head_refs = (f"refs/heads/{head}", f"refs/remotes/origin/{head}") if head else ()
+    listed = _git(["for-each-ref", "--format=%(refname)", *base_refs, *head_refs], cwd, deadline)
+    if listed is None:
+        return None
+    found = set(listed.split())  # A pattern also lists refs below it, so match exactly.
+    base_ref = next((ref for ref in base_refs if ref in found), None)
+    head_ref = next((ref for ref in head_refs if ref in found), None) if head else "HEAD"
+    if base_ref is None or head_ref is None:
+        return None
+    stat = _git(["diff", "--shortstat", "--no-ext-diff", "--no-textconv",
+                 f"{base_ref}...{head_ref}", "--"], cwd, deadline)
+    if stat is None:
+        return None
+    return sum(int(n) for n in re.findall(r"(\d+) (?:insertion|deletion)", stat))
+
+
+def _git(args: list[str], cwd: str, deadline: float) -> str | None:
+    """Run git with `args` in `cwd` and return its output; None when it fails,
+    is missing, or runs past `deadline`. The C locale keeps git's words
+    English, and undecodable bytes are replaced, never raised."""
+
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "-c", "core.fsmonitor=false", *args],
+            cwd=cwd, capture_output=True, encoding="utf-8", errors="replace",
+            timeout=remaining,
+            env={**os.environ, "GIT_OPTIONAL_LOCKS": "0", "LC_ALL": "C", "LANG": "C"},
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None  # No git, no such folder, or too slow: the size is unknown.
+    return result.stdout if result.returncode == 0 else None
+
+
+def _names_repository(url: str, repository: str) -> bool:
+    """True when the remote `url` (HTTPS or SSH form) is `repository`, "owner/repo"."""
+
+    path = url.strip().lower().rstrip("/").removesuffix(".git")
+    wanted = repository.lower()
+    return path.endswith("/" + wanted) or path.endswith(":" + wanted)
 
 
 def _change_read_hold(gate: str, skill: str, proof: _Proof, changes: "_Changes", by_tool: bool,
