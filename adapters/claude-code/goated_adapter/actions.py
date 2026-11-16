@@ -376,17 +376,20 @@ def _repeated_failure_hold(proof: _Proof) -> Hold | None:
     if proof.loaded_or_skipped(DIAGNOSE_SKILL):
         return None
     failures: dict[str, int] = {}
+    repeated = None
     for call in proof.turn.calls:
         if call.name not in COMMAND_TOOLS or call.ok or call.held:
             continue
-        text = " ".join(str(call.input.get("command") or "").split())
-        if text and shell.analyze(text).is_check:
-            failures[text] = failures.get(text, 0) + 1
-            if failures[text] == REPEATED_FAILURES:
+        command = str(call.input.get("command") or "")
+        key = " ".join(command.split())
+        if key and shell.analyze(command).is_check:
+            failures[key] = failures.get(key, 0) + 1
+            if failures[key] == REPEATED_FAILURES:
+                repeated = key
                 break
-    else:
+    if repeated is None:
         return None
-    shown = text if len(text) <= 80 else text[:77] + "..."
+    shown = repeated if len(repeated) <= 80 else repeated[:77] + "..."
     return Hold(
         "repeated-failure", JUSTIFIED_SKIP,
         # The command is quoted, not backticked: backticks name a skill to load.
