@@ -23,8 +23,8 @@ const prompt = (t = 1): UsageEvent => ({ kind: 'prompt', t, named: [] })
 const response = (t: number): UsageEvent => ({ kind: 'response', t })
 const results = (t: number): UsageEvent => ({ kind: 'results', t })
 const load = (skill: string, t: number): UsageEvent => ({ kind: 'load', t, skill, via: 'tool', isSubagent: false })
-const preHold = (tool: string, text: string, t: number) => hookEvents(denied(tool, text), SKILLS, t, { holdsOnly: true })
-const stopHold = (t: number, text: string = ADAPTER_TEXTS.closeout) => hookEvents(blockedStop(text), SKILLS, t)
+const preHold = (tool: string, text: string, t: number) => hookEvents(denied(tool, text), t, { holdsOnly: true })
+const stopHold = (t: number, text: string = ADAPTER_TEXTS.closeout) => hookEvents(blockedStop(text), t)
 const turnEnd = (t: number): UsageEvent => ({ kind: 'turn-end', t })
 
 const row = (door: string, content: Row['message']['content'], more: Partial<Row['message']> & { agentId?: string } = {}): Row => {
@@ -73,8 +73,8 @@ test('the closeout hold reads from the blocked Stop that carries it, live and in
   const want = [{ kind: 'nudge', t: 1, hook: 'closeout', named: ['verification-before-completion', 'doc-sync'], holdKind: 'justified-skip', isStop: true, skipOnly: ['verification-before-completion'] }]
   const live = row('hook-context', [{ type: 'text', text: blockedStop(ADAPTER_TEXTS.closeout) }], { name: 'hook_blocking_error' })
   // A blocked Stop hands the agent its reason as a tool result would, so it ends the reply's round trip.
-  expect(rowEvents(live, SKILLS, 1, { hasTool: true, lastBoundary: 'response' })).toEqual([...want, { kind: 'results', t: 1 }])
-  expect(rowEvents(live, SKILLS, 1, { hasTool: true, lastBoundary: 'results' })).toEqual(want)
+  expect(rowEvents(live, SKILLS, 1, { lastBoundary: 'response' })).toEqual([...want, { kind: 'results', t: 1 }])
+  expect(rowEvents(live, SKILLS, 1, { lastBoundary: 'results' })).toEqual(want)
   // History holds the same reminder, after the reply it blocked; the plain "Stop hook feedback" note is not in it.
   const history: HistoryMessage[] = [
     { role: 'user', content: [{ type: 'text', text: 'Fix the exporter.' }] },
@@ -84,7 +84,7 @@ test('the closeout hold reads from the blocked Stop that carries it, live and in
   expect(historyEvents(history, SKILLS, 1).filter(e => e.kind === 'nudge')).toEqual(want.map(e => ({ ...e, isEarlier: true })))
   expect(historyEvents(history, SKILLS, 1).map(e => e.kind)).toEqual(['prompt', 'response', 'nudge', 'results'])
   // Line ends written as CRLF read the same.
-  expect(hookEvents(blockedStop(ADAPTER_TEXTS.closeout, '\r\n'), SKILLS, 1)).toEqual(want)
+  expect(hookEvents(blockedStop(ADAPTER_TEXTS.closeout, '\r\n'), 1)).toEqual(want)
 })
 
 test('the closeout hold is read once live: the plain feedback note row is not observed', async () => {
@@ -97,10 +97,10 @@ test('the closeout hold names each skill its items ask for, those named only in 
 })
 
 test('a hold line is a hold only as an errored result or a blocked Stop: other hook text that carries one is not', async () => {
-  expect(hookEvents(`SessionStart hook additional context: see the log:\n${ADAPTER_TEXTS.closeout}`, SKILLS, 1)).toEqual([])
-  expect(hookEvents(`<system-reminder>\n${ADAPTER_TEXTS.design}\n</system-reminder>`, SKILLS, 1)).toEqual([])
-  expect(hookEvents(`Stop hook feedback:\n${ADAPTER_TEXTS.design}`, SKILLS, 1)).toEqual([])
-  expect(hookEvents(blockedStop('Tests are failing; fix them first.'), SKILLS, 1)).toEqual([])
+  expect(hookEvents(`SessionStart hook additional context: see the log:\n${ADAPTER_TEXTS.closeout}`, 1)).toEqual([])
+  expect(hookEvents(`<system-reminder>\n${ADAPTER_TEXTS.design}\n</system-reminder>`, 1)).toEqual([])
+  expect(hookEvents(`Stop hook feedback:\n${ADAPTER_TEXTS.design}`, 1)).toEqual([])
+  expect(hookEvents(blockedStop('Tests are failing; fix them first.'), 1)).toEqual([])
 })
 
 // ---------- strict holds: only loading clears them, in the turn they ask ------------
@@ -146,7 +146,7 @@ test('the spawn hold asks once for either brief skill: loading one follows it, a
 // ---------- a load counts only when it ran ------------------------------------------
 
 test('a Skill call whose result is an error loaded nothing: it neither counts nor answers a hold', async () => {
-  const call = toolUseEvents([{ id: 'u1', name: 'Skill', input: { skill: 'software-design-principles' } }], false, true, 3)
+  const call = toolUseEvents([{ id: 'u1', name: 'Skill', input: { skill: 'software-design-principles' } }], false, 3)
   const s = summarize([prompt(), ...preHold('Write', ADAPTER_TEXTS.design, 2), ...call, { kind: 'refused', t: 4, id: 'u1' }, turnEnd(5)])
   expect(s.loads).toEqual({})
   expect(s.nudges).toEqual({ design: { ignored: 1 } })
@@ -156,7 +156,7 @@ test('a Skill call whose result is an error loaded nothing: it neither counts no
 })
 
 test('a Skill call names its skill as the adapter reads it: no leading slash, no arguments', async () => {
-  const [load] = toolUseEvents([{ id: 'u1', name: 'Skill', input: { skill: '/tdd write the failing test first' } }], false, true, 1)
+  const [load] = toolUseEvents([{ id: 'u1', name: 'Skill', input: { skill: '/tdd write the failing test first' } }], false, 1)
   expect(load).toEqual({ kind: 'load', t: 1, id: 'u1', skill: 'tdd', via: 'tool', isSubagent: false })
 })
 
@@ -208,21 +208,21 @@ test("a skill loaded beside the held call in its own reply answers the hold, eve
 
 test('reply and result rows mark where a main round trip begins, once each; subagent rows do not', async () => {
   const text = row('response', [{ type: 'text', text: 'goated-route: direct' }])
-  expect(rowEvents(text, SKILLS, 1, { hasTool: true, lastBoundary: 'results' })).toEqual([{ kind: 'response', t: 1 }, { kind: 'route', t: 1, form: 'direct' }])
-  expect(rowEvents(text, SKILLS, 1, { hasTool: true, lastBoundary: 'response' })).toEqual([{ kind: 'route', t: 1, form: 'direct' }])
+  expect(rowEvents(text, SKILLS, 1, { lastBoundary: 'results' })).toEqual([{ kind: 'response', t: 1 }, { kind: 'route', t: 1, form: 'direct' }])
+  expect(rowEvents(text, SKILLS, 1, { lastBoundary: 'response' })).toEqual([{ kind: 'route', t: 1, form: 'direct' }])
   const ok = row('tool-result', [{ type: 'tool_result', tool_use_id: 'u1', content: 'ok', is_error: false }])
-  expect(rowEvents(ok, SKILLS, 2, { hasTool: true, lastBoundary: 'response' })).toEqual([{ kind: 'results', t: 2 }])
-  expect(rowEvents(ok, SKILLS, 2, { hasTool: true, lastBoundary: 'results' })).toEqual([])
+  expect(rowEvents(ok, SKILLS, 2, { lastBoundary: 'response' })).toEqual([{ kind: 'results', t: 2 }])
+  expect(rowEvents(ok, SKILLS, 2, { lastBoundary: 'results' })).toEqual([])
   const heldRow = row('tool-result', [{ type: 'tool_result', tool_use_id: 'u2', content: denied('Edit', ADAPTER_TEXTS.routeLine), is_error: true }])
-  expect(rowEvents(heldRow, SKILLS, 3, { hasTool: true, lastBoundary: 'response' }).map(e => e.kind)).toEqual(['nudge', 'refused', 'results'])
-  expect(rowEvents({ ...text, agentId: 'a1' }, SKILLS, 1, { hasTool: true, lastBoundary: 'results' }).map(e => e.kind)).toEqual(['route'])
+  expect(rowEvents(heldRow, SKILLS, 3, { lastBoundary: 'response' }).map(e => e.kind)).toEqual(['nudge', 'refused', 'results'])
+  expect(rowEvents({ ...text, agentId: 'a1' }, SKILLS, 1, { lastBoundary: 'results' }).map(e => e.kind)).toEqual(['route'])
   // History marks each assistant message and each message of results.
   const history: HistoryMessage[] = [
     { role: 'user', content: [{ type: 'text', text: 'Fix it.' }] },
     { role: 'assistant', content: [{ type: 'text', text: 'goated-route: direct' }, { type: 'tool_use', id: 'u1', name: 'Bash', input: { command: 'ls' } }] },
     { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'u1', content: 'ok' }] },
   ]
-  expect(historyEvents(history, SKILLS, 1).map(e => e.kind)).toEqual(['prompt', 'response', 'route', 'tool', 'results'])
+  expect(historyEvents(history, SKILLS, 1).map(e => e.kind)).toEqual(['prompt', 'response', 'route', 'results'])
 })
 
 // ---------- justified-skip holds: followed, declined with a reason, or ignored -------

@@ -276,6 +276,6 @@ async function observeRow($: Dollar, e: SessionAppendInput) {
     const kind = kept[i]?.kind
     if (kind === 'response' || kind === 'results') lastBoundary = kind
   }
-  const seen = { hasTool: kept.some(ev => ev.kind === 'tool'), lastKind: kept.at(-1)?.kind, lastBoundary }
+  const seen = { lastKind: kept.at(-1)?.kind, lastBoundary }
   await record($, rowEvents(e, await knownSkills($, isPrompt), await $.clock.now(), seen))
 }

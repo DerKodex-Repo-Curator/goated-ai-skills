@@ -18,21 +18,18 @@ without it.
 | Route lines, counted by form (`direct`, `continue`, routed) | `goated-route:` lines in replies |
 | Turns that write, by whether a route line came before the first write, only after it, or not at all | The main agent's edits and spawns, the calls the adapter holds like writes; a call whose result is an error, such as a held one, did not write |
 | Justified skips, with their reasons; a skip declines a justified-skip hold or a hook nudge naming that skill in the same turn | `goated-skip:` lines in replies |
-| The adapter's holds by gate and kind, and each held skill's outcome: loaded, files read, already loaded, declined, not loaded, or waiting | Denied calls whose reason starts `goated-hold: <gate> \| <kind>`, and the blocked `Stop` that carries the closeout hold |
+| The adapter's holds by gate and kind, and each held skill's outcome: loaded, files read, declined, not loaded, or waiting | Denied calls whose reason starts `goated-hold: <gate> \| <kind>`, and the blocked `Stop` that carries the closeout hold |
 | Your overrides, by phrase | The adapter's sentence `recorded your override for this prompt` in its hook context |
 | Reads of skills' reference and other supporting files, and whether the skill had loaded first | `Read` paths and shell commands |
 | Subagent spawns, with type and task, including ones that load no skill | Agent tool calls that ran; a held or failed attempt shows in the log as held but is not counted |
-| A subagent's start message, and its reads of a skill's `SKILL.md` | SubagentStart hook context; a subagent's `Read` calls |
-| Whether the router loaded before any other tool | The session-start router rule of earlier hand-written hooks |
+| A subagent's reads of a skill's `SKILL.md` | A subagent's `Read` calls |
 
 Both route and skip lines are read with the marker grammar in
 `stack/fixtures/markers/README.md`, and the mod's tests check that reading
 against `lines.yaml` there.
 
-The mod also reads the hold and nudge messages of the hand-written hooks some
-installs ran before the adapter (`ROUTE CHECK`, `DESIGN HOLD`, `COMMIT CHECK`,
-and others in `hooks/classify.ts`). It will keep reading them until the
-adapter replaces those hooks.
+Summaries stored by earlier versions of the mod may still show a GOATED
+router rule line, start messages, or already loaded counts in All time.
 
 Holds reach a session as denied tool calls, and the closeout hold as a
 blocked `Stop`. The mod reads each hold's gate and kind from its first line,
@@ -49,8 +46,7 @@ clears it. In particular:
 
 - An adapter hold asks for a load in the current turn, so a skill loaded in
   an earlier turn shows as loaded only when the agent loads it again, never
-  as already loaded. ("Already loaded" is for the earlier hand-written hooks,
-  which asked once a session.)
+  as already loaded.
 - A `router-first` hold asks for the router, and a `route-line` hold asks
   for a route line.
 - Claude Code records a call only after its hold returns, so the adapter does
@@ -90,7 +86,7 @@ clears it. In particular:
 ## The Pane
 
 - **Session**: a picture of where skill loads came from, then lines on how
-  the holds went, the router rule, and route lines, writing turns, adapter
+  the holds went, and route lines, writing turns, adapter
   holds, overrides, and subagents. Below them is an activity log, newest first, with per-hold
   and per-skill tables.
 - **All time**: the same totals across every stored session, reread after
@@ -236,8 +232,6 @@ This has not been tested end to end. Keep a backup of both files.
 - A writing turn runs from one typed prompt to the next. A message from
   another session that starts a new turn for the adapter joins the running
   turn here, and so does a background result, as it does for the adapter.
-- Only the subagent start message of the hand-written hooks
-  (`DELEGATED AGENT`) is recognized; the adapter does not send one yet.
 - A hold still waiting when the session ends counts as not followed. That
   includes a session you resume later: the turn it waited in is over. A mod
   reloaded mid-turn, such as by a plugin update, starts its events afresh, so

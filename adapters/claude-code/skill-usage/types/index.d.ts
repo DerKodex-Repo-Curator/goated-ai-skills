@@ -33,13 +33,12 @@ export type UsageEvent = Stamp &
     /** An Agent tool call starting a subagent, by the main agent or the subagent `agent`. */
     /** `id`: the call's tool_use id, so a refusal of the call (`refused`) can take it back. */
     | { kind: 'spawn'; id?: string; agentType: string; description: string; isSubagent?: true; agent?: string }
-    /** The start message a SubagentStart hook gave the subagent `agent`. */
+    /** The start message a SubagentStart hook gave the subagent `agent`; only in events stored by earlier versions. */
     | { kind: 'subagent-start'; agent?: string }
     /** A main-agent call the adapter holds like a write: an edit, or a spawn that hands work on. */
     | { kind: 'write'; id?: string }
     /** A call whose result was an error, such as one the adapter held: it did not run, so its spawn or write did not happen. */
     | { kind: 'refused'; id: string }
-    | { kind: 'tool' }
     /**
      * Boundaries of the main agent's round trips: a reply begins (`response`), then
      * its tool results come back (`results`). Each marks only the first row of its
@@ -70,10 +69,13 @@ export type SubagentCounts = { spawns: number; starts: number; bodyReads: number
 /** Why a skill loaded. */
 export type Origin = 'user-slash' | 'user-named' | 'hook-nudged' | 'router-routed' | 'self-initiated' | 'subagent'
 
-/** What became of one skill a hook named. `declined`: a skip line said why it does not apply. `pending`: the turn is still open. */
+/**
+ * What became of one skill a hook named. `declined`: a skip line said why it does not apply. `pending`: the turn is still open.
+ * `already loaded`: only in summaries stored by earlier versions.
+ */
 export type Outcome = 'followed' | 'read files' | 'already loaded' | 'declined' | 'ignored' | 'pending'
 
-/** Whether the router loaded before any other tool, where the router rule was active. */
+/** Whether the router loaded before any other tool, where a router rule was active; summaries stored by earlier versions may carry it, and current ones are always `off`. */
 export type RouterStatus = 'first' | 'late' | 'never' | 'off'
 
 export type Counts<K extends string> = Partial<Record<K, number>>

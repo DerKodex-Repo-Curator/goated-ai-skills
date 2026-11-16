@@ -159,7 +159,8 @@ function standing(loadCount: number, outcomes: Counts<Outcome>): Run[] {
 
 /**
  * The status line: the session's skills, its hooks in the pane's words with
- * counts of none left out, and the router rule in a word.
+ * counts of none left out, and, for a session stored while a router rule was
+ * active, that rule in a word.
  */
 export function statusText(s: SessionSummary): string {
   const f = followCounts(sumOutcomes(s.nudges))
@@ -168,11 +169,11 @@ export function statusText(s: SessionSummary): string {
   return [`skills ${Object.keys(s.loads).length}`, f.settled + f.pending > 0 ? `hooks: ${hooks.join(' · ')}` : '', router].filter(Boolean).join(' · ')
 }
 
-const ROUTER_LINE: Record<SessionSummary['router'], [string, Tone]> = {
+/** The router rule's line, for a session resumed from a summary stored while that rule was active. */
+const ROUTER_LINE: Record<Exclude<SessionSummary['router'], 'off'>, [string, Tone]> = {
   first: ['GOATED router rule: router loaded first', 'good'],
   late: ['GOATED router rule: router loaded, but after other tools', 'waiting'],
   never: ['GOATED router rule: router not loaded yet', 'bad'],
-  off: ['GOATED router rule: not seen this session', 'dim'],
 }
 
 /**
@@ -277,7 +278,6 @@ export function sessionTab(v: View, s: SessionSummary, timeline: TimelineEntry[]
   const outcomes = sumOutcomes(s.nudges)
   const loads = byOrigin(s.loads)
   const loadCount = Object.values(loads).reduce((a, b) => a + b, 0)
-  const [routerText, routerTone] = ROUTER_LINE[s.router]
   const feed = timeline.slice(-rows).reverse()
   const spawns = s.subagents?.spawns ?? 0
   const badges: Badges = { notFollowed: outcomes.ignored ?? 0, waiting: outcomes.pending ?? 0, readsUnloaded: s.refsUnloaded ?? 0, started: spawns }
@@ -291,7 +291,7 @@ export function sessionTab(v: View, s: SessionSummary, timeline: TimelineEntry[]
         { now, timeline: preview != null && now < preview + PREVIEW_MS ? previewTimeline(preview) : timeline },
       )}
       {words(v, standing(loadCount, outcomes), 'plain', true)}
-      {line(v, routerText, routerTone)}
+      {s.router !== 'off' && line(v, ...ROUTER_LINE[s.router])}
       {measuresText(s) && line(v, measuresText(s) ?? '', 'plain')}
       {title(v, 'Activity', 'newest first')}
       {feed.length === 0
@@ -437,11 +437,7 @@ export function allTimeTab(v: View, all: AllTime, rows: number) {
         `Skill loads across ${plural(all.sessions, 'session')} by who caused them: ${ORIGINS.map(o => `${STATION[o]} ${loads[o]}`).join(', ')}. Reference files read: ${readCount(all.refs)}.`,
       )}
       {words(v, [{ text: `${plural(all.sessions, 'session')} · ` }, ...standing(loadCount, outcomes)], 'plain', true)}
-      {line(
-        v,
-        ruled === 0 ? 'GOATED router rule: not seen yet' : `GOATED router rule: router loaded first in ${first} of ${plural(ruled, 'session')}`,
-        ruled === 0 ? 'dim' : rateTone(first, ruled),
-      )}
+      {ruled > 0 && line(v, `GOATED router rule: router loaded first in ${first} of ${plural(ruled, 'session')}`, rateTone(first, ruled))}
       {measuresText(all) && line(v, measuresText(all) ?? '', 'plain')}
       {usageTables(v, all, rows, '')}
     </Box>
@@ -520,7 +516,7 @@ export function reportText(all: AllTime, avail: Available | null): string {
     out.push(`- ${hookName(hook)}: ${f.acted} of ${f.settled} handled (${percent(f.acted, f.settled)})${parts.length ? ` · ${parts.join(' · ')}` : ''}`)
   }
   const ruled = (all.router.first ?? 0) + (all.router.late ?? 0) + (all.router.never ?? 0)
-  out.push('', ruled === 0 ? 'GOATED router rule: not seen yet.' : `GOATED router rule: router loaded first in ${all.router.first ?? 0} of ${plural(ruled, 'session')}.`)
+  if (ruled > 0) out.push('', `GOATED router rule: router loaded first in ${all.router.first ?? 0} of ${plural(ruled, 'session')}.`)
   out.push('', '## Skills', '')
   for (const [skill, c] of Object.entries(all.loads).sort(([, x], [, y]) => total(y) - total(x))) {
     out.push(`- ${skill}: ${total(c)} (${ORIGINS.filter(o => c[o]).map(o => `${BECAUSE[o]} ${c[o]}`).join(' · ')})`)
@@ -533,7 +529,7 @@ export function reportText(all: AllTime, avail: Available | null): string {
   out.push(`- Writing turns: ${writes.routed} routed before the first write · ${writes.late} routed only after it · ${writes.none} with no route line`)
   out.push(`- Adapter holds: ${holdWords(all) || 'none'}`)
   out.push(`- Overrides: ${overrides.join(' · ') || 'none'}`)
-  out.push(`- Subagents: ${sub.spawns} started · ${plural(sub.starts, 'start message')} · ${sub.bodyReads} skill bodies read`)
+  out.push(`- Subagents: ${sub.spawns} started${sub.starts ? ` · ${plural(sub.starts, 'start message')}` : ''} · ${sub.bodyReads} skill bodies read`)
   const refs = refRows(all.refs)
   out.push('', '## References', '')
   if (refs.length === 0) out.push('(none read yet)')

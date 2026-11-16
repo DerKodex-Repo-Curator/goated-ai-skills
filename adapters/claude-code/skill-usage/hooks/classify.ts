@@ -3,12 +3,9 @@
 // loaded and whether hook nudges were followed. Pure: no engine calls, so tests
 // can feed it events and messages.
 //
-// Two kinds of hook text are read. The GOATED Claude Code adapter's holds start
+// The hook text read is the GOATED Claude Code adapter's: its holds start
 // `goated-hold: <gate> | <kind>` (adapters/claude-code/README.md in the GOATED
-// repo), and `OVERRIDE_NOTICE` matches its override sentence. `LEGACY_MARKERS`
-// are the messages of the hand-written hooks some installs ran before the
-// adapter; they stay readable until the adapter replaces them, and must change
-// with those hooks while they do.
+// repo), and `OVERRIDE_NOTICE` matches its override sentence.
 
 import type {
   AllTime,
@@ -21,7 +18,6 @@ import type {
   Refs,
   Route,
   RouteForm,
-  RouterStatus,
   SessionSummary,
   SubagentCounts,
   TimelineEntry,
@@ -30,35 +26,12 @@ import type {
 } from '../types'
 
 export const ROUTER = 'using-goated-ai-skills'
-/** The route hold asks for whichever specialist the route chose, not a named one. */
-export const ANY_SPECIALIST = '(any specialist)'
 /** The adapter's route-line hold asks for a route line, which no skill load settles. */
 export const ROUTE_LINE = '(route line)'
 /** Subagent counts before any subagent did anything. */
 export const NO_SUBAGENTS: Readonly<SubagentCounts> = { spawns: 0, starts: 0, bodyReads: 0 }
 /** Writing-turn counts before any turn wrote. */
 export const NO_WRITING_TURNS: Readonly<WritingTurns> = { routed: 0, late: 0, none: 0 }
-
-// Hand-written hook messages, the first match winning within one paragraph of hook output.
-// `subagent-start` is a SubagentStart hook's contract for a subagent: recorded as its start, not as a nudge.
-const LEGACY_MARKERS: ReadonlyArray<readonly [string, string]> = [
-  ['DELEGATED AGENT', 'subagent-start'],
-  ['MANDATORY SESSION RULE', 'router-rule'],
-  ['ROUTE CHECK', 'route-hold'],
-  ['DESIGN HOLD', 'design-hold'],
-  ['SECURITY HOLD', 'security-hold'],
-  ['DESIGN CHECK (new code file', 'design-new-file'],
-  ['DESIGN CHECK', 'design'],
-  ['SECURITY SIGNAL', 'security'],
-  ['COMMIT CHECK', 'commit-hold'],
-  ['PR CHECK', 'pr-hold'],
-  ['SPAWN BRIEF HOLD', 'spawn-hold'],
-  ['MERGE CONFLICT', 'merge-conflict'],
-  ['REPEATED FAILURE', 'diagnose'],
-  ['CLOSEOUT CHECK', 'closeout'],
-]
-// Holds arrive as a denied tool call (an errored tool result), not as context.
-const LEGACY_HOLDS = new Set(['route-hold', 'design-hold', 'security-hold', 'commit-hold', 'pr-hold', 'spawn-hold'])
 
 export const ORIGINS: readonly Origin[] = ['user-slash', 'user-named', 'hook-nudged', 'router-routed', 'self-initiated', 'subagent']
 export const OUTCOMES: readonly Outcome[] = ['followed', 'read files', 'already loaded', 'declined', 'ignored', 'pending']
@@ -120,16 +93,6 @@ function skillBodies(text: string): string[] {
   return [...new Set(skillPaths(text).flatMap(p => (p.below.length === 1 && isSkillMd(p.below[0]) ? [p.skill] : [])))]
 }
 
-/**
- * Skills a hook message names. The GOATED hooks backtick every skill they name,
- * so only backticked names count: plain words such as "run the commit again"
- * must not match a skill called `run`.
- */
-export function skillsBackticked(text: string, skills: readonly string[]): string[] {
-  const ticked = new Set([...text.matchAll(/`([\w:.-]+)`/g)].flatMap(m => (m[1] ? [m[1].split(':').pop() ?? m[1]] : [])))
-  return skills.filter(s => ticked.has(s))
-}
-
 // The hold line, exactly as adapters/claude-code/README.md ("Hold messages") documents it.
 const ADAPTER_HOLD = /^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-skip)$/
 // How Claude Code wraps a hold's reason (2.1.325): a denied call's errored result starts `PreToolUse:<Tool> hook error: `,
@@ -189,48 +152,27 @@ function adapterHold(text: string, isErrorResult: boolean): { gate: string; kind
 }
 
 /**
- * The hook messages in one piece of hook output, each with the skills it
- * names. Output that carries an adapter hold is that one hold, and its
- * `hook` is its gate; `isStop`: it held a `Stop`, not a call; `skipOnly`:
- * the named skills it offers only as a skip line, which no load answers. Otherwise a legacy marked paragraph starts a message,
- * and unmarked paragraphs after it belong to it. `holdsOnly`: the text is an
- * errored tool result, which can quote a marker, so only holds count.
+ * The adapter hold in one piece of hook output, as a nudge with the skills it
+ * names; none when the output carries no hold. Its `hook` is its gate;
+ * `isStop`: it held a `Stop`, not a call; `skipOnly`: the named skills it
+ * offers only as a skip line, which no load answers. `holdsOnly`: the text is
+ * an errored tool result.
  */
-export function hookNudges(
-  text: string,
-  skills: readonly string[],
-  holdsOnly = false,
-): { hook: string; named: string[]; holdKind?: HoldKind; isStop?: true; skipOnly?: string[] }[] {
+export function hookNudges(text: string, holdsOnly = false): { hook: string; named: string[]; holdKind: HoldKind; isStop?: true; skipOnly?: string[] }[] {
   const hold = adapterHold(text, holdsOnly)
-  if (hold) {
-    const { named, skipOnly } = adapterHoldNamed(hold.gate, hold.body)
-    return [{ hook: hold.gate, named, holdKind: hold.kind, ...(hold.isStop ? { isStop: true as const } : {}), ...(skipOnly.length > 0 ? { skipOnly } : {}) }]
-  }
-
-  const messages: { hook: string; body: string }[] = []
-  for (const paragraph of text.split('\n\n')) {
-    const hook = LEGACY_MARKERS.find(([marker]) => paragraph.includes(marker))?.[1]
-    if (hook) messages.push({ hook, body: paragraph })
-    else {
-      const last = messages.at(-1)
-      if (last) last.body += '\n\n' + paragraph
-    }
-  }
-  return messages
-    .filter(m => !holdsOnly || LEGACY_HOLDS.has(m.hook))
-    .map(m => ({ hook: m.hook, named: m.hook === 'route-hold' ? [ANY_SPECIALIST] : m.hook === 'subagent-start' ? [] : skillsBackticked(m.body, skills) }))
+  if (!hold) return []
+  const { named, skipOnly } = adapterHoldNamed(hold.gate, hold.body)
+  return [{ hook: hold.gate, named, holdKind: hold.kind, ...(hold.isStop ? { isStop: true as const } : {}), ...(skipOnly.length > 0 ? { skipOnly } : {}) }]
 }
 
 /**
- * The events of one piece of hook output: a nudge per hook message, or a
- * subagent's start for its start message. `agent`: the subagent the hook
- * spoke to; `holdsOnly`: the text is an errored tool result.
+ * The events of one piece of hook output: a nudge for the adapter hold it
+ * carries, if any. `agent`: the subagent the hook spoke to; `holdsOnly`: the
+ * text is an errored tool result.
  */
-export function hookEvents(text: string, skills: readonly string[], t: number, opts: { agent?: string; holdsOnly?: boolean } = {}): UsageEvent[] {
+export function hookEvents(text: string, t: number, opts: { agent?: string; holdsOnly?: boolean } = {}): UsageEvent[] {
   const ofAgent = opts.agent ? { agent: opts.agent } : {}
-  return hookNudges(text, skills, opts.holdsOnly).map((n): UsageEvent =>
-    n.hook === 'subagent-start' ? { kind: 'subagent-start', t, ...ofAgent } : { kind: 'nudge', t, ...n, ...(opts.agent ? { isSubagent: true as const } : {}), ...ofAgent },
-  )
+  return hookNudges(text, opts.holdsOnly).map((n): UsageEvent => ({ kind: 'nudge', t, ...n, ...(opts.agent ? { isSubagent: true as const } : {}), ...ofAgent }))
 }
 
 // The adapter's sentence when it records overrides you typed, each phrase quoted; its other notices share the prefix.
@@ -247,9 +189,6 @@ export function overrideEvents(text: string, t: number): UsageEvent[] {
 
 /** A skill's bare name: `plugin:skill` and `skill` are the same skill. */
 export const short = (skill: string) => skill.split(':').pop() ?? skill
-
-// App bookkeeping tools that say nothing about whether the agent started work.
-const BOOKKEEPING_TOOL = /^(ToolSearch$|mcp__ccd_)/
 
 /**
  * The events of one message the person sent: a prompt, plus a skill load when
@@ -279,21 +218,18 @@ const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', ...SP
 /**
  * The events of one assistant message's tool calls: skill loads, subagent
  * spawns, writes, reads into a skill's folder, reads of a skill's supporting
- * files, and the turn's first real tool (`hasToolBefore`: one was already
- * seen). A subagent's calls count only as skill loads, spawns,
+ * files. A subagent's calls count only as skill loads, spawns,
  * supporting-file reads and reads of a SKILL.md (`body`); `agent` names that
  * subagent.
  */
 export function toolUseEvents(
   uses: readonly { id?: string; name: string; input: Record<string, unknown> }[],
   isSubagent: boolean,
-  hasToolBefore: boolean,
   t: number,
   agent?: string,
 ): UsageEvent[] {
   const events: UsageEvent[] = []
   const ofAgent = isSubagent && agent ? { agent } : {}
-  let seenTool = hasToolBefore
   for (const { id, name, input } of uses) {
     const ofCall = id ? { id } : {}
     if (name === 'Skill') {
@@ -315,10 +251,6 @@ export function toolUseEvents(
     if (reached.length > 0) events.push({ kind: 'read', t, skills: reached })
     events.push(...refs)
     if (WRITE_TOOLS.has(name)) events.push({ kind: 'write', t, ...ofCall })
-    if (!seenTool && !BOOKKEEPING_TOOL.test(name)) {
-      events.push({ kind: 'tool', t })
-      seenTool = true
-    }
   }
   return events
 }
@@ -427,13 +359,11 @@ export function textOf(content: unknown): string {
  */
 export function historyEvents(messages: readonly HistoryMessage[], skills: readonly string[], t: number): UsageEvent[] {
   const events: UsageEvent[] = []
-  let hasTool = false
   let lastBoundary: 'response' | 'results' | undefined
   for (const message of messages) {
     if (message.role === 'assistant') {
       const uses = toolUses(message.content)
-      const add = toolUseEvents(uses, false, hasTool, t)
-      hasTool ||= add.some(e => e.kind === 'tool')
+      const add = toolUseEvents(uses, false, t)
       if (lastBoundary !== 'response') events.push({ kind: 'response', t })
       lastBoundary = 'response'
       events.push(...markerEvents(textOf(message.content.filter(b => b.type === 'text')), t), ...add)
@@ -443,12 +373,12 @@ export function historyEvents(messages: readonly HistoryMessage[], skills: reado
     const after: UsageEvent[] = []
     for (const b of message.content) {
       if (b.type === 'tool_result') {
-        if (b.is_error) after.push(...refusalEvents(b, skills, t))
+        if (b.is_error) after.push(...refusalEvents(b, t))
         continue
       }
       if (b.type !== 'text') continue
       const text = String(b.text ?? '').trim()
-      if (HOOK_TEXT.test(text)) after.push(...hookEvents(text, skills, t))
+      if (HOOK_TEXT.test(text)) after.push(...hookEvents(text, t))
       else if (COMPACT_SUMMARY.test(text)) opening.push({ kind: 'compact', t })
       else if (text.includes('<command-name>') || (text && !NOT_TYPED.test(text))) {
         // A message can hold several typed blocks; it is still one prompt.
@@ -476,9 +406,9 @@ function toolUses(blocks: readonly { type: string; [field: string]: unknown }[])
  * The events of one errored tool result: the holds its text carries, then the
  * refusal of its call, which did not run. `agent`: the subagent it belongs to.
  */
-function refusalEvents(block: { [field: string]: unknown }, skills: readonly string[], t: number, agent?: string): UsageEvent[] {
+function refusalEvents(block: { [field: string]: unknown }, t: number, agent?: string): UsageEvent[] {
   const id = block.tool_use_id
-  return [...hookEvents(textOf(block.content), skills, t, { agent, holdsOnly: true }), ...(typeof id === 'string' ? [{ kind: 'refused' as const, t, id }] : [])]
+  return [...hookEvents(textOf(block.content), t, { agent, holdsOnly: true }), ...(typeof id === 'string' ? [{ kind: 'refused' as const, t, id }] : [])]
 }
 
 /** Whether an event is an adapter hold on a `Stop`: the closeout's, which the reply after it answers. */
@@ -503,9 +433,8 @@ export const isObservedRow = (row: Row) => OBSERVED_DOORS.has(row.door) || isHoo
  * The events of one conversation row: the person's prompts and slash
  * commands; a reply's route and skip lines, skill loads, spawns, writes and
  * skill-file reads; hook messages, holds and override sentences; and
- * compactions; and the main agent's round-trip boundaries. `seen`: whether
- * the session's events already hold a real tool, the kind of the last one,
- * and the last round-trip boundary.
+ * compactions; and the main agent's round-trip boundaries. `seen`: the kind
+ * of the session's last event, and its last round-trip boundary.
  *
  * Claude Code hands a mod one row per content block, with no id tying a
  * reply's rows together, so a reply's first row marks where it begins.
@@ -518,7 +447,7 @@ export function rowEvents(
   row: Row,
   skills: readonly string[],
   t: number,
-  seen: { hasTool: boolean; lastKind?: UsageEvent['kind']; lastBoundary?: 'response' | 'results' },
+  seen: { lastKind?: UsageEvent['kind']; lastBoundary?: 'response' | 'results' },
 ): UsageEvent[] {
   const isMain = !row.agentId
   const blocks = row.message.content
@@ -527,17 +456,17 @@ export function rowEvents(
   if (row.door === 'response') {
     const uses = toolUses(blocks)
     const begins: UsageEvent[] = isMain && seen.lastBoundary !== 'response' ? [{ kind: 'response', t }] : []
-    return [...begins, ...markerEvents(textOf(blocks.filter(b => b.type === 'text')), t, row.agentId), ...toolUseEvents(uses, !isMain, seen.hasTool, t, row.agentId)]
+    return [...begins, ...markerEvents(textOf(blocks.filter(b => b.type === 'text')), t, row.agentId), ...toolUseEvents(uses, !isMain, t, row.agentId)]
   }
   if (isHookRow(row)) {
     const text = textOf(blocks)
-    const heard = hookEvents(text, skills, t, { agent: row.agentId })
+    const heard = hookEvents(text, t, { agent: row.agentId })
     // A blocked Stop hands the agent its reason as tool results do, so it ends the reply's round trip.
     const ends = isMain && heard.some(isStopHold) && seen.lastBoundary !== 'results' ? [{ kind: 'results' as const, t }] : []
     return [...heard, ...(isMain ? overrideEvents(text, t) : []), ...ends]
   }
   if (row.door === 'tool-result') {
-    const refusals = blocks.flatMap(b => (b.type === 'tool_result' && b.is_error ? refusalEvents(b, skills, t, row.agentId) : []))
+    const refusals = blocks.flatMap(b => (b.type === 'tool_result' && b.is_error ? refusalEvents(b, t, row.agentId) : []))
     const isResult = isMain && blocks.some(b => b.type === 'tool_result')
     return [...refusals, ...(isResult && seen.lastBoundary !== 'results' ? [{ kind: 'results' as const, t }] : [])]
   }
@@ -599,8 +528,8 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   type NudgeRow = TimelineEntry & { kind: 'nudge' }
   type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; isStop?: true; isSkipOnly?: true; isSkipRejected?: true; mark: NudgedSkill; row: NudgeRow }
   let open: Open[] = []
-  /** Whether an open ask is answered by loading `skill`; the route hold of earlier hooks is answered by any specialist. */
-  const answers = (n: Open, skill: string) => !n.isSkipOnly && (n.anyOf.includes(skill) || (n.anyOf[0] === ANY_SPECIALIST && skill !== ROUTER))
+  /** Whether an open ask is answered by loading `skill`. */
+  const answers = (n: Open, skill: string) => !n.isSkipOnly && n.anyOf.includes(skill)
   // The adapter holds of each loop's running turn, by agent ('' for the main agent) and gate: the row a repeat joins,
   // and every ask the row made, settled or not.
   type GateRow = { row: NudgeRow; asks: Open[] }
@@ -627,9 +556,6 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   let hasRepliedSinceStop = false
   // Whether the session has a task a `continue` route line can continue, as the adapter's route-line hold checks.
   let hasTask = false
-  let routerRule = false
-  let toolSeen = false
-  let router: RouterStatus | null = null
 
   // `by`: the event that settled it, whose time the row keeps so the picture can show the moment; a rebuilt event has no real time.
   // `chosen`: for an ask with alternatives, the skill that answered it, which its row then names.
@@ -669,7 +595,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
     const isAnswer = by.kind === 'turn-end' && !by.agent && (by.reason === undefined || by.reason === 'answer')
     const isPassed = isAnswer && hasRepliedSinceStop && stopBlocks < STOP_BLOCK_LIMIT
     if (isAnswer && stopBlocks >= STOP_BLOCK_LIMIT) for (const n of lastStopAsks) reopen(n)
-    const ending = open.filter(n => isInLoop(n) && n.hook !== 'router-rule')
+    const ending = open.filter(isInLoop)
     for (const n of ending) {
       const reason = n.isStrict || n.isSkipRejected ? undefined : skipReason(n.anyOf, n.agent)
       if (reason !== undefined) n.mark.reason = reason
@@ -722,7 +648,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   }
   /** What the held call's own reply already did for `ask`, which the adapter could not see yet: the answering skill, or none. */
   const answeredInReply = (ask: readonly string[], e: UsageEvent & { kind: 'nudge' }) => {
-    if (!e.holdKind || e.agent) return undefined
+    if (e.agent) return undefined
     const own = isInResults ? answeredReply : reply
     if (ask[0] === ROUTE_LINE) return own.route && (own.route !== 'continue' || hasTask) ? ROUTE_LINE : undefined
     return ask.find(s => own.loads.has(s))
@@ -731,9 +657,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   for (const e of events) {
     switch (e.kind) {
       case 'prompt':
-        // The router rule arrives at session start, before the first prompt,
-        // and holds for the whole session: it stays open until the router loads.
-        // Anything else still open belongs to a turn that is over, a turn end the mod did not see included.
+        // Anything still open belongs to a turn that is over, a turn end the mod did not see included.
         closeTurn(() => true, e)
         tallyWritingTurn()
         skipped.clear()
@@ -757,7 +681,6 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         isInResults = true
         break
       case 'nudge': {
-        if (e.hook === 'router-rule') routerRule = true
         if (e.holdKind) measures.holds[e.holdKind] = (measures.holds[e.holdKind] ?? 0) + 1
         if (e.isStop) {
           hasRepliedSinceStop = false
@@ -765,7 +688,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         }
         // A gate whose skills are alternatives asks once; any other nudge asks for each skill it names.
         const asks = ALTERNATIVE_GATES.has(e.hook) && e.named.length > 1 ? [e.named] : e.named.map(s => [s])
-        if (e.holdKind && joinRepeat(e, asks)) break
+        if (joinRepeat(e, asks)) break
         const row: NudgeRow = {
           ...stamp(e),
           kind: 'nudge' as const,
@@ -775,43 +698,21 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
           ...(e.isSubagent ? { isSubagent: true as const } : {}),
         }
         timeline.push(row)
-        const at = e.isEarlier ? {} : { at: e.t }
-        if (e.holdKind) {
-          // An adapter hold's asks are records of the turn, so a repeat of the hold finds them, settled or not.
-          const held: GateRow = { row, asks: [] }
-          if (asks.length > 0) turnHolds.set(gateKey(e.hook, e.agent), held)
-          for (const ask of asks) {
-            const n = addAsk(held, e, ask)
-            const inReply = e.isStop ? undefined : answeredInReply(ask, e)
-            const reason = e.holdKind === 'strict' || e.isStop ? undefined : skipReason(ask, e.agent)
-            if (inReply !== undefined) settle(m => m === n, 'followed', e, inReply)
-            else if (reason !== undefined) {
-              // Declined before it was asked, earlier in the same turn.
-              n.mark.reason = reason
-              settle(m => m === n, 'declined', e)
-            }
-          }
-          if (e.isStop) lastStopAsks = held.asks.slice()
-          break
-        }
+        // A hold's asks are records of the turn, so a repeat of the hold finds them, settled or not.
+        const held: GateRow = { row, asks: [] }
+        if (asks.length > 0) turnHolds.set(gateKey(e.hook, e.agent), held)
         for (const ask of asks) {
-          const label = ask.join(' or ')
-          const reason = skipReason(ask, e.agent)
-          if (e.hook !== 'router-rule' && ask.some(s => loaded.has(s))) {
-            // Earlier hooks asked once a session; the adapter's holds ask for a load in this turn, so one before does not answer them.
-            bump(nudges, e.hook, 'already loaded')
-            row.skills.push({ skill: label, status: 'already loaded', ...at })
-          } else if (reason !== undefined) {
+          const n = addAsk(held, e, ask)
+          const inReply = e.isStop ? undefined : answeredInReply(ask, e)
+          const reason = e.holdKind === 'strict' || e.isStop ? undefined : skipReason(ask, e.agent)
+          if (inReply !== undefined) settle(m => m === n, 'followed', e, inReply)
+          else if (reason !== undefined) {
             // Declined before it was asked, earlier in the same turn.
-            bump(nudges, e.hook, 'declined')
-            row.skills.push({ skill: label, status: 'declined', reason, ...at })
-          } else {
-            const mark: NudgedSkill = { skill: label, status: 'pending' }
-            row.skills.push(mark)
-            for (const s of ask) turnNudged.add(s)
-            open.push({ hook: e.hook, anyOf: ask, ...(e.agent ? { agent: e.agent } : {}), mark, row })
+            n.mark.reason = reason
+            settle(m => m === n, 'declined', e)
           }
         }
+        if (e.isStop) lastStopAsks = held.asks.slice()
         break
       }
       case 'skip': {
@@ -846,10 +747,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         bump(loads, e.skill, origin)
         lastUsed[e.skill] = e.t
         timeline.push({ ...stamp(e), kind: 'load', skill: e.skill, origin, ...(e.isSubagent ? { isSubagent: true as const } : {}) })
-        if (e.skill === ROUTER) {
-          turnRouter = true
-          router ??= toolSeen ? 'late' : 'first'
-        }
+        if (e.skill === ROUTER) turnRouter = true
         if (!e.isSubagent && e.via === 'tool') reply.loads.add(e.skill)
         settle(n => answers(n, e.skill), 'followed', e, e.skill)
         loaded.add(e.skill)
@@ -921,11 +819,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         }
         break
       }
-      case 'tool':
-        toolSeen = true
-        break
       case 'compact':
-        // The hooks forget loaded skills here, so a later nudge is not "already loaded".
         loaded = new Set()
         timeline.push({ ...stamp(e), kind: 'compact' })
         break
@@ -934,7 +828,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   settle(() => true, isFinal ? 'ignored' : 'pending')
   tallyWritingTurn()
 
-  return { loads, nudges, lastUsed, refs, refsUnloaded, ...measures, timeline, router: routerRule ? router ?? 'never' : 'off' }
+  return { loads, nudges, lastUsed, refs, refsUnloaded, ...measures, timeline, router: 'off' }
 }
 
 function addFlat(into: Record<string, number | undefined>, from: Record<string, number | undefined> | undefined) {
@@ -1026,8 +920,8 @@ export function allTimeOf(
 
 /**
  * One session's summary from two stretches of it: what was stored before a
- * resume (`earlier`) and what was observed since. The earlier router status
- * stands once it was decided.
+ * resume (`earlier`) and what was observed since. The router status is the
+ * earlier one's, which only a summary stored by an earlier version sets.
  */
 export function mergeSummaries(earlier: SessionSummary | null, later: SessionSummary): SessionSummary {
   if (!earlier) return later
@@ -1038,7 +932,6 @@ export function mergeSummaries(earlier: SessionSummary | null, later: SessionSum
   addRefs((out.refs ??= {}), later.refs)
   out.refsUnloaded = (out.refsUnloaded ?? 0) + (later.refsUnloaded ?? 0)
   addMeasures(out, later)
-  if (out.router === 'off' || out.router === 'never') out.router = later.router === 'off' ? out.router : later.router
   return out
 }
 

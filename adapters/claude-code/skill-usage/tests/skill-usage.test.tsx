@@ -3,45 +3,32 @@ import type { TestBody } from 'claude-code/testing'
 
 import type { TimelineEntry, UsageEvent } from '../types'
 import type { HistoryMessage } from '../hooks/classify'
-import { addSession, allTimeOf, ANY_SPECIALIST, closeOpen, historyEvents, hookNudges, mergeSummaries, skillFiles, skillsInPath, skillsNamed, markerEvents, summarize, toolUseEvents } from '../hooks/classify'
+import { addSession, allTimeOf, closeOpen, historyEvents, hookNudges, mergeSummaries, skillFiles, skillsInPath, skillsNamed, markerEvents, summarize, toolUseEvents } from '../hooks/classify'
 import { DECLINED_COLOR, followCounts, PANE_COLUMNS, READ_COLOR, reportText, statusText } from '../hooks/view'
 import { badgeWords, PREVIEW_MS, playQueue, previewTimeline } from '../hooks/picture'
+import { ADAPTER_TEXTS } from './adapter-texts'
 
 // `run` is a real built-in skill name that also appears as a plain word in hook messages.
 const SKILLS = ['using-goated-ai-skills', 'software-design-principles', 'code-security-review', 'tdd', 'commit-message', 'run']
 
-test('a spawn brief hold names only handoff, not the router it says to leave out', async () => {
-  const hold =
-    'SPAWN BRIEF HOLD (first agent or session you start this session): load `handoff` with the Skill tool and write this brief in its spawn-brief mode (references/spawn-brief.md); for a scoped implementation task, the implementer prompt from subagent-driven-development fits better. ' +
-    'Do not add the GOATED router rule or the delegated-agent rules: the child gets them from its own hooks.'
-  expect(hookNudges(hold, [...SKILLS, 'handoff'], true)).toEqual([{ hook: 'spawn-hold', named: ['handoff'] }])
-})
-
-test('hook messages name only backticked skills, not plain words', async () => {
-  const hold =
-    'COMMIT CHECK (held once this turn): before committing, invoke the `commit-message` skill and draft the message with it, then run the commit again. ' +
-    'The whole command was held, so rerun any steps chained before it too, and never fall through to another directory if a `cd` fails.'
-  expect(hookNudges(hold, SKILLS, true)).toEqual([{ hook: 'commit-hold', named: ['commit-message'] }])
-})
-
 test('an open nudge is pending while the session runs and ignored once it ended', async () => {
   const events: UsageEvent[] = [
     { kind: 'prompt', t: 1, named: [] },
-    { kind: 'nudge', t: 2, hook: 'design-hold', named: ['software-design-principles'] },
+    { kind: 'nudge', t: 2, hook: 'design', named: ['software-design-principles'], holdKind: 'justified-skip' },
   ]
-  expect(summarize(events).nudges).toEqual({ 'design-hold': { pending: 1 } })
-  expect(summarize(events, true).nudges).toEqual({ 'design-hold': { ignored: 1 } })
+  expect(summarize(events).nudges).toEqual({ design: { pending: 1 } })
+  expect(summarize(events, true).nudges).toEqual({ design: { ignored: 1 } })
 })
 
 test('a stored session that never ended cleanly has no nudge left waiting', async () => {
   // A crash or a resume leaves "pending" in the store; nothing can settle it any more, so it reads as ignored.
   const stored = summarize([
     { kind: 'prompt', t: 1, named: [] },
-    { kind: 'nudge', t: 2, hook: 'design-hold', named: ['software-design-principles'] },
+    { kind: 'nudge', t: 2, hook: 'design', named: ['software-design-principles'], holdKind: 'justified-skip' },
   ])
-  expect(stored.nudges).toEqual({ 'design-hold': { pending: 1 } })
-  expect(closeOpen(stored).nudges).toEqual({ 'design-hold': { ignored: 1 } })
-  expect(stored.nudges).toEqual({ 'design-hold': { pending: 1 } })
+  expect(stored.nudges).toEqual({ design: { pending: 1 } })
+  expect(closeOpen(stored).nudges).toEqual({ design: { ignored: 1 } })
+  expect(stored.nudges).toEqual({ design: { pending: 1 } })
 })
 
 test('all time keeps every session: past the cap, the oldest fold into one total of older sessions instead of being dropped', async () => {
@@ -73,8 +60,8 @@ test('all time keeps every session: past the cap, the oldest fold into one total
 
 test('a resumed session adds to what was stored before', async () => {
   const before = summarize([
-    { kind: 'nudge', t: 1, hook: 'router-rule', named: ['using-goated-ai-skills'] },
-    { kind: 'prompt', t: 2, named: [] },
+    { kind: 'prompt', t: 1, named: [] },
+    { kind: 'nudge', t: 2, hook: 'router-first', named: ['using-goated-ai-skills'], holdKind: 'strict' },
     { kind: 'load', t: 3, skill: 'using-goated-ai-skills', via: 'tool', isSubagent: false },
   ])
   const after = summarize([
@@ -82,44 +69,15 @@ test('a resumed session adds to what was stored before', async () => {
     { kind: 'load', t: 5, skill: 'tdd', via: 'tool', isSubagent: false },
   ])
   const merged = mergeSummaries(before, after)
-  expect(merged.router).toBe('first')
+  expect(merged.router).toBe('off')
+  // A summary stored by an earlier version keeps the router status it carried.
+  expect(mergeSummaries({ ...before, router: 'first' }, after).router).toBe('first')
   expect(merged.loads).toEqual({ 'using-goated-ai-skills': { 'hook-nudged': 1 }, tdd: { 'self-initiated': 1 } })
   expect(merged.lastUsed).toEqual({ 'using-goated-ai-skills': 3, tdd: 5 })
 })
 
-test('a subagent load settles the route hold', async () => {
-  const s = summarize([
-    { kind: 'prompt', t: 1, named: [] },
-    { kind: 'nudge', t: 2, hook: 'route-hold', named: [ANY_SPECIALIST] },
-    { kind: 'load', t: 3, skill: 'tdd', via: 'tool', isSubagent: true },
-  ])
-  expect(s.nudges).toEqual({ 'route-hold': { followed: 1 } })
-  expect(s.loads).toEqual({ tdd: { subagent: 1 } })
-})
-
-test('one deny carrying two holds is two nudges', async () => {
-  const deny =
-    'SECURITY HOLD (auth): login.py. Load `code-security-review` with the Skill tool.\n\n' +
-    'DESIGN HOLD (first substantial code change): load `software-design-principles`.\n\n' +
-    'This edit was held once and was not applied.'
-  expect(hookNudges(deny, SKILLS, true)).toEqual([
-    { hook: 'security-hold', named: ['code-security-review'] },
-    { hook: 'design-hold', named: ['software-design-principles'] },
-  ])
-})
-
-test('the router rule names its skill in a later paragraph', async () => {
-  const rule = "MANDATORY SESSION RULE (from the user's own settings):\n\nYour FIRST action MUST be invoking `using-goated-ai-skills`."
-  expect(hookNudges(rule, SKILLS)).toEqual([{ hook: 'router-rule', named: ['using-goated-ai-skills'] }])
-})
-
-test('the route hold asks for any specialist, not its examples', async () => {
-  const hold = 'ROUTE CHECK: you loaded `using-goated-ai-skills` but no skill since, for example `tdd`.'
-  expect(hookNudges(hold, SKILLS, true)).toEqual([{ hook: 'route-hold', named: [ANY_SPECIALIST] }])
-})
-
 test('an ordinary tool error is not a hold', async () => {
-  expect(hookNudges('COMMIT failed: nothing to commit', SKILLS, true)).toEqual([])
+  expect(hookNudges('COMMIT failed: nothing to commit', true)).toEqual([])
 })
 
 test('names and skill paths are found, partial words are not', async () => {
@@ -140,35 +98,30 @@ test('a read into a skill settles its nudge by the same skill the reference log 
   expect(skillsInPath('cat skills/README.md && ls goated-ai-skills/x')).toEqual([])
   const s = summarize([
     { kind: 'prompt', t: 1, named: [] },
-    { kind: 'nudge', t: 2, hook: 'design-hold', named: ['software-design-principles'] },
-    ...toolUseEvents([{ name: 'Bash', input: { command: 'cat skills/software-design-principles/references/red-flags.md' } }], false, true, 3),
+    { kind: 'nudge', t: 2, hook: 'design', named: ['software-design-principles'], holdKind: 'justified-skip' },
+    ...toolUseEvents([{ name: 'Bash', input: { command: 'cat skills/software-design-principles/references/red-flags.md' } }], false, 3),
   ])
-  expect(s.nudges).toEqual({ 'design-hold': { 'read files': 1 } })
+  expect(s.nudges).toEqual({ design: { 'read files': 1 } })
 })
 
-test('a routed session: origins, outcomes and router status', async () => {
+test('a routed session: origins and outcomes', async () => {
   let t = 0
   // Omit each member of the union on its own, so each event keeps its fields.
   const at = (e: UsageEvent extends infer E ? (E extends unknown ? Omit<E, 't'> : never) : never) => ({ ...e, t: ++t }) as UsageEvent
   const events: UsageEvent[] = [
-    at({ kind: 'nudge', hook: 'router-rule', named: ['using-goated-ai-skills'] }),
     at({ kind: 'prompt', named: [] }),
+    at({ kind: 'nudge', hook: 'router-first', named: ['using-goated-ai-skills'], holdKind: 'strict' }),
     at({ kind: 'load', skill: 'using-goated-ai-skills', via: 'tool', isSubagent: false }),
-    at({ kind: 'tool' }),
-    at({ kind: 'nudge', hook: 'route-hold', named: [ANY_SPECIALIST] }),
     at({ kind: 'load', skill: 'tdd', via: 'tool', isSubagent: false }),
-    at({ kind: 'nudge', hook: 'design-hold', named: ['software-design-principles'] }),
+    at({ kind: 'nudge', hook: 'design', named: ['software-design-principles'], holdKind: 'justified-skip' }),
     at({ kind: 'read', skills: ['software-design-principles'] }),
-    at({ kind: 'nudge', hook: 'security-hold', named: ['code-security-review'] }),
+    at({ kind: 'nudge', hook: 'security', named: ['code-security-review'], holdKind: 'justified-skip' }),
     at({ kind: 'prompt', named: ['commit-message'] }),
+    at({ kind: 'nudge', hook: 'commit', named: ['commit-message'], holdKind: 'strict' }),
     at({ kind: 'load', skill: 'commit-message', via: 'tool', isSubagent: false }),
-    at({ kind: 'nudge', hook: 'commit-hold', named: ['commit-message'] }),
-    at({ kind: 'compact' }),
-    at({ kind: 'nudge', hook: 'commit-hold', named: ['commit-message'] }),
     at({ kind: 'load', skill: 'grill-me', via: 'slash', isSubagent: false }),
   ]
   const s = summarize(events)
-  expect(s.router).toBe('first')
   expect(s.loads).toEqual({
     'using-goated-ai-skills': { 'hook-nudged': 1 },
     tdd: { 'router-routed': 1 },
@@ -176,16 +129,15 @@ test('a routed session: origins, outcomes and router status', async () => {
     'grill-me': { 'user-slash': 1 },
   })
   expect(s.nudges).toEqual({
-    'router-rule': { followed: 1 },
-    'route-hold': { followed: 1 },
-    'design-hold': { 'read files': 1 },
-    'security-hold': { ignored: 1 },
-    // Already loaded before compaction; after it the hooks forget, so it is open again.
-    'commit-hold': { 'already loaded': 1, pending: 1 },
+    'router-first': { followed: 1 },
+    design: { 'read files': 1 },
+    // Still open when the next message arrived, so its turn was over.
+    security: { ignored: 1 },
+    commit: { followed: 1 },
   })
 })
 
-test('no router rule means router status off; all-time adds sessions', async () => {
+test('a summary has router status off; all-time adds sessions', async () => {
   const s = summarize([{ kind: 'load', t: 1, skill: 'tdd', via: 'tool', isSubagent: true }])
   expect(s.router).toBe('off')
   expect(s.loads).toEqual({ tdd: { subagent: 1 } })
@@ -193,6 +145,14 @@ test('no router rule means router status off; all-time adds sessions', async () 
   expect(all.sessions).toBe(2)
   expect(all.loads).toEqual({ tdd: { subagent: 2 } })
   expect(all.router).toEqual({ off: 2 })
+})
+
+test('a stored event of a kind this version no longer records is skipped', async () => {
+  // Earlier versions stored a `tool` event at a session's first real tool call.
+  const stored = [{ kind: 'prompt', t: 1, named: [] }, { kind: 'tool', t: 2 }, { kind: 'load', t: 3, skill: 'tdd', via: 'tool', isSubagent: false }] as unknown as UsageEvent[]
+  const s = summarize(stored)
+  expect(s.loads).toEqual({ tdd: { 'self-initiated': 1 } })
+  expect(s.timeline.map(e => e.kind)).toEqual(['prompt', 'load'])
 })
 
 /**
@@ -220,28 +180,17 @@ const PANE = {
 } as const
 
 test('history rebuilds a session the mod joined late, as the live view would see it', async () => {
-  const use = (name: string, input: Record<string, unknown>) => ({ type: 'tool_use', id: name, name, input })
+  const use = (id: string, name: string, input: Record<string, unknown>) => ({ type: 'tool_use', id, name, input })
+  const held = (id: string, text: string) => ({ role: 'user' as const, content: [{ type: 'tool_result', tool_use_id: id, is_error: true, content: `PreToolUse:Edit hook error: ${text}` }] })
   const history: HistoryMessage[] = [
-    {
-      role: 'user',
-      content: [
-        {
-          type: 'text',
-          text:
-            "<system-reminder>\nSessionStart hook additional context: MANDATORY SESSION RULE (from the user's own settings):\n\n" +
-            'Your FIRST action MUST be invoking the `using-goated-ai-skills` skill.\n</system-reminder>',
-        },
-        { type: 'text', text: 'Fix the bug in calc.py' },
-      ],
-    },
-    { role: 'assistant', content: [{ type: 'text', text: 'Routing first.' }, use('Skill', { skill: 'using-goated-ai-skills' })] },
-    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'Skill', content: 'Launching skill' }, { type: 'text', text: 'Base directory for this skill: ...' }] },
-    { role: 'assistant', content: [use('Edit', { file_path: 'calc.py' })] },
-    {
-      role: 'user',
-      content: [{ type: 'tool_result', tool_use_id: 'Edit', is_error: true, content: 'PreToolUse:Edit hook error: DESIGN HOLD (first substantial code change): load `software-design-principles`.' }],
-    },
-    { role: 'assistant', content: [use('Skill', { skill: 'software-design-principles' })] },
+    { role: 'user', content: [{ type: 'text', text: 'Fix the bug in calc.py' }] },
+    { role: 'assistant', content: [{ type: 'text', text: 'Editing.' }, use('e1', 'Edit', { file_path: 'calc.py' })] },
+    held('e1', ADAPTER_TEXTS.routerFirst),
+    { role: 'assistant', content: [use('s1', 'Skill', { skill: 'using-goated-ai-skills' })] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 's1', content: 'Launching skill' }, { type: 'text', text: 'Base directory for this skill: ...' }] },
+    { role: 'assistant', content: [use('e2', 'Edit', { file_path: 'calc.py' })] },
+    held('e2', ADAPTER_TEXTS.design),
+    { role: 'assistant', content: [use('s2', 'Skill', { skill: 'software-design-principles' })] },
     { role: 'user', content: [{ type: 'text', text: '<command-name>/tdd</command-name>' }] },
     { role: 'user', content: [{ type: 'text', text: '<task-notification>a background task ended</task-notification>' }] },
   ]
@@ -249,9 +198,8 @@ test('history rebuilds a session the mod joined late, as the live view would see
   expect(events.every(e => e.isEarlier && e.t === 99)).toBe(true)
   expect(events.filter(e => e.kind === 'prompt').length).toBe(2)
   const s = summarize(events)
-  expect(s.router).toBe('first')
   expect(s.loads).toEqual({ 'using-goated-ai-skills': { 'hook-nudged': 1 }, 'software-design-principles': { 'hook-nudged': 1 }, tdd: { 'user-slash': 1 } })
-  expect(s.nudges).toEqual({ 'router-rule': { followed: 1 }, 'design-hold': { followed: 1 } })
+  expect(s.nudges).toEqual({ 'router-first': { followed: 1 }, design: { followed: 1 } })
   expect(s.timeline.every(entry => entry.isEarlier)).toBe(true)
 })
 
@@ -268,7 +216,7 @@ test('a nudge row keeps when each skill settled, so the picture plays that momen
     { skill: 'setup-scribe', status: 'ignored', at: 9 },
   ])
   const rebuilt = summarize([
-    { kind: 'nudge', t: 7, hook: 'design-hold', named: ['software-design-principles'], isEarlier: true },
+    { kind: 'nudge', t: 7, hook: 'design', named: ['software-design-principles'], holdKind: 'justified-skip', isEarlier: true },
     { kind: 'load', t: 7, skill: 'software-design-principles', via: 'tool', isSubagent: false, isEarlier: true },
   ])
   const earlier = rebuilt.timeline.find(e => e.kind === 'nudge')
@@ -277,18 +225,23 @@ test('a nudge row keeps when each skill settled, so the picture plays that momen
 
 test("the report uses the pane's words, not internal labels", async () => {
   const s = summarize([
-    { kind: 'nudge', t: 1, hook: 'router-rule', named: ['using-goated-ai-skills'] },
-    { kind: 'prompt', t: 2, named: [] },
+    { kind: 'prompt', t: 1, named: [] },
+    { kind: 'nudge', t: 2, hook: 'router-first', named: ['using-goated-ai-skills'], holdKind: 'strict' },
     { kind: 'load', t: 3, skill: 'using-goated-ai-skills', via: 'tool', isSubagent: false },
-    { kind: 'nudge', t: 4, hook: 'diagnose', named: ['tdd'] },
+    { kind: 'nudge', t: 4, hook: 'closeout', named: ['tdd'], holdKind: 'justified-skip' },
     { kind: 'prompt', t: 5, named: [] },
   ])
-  const text = reportText(addSession(null, s), { names: SKILLS, own: ['tdd'], total: 6, included: 6 })
-  expect(text).toContain('- GOATED router rule: 1 of 1 handled (100%) · loaded 1')
-  expect(text).toContain('- repeated failure: 0 of 1 handled (0%) · not loaded 1')
+  const all = addSession(null, s)
+  const text = reportText(all, { names: SKILLS, own: ['tdd'], total: 6, included: 6 })
+  expect(text).toContain('- router-first hold: 1 of 1 handled (100%) · loaded 1')
+  expect(text).toContain('- closeout hold: 0 of 1 handled (0%) · not loaded 1')
   expect(text).toContain('- using-goated-ai-skills: 1 (after a hook 1)')
-  expect(text).toContain('GOATED router rule: router loaded first in 1 of 1 session.')
-  expect(text).not.toMatch(/hook-nudged|router-rule|diagnose:/)
+  expect(text).toContain('- Subagents: 0 started · 0 skill bodies read')
+  expect(text).not.toMatch(/hook-nudged|router-first:|closeout:|GOATED router rule|start message/)
+  // Summaries stored by earlier versions still bring their router rule and start messages into the report.
+  const stored = reportText({ ...all, router: { first: 1, late: 1 }, subagents: { spawns: 0, starts: 2, bodyReads: 0 } }, null)
+  expect(stored).toContain('GOATED router rule: router loaded first in 1 of 2 sessions.')
+  expect(stored).toContain('- Subagents: 0 started · 2 start messages · 0 skill bodies read')
 })
 
 test('the pane shows the session and switches tabs, on every surface', async ($, on) => {
@@ -297,8 +250,8 @@ test('the pane shows the session and switches tabs, on every surface', async ($,
     events: {
       shape: 'events-1',
       value: [
-        { kind: 'nudge', t: 1, hook: 'router-rule', named: ['using-goated-ai-skills'] },
-        { kind: 'prompt', t: 2, named: [] },
+        { kind: 'prompt', t: 1, named: [] },
+        { kind: 'nudge', t: 2, hook: 'router-first', named: ['using-goated-ai-skills'], holdKind: 'strict' },
         { kind: 'load', t: 3, skill: 'using-goated-ai-skills', via: 'tool', isSubagent: false },
       ],
     },
@@ -323,9 +276,10 @@ test('the pane shows the session and switches tabs, on every surface', async ($,
     const ui = await $.ui.mount({ ...PANE, surface })
     // The line under the picture says where things stand, in words, on every surface.
     expect((await ui.find({ type: 'Text', text: /skill load/ }))?.text).toBe('1 skill load · hooks: 1 followed')
-    expect((await ui.find({ type: 'Text', text: /router rule:/ }))?.text).toBe('GOATED router rule: router loaded first')
+    // No router rule line: this session had none.
+    expect(await ui.find({ type: 'Text', text: /router rule/ })).toBeUndefined()
     // One row per event, newest first, in columns; a nudge is one sentence with its result.
-    expect((await ui.find({ type: 'Text', text: /→/ }))?.text).toBe('GOATED router rule → using-goated-ai-skills loaded')
+    expect((await ui.find({ type: 'Text', text: /→/ }))?.text).toBe('router-first hold → using-goated-ai-skills loaded')
     // The load half a second ago is still flying from its station to the core, where the picture draws.
     if (surface !== 'terminal') expect((await frameOf(ui))?.source).toContain('<animateMotion')
     expect((await ui.find({ type: 'Text', text: /after a hook/ }))?.text).toBe('using-goated-ai-skills · after a hook')
@@ -337,7 +291,8 @@ test('the pane shows the session and switches tabs, on every surface', async ($,
     await ui.unmount()
 
     const all = await $.ui.mount({ ...PANE, surface })
-    expect(await all.find({ type: 'Text', text: /^GOATED router rule$/ })).toBeDefined()
+    expect(await all.find({ type: 'Text', text: /^router-first hold$/ })).toBeDefined()
+    expect(await all.find({ type: 'Text', text: /router rule/ })).toBeUndefined()
     expect(await all.find({ type: 'Text', text: /^1 of 1$/ })).toBeDefined()
     // The outcome bar: one followed of one settled fills the whole bar green, on every surface.
     const fills = (await all.findAll({ type: 'Box' })).filter(b => b.props.backgroundColor === 'success')
@@ -362,7 +317,7 @@ test('the pane shows the session and switches tabs, on every surface', async ($,
 })
 
 test('a nudge flies from Hooks to the agent it spoke to, straight to Agent or to Subagents', async ($, on) => {
-  const nudge = (isSubagent: boolean) => ({ kind: 'nudge', t: 400, hook: 'commit-hold', named: ['commit-message'], ...(isSubagent ? { isSubagent: true } : {}) })
+  const nudge = (isSubagent: boolean) => ({ kind: 'nudge', t: 400, hook: 'commit', named: ['commit-message'], holdKind: 'strict', ...(isSubagent ? { isSubagent: true } : {}) })
   const stored: Record<string, unknown> = { tab: 'session' }
   on('clock.now', () => ({ value: 500 }))
   on('state.get', (_, e) => {
@@ -386,7 +341,7 @@ test('a nudge flies from Hooks to the agent it spoke to, straight to Agent or to
 test('moments queue one after another with a gap, from event times alone, and an old backlog is skipped', async () => {
   const timeline: TimelineEntry[] = [
     { t: 1000, kind: 'load', skill: 'tdd', origin: 'self-initiated' },
-    { t: 1100, kind: 'nudge', hook: 'commit-hold', skills: [{ skill: 'commit-message', status: 'already loaded', at: 1100 }] },
+    { t: 1100, kind: 'nudge', hook: 'commit', holdKind: 'strict', skills: [{ skill: 'commit-message', status: 'followed', at: 1100 }] },
     { t: 1200, kind: 'load', skill: 'caveman', origin: 'user-slash' },
   ]
   const plays = playQueue(timeline)
@@ -408,7 +363,7 @@ test('moments queue one after another with a gap, from event times alone, and an
 test('a waiting nudge holds its dotted trail in amber, fading in when its dot sets off', async ($, on) => {
   const stored: Record<string, unknown> = {
     tab: 'session',
-    events: { shape: 'events-1', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'nudge', t: 450, hook: 'pr-hold', named: ['pr-description'] }] },
+    events: { shape: 'events-1', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'nudge', t: 450, hook: 'pull-request', named: ['pr-description'], holdKind: 'strict' }] },
   }
   let now = 500
   on('clock.now', () => ({ value: now }))
@@ -443,7 +398,7 @@ test('a waiting nudge holds its dotted trail in amber, fading in when its dot se
 test('the still copy under the frame shows a trail only when the frame does, so a rebuilt frame never flashes one', async ($, on) => {
   const stored: Record<string, unknown> = {
     tab: 'session',
-    events: { shape: 'events-1', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'nudge', t: 450, hook: 'pr-hold', named: ['pr-description'] }] },
+    events: { shape: 'events-1', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'nudge', t: 450, hook: 'pull-request', named: ['pr-description'], holdKind: 'strict' }] },
   }
   let now = 500
   on('clock.now', () => ({ value: now }))
@@ -467,10 +422,10 @@ test('the still copy under the frame shows a trail only when the frame does, so 
 })
 
 test("a trail whose dot set off long ago stands in the frame as drawn, not by replaying an old animation", async ($, on) => {
-  // The router rule waits all session; each new moment rebuilds the frame, which must show its trail from the first paint.
+  // A hold waits until its turn ends; each new moment rebuilds the frame, which must show its trail from the first paint.
   const stored: Record<string, unknown> = {
     tab: 'session',
-    events: { shape: 'events-1', value: [{ kind: 'nudge', t: 450, hook: 'router-rule', named: ['using-goated-ai-skills'] }, { kind: 'prompt', t: 500, named: [] }] },
+    events: { shape: 'events-1', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'nudge', t: 450, hook: 'router-first', named: ['using-goated-ai-skills'], holdKind: 'strict' }] },
   }
   on('clock.now', () => ({ value: 600_000 }))
   on('state.get', (_, e) => {
@@ -486,44 +441,6 @@ test("a trail whose dot set off long ago stands in the frame as drawn, not by re
   expect(frame).not.toContain('values="0;.6"')
   // The still copy under it draws the very same line.
   expect(trailOf(still)?.replace('/>', '>')).toBe(trailOf(frame)?.replace('/>', '>'))
-})
-
-test('a trail still waiting when your next message arrives fades out, and the badge alone keeps counting it', async ($, on) => {
-  // The router rule stays open all session; its trail should not stand for hours.
-  const stored: Record<string, unknown> = {
-    tab: 'session',
-    events: { shape: 'events-1', value: [{ kind: 'nudge', t: 450, hook: 'router-rule', named: ['using-goated-ai-skills'] }, { kind: 'prompt', t: 500, named: [] }] },
-  }
-  let now = 3000
-  on('clock.now', () => ({ value: now }))
-  on('state.get', (_, e) => {
-    const key = (e as { key: string }).key
-    return { value: key in stored ? { value: stored[key], version: 1 } : { value: undefined, version: 0 } }
-  })
-  on('state.set', () => ({ value: { isSet: true, version: 2 } }))
-  const draw = async () => {
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-    const [still, frame] = (await ui.findAll({ type: 'Svg' })).map(x => String(x.props.source))
-    await ui.unmount()
-    return { still, frame }
-  }
-  const DOTS = 'stroke-dasharray="1.5 4.5"'
-  // In the turn it was sent, the trail stands while it waits.
-  const before = await draw()
-  expect(before.frame).toContain(DOTS)
-  // Your next message: the picture is drawn afresh and the trail fades out over two seconds.
-  const events = (stored.events as { value: unknown[] }).value
-  stored.events = { shape: 'events-1', value: [...events, { kind: 'prompt', t: 4000, named: [] }] }
-  now = 4100
-  const fading = await draw()
-  expect(fading.frame).not.toBe(before.frame)
-  expect(fading.frame).toMatch(/stroke="#ffa62b" opacity="0.6"><animate attributeName="opacity" values=".6;0" begin="-0.100s" dur="2.000s"/)
-  // Once faded, neither layer draws it; the nudge is still waiting, so the badge still counts it.
-  now = 20_000
-  const after = await draw()
-  expect(after.frame).not.toContain(DOTS)
-  expect(after.still).not.toContain(DOTS)
-  expect(after.frame).toContain('×1')
 })
 
 test('the preview script plays every kind of moment in turn, none skipped for waiting too long', async () => {
@@ -584,14 +501,14 @@ test('the Session tab breaks down this session alone: each hook with its follow 
       shape: 'events-1',
       value: [
         { kind: 'prompt', t: 1, named: [] },
-        { kind: 'nudge', t: 2, hook: 'commit-hold', named: ['commit-message'] },
+        { kind: 'nudge', t: 2, hook: 'commit', named: ['commit-message'], holdKind: 'strict' },
         { kind: 'load', t: 3, skill: 'commit-message', via: 'tool', isSubagent: false },
         { kind: 'load', t: 4, skill: 'tdd', via: 'tool', isSubagent: false },
         { kind: 'load', t: 5, skill: 'tdd', via: 'tool', isSubagent: false },
       ],
     },
     // Another session's totals must not show here.
-    allTime: { shape: 'all-time-1', value: { sessions: 1, loads: { diagnose: { 'self-initiated': 9 } }, nudges: { 'pr-hold': { ignored: 4 } }, router: {}, lastUsed: {} } },
+    allTime: { shape: 'all-time-1', value: { sessions: 1, loads: { diagnose: { 'self-initiated': 9 } }, nudges: { 'pull-request': { ignored: 4 } }, router: {}, lastUsed: {} } },
   }
   on('clock.now', () => ({ value: 100_000 }))
   on('state.get', (_, e) => {
@@ -602,13 +519,13 @@ test('the Session tab breaks down this session alone: each hook with its follow 
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   const text = async (re: RegExp) => (await ui.find({ type: 'Text', text: re }))?.text
   expect(await text(/^Hooks this session$/)).toBeDefined()
-  expect(await text(/^commit check$/)).toBeDefined()
+  expect(await text(/^commit hold$/)).toBeDefined()
   expect(await text(/^1 of 1$/)).toBeDefined()
   expect(await text(/^Skills this session$/)).toBeDefined()
   // Most loaded first, with its count.
   const skills = (await ui.findAll({ type: 'Text', text: /^(tdd|commit-message)$/ })).map(t => t.text)
   expect(skills.slice(0, 2)).toEqual(['tdd', 'commit-message'])
-  expect(await text(/^PR check$/)).toBeUndefined()
+  expect(await text(/^pull-request hold$/)).toBeUndefined()
   expect(await text(/^diagnose$/)).toBeUndefined()
   await ui.unmount()
 })
@@ -616,7 +533,7 @@ test('the Session tab breaks down this session alone: each hook with its follow 
 test("the agent a nudge spoke to holds amber on its border until it sends the result back to Hooks", async ($, on) => {
   const stored: Record<string, unknown> = {
     tab: 'session',
-    events: { shape: 'events-1', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'nudge', t: 1000, hook: 'commit-hold', named: ['commit-message'] }] },
+    events: { shape: 'events-1', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'nudge', t: 1000, hook: 'commit', named: ['commit-message'], holdKind: 'strict' }] },
   }
   let now = 1050
   on('clock.now', () => ({ value: now }))
@@ -751,12 +668,12 @@ test("a skill's supporting files are found by skill and path; its SKILL.md, fold
 test('reading a reference is recorded for the main agent and for subagents alike', async () => {
   const read = (path: string) => [{ name: 'Read', input: { file_path: path } }]
   const path = '/h/.claude/skills/diagnose/references/root-cause-tracing.md'
-  expect(toolUseEvents(read(path), false, true, 5)).toEqual([
+  expect(toolUseEvents(read(path), false, 5)).toEqual([
     { kind: 'read', t: 5, skills: ['diagnose'] },
     { kind: 'ref', t: 5, skill: 'diagnose', file: 'references/root-cause-tracing.md' },
   ])
   // A subagent's read settles no nudge of the main agent's, but its reference still counts.
-  expect(toolUseEvents(read(path), true, true, 6)).toEqual([{ kind: 'ref', t: 6, skill: 'diagnose', file: 'references/root-cause-tracing.md', isSubagent: true }])
+  expect(toolUseEvents(read(path), true, 6)).toEqual([{ kind: 'ref', t: 6, skill: 'diagnose', file: 'references/root-cause-tracing.md', isSubagent: true }])
 })
 
 test('each reference read is counted per skill and file, and the log says whether its skill had loaded', async () => {
@@ -987,7 +904,7 @@ test('the All time picture shows node counts and the core ring but no badge, wit
         { kind: 'prompt', t: 1, named: [] },
         { kind: 'ref', t: 400, skill: 'tdd', file: 'references/a.md' },
         // Still waiting in the live session, which All time adds as it runs.
-        { kind: 'nudge', t: 450, hook: 'design-hold', named: ['software-design-principles'] },
+        { kind: 'nudge', t: 450, hook: 'design', named: ['software-design-principles'], holdKind: 'justified-skip' },
       ],
     },
     allTime: {
@@ -995,7 +912,7 @@ test('the All time picture shows node counts and the core ring but no badge, wit
       value: {
         sessions: 1,
         loads: { tdd: { 'self-initiated': 2 } },
-        nudges: { 'commit-hold': { followed: 1, ignored: 2 } },
+        nudges: { commit: { followed: 1, ignored: 2 } },
         router: {},
         lastUsed: {},
         refs: { tdd: { 'references/a.md': 4 } },
@@ -1032,7 +949,7 @@ test("the Session picture's alt text names each badge it shows, and leaves out a
         { kind: 'prompt', t: 1, named: [] },
         { kind: 'ref', t: 2, skill: 'tdd', file: 'references/a.md' },
         { kind: 'ref', t: 3, skill: 'tdd', file: 'references/b.md' },
-        { kind: 'nudge', t: 4, hook: 'design-hold', named: ['software-design-principles'] },
+        { kind: 'nudge', t: 4, hook: 'design', named: ['software-design-principles'], holdKind: 'justified-skip' },
       ],
     },
   }
@@ -1107,7 +1024,7 @@ test('a page leaves a dotted pink way that fades once it lands, drawn the same i
       shape: 'events-1',
       value: [
         { kind: 'prompt', t: 1, named: [] },
-        { kind: 'nudge', t: 100, hook: 'pr-hold', named: ['pr-description'] },
+        { kind: 'nudge', t: 100, hook: 'pull-request', named: ['pr-description'], holdKind: 'strict' },
         { kind: 'ref', t: 200, skill: 'tdd', file: 'references/a.md' },
       ],
     },
@@ -1285,13 +1202,13 @@ test('a load the agent made of its own accord says so, apart from one a subagent
 test('a subagent loading a skill a hook asked for loaded it after a hook, not of its own accord', async ($, on) => {
   const events: UsageEvent[] = [
     { kind: 'prompt', t: 1, named: [] },
-    { kind: 'nudge', t: 2, hook: 'design-hold', named: ['software-design-principles'], isSubagent: true },
+    { kind: 'nudge', t: 2, hook: 'design', named: ['software-design-principles'], holdKind: 'justified-skip', isSubagent: true },
     { kind: 'load', t: 3, skill: 'software-design-principles', via: 'tool', isSubagent: true },
     { kind: 'load', t: 4, skill: 'tdd', via: 'tool', isSubagent: true },
   ]
   const s = summarize(events)
   expect(s.loads).toEqual({ 'software-design-principles': { 'hook-nudged': 1 }, tdd: { subagent: 1 } })
-  expect(s.nudges).toEqual({ 'design-hold': { followed: 1 } })
+  expect(s.nudges).toEqual({ design: { followed: 1 } })
   // The log row keeps that a subagent made it.
   expect(s.timeline.filter(e => e.kind === 'load')).toEqual([
     { t: 3, kind: 'load', skill: 'software-design-principles', origin: 'hook-nudged', isSubagent: true },
@@ -1352,7 +1269,7 @@ test('a load a hook asked a subagent for flies from Hooks to SKILLS and on to Su
       shape: 'events-1',
       value: [
         { kind: 'prompt', t: 1, named: [] },
-        { kind: 'nudge', t: 300, hook: 'design-hold', named: ['software-design-principles'], isSubagent: true },
+        { kind: 'nudge', t: 300, hook: 'design', named: ['software-design-principles'], holdKind: 'justified-skip', isSubagent: true },
         { kind: 'load', t: 400, skill: 'software-design-principles', via: 'tool', isSubagent: true },
       ],
     },
@@ -1370,7 +1287,7 @@ test("a nudge's result flies back from the agent to Hooks in its colour, and Hoo
       shape: 'events-1',
       value: [
         { kind: 'prompt', t: 1, named: [] },
-        { kind: 'nudge', t: 300, hook: 'commit-hold', named: ['commit-message'] },
+        { kind: 'nudge', t: 300, hook: 'commit', named: ['commit-message'], holdKind: 'strict' },
         { kind: 'prompt', t: 400, named: [] },
       ],
     },
@@ -1403,13 +1320,15 @@ test('a reference read is a round trip: a request from the reader to References,
 
 test('the status line says in words how the hooks went, leaving out counts of none', async () => {
   const s = summarize([
-    { kind: 'nudge', t: 1, hook: 'router-rule', named: ['using-goated-ai-skills'] },
-    { kind: 'prompt', t: 2, named: [] },
+    { kind: 'prompt', t: 1, named: [] },
+    { kind: 'nudge', t: 2, hook: 'router-first', named: ['using-goated-ai-skills'], holdKind: 'strict' },
     { kind: 'load', t: 3, skill: 'using-goated-ai-skills', via: 'tool', isSubagent: false },
-    { kind: 'nudge', t: 4, hook: 'design-hold', named: ['software-design-principles'] },
+    { kind: 'nudge', t: 4, hook: 'design', named: ['software-design-principles'], holdKind: 'justified-skip' },
   ])
-  expect(statusText(s)).toBe('skills 1 · hooks: 1 followed · 1 waiting · router ✓')
-  expect(statusText(summarize([{ kind: 'prompt', t: 1, named: [] }, { kind: 'nudge', t: 2, hook: 'pr-hold', named: ['pr-description'] }], true))).toBe(
+  expect(statusText(s)).toBe('skills 1 · hooks: 1 followed · 1 waiting')
+  // A summary stored by an earlier version, while a router rule was active, still says how the router went.
+  expect(statusText({ ...s, router: 'first' })).toBe('skills 1 · hooks: 1 followed · 1 waiting · router ✓')
+  expect(statusText(summarize([{ kind: 'prompt', t: 1, named: [] }, { kind: 'nudge', t: 2, hook: 'pull-request', named: ['pr-description'], holdKind: 'strict' }], true))).toBe(
     'skills 0 · hooks: 0 followed · 1 not',
   )
   expect(statusText(summarize([{ kind: 'prompt', t: 1, named: [] }]))).toBe('skills 0')
@@ -1429,15 +1348,14 @@ test('a goated-skip line declines the nudge it names, keeping the reason', async
   expect(row?.kind === 'nudge' && row.skills).toEqual([{ skill: 'software-design-principles', status: 'declined', at: 3, reason: 'no code changed this turn' }])
 })
 
-test('a nudge still open when its turn ends is ignored then, not left waiting; the router rule waits for the router', async () => {
+test('a nudge still open when its turn ends is ignored then, not left waiting', async () => {
   const s = summarize([
-    { kind: 'nudge', t: 1, hook: 'router-rule', named: ['using-goated-ai-skills'] },
     { kind: 'prompt', t: 2, named: [] },
-    { kind: 'nudge', t: 3, hook: 'design-hold', named: ['software-design-principles'] },
+    { kind: 'nudge', t: 3, hook: 'design', named: ['software-design-principles'], holdKind: 'justified-skip' },
     { kind: 'turn-end', t: 4 },
   ])
-  expect(s.nudges).toEqual({ 'router-rule': { pending: 1 }, 'design-hold': { ignored: 1 } })
-  const row = s.timeline.find(e => e.kind === 'nudge' && e.hook === 'design-hold')
+  expect(s.nudges).toEqual({ design: { ignored: 1 } })
+  const row = s.timeline.find(e => e.kind === 'nudge' && e.hook === 'design')
   expect(row?.kind === 'nudge' && row.skills).toEqual([{ skill: 'software-design-principles', status: 'ignored', at: 4 }])
 })
 
@@ -1445,13 +1363,13 @@ test("a subagent's turn end settles only that subagent's nudges, and its skip li
   const s = summarize([
     { kind: 'prompt', t: 1, named: [] },
     { kind: 'nudge', t: 2, hook: 'design', named: ['software-design-principles'], isSubagent: true, agent: 'a1' },
-    { kind: 'nudge', t: 3, hook: 'security-hold', named: ['code-security-review'], isSubagent: true, agent: 'a2' },
-    { kind: 'nudge', t: 4, hook: 'commit-hold', named: ['commit-message'] },
+    { kind: 'nudge', t: 3, hook: 'security', named: ['code-security-review'], holdKind: 'justified-skip', isSubagent: true, agent: 'a2' },
+    { kind: 'nudge', t: 4, hook: 'commit', named: ['commit-message'], holdKind: 'strict' },
     { kind: 'skip', t: 5, skill: 'code-security-review', reason: 'only a scratch probe script', isSubagent: true, agent: 'a2' },
     { kind: 'skip', t: 6, skill: 'commit-message', reason: 'a subagent cannot speak for the agent', isSubagent: true, agent: 'a1' },
     { kind: 'turn-end', t: 7, agent: 'a1' },
   ])
-  expect(s.nudges).toEqual({ design: { ignored: 1 }, 'security-hold': { declined: 1 }, 'commit-hold': { pending: 1 } })
+  expect(s.nudges).toEqual({ design: { ignored: 1 }, security: { declined: 1 }, commit: { pending: 1 } })
 })
 
 test('a skip line written earlier in the same turn declines a later nudge; one from an earlier turn does not', async () => {
@@ -1505,13 +1423,13 @@ test('a decline counts as handled in the rates, and the status line names declin
   expect(followCounts({ followed: 1, declined: 1, ignored: 1 })).toEqual({ acted: 2, settled: 3, pending: 0, declined: 1 })
   const s = summarize([
     { kind: 'prompt', t: 1, named: [] },
-    { kind: 'nudge', t: 2, hook: 'pr-hold', named: ['pr-description'] },
-    { kind: 'skip', t: 3, skill: 'pr-description', reason: 'the user wrote the description' },
+    { kind: 'nudge', t: 2, hook: 'security', named: ['code-security-review'], holdKind: 'justified-skip' },
+    { kind: 'skip', t: 3, skill: 'code-security-review', reason: 'only a scratch probe script' },
     { kind: 'turn-end', t: 4 },
   ])
   expect(statusText(s)).toBe('skills 0 · hooks: 0 followed · 1 declined')
-  const report = reportText(addSession(null, s), { names: [...SKILLS, 'pr-description'], own: [], total: 7, included: 7 })
-  expect(report).toContain('- PR check: 1 of 1 handled (100%) · declined 1')
+  const report = reportText(addSession(null, s), { names: SKILLS, own: [], total: 6, included: 6 })
+  expect(report).toContain('- security hold: 1 of 1 handled (100%) · declined 1')
 })
 
 test('a declined row reads in pale green and reveals its reason on hover', async ($, on) => {

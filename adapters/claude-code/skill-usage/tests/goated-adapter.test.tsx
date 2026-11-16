@@ -1,7 +1,7 @@
 // What the mod records from the GOATED Claude Code adapter and the marker
 // grammar: route lines, the adapter's routing holds and their outcomes, typed
 // overrides, justified skips against an adapter hold, required-reference
-// reads, subagent spawns and start messages, and subagent reads of skill bodies.
+// reads, subagent spawns, and subagent reads of skill bodies.
 
 import { expect, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
@@ -93,10 +93,10 @@ const EDIT = { name: 'Edit', input: { file_path: 'src/a.ts', old_string: 'a', ne
 
 test('writes are the calls the adapter holds like writes: edits and spawns, by the main agent only', async () => {
   for (const name of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Agent', 'mcp__ccd_session__start_session', 'mcp__ccd_session__hand_off_to_session']) {
-    expect(toolUseEvents([{ name, input: {} }], false, true, 1).filter(e => e.kind === 'write')).toEqual([{ kind: 'write', t: 1 }])
+    expect(toolUseEvents([{ name, input: {} }], false, 1).filter(e => e.kind === 'write')).toEqual([{ kind: 'write', t: 1 }])
   }
-  expect(toolUseEvents([{ name: 'Read', input: { file_path: 'a' } }, { name: 'Bash', input: { command: 'ls' } }], false, true, 1).filter(e => e.kind === 'write')).toEqual([])
-  expect(toolUseEvents([EDIT], true, true, 1, 'a1').filter(e => e.kind === 'write')).toEqual([])
+  expect(toolUseEvents([{ name: 'Read', input: { file_path: 'a' } }, { name: 'Bash', input: { command: 'ls' } }], false, 1).filter(e => e.kind === 'write')).toEqual([])
+  expect(toolUseEvents([EDIT], true, 1, 'a1').filter(e => e.kind === 'write')).toEqual([])
 })
 
 test('each turn that writes counts once: routed before its first write, only after it, or not at all', async () => {
@@ -104,32 +104,32 @@ test('each turn that writes counts once: routed before its first write, only aft
     // Routed before the first write; a second write in the turn does not count again.
     { kind: 'prompt', t: 1, named: [] },
     ...markerEvents('goated-route: standard | requires: tdd', 2),
-    ...toolUseEvents([EDIT], false, false, 3),
-    ...toolUseEvents([EDIT], false, true, 4),
+    ...toolUseEvents([EDIT], false, 3),
+    ...toolUseEvents([EDIT], false, 4),
     // `continue` is a route line too.
     { kind: 'prompt', t: 5, named: [] },
     ...markerEvents('goated-route: continue', 6),
-    ...toolUseEvents([EDIT], false, true, 7),
+    ...toolUseEvents([EDIT], false, 7),
     // A route line only after the write.
     { kind: 'prompt', t: 8, named: [] },
-    ...toolUseEvents([EDIT], false, true, 9),
+    ...toolUseEvents([EDIT], false, 9),
     ...markerEvents('goated-route: direct', 10),
     // A main turn end inside a typed prompt's turn (a background result woke the agent) does not split it.
     { kind: 'turn-end', t: 11 },
-    ...toolUseEvents([EDIT], false, true, 12),
+    ...toolUseEvents([EDIT], false, 12),
     // No route line at all.
     { kind: 'prompt', t: 13, named: [] },
-    ...toolUseEvents([EDIT], false, true, 14),
+    ...toolUseEvents([EDIT], false, 14),
     // A turn that only reads is not counted.
     { kind: 'prompt', t: 15, named: [] },
-    ...toolUseEvents([{ name: 'Read', input: { file_path: 'a' } }], false, true, 16),
+    ...toolUseEvents([{ name: 'Read', input: { file_path: 'a' } }], false, 16),
   ])
   expect(s.writingTurns).toEqual({ routed: 2, late: 1, none: 1 })
   expect(addSession(addSession(null, s), s).writingTurns).toEqual({ routed: 4, late: 2, none: 2 })
 })
 
 test('the report says how many writing turns had a route line', async () => {
-  const s = summarize([{ kind: 'prompt', t: 1, named: [] }, ...toolUseEvents([EDIT], false, false, 2)])
+  const s = summarize([{ kind: 'prompt', t: 1, named: [] }, ...toolUseEvents([EDIT], false, 2)])
   expect(reportText(addSession(null, s), null)).toContain('- Writing turns: 0 routed before the first write · 0 routed only after it · 1 with no route line')
 })
 
@@ -142,27 +142,23 @@ const ROUTE_MISSING = held('Edit', ADAPTER_TEXTS.routeLine)
 const PIPELINE = held('Edit', ADAPTER_TEXTS.pipeline)
 
 test("each adapter hold names its gate, its kind and what it asks for: the router, a route line, or the route's missing skills", async () => {
-  expect(hookEvents(ROUTER_FIRST, SKILLS, 1, { holdsOnly: true })).toEqual([{ kind: 'nudge', t: 1, hook: 'router-first', named: [ROUTER], holdKind: 'strict' }])
-  expect(hookEvents(ROUTE_MISSING, SKILLS, 1, { holdsOnly: true })).toEqual([{ kind: 'nudge', t: 1, hook: 'route-line', named: [ROUTE_LINE], holdKind: 'strict' }])
-  expect(hookEvents(PIPELINE, SKILLS, 1, { holdsOnly: true })).toEqual([{ kind: 'nudge', t: 1, hook: 'pipeline', named: ['tdd', 'doc-sync'], holdKind: 'strict' }])
+  expect(hookEvents(ROUTER_FIRST, 1, { holdsOnly: true })).toEqual([{ kind: 'nudge', t: 1, hook: 'router-first', named: [ROUTER], holdKind: 'strict' }])
+  expect(hookEvents(ROUTE_MISSING, 1, { holdsOnly: true })).toEqual([{ kind: 'nudge', t: 1, hook: 'route-line', named: [ROUTE_LINE], holdKind: 'strict' }])
+  expect(hookEvents(PIPELINE, 1, { holdsOnly: true })).toEqual([{ kind: 'nudge', t: 1, hook: 'pipeline', named: ['tdd', 'doc-sync'], holdKind: 'strict' }])
   // An ordinary failure that quotes a hold mid-line is not one.
-  expect(hookEvents('Error: grep found "goated-hold: pipeline | strict" in a file', SKILLS, 1, { holdsOnly: true })).toEqual([])
+  expect(hookEvents('Error: grep found "goated-hold: pipeline | strict" in a file', 1, { holdsOnly: true })).toEqual([])
 })
 
 test("a hold line is a hold only as the result's first line, so failing output that prints one is not", async () => {
   const output = `FAIL test_holds (tests.test_claude_code_adapter)\n${ADAPTER_TEXTS.pipeline}\nAssertionError: 'deny' != 'pass'`
-  expect(hookEvents(output, SKILLS, 1, { holdsOnly: true })).toEqual([])
-})
-
-test("an adapter hold names every skill it backticks, even before the session's skill listing has loaded", async () => {
-  expect(hookEvents(PIPELINE, [], 1, { holdsOnly: true })).toEqual([{ kind: 'nudge', t: 1, hook: 'pipeline', named: ['tdd', 'doc-sync'], holdKind: 'strict' }])
+  expect(hookEvents(output, 1, { holdsOnly: true })).toEqual([])
 })
 
 test('a corrected route line that drops a held skill follows the pipeline hold for it; continue keeps the route', async () => {
   const s = summarize([
     { kind: 'prompt', t: 1, named: [] },
     ...markerEvents('goated-route: standard | requires: tdd, doc-sync', 2),
-    ...hookEvents(PIPELINE, SKILLS, 3, { holdsOnly: true }),
+    ...hookEvents(PIPELINE, 3, { holdsOnly: true }),
     { kind: 'load', t: 4, skill: 'tdd', via: 'tool', isSubagent: false },
     ...markerEvents('goated-route: continue', 5),
     ...markerEvents('goated-route: standard | requires: tdd', 6),
@@ -172,18 +168,18 @@ test('a corrected route line that drops a held skill follows the pipeline hold f
     { skill: 'tdd', status: 'followed', at: 4 },
     { skill: 'doc-sync', status: 'followed', at: 6 },
   ])
-  const direct = summarize([{ kind: 'prompt', t: 1, named: [] }, ...hookEvents(PIPELINE, SKILLS, 2, { holdsOnly: true }), ...markerEvents('goated-route: direct', 3)])
+  const direct = summarize([{ kind: 'prompt', t: 1, named: [] }, ...hookEvents(PIPELINE, 2, { holdsOnly: true }), ...markerEvents('goated-route: direct', 3)])
   expect(direct.nudges).toEqual({ pipeline: { followed: 2 } })
 })
 
 test('the router-first hold is followed by loading the router, the route-line hold by a route line, the pipeline hold by each skill', async () => {
   const s = summarize([
     { kind: 'prompt', t: 1, named: [] },
-    ...hookEvents(ROUTER_FIRST, SKILLS, 2, { holdsOnly: true }),
+    ...hookEvents(ROUTER_FIRST, 2, { holdsOnly: true }),
     { kind: 'load', t: 3, skill: ROUTER, via: 'tool', isSubagent: false },
-    ...hookEvents(ROUTE_MISSING, SKILLS, 4, { holdsOnly: true }),
+    ...hookEvents(ROUTE_MISSING, 4, { holdsOnly: true }),
     { kind: 'route', t: 5, form: 'route', intensity: 'standard', requires: ['tdd', 'doc-sync'] },
-    ...hookEvents(PIPELINE, SKILLS, 6, { holdsOnly: true }),
+    ...hookEvents(PIPELINE, 6, { holdsOnly: true }),
     { kind: 'load', t: 7, skill: 'tdd', via: 'tool', isSubagent: false },
     { kind: 'turn-end', t: 8 },
   ])
@@ -197,7 +193,7 @@ test('the router-first hold is followed by loading the router, the route-line ho
 test('a skip line never declines a strict adapter hold: only loading the skill clears it', async () => {
   const s = summarize([
     { kind: 'prompt', t: 1, named: [] },
-    ...hookEvents(PIPELINE, SKILLS, 2, { holdsOnly: true }),
+    ...hookEvents(PIPELINE, 2, { holdsOnly: true }),
     { kind: 'load', t: 3, skill: 'tdd', via: 'tool', isSubagent: false },
     ...markerEvents('goated-skip: doc-sync: change touches only test fixtures', 4),
     { kind: 'turn-end', t: 5 },
@@ -211,7 +207,7 @@ test('a justified skip line declines a justified-skip hold it names, before or a
   const design = 'PreToolUse:Edit hook error: goated-hold: design | justified-skip\nLoad `doc-sync` or write a skip line.'
   const after = summarize([
     { kind: 'prompt', t: 1, named: [] },
-    ...hookEvents(design, SKILLS, 2, { holdsOnly: true }),
+    ...hookEvents(design, 2, { holdsOnly: true }),
     ...markerEvents('goated-skip: doc-sync: change touches only test fixtures', 3),
   ])
   expect(after.nudges).toEqual({ design: { declined: 1 } })
@@ -221,15 +217,9 @@ test('a justified skip line declines a justified-skip hold it names, before or a
   const before = summarize([
     { kind: 'prompt', t: 1, named: [] },
     ...markerEvents('goated-skip: doc-sync: change touches only test fixtures', 2),
-    ...hookEvents(design, SKILLS, 3, { holdsOnly: true }),
+    ...hookEvents(design, 3, { holdsOnly: true }),
   ])
   expect(before.nudges).toEqual({ design: { declined: 1 } })
-})
-
-test('the hooks of earlier installs are still read beside the adapter', async () => {
-  // Their hold texts stay readable until the adapter replaces them.
-  const legacy = 'COMMIT CHECK (held once this turn): before committing, invoke the `commit-message` skill and draft the message with it.'
-  expect(hookEvents(legacy, SKILLS, 1, { holdsOnly: true })).toEqual([{ kind: 'nudge', t: 1, hook: 'commit-hold', named: ['commit-message'] }])
 })
 
 // ---------- overrides ---------------------------------------------------------------
@@ -272,9 +262,9 @@ test('a read of a reference file the route requires is recorded against its skil
   const s = summarize([
     { kind: 'prompt', t: 1, named: [] },
     { kind: 'route', t: 2, form: 'route', intensity: 'standard', requires: ['software-design-principles'] },
-    ...toolUseEvents(uses, false, false, 3),
+    ...toolUseEvents(uses, false, 3),
     { kind: 'load', t: 4, skill: 'software-design-principles', via: 'tool', isSubagent: false },
-    ...toolUseEvents(uses, false, true, 5),
+    ...toolUseEvents(uses, false, 5),
   ])
   expect(s.refs).toEqual({ 'software-design-principles': { 'references/red-flags.md': 2 } })
   expect(s.refsUnloaded).toBe(1)
@@ -286,41 +276,30 @@ const SPAWN = { name: 'Agent', input: { description: 'Scan the repo', subagent_t
 
 test('a subagent spawn is recorded with its type and task, by the main agent or a subagent', async () => {
   // A spawn hands work on, so it is also a write, as the adapter holds it.
-  expect(toolUseEvents([SPAWN], false, true, 4)).toEqual([{ kind: 'spawn', t: 4, agentType: 'Explore', description: 'Scan the repo' }, { kind: 'write', t: 4 }])
-  expect(toolUseEvents([{ name: 'Agent', input: { description: 'Help', prompt: 'x' } }], true, true, 4, 'a1')).toEqual([
+  expect(toolUseEvents([SPAWN], false, 4)).toEqual([{ kind: 'spawn', t: 4, agentType: 'Explore', description: 'Scan the repo' }, { kind: 'write', t: 4 }])
+  expect(toolUseEvents([{ name: 'Agent', input: { description: 'Help', prompt: 'x' } }], true, 4, 'a1')).toEqual([
     { kind: 'spawn', t: 4, agentType: 'general-purpose', description: 'Help', isSubagent: true, agent: 'a1' },
   ])
 })
 
 test('a subagent that loads no skill still counts and shows in the log', async () => {
-  const s = summarize([{ kind: 'prompt', t: 1, named: [] }, ...toolUseEvents([SPAWN], false, false, 2), { kind: 'turn-end', t: 3, agent: 'a1' }])
+  const s = summarize([{ kind: 'prompt', t: 1, named: [] }, ...toolUseEvents([SPAWN], false, 2), { kind: 'turn-end', t: 3, agent: 'a1' }])
   expect(s.loads).toEqual({})
   expect(s.subagents).toEqual({ spawns: 1, starts: 0, bodyReads: 0 })
   expect(s.timeline.at(-1)).toEqual({ kind: 'spawn', t: 2, agentType: 'Explore', description: 'Scan the repo' })
 })
 
-// As the SubagentStart hook of an earlier install hands a subagent its contract.
-const START = "DELEGATED AGENT: another agent started you for the task in your first message, and it owns the user's intent and the final answer. For delivery work, invoke the using-goated-ai-skills router first."
-
-test("the subagent start message is recorded as the subagent's start, not as a nudge", async () => {
-  expect(hookEvents(START, SKILLS, 3, { agent: 'a1' })).toEqual([{ kind: 'subagent-start', t: 3, agent: 'a1' }])
-  const s = summarize([{ kind: 'prompt', t: 1, named: [] }, ...toolUseEvents([SPAWN], false, false, 2), ...hookEvents(START, SKILLS, 3, { agent: 'a1' })])
-  expect(s.nudges).toEqual({})
-  expect(s.subagents).toEqual({ spawns: 1, starts: 1, bodyReads: 0 })
-  expect(s.timeline.at(-1)).toEqual({ kind: 'subagent-start', t: 3 })
-})
-
 test("a subagent reading a skill's SKILL.md is a body read, which settles that subagent's nudge for it", async () => {
-  const read = toolUseEvents([{ name: 'Read', input: { file_path: 'C:\\home\\.claude\\skills\\tdd\\SKILL.md' } }], true, true, 4, 'a1')
+  const read = toolUseEvents([{ name: 'Read', input: { file_path: 'C:\\home\\.claude\\skills\\tdd\\SKILL.md' } }], true, 4, 'a1')
   expect(read).toEqual([{ kind: 'body', t: 4, skill: 'tdd', isSubagent: true, agent: 'a1' }])
   const s = summarize([
     { kind: 'prompt', t: 1, named: [] },
-    { kind: 'nudge', t: 2, hook: 'design-hold', named: ['tdd'], isSubagent: true, agent: 'a1' },
-    { kind: 'nudge', t: 3, hook: 'design-hold', named: ['tdd'], isSubagent: true, agent: 'a2' },
+    { kind: 'nudge', t: 2, hook: 'design', named: ['tdd'], holdKind: 'justified-skip', isSubagent: true, agent: 'a1' },
+    { kind: 'nudge', t: 3, hook: 'design', named: ['tdd'], holdKind: 'justified-skip', isSubagent: true, agent: 'a2' },
     ...read,
     { kind: 'turn-end', t: 5, agent: 'a2' },
   ])
-  expect(s.nudges).toEqual({ 'design-hold': { 'read files': 1, ignored: 1 } })
+  expect(s.nudges).toEqual({ design: { 'read files': 1, ignored: 1 } })
   expect(s.subagents).toEqual({ spawns: 0, starts: 0, bodyReads: 1 })
   expect(s.timeline.at(-1)).toEqual({ kind: 'body', t: 4, skill: 'tdd', isSubagent: true })
 })
@@ -350,10 +329,11 @@ test('the Session tab logs route lines, adapter holds, overrides, spawns and sta
     { kind: 'prompt', t: 1, named: [] },
     ...overrideEvents('GOATED Claude Code adapter: recorded your override for this prompt: "skip doc-sync".', 2),
     ...markerEvents('goated-route: standard | requires: tdd', 3),
-    ...hookEvents(PIPELINE.replace('`tdd`, `doc-sync`', '`tdd`'), SKILLS, 4, { holdsOnly: true }),
+    ...hookEvents(PIPELINE.replace('`tdd`, `doc-sync`', '`tdd`'), 4, { holdsOnly: true }),
     { kind: 'load', t: 5, skill: 'tdd', via: 'tool', isSubagent: false },
-    ...toolUseEvents([SPAWN], false, true, 6),
-    ...hookEvents(START, SKILLS, 7, { agent: 'a1' }),
+    ...toolUseEvents([SPAWN], false, 6),
+    // A start message, as events stored by earlier versions carry it.
+    { kind: 'subagent-start', t: 7, agent: 'a1' },
   ])
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await mount(surface)
@@ -370,7 +350,7 @@ test('the Session tab logs route lines, adapter holds, overrides, spawns and sta
 })
 
 test('a subagent that loads no skill lights the Subagents node, with its spawn count on a badge', async ($, on) => {
-  const mount = paneRig($, on, [{ kind: 'prompt', t: 1, named: [] }, ...toolUseEvents([SPAWN], false, false, 2)])
+  const mount = paneRig($, on, [{ kind: 'prompt', t: 1, named: [] }, ...toolUseEvents([SPAWN], false, 2)])
   const ui = await mount('desktop')
   const [still = ''] = (await ui.findAll({ type: 'Svg' })).map(x => String(x.props.source))
   await ui.unmount()
@@ -383,16 +363,16 @@ test('the report lists route lines, adapter holds by kind, overrides and subagen
   const s = summarize([
     { kind: 'prompt', t: 1, named: [] },
     ...markerEvents('goated-route: direct', 2),
-    ...hookEvents(ROUTER_FIRST, SKILLS, 3, { holdsOnly: true }),
+    ...hookEvents(ROUTER_FIRST, 3, { holdsOnly: true }),
     ...overrideEvents(NOTICE, 4),
-    ...toolUseEvents([SPAWN], false, true, 5),
+    ...toolUseEvents([SPAWN], false, 5),
   ])
   const report = reportText(addSession(null, s), null)
   expect(report).toContain('## Routes and adapter holds')
   expect(report).toContain('- Route lines: 1 direct')
   expect(report).toContain('- Adapter holds: 1 strict')
   expect(report).toContain('- Overrides: "skip routing" 1 · "skip the tdd skill" 1')
-  expect(report).toContain('- Subagents: 1 started · 0 start messages · 0 skill bodies read')
+  expect(report).toContain('- Subagents: 1 started · 0 skill bodies read')
 })
 
 // ---------- rows as session.append carries them ------------------------------------
@@ -402,7 +382,7 @@ const row = (door: string, content: Row['message']['content'], more: Partial<Row
   const { agentId, ...message } = more
   return { door, ...(agentId ? { agentId } : {}), message: { content, ...message } }
 }
-const SEEN = { hasTool: true }
+const SEEN = {}
 
 test("the adapter's notice row, as Claude Code 2.1.325 hands it to a mod, carries no text and yields nothing", async () => {
   const notice = row('hook-context', [], { name: 'hook_system_message' })

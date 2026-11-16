@@ -232,7 +232,7 @@ function readTrail(path: Path, color: string, begin: number, isStill = false): s
  * instead of relying on an old animation replaying, and `isStill` draws the
  * very same lines with nothing moving, for the copy under the frame.
  */
-function trail(path: Path, opts: { appear?: number; settle?: { begin: number; color: string }; fadeOut?: number }, isStill = false): string {
+function trail(path: Path, opts: { appear?: number; settle?: { begin: number; color: string } }, isStill = false): string {
   const dots = `d="${pathD(path)}" ${DOTTED}`
   const { appear, settle } = opts
   const isSettled = settle !== undefined && settle.begin <= -LEG_MS
@@ -240,17 +240,11 @@ function trail(path: Path, opts: { appear?: number; settle?: { begin: number; co
   // Amber while it waits: hidden before its dot sets off, fading in behind it, then standing.
   if (!isSettled) {
     let shown = appear === undefined || appear <= -LEG_MS ? 0.6 : appear >= 0 ? 0 : (0.6 * -appear) / LEG_MS
-    // Set aside at your next message while still waiting: it fades out, and the badge alone counts it.
-    const { fadeOut } = opts
-    if (fadeOut !== undefined && fadeOut < 0) shown *= Math.max(0, 1 - -fadeOut / TRAIL_FADE_MS)
     // The result's dot under way: the amber gives way behind it.
     if (settle && settle.begin < 0) shown *= 1 - -settle.begin / LEG_MS
     let anims = ''
     if (!isStill && appear !== undefined && appear > -LEG_MS) anims += `<animate attributeName="opacity" values="0;.6" begin="${at(appear)}" dur="${at(LEG_MS)}" fill="freeze"/>`
     if (!isStill && settle) anims += `<animate attributeName="opacity" values=".6;0" begin="${at(settle.begin)}" dur="${at(LEG_MS)}" fill="freeze"/>`
-    if (!isStill && fadeOut !== undefined && fadeOut > -TRAIL_FADE_MS) {
-      anims += `<animate attributeName="opacity" values=".6;0" begin="${at(fadeOut)}" dur="${at(TRAIL_FADE_MS)}" fill="freeze"/>`
-    }
     if (anims) out += `<path ${dots} stroke="${DARK.amber}" opacity="${n1(shown)}">${anims}</path>`
     else if (shown > 0) out += `<path ${dots} stroke="${DARK.amber}" opacity="${n1(shown)}"/>`
   }
@@ -271,34 +265,14 @@ function trail(path: Path, opts: { appear?: number; settle?: { begin: number; co
 }
 
 /**
- * When the turn a nudge was sent in ended, at your next message, if it has: a
- * trail still waiting then is set aside and fades, so a nudge that stays open
- * all session (the router rule) does not hold a line on the picture for hours.
- * A nudge sent before any message (at session start) belongs to the turn your
- * first message begins, so it is set aside at the message after that.
- */
-function setAsideAt(timeline: readonly TimelineEntry[], row: number): number | undefined {
-  let isInTurn = timeline.slice(0, row).some(e => e.kind === 'prompt')
-  for (let i = row + 1; i < timeline.length; i++) {
-    const e = timeline[i]
-    if (e?.kind !== 'prompt') continue
-    if (isInTurn) return e.t
-    isInTurn = true
-  }
-  return undefined
-}
-
-/**
  * The border of the agent a nudge spoke to, in the hook's amber: from when the
  * nudge's dot lands (`land`) while it holds, ending when the agent sends its
- * result back to Hooks (`settle`). `release`: when it stopped holding without
- * a result (set aside at your next message), so the amber fades. Times are ms from now; drawn as
- * it stands, animating only what is to come, like `trail`. While it holds,
+ * result back to Hooks (`settle`). Times are ms from now; drawn as it stands, animating only what is to come, like `trail`. While it holds,
  * the amber breathes (phased to `now`, so a rebuilt frame carries on in step):
  * the border thickens and brightens and a soft glow swells around it, as a
  * decision still being made; the still copy holds it steady.
  */
-function agentBorder({ p, r }: MapNode, o: { land: number; settle?: number; release?: number; now: number }, isStill = false): string {
+function agentBorder({ p, r }: MapNode, o: { land: number; settle?: number; now: number }, isStill = false): string {
   const ring = (color: string) => `cx="${n1(p.x)}" cy="${n1(p.y)}" r="${r}" fill="none" stroke="${color}" stroke-width="1.8"`
   let out = ''
   // Amber while it holds.
@@ -308,9 +282,6 @@ function agentBorder({ p, r }: MapNode, o: { land: number; settle?: number; rele
   if (o.settle !== undefined) {
     if (o.settle <= 0) shown = 0
     else if (!isStill) anims += `<set attributeName="opacity" to="0" begin="${at(o.settle)}" fill="freeze"/>`
-  } else if (o.release !== undefined) {
-    if (o.release <= 0) shown *= Math.max(0, 1 - -o.release / TRAIL_FADE_MS)
-    if (!isStill && o.release > -TRAIL_FADE_MS) anims += `<animate attributeName="opacity" values="1;0" begin="${at(o.release)}" dur="${at(TRAIL_FADE_MS)}" fill="freeze"/>`
   }
   if (anims || (shown > 0 && !isStill)) {
     const breath = `begin="${at(-(o.now % HOLD_BREATH_MS || HOLD_BREATH_MS))}" dur="${at(HOLD_BREATH_MS)}" repeatCount="indefinite"`
@@ -612,15 +583,12 @@ function drawMap(d: MapData, moments?: Moments): string {
     const settle = [...queue].reverse().find((p): p is Extract<Play, { kind: 'settle' }> => p.kind === 'settle' && p.row === row)
     const isFading = !isWaiting && settle !== undefined && now < settle.start + TRAIL_HOLD_MS + TRAIL_FADE_MS
     if (!isWaiting && !isFading) return
-    const aside = isWaiting ? setAsideAt(timeline, row) : undefined
-    if (aside !== undefined && now >= aside + TRAIL_FADE_MS) return
     borders += agentBorder(
       agentOf(row),
       {
         land: sent ? sent.start + LEG_MS - now : -Infinity,
         now,
         ...(isFading && settle ? { settle: settle.start - now } : {}),
-        ...(aside !== undefined ? { release: aside - now } : {}),
       },
       moments?.isStill,
     )
@@ -629,7 +597,6 @@ function drawMap(d: MapData, moments?: Moments): string {
       {
         ...(sent ? { appear: sent.start - now } : {}),
         ...(isFading && settle ? { settle: { begin: settle.start - now, color: resultColor(settle) } } : {}),
-        ...(aside !== undefined ? { fadeOut: aside - now } : {}),
       },
       moments?.isStill,
     )
@@ -726,13 +693,9 @@ export function picture(v: View, d: MapData, alt: string, moments?: Moments) {
   const plays = moments ? playQueue(moments.timeline) : []
   // Whole nudge rows: their state, their agent and their trail all change the drawing.
   const nudges = moments ? moments.timeline.filter(e => e.kind === 'nudge') : []
-  // A waiting trail set aside by your next message changes the drawing too, and is quiet once it has faded.
-  const asides = moments
-    ? moments.timeline.flatMap((e, row) => (e.kind === 'nudge' && e.skills.some(x => x.status === 'pending') ? [setAsideAt(moments.timeline, row) ?? null] : []))
-    : []
-  const shows = JSON.stringify([d, plays, nudges, asides])
+  const shows = JSON.stringify([d, plays, nudges])
   const now = moments?.now ?? 0
-  const quiet = Math.max(quietAt(plays), ...asides.map(t => (t === null ? -Infinity : t + TRAIL_FADE_MS)))
+  const quiet = quietAt(plays)
   let drawn = lastDrawn.get(d.title)
   const isStale = drawn !== undefined && drawn.drawnAt < quiet && now >= quiet
   if (drawn?.shows !== shows || isStale) {
