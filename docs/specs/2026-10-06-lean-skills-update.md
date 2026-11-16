@@ -128,7 +128,8 @@ Both are reached by description. Neither adds a router gate.
 - `AGENTS.md` and `skills/README.md` — maintainer contract and lean schema.
 - `docs/specs/2026-07-26-selective-upstream-skill-adoption.md` — earlier
   adoption, its non-goals, and requirement R7.
-- `tickets/023-evaluate-active-domain-modeling.md` — the open evaluation gate.
+- `tickets/archive/023-evaluate-active-domain-modeling.md` — the evaluation
+  gate, closed with a maintainer no-go on 2026-11-16.
 - `skills/agent-workflows/framework-agnostic-skill-creator/references/skill-evaluation.md`
   — the authoring lenses applied by R1.
 - `https://github.com/mattpocock/skills` at

@@ -2,8 +2,8 @@
 
 ## Status
 
-Approved. Phase A is accepted, Phase B concluded with a maintainer no-go, and
-Phase C remains ticket ready.
+Approved and concluded. Phase A is accepted, and Phases B and C concluded with
+maintainer no-go decisions.
 
 ## Mode
 
@@ -163,12 +163,11 @@ Every new or changed skill must:
 - [x] AC7: Not applicable after the AC6 no-go. No invocation metadata,
       production consumer, or adapter was accepted, so no implementation was
       authorized.
-- [ ] AC8: A maintainer-reviewed domain-modeling evaluation records current
+- [x] AC8: A maintainer-reviewed domain-modeling evaluation records current
       ownership, pressure-scenario evidence, overlap risks, and a go/no-go
       decision before a new skill is added.
-- [ ] AC9: Any accepted `domain-modeling` skill owns only active terminology and
-      consequential decision capture, with narrow writes and no broad
-      onboarding scan.
+- [x] AC9: Not applicable after the AC8 no-go. No `domain-modeling` skill was
+      accepted, so no implementation was authorized.
 - [x] AC10: Repository validation, focused tests, V1/V2 context comparison,
       public-boundary scans, Markdown/link review, and diff checks pass for
       every completed implementation slice.
@@ -238,6 +237,11 @@ conditional implementation ticket is closed without implementation.
 Evaluate current workflows under pressure. Creating the public skill requires
 a separate maintainer go decision after the overlap evidence is reviewed.
 
+Completed on 2026-11-16 with a maintainer **NO-GO**. Five live pressure
+scenarios showed no lost terms or decisions, and `grill-with-docs` already owns
+the narrow inline capture. No skill was added, and the conditional
+implementation ticket is closed without implementation.
+
 ## Risks
 
 - Invocation metadata could become inert documentation. Mitigation: require a
@@ -256,11 +260,13 @@ a separate maintainer go decision after the overlap evidence is reviewed.
 
 ## Open Questions
 
-- Does current delivery work demonstrate enough terminology-loss failure to
-  justify `domain-modeling`? Owner: GOATED maintainer after the evaluation
-  report.
+None.
 
 ## Resolved Questions
+
+- Active domain modeling: resolved on 2026-11-16 with **NO-GO**. See
+  `docs/domain-modeling-decision-report.md`. AC9 is not applicable;
+  `grill-with-docs` keeps ownership of inline term and ADR capture.
 
 - Invocation topology consumer: resolved on 2026-07-27 with **NO-GO**. No
   production host was selected; Codex was only the disposable experiment

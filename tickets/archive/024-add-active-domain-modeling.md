@@ -9,6 +9,19 @@
 HITL — starts only after Ticket 023 records an explicit maintainer go decision
 and accepted ownership boundary.
 
+## Work State
+
+Not authorized. Closed without implementation and archived on 2026-11-16
+after Ticket 023's maintainer **NO-GO** decision.
+
+## Disposition
+
+This conditional ticket never entered the ready frontier. Its criteria remain
+unchecked because no skill, reference, registry entry, fixture, or public
+behavior was implemented. `grill-with-docs` keeps ownership of inline term and
+ADR capture. Any future domain-modeling work needs a new approved scope and
+must not restart this ticket implicitly.
+
 ## What To Build
 
 Implement the narrow active domain-modeling remedy accepted in Ticket 023.
@@ -61,7 +74,7 @@ revise this ticket's implementation scope before editing.
 
 ## Blocked By
 
-- `tickets/023-evaluate-active-domain-modeling.md`
+- `tickets/archive/023-evaluate-active-domain-modeling.md`
 
 Ticket 013 is not a functional dependency. Sequence overlapping validator work
 or plan against its completed module boundaries.

@@ -59,22 +59,25 @@ a separate product track requiring its own spec and approval.
 
 ## Phase C: Active Domain Modeling
 
-1. `tickets/023-evaluate-active-domain-modeling.md`
+1. `tickets/archive/023-evaluate-active-domain-modeling.md`
+   - Status: Completed with maintainer no-go and archived.
    - Blocked by: Ticket 015
-   - Enables: maintainer go/revise/no-go decision.
-2. `tickets/024-add-active-domain-modeling.md`
-   - Blocked by: Ticket 023 plus an explicit go decision
-   - Enables: the accepted narrow domain-modeling remedy.
+   - Result: no `domain-modeling` skill; `grill-with-docs` keeps inline term
+     and ADR capture.
+2. `tickets/archive/024-add-active-domain-modeling.md`
+   - Status: Not authorized; closed without implementation and archived.
+   - Blocked by: Ticket 023's maintainer no-go decision
+   - Result: no skill, reference, registry, or fixture changes.
+
+Phase C concluded on 2026-11-16. See
+`docs/domain-modeling-decision-report.md`.
 
 ## Frontier
 
-The current ready frontier is:
+This track has no ready frontier. All phases are concluded.
 
-- Ticket 023
-
-Tickets 013 and 015 through 021 are complete. Ticket 022 closed without
-implementation after the invocation no-go. Conditional Ticket 024 never joins
-the frontier without its recorded maintainer go decision.
+Tickets 013, 015 through 021, and 023 are complete. Tickets 022 and 024 closed
+without implementation after their maintainer no-go decisions.
 
 ## Acceptance-Criteria Coverage
 
@@ -86,9 +89,10 @@ the frontier without its recorded maintainer go decision.
 - AC6 -> archived Ticket 021
 - AC7 -> not applicable after Ticket 021's no-go; archived Ticket 022 records
   that no invocation metadata was accepted or implemented
-- AC8 -> Ticket 023
-- AC9 -> Ticket 024
-- AC10 -> Tickets 015 through 020 and conditional Ticket 024
+- AC8 -> archived Ticket 023
+- AC9 -> not applicable after Ticket 023's no-go; archived Ticket 024 records
+  that no domain-modeling skill was accepted or implemented
+- AC10 -> Tickets 015 through 020
 - AC11 -> every implementation ticket, consolidated by Ticket 020
 
 ## Deferred Separate Product Tracks
