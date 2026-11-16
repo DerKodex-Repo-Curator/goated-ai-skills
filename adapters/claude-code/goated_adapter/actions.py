@@ -179,8 +179,9 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
                  subagents: Callable[[], dict] | None = None) -> Hold | None:
     """Return the action hold for this call, if any; the call's own entry is not yet proof.
 
-    `cwd` is the project folder: only changes to files inside it are the
-    turn's changes a change read must follow. `subagents` returns the turns
+    `cwd` is the project folder: only files inside it meet the design and
+    security gates, and only changes to them are the turn's changes a change
+    read must follow. `subagents` returns the turns
     of each subagent this turn spawned, as `check_closeout` takes them; it is
     called only when a commit or pull request needs its change read, since
     reading their transcripts takes time.
@@ -194,7 +195,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         if hold is None and command.opens_pr:
             hold = _pr_hold(proof, changes)
         for target in command.write_targets:
-            hold = hold or _security_hold(_norm(target), proof)
+            if _in_project(target, cwd):
+                hold = hold or _security_hold(_norm(target), proof)
         return hold
     if PR_TOOL_RE.match(tool_name):
         return _pr_hold(proof, changes, by_tool=True)
@@ -207,6 +209,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         return _spawn_hold(brief, proof) if brief.strip() else None
     if tool_name in FILE_WRITE_TOOLS:
         path = _norm(str(tool_input.get(FILE_WRITE_TOOLS[tool_name]) or ""))
+        if not _in_project(path, cwd):
+            return None  # A scratch file elsewhere is not the project's design or security.
         return _security_hold(path, proof) or _design_hold(path, tool_input, proof)
     return None
 
@@ -558,12 +562,16 @@ def _changed_paths(call, cwd: str | None) -> list[str]:
 
 
 def _in_project(path: str, cwd: str | None) -> bool:
-    """True for a relative path, or one under `cwd`; decided without touching the disk."""
+    """True when `path` is `cwd`, the project folder, or under it; with no
+    `cwd`, always. A relative path is taken from `cwd` and a leading `~` is
+    the user's home; decided without touching the disk."""
 
-    if not cwd or not (os.path.isabs(path) or path.startswith(("/", "\\"))):
+    if not cwd:
         return True
     root = os.path.normcase(os.path.abspath(cwd))
-    full = os.path.normcase(os.path.abspath(path))
+    # `join` keeps a path that is already absolute, and on Windows gives a
+    # rooted one, such as `/tmp/x`, the project's drive.
+    full = os.path.normcase(os.path.abspath(os.path.join(cwd, os.path.expanduser(path))))
     return full == root or full.startswith(root.rstrip(os.sep) + os.sep)
 
 

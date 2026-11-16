@@ -130,7 +130,8 @@ class ShellCommand:
 
     `writes` says it writes, copies, moves, or deletes files. `write_targets`
     are the files it names as written (redirect targets, copy destinations,
-    removed or moved files, in-place edits), and `unknown_writes` says some
+    removed or moved files, in-place edits), each joined to any `cd` before
+    it in the command (see `_change_directory`), and `unknown_writes` says some
     write's files cannot be read from the command (`git apply`, `patch`, a
     download without an output name). `commit` is True for a `git commit`
     that records one (not `--dry-run`); `commit_message` is its message when
@@ -162,19 +163,27 @@ def analyze(command: str) -> ShellCommand:
     """Return what `command` does; never raises on odd input."""
 
     result = ShellCommand()
+    directory: str | None = ""
     for segment in _segments(command):
-        _add_segment(result, segment)
+        directory = _add_segment(result, segment, directory)
     if DOTNET_WRITE_RE.search(command):
         result.writes = result.unknown_writes = True
     return result
 
 
-def _add_segment(result: ShellCommand, segment: "_Segment") -> None:
+def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | None) -> str | None:
+    """Add one segment's facts to `result`, its write targets taken from
+    `directory` (see `_change_directory`); return the directory later
+    segments run in."""
+
     targets = [t for t in segment.redirects if t.lower() not in NULL_TARGETS]
     unknown = False
     prints = False
     name, original, args = _resolve(segment.words)
-    if name in TARGETS_ARE_ARGS:
+    next_directory = directory
+    if name in CHANGE_DIRECTORY:
+        next_directory = _change_directory(name, args, directory)
+    elif name in TARGETS_ARE_ARGS:
         targets += _ps_paths(args) if name.count("-") else _positional(args)
     elif name in TARGET_IS_LAST_ARG:
         positional = _ps_paths(args) if name.count("-") else _positional(args)
@@ -213,11 +222,50 @@ def _add_segment(result: ShellCommand, segment: "_Segment") -> None:
         result.prints_changes = True
     if _is_check(name, original, args):
         result.is_check = True
-    result.write_targets += [t for t in targets if t]
+    result.write_targets += [_from_directory(directory, t) for t in targets if t]
     if targets or unknown:
         result.writes = True
     if unknown:
         result.unknown_writes = True
+    return next_directory
+
+
+# Directory changes ---------------------------------------------------------------
+#
+# A write target is relative to the folder its segment runs in. A `cd` earlier
+# in the same command moves that folder, so `cd /elsewhere && mv a b` writes
+# `/elsewhere/a`. The directory is "" before any `cd`, a path once a `cd` is
+# followed, and None once one cannot be: a variable, `cd -`, `popd`, or a bare
+# `cd`. An unknown directory leaves targets as written. Only the words are
+# read: a `cd` inside a subshell or pipeline still counts for later segments.
+
+CHANGE_DIRECTORY = frozenset(
+    {"cd", "chdir", "pushd", "popd", "set-location", "sl", "push-location", "pop-location"}
+)
+DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+def _change_directory(name: str, args: list[str], directory: str | None) -> str | None:
+    """Return the directory after `name args` runs in `directory`."""
+
+    if name in ("popd", "pop-location") or "-" in args:
+        return None  # Back to a folder the command does not name.
+    paths = _ps_paths(args) if name.count("-") or name == "sl" else _positional(args)
+    if not paths or any(ch in paths[0] for ch in "$`%"):
+        return None
+    return _from_directory(directory, paths[0])
+
+
+def _from_directory(directory: str | None, path: str) -> str:
+    """`path` as seen from where the command started, when it was written in `directory`."""
+
+    if not directory or _is_absolute(path):
+        return path
+    return directory.rstrip("/\\") + "/" + path
+
+
+def _is_absolute(path: str) -> bool:
+    return path.startswith(("/", "\\", "~")) or bool(DRIVE_RE.match(path))
 
 
 # Tokenizing --------------------------------------------------------------------

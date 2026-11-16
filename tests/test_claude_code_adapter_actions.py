@@ -455,6 +455,92 @@ class SecurityHoldTests(AdapterTestCase):
                 self.assertEqual(decision(s.call("Edit", edit)), "pass")
 
 
+class OutOfProjectTests(AdapterTestCase):
+    """The design and security gates, and the closeout, count only project files (AC11).
+
+    `self.outside` is an absolute folder beside the project, not inside it.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.outside = str(self.root / "scratch")
+        self.inside = str(self.session.project)
+
+    def changed_by(self, command: str, tool: str = "Bash") -> dict:
+        """Run `command` in a fresh session, with `{inside}` as its project folder,
+        and return what the closeout says."""
+
+        s = self.fresh()
+        s.prompt("Tidy it.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        command = command.replace("{inside}", str(s.project))
+        self.assertEqual(decision(s.run(command, tool=tool)), "pass")
+        return stop(s)
+
+    def test_a_large_code_write_outside_the_project_skips_the_design_gate(self) -> None:
+        s = self.routed()
+
+        outside = s.call("Write", write(f"{self.outside}/probe.py", lines=40))
+        self.assertEqual(decision(outside), "pass")
+        inside = s.call("Write", write(f"{self.inside}/src/probe.py", lines=40))
+        self.assertEqual(hold_line(inside), "goated-hold: design | justified-skip")
+
+    def test_a_sensitive_write_outside_the_project_skips_the_security_gate(self) -> None:
+        s = self.routed()
+        for path in (f"{self.outside}/.env", "/tmp/scratch/auth/login.py"):
+            with self.subTest(path=path):
+                edit = {"file_path": path, "old_string": "a", "new_string": "b"}
+                self.assertEqual(decision(s.call("Edit", edit)), "pass")
+        edit = {"file_path": f"{self.inside}/.env", "old_string": "a", "new_string": "b"}
+        self.assertEqual(hold_line(s.call("Edit", edit)), "goated-hold: security | justified-skip")
+
+    def test_a_shell_write_after_a_cd_outside_skips_the_security_gate(self) -> None:
+        s = self.routed()
+
+        outside = s.run(f'cd "{self.outside}" && echo KEY=1 > .env')
+        self.assertEqual(decision(outside), "pass")
+        inside = s.run("cd config && echo KEY=1 > .env")
+        self.assertEqual(hold_line(inside), "goated-hold: security | justified-skip")
+
+    def test_a_move_after_a_cd_outside_is_not_a_project_change(self) -> None:
+        for tool, command in (
+            ("Bash", f'cd "{self.outside}" && mv a.py b.py'),
+            ("Bash", "cd /tmp/scratch && mv a.py b.py"),
+            ("Bash", "cd ~/.claude/hooks && mv a.ps1 b.ps1"),
+            ("Bash", "cd src && cd ../.. && mv a.py b.py"),
+            ("Bash", f'pushd "{self.outside}" && mv a.py b.py && popd'),
+            ("PowerShell", f"Set-Location -Path '{self.outside}'; Move-Item a.py b.py"),
+            ("Bash", f'cd "$dir" && cd "{self.outside}" && mv a.py b.py'),
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.changed_by(command, tool), {})
+
+    def test_a_move_after_a_cd_inside_is_a_project_change(self) -> None:
+        for tool, command in (
+            ("Bash", "cd sub && mv a.py b.py"),
+            ("Bash", 'cd "{inside}/sub" && mv a.py b.py'),
+            ("Bash", f'cd "{self.outside}" && cd "{{inside}}" && mv a.py b.py'),
+            ("PowerShell", "Set-Location sub; Move-Item a.py b.py"),
+        ):
+            with self.subTest(command=command):
+                held = self.changed_by(command, tool)
+                self.assertEqual(closeout_line(held), "goated-hold: closeout | justified-skip")
+
+    def test_an_unresolvable_cd_leaves_the_target_inside(self) -> None:
+        for tool, command in (
+            ("Bash", 'cd "$dir" && mv a.py b.py'),
+            ("Bash", f'cd "{self.outside}" && cd "$dir" && mv a.py b.py'),
+            ("Bash", "cd - && mv a.py b.py"),
+            ("Bash", "cd && mv a.py b.py"),
+            ("Bash", f'pushd "{self.outside}" && popd && mv a.py b.py'),
+            ("PowerShell", "Set-Location $env:TEMP; Move-Item a.py b.py"),
+        ):
+            with self.subTest(command=command):
+                held = self.changed_by(command, tool)
+                self.assertEqual(closeout_line(held), "goated-hold: closeout | justified-skip")
+
+
 class SubagentActionTests(AdapterTestCase):
     """Inside a subagent, action gates apply and routing gates do not (spec R9)."""
 

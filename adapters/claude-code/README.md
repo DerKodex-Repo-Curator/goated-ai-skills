@@ -94,14 +94,19 @@ of hold:
 | `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` loads in the turn, and an inline message (or the tool's `message`) passes the [content check](#content-checks); then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
 | `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` loads in the turn; then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
 | `spawn` | strict | Starting an agent or session with a brief | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, all in the turn; and the brief passes the [content check](#content-checks) |
-| `design` | justified-skip | A write adding five or more lines to a code file | `software-design-principles` loads in the turn |
-| `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` loads in the turn |
+| `design` | justified-skip | A write adding five or more lines to a code file inside the project folder | `software-design-principles` loads in the turn |
+| `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` loads in the turn |
 | `closeout` | justified-skip | The end of a turn that changed code, or that loaded `code-security-review` and changed a security-sensitive file (a `Stop` hook) | Every item below is met or skipped |
 
 The closeout items, each judged against the turn's last code change. A code
 change is a write tool's file, or a file a shell command writes (its redirect
 target, copy destination, or removed, moved, or edited file), inside the
-project folder; a scratch or temp file elsewhere does not count. A shell write
+project folder; a scratch or temp file elsewhere does not count. The project
+folder is the folder the hook input names as the session's working folder; a
+relative path is taken from it, and a shell write target from any `cd` earlier
+in its command (see [Shell writes](#shell-writes)). The `design` and `security`
+gates use the same rule, so a scratch script outside the project is never
+held. A shell write
 whose files the command does not name (`git apply`, `patch`, a download
 without an output name) counts as a change to non-test code. Code a subagent
 changed counts too, at the point the parent spawned it; if the subagent ran a
@@ -199,6 +204,19 @@ ignored, as are comparisons inside `[[ ]]` and arithmetic in `$(( ))`, so
 runs, `git status`, and `git checkout <branch>` stay free. Commit and
 pull-request commands are recognized the same way, per command, so
 `echo gh pr create` opens nothing.
+
+A write target is read from the folder its command runs in. A `cd`, `chdir`,
+`pushd`, `Set-Location`, `sl`, or `Push-Location` earlier in the same command
+moves that folder, so `cd /elsewhere && mv a.py b.py` moves
+`/elsewhere/a.py`, outside the project, and `cd sub && mv a.py b.py` moves
+`sub/a.py`, inside it. A `cd` to an absolute path, a drive path, or a path
+under `~` replaces the folder; a relative one is joined to it. A `cd` the
+analysis cannot follow (to a variable, `cd -`, a bare `cd`, `popd`, or
+`Pop-Location`) leaves later targets as written, taken from the project
+folder, until a later `cd` to an absolute path. Only a `cd` in the same
+command is followed, not one in an earlier call, and only its words are read:
+a `cd` inside a subshell such as `(cd x && …)` still moves the folder for the
+later commands in this one.
 
 ### Change reads
 
