@@ -162,7 +162,8 @@ End routing with one route line, on its own line, outside code blocks:
 
 Use lowercase keywords and installed skill names, list each skill once, and
 add no trailing text. A checkpoint that changes the required skills writes a
-new route line; the last one wins.
+new route line; the last one wins. Write it in a message before the first
+call it covers.
 
 ## Delegation
 

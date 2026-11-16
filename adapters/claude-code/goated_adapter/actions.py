@@ -32,7 +32,7 @@ from typing import NamedTuple
 import re
 
 from . import contracts, shell
-from .gates import COMMAND_TOOLS, STRICT, Hold, goated_skill_name
+from .gates import COMMAND_TOOLS, STRICT, Hold, goated_skill_name, unseen_line_advice
 from .markers import parse_reply
 from .transcript import Turn, skill_name
 
@@ -343,8 +343,8 @@ def _security_hold(path: str, proof: _Proof) -> Hold | None:
         f"`{SECURITY_SKILL}` with the Skill tool in this turn and review this change with "
         "it. If the change crosses no trust boundary and touches no auth, secrets, "
         "persistence, execution, dependency, or deployment behaviour, write "
-        f"`goated-skip: {SECURITY_SKILL}: <reason>` on its own line instead, then make the "
-        "edit again. This edit was not applied.",
+        f"`goated-skip: {SECURITY_SKILL}: <reason>` on its own line instead. This edit "
+        "was not applied. " + unseen_line_advice("skip line", f"skip {SECURITY_SKILL}"),
     )
 
 
@@ -358,7 +358,8 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof) -> Hold | None:
         f"This is a substantial code change. Load `{DESIGN_SKILL}` with the Skill tool in "
         "this turn and apply its 'Before changing code' rules to it. If the edit is "
         f"mechanical, with no design in it, write `goated-skip: {DESIGN_SKILL}: <reason>` "
-        "on its own line instead, then make the edit again. This edit was not applied.",
+        "on its own line instead. This edit was not applied. "
+        + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
     )
 
 
