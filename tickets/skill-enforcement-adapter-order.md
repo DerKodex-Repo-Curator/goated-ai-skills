@@ -50,25 +50,30 @@ Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
    - Blocked by: `tickets/archive/033-adapter-real-use-trial.md` (its keep decision)
    - Enables: review holds that clear only after the agent reads the change,
      not on a skill load alone; ticket 038 builds on it.
-11. `tickets/042-adapter-fresh-session-routing.md`
+11. `tickets/047-adapter-overrides-from-other-agents.md`
    - Blocked by: `tickets/041-adapter-review-holds-read-the-change.md`
+   - Enables: overrides recorded and announced only for a prompt a person
+     typed, never for a message from another agent or session.
+12. `tickets/042-adapter-fresh-session-routing.md`
+   - Blocked by: `tickets/047-adapter-overrides-from-other-agents.md`
    - Enables: `continue` in a session with no task, and loads earlier in the
      turn counting for the task it starts.
-12. `tickets/043-adapter-out-of-project-holds.md`
+13. `tickets/043-adapter-out-of-project-holds.md`
    - Blocked by: `tickets/042-adapter-fresh-session-routing.md`
    - Enables: no design, security, or closeout holds for files outside the
      project.
-13. `tickets/044-adapter-closeout-same-command-check.md`
+14. `tickets/044-adapter-closeout-same-command-check.md`
    - Blocked by: `tickets/043-adapter-out-of-project-holds.md`
    - Enables: a check in the same command as the write proving it.
-14. `tickets/045-route-and-skip-lines-before-the-call.md`
+15. `tickets/045-route-and-skip-lines-before-the-call.md`
    - Blocked by: `tickets/044-adapter-closeout-same-command-check.md`
    - Enables: route and skip lines the adapter can see on the first try.
-15. `tickets/046-adapter-pipeline-after-compaction.md`
+16. `tickets/046-adapter-pipeline-after-compaction.md`
    - Blocked by: `tickets/045-route-and-skip-lines-before-the-call.md`
    - Enables: the last route line winning after a compaction.
 
-Tickets 041–046 are the trial's revise fixes (spec, Trial Result). They edit
+Tickets 041–046 are the trial's revise fixes (spec, Trial Result), and 047
+fixes an R8 gap found in real use after the trial. They edit
 the same adapter files and hold texts, so they run one after another, and all
 of them run before Ticket 035 in
 `tickets/adapter-skill-activation-gates-order.md`. The trial's revise decision
@@ -94,7 +99,8 @@ settlement module.
 - AC2 → 029 (docs), 030 (detection)
 - AC3 → 029
 - AC4 → 030 (routing gates, overrides, subagents, fail-open), 031 (action and
-  closeout gates, content checks, shell writes)
+  closeout gates, content checks, shell writes), 047 (overrides only from a
+  typed prompt)
 - AC5 → 030, 031
 - AC6 → 028, 029, 030
 - AC7 → 032 (routing holds, lines, skips, overrides, references, subagents),

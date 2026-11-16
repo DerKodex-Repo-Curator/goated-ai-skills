@@ -18,7 +18,7 @@ Source spec: `docs/specs/2026-11-16-adapter-skill-activation-gates.md`
 
 The four tickets touch the same adapter files (`actions.py`, the README's
 gate tables, the generated hold texts) and the mod's gate names, so they run
-one after another in this order, not in parallel. Tickets 041–046, from the
+one after another in this order, not in parallel. Tickets 041–047, from the
 skill-enforcement order, edit the same files and run before 035. Ticket
 037 adds an item to the closeout gate rather than a new gate.
 

@@ -61,7 +61,7 @@ without any skill being skipped:
 
 ## Blocked By
 
-- `tickets/041-adapter-review-holds-read-the-change.md` (same files)
+- `tickets/047-adapter-overrides-from-other-agents.md` (same files)
 
 ## Scope Exclusions
 
