@@ -1,7 +1,7 @@
 # Skill-Usage Mod For Claude Code
 
 An optional Claude Code mod that shows, in a pane beside the chat, which
-skills load and why, what became of each GOATED hold and hook nudge, and what
+skills load and why, what became of each GOATED adapter hold, and what
 subagents did. It is the measurement tool for the
 [GOATED Claude Code adapter](../README.md). It displays only and enforces
 nothing.
@@ -17,7 +17,7 @@ without it.
 | Skill loads and why each loaded: your `/command`, your prompt naming it, a hook, the router's route, the agent, or a subagent | Skill tool calls and slash commands |
 | Route lines, counted by form (`direct`, `continue`, routed) | `goated-route:` lines in replies |
 | Turns that write, by whether a route line came before the first write, only after it, or not at all | The main agent's edits and spawns, the calls the adapter holds like writes; a call whose result is an error, such as a held one, did not write |
-| Justified skips, with their reasons; a skip declines a justified-skip hold or a hook nudge naming that skill in the same turn | `goated-skip:` lines in replies |
+| Justified skips, with their reasons; a skip declines a justified-skip hold naming that skill in the same turn | `goated-skip:` lines in replies |
 | The adapter's holds by gate and kind, and each held skill's outcome: loaded, files read, declined, not loaded, or waiting | Denied calls whose reason starts `goated-hold: <gate> \| <kind>`, and the blocked `Stop` that carries the closeout hold |
 | Your overrides, by phrase | The adapter's sentence `recorded your override for this prompt` in its hook context |
 | Reads of skills' reference and other supporting files, and whether the skill had loaded first | `Read` paths and shell commands |
@@ -233,10 +233,14 @@ This has not been tested end to end. Keep a backup of both files.
   another session that starts a new turn for the adapter joins the running
   turn here, and so does a background result, as it does for the adapter.
 - A hold still waiting when the session ends counts as not followed. That
-  includes a session you resume later: the turn it waited in is over. A mod
-  reloaded mid-turn, such as by a plugin update, starts its events afresh, so
-  a hold waiting at that moment also counts as not followed, even if the agent
-  follows it a moment later.
+  includes a session you resume later: the turn it waited in is over.
+- A mod reloaded mid-session, such as by a plugin update, keeps the
+  session's events, unless the update changes their shape tag (the events
+  atom in `hooks/register.tsx`). Then the events recorded before the reload are
+  dropped, and the history rebuild does not run again in that session, so
+  the session's summary covers only what came after the reload, on top of
+  the stored summary of a resumed session. A hold waiting at that moment is
+  dropped with them.
 - Two sessions folding the same old sessions into the `older` total at the
   same moment can count them twice. Folding happens only past 300 sessions.
 - A session already folded into `older` and then resumed counts twice: its

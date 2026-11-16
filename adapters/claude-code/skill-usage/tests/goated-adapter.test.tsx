@@ -314,7 +314,7 @@ const PANE = {
 } as const
 
 function paneRig(...[$, on, events]: [...Parameters<TestBody>, UsageEvent[]]) {
-  const stored: Record<string, unknown> = { tab: 'session', events: { shape: 'events-1', value: events } }
+  const stored: Record<string, unknown> = { tab: 'session', events: { shape: 'events-2', value: events } }
   on('clock.now', () => ({ value: 100_000 }))
   on('state.get', (_, e) => {
     const key = (e as { key: string }).key
@@ -469,4 +469,46 @@ test('a local command such as /skill-usage is no prompt, nor is its output; a ty
     { kind: 'prompt', t: 1, named: [] },
     { kind: 'load', t: 1, skill: 'tdd', via: 'slash', isSubagent: false },
   ])
+})
+
+// ---------- compaction and summaries from earlier versions ----------------------------
+
+test('a compaction is one context row: a reference read after it counts as read before loading', async ($, on) => {
+  const compaction = row('compaction', [{ type: 'text', text: 'This session is being continued from a previous conversation.' }])
+  expect(rowEvents(compaction, SKILLS, 5, SEEN)).toEqual([{ kind: 'compact', t: 5 }])
+  // Its boundary and summary arrive as two rows: the second adds nothing, nor does a subagent's.
+  expect(rowEvents(compaction, SKILLS, 6, { lastKind: 'compact' })).toEqual([])
+  expect(rowEvents(row('compaction', [], { agentId: 'a1' }), SKILLS, 6, SEEN)).toEqual([])
+  const events: UsageEvent[] = [
+    { kind: 'prompt', t: 1, named: [] },
+    { kind: 'load', t: 2, skill: 'tdd', via: 'tool', isSubagent: false },
+    { kind: 'ref', t: 3, skill: 'tdd', file: 'references/a.md' },
+    { kind: 'compact', t: 4 },
+    { kind: 'ref', t: 5, skill: 'tdd', file: 'references/a.md' },
+  ]
+  const s = summarize(events)
+  expect(s.refsUnloaded).toBe(1)
+  expect(s.timeline.map(e => e.kind)).toEqual(['prompt', 'load', 'ref', 'compact', 'ref'])
+  const ui = await paneRig($, on, events)('terminal')
+  expect(await ui.find({ type: 'Text', text: /^compacted · checks re-armed$/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a summary stored by an earlier version still shows its hook keys and already-loaded counts, in the report and All time', async ($, on) => {
+  const earlier = { ...summarize([{ kind: 'prompt', t: 1, named: [] }]), nudges: { 'commit-hold': { followed: 1, 'already loaded': 2 } } }
+  const all = addSession(null, earlier)
+  const text = reportText(all, null)
+  expect(text).toContain('- commit check: 3 of 3 handled (100%)')
+  expect(text).toContain('already loaded 2')
+  const stored: Record<string, unknown> = { tab: 'all', events: { shape: 'events-2', value: [] }, allTime: { shape: 'all-time-1', value: all } }
+  on('clock.now', () => ({ value: 100_000 }))
+  on('state.get', (_, e) => {
+    const key = (e as { key: string }).key
+    return { value: key in stored ? { value: stored[key], version: 1 } : { value: undefined, version: 0 } }
+  })
+  on('state.set', () => ({ value: { isSet: true, version: 2 } }))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /^commit check$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^3 of 3$/ })).toBeDefined()
+  await ui.unmount()
 })
