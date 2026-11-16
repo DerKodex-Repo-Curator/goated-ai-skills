@@ -10,6 +10,7 @@ These are guidelines for judgement. Project instructions, a project's own standa
   - `#obvious` Write for the reader
   - `#naming` Choose names with care
   - `#comments` Comment what the code cannot say
+  - `#reader-first-comments` Reader-first comments (opt-in)
   - `#comments-first` Write the comment first
   - `#keeping-comments-true` Keep comments true
   - `#consistency` Be consistent
@@ -94,6 +95,63 @@ Obscurity is one of the two causes of complexity (`#complexity-symptoms`). This 
 | "The comments I have seen are useless." | Then write better ones. It is a learnable skill. |
 
 > **Where the books agree and differ.** Both say comments should explain *why*, and both say a comment that restates the code is a DRY violation. They differ on quantity. Ousterhout wants a comment on every class, function and field. Thomas and Hunt warn against commenting everything mechanically. See Where the books differ (`#differences`).
+
+> **Writing for newer programmers?** When a user or project asks for denser comments, or the code's readers are beginner-to-intermediate programmers, use Reader-first comments (`#reader-first-comments`) in place of the amount set here.
+
+<!-- id: #reader-first-comments -->
+
+### Reader-first comments (opt-in)
+
+**Rule:** When a user or project asks for it, or when the code's readers are beginner-to-intermediate programmers, comment more densely so a newer programmer can follow the code without outside help. Otherwise the default in `#comments` stands.
+
+Everything in `#comments` still holds: a comment must say something the code beside it does not. This profile only raises how many places get a comment.
+
+- **Every function, method, class and type has a short docstring.** Say what it is for and the one fact a caller cannot see from the signature. Never just restate the name. One line is enough for something small.
+- **A field, constant or parameter gets its own short comment** when its purpose or unit is not obvious.
+- **In a long function or script, a comment opens each step,** in order. Say what the step achieves and why it happens at that point.
+- **A variable that carries state gets a comment** saying what each value means and when it changes.
+- **An unfamiliar call is explained where it is made:** what its positional arguments and fixed values mean, and any library behaviour a reader would not guess.
+- **A line that looks wrong or surprising says why it is there.**
+- **Use short sentences and everyday words.** Explain an unfamiliar term the first time it appears.
+- **Never narrate syntax.** "Loop over the lines" or "add one to the count" tells the reader nothing.
+- **State a reason only when the code confirms it.** If the reason is not known, say it is not recorded rather than guess.
+
+**Example**
+
+```python
+MAX_BLANK_RUN = 1  # Most blank lines allowed in a row. Why the limit is one is not recorded.
+
+
+def find_extra_blank_lines(path: str) -> list[int]:
+    """List the line numbers of blank lines that go over MAX_BLANK_RUN.
+
+    Line numbers start at 1, as in a text editor. A line holding only spaces counts as blank.
+    """
+    # Line numbers to report, in the order they appear in the file.
+    extra_lines = []
+
+    # How many blank lines in a row have just been read. It goes up by one at
+    # each blank line and back to 0 at any line with text on it.
+    blank_run = 0
+
+    # Read the file one line at a time. The encoding is fixed so the result is
+    # the same on every computer, whatever that computer's default is.
+    with open(path, encoding="utf-8") as file:
+        # enumerate(file, 1) pairs each line with its number. The 1 makes the
+        # count start at 1 instead of Python's usual 0.
+        for number, line in enumerate(file, 1):
+            # strip() removes spaces and the line ending, so an empty result
+            # means the line is blank. A line with text ends the run.
+            if line.strip():
+                blank_run = 0
+                continue
+
+            blank_run += 1
+            if blank_run > MAX_BLANK_RUN:
+                extra_lines.append(number)
+
+    return extra_lines
+```
 
 <!-- id: #comments-first -->
 

@@ -157,6 +157,9 @@ condition first arises while writing:
 12. Give each public class and function an interface comment that says
     something the signature does not. Inside functions, comment only intent
     and surprises. Never restate the code. `readability.md#comments`
+    When a user or project asks for denser comments, or the readers are
+    beginner-to-intermediate programmers, follow
+    `readability.md#reader-first-comments` instead.
 13. Open and close each resource in the same place. `errors.md#resources`
 14. Avoid shared changeable state. If it must exist, give it one owner.
     `concurrency.md#shared-state`
@@ -232,7 +235,7 @@ the file listed here.
 | [Complexity And Modules](references/complexity-and-modules.md) | Before changing code; while writing | `#complexity-defined` `#complexity-symptoms` `#complexity-incremental` `#etc` `#strategic` `#deep-modules` `#information-hiding` `#general-purpose` `#layers` `#pull-down` `#together-apart` `#what-matters` `#glossary` |
 | [Keeping Code Easy To Change](references/decoupling.md) | Before changing code; while writing | `#dry` `#orthogonality` `#tell-dont-ask` `#global-data` `#inheritance` `#reversibility` `#configuration` `#pipelines` |
 | [Errors And Defensive Code](references/errors.md) | While writing | `#error-decision` `#define-away` `#fewer-handlers` `#crash-early` `#contracts` `#assertions` `#resources` |
-| [Names, Comments And Obvious Code](references/readability.md) | Before changing code; while writing; before reporting done | `#obvious` `#naming` `#comments` `#comments-first` `#keeping-comments-true` `#consistency` |
+| [Names, Comments And Obvious Code](references/readability.md) | Before changing code; while writing; before reporting done | `#obvious` `#naming` `#comments` `#reader-first-comments` `#comments-first` `#keeping-comments-true` `#consistency` |
 | [Designing And Planning](references/process.md) | Before changing code; while writing | `#small-steps` `#design-twice` `#tracer-bullets` `#prototypes` `#requirements` `#puzzles` `#domain-language` `#good-enough` `#starter-kit` `#agility` |
 | [While You Are Coding](references/coding.md) | While writing | `#coincidence` `#refactoring` `#testing` `#algorithm-speed` `#performance` `#security` `#debugging` |
 | [Events And Concurrency](references/concurrency.md) | While writing | `#shared-state` `#temporal-coupling` `#events` `#actors` |
