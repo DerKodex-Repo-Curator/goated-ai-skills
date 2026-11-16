@@ -162,6 +162,11 @@ def _adapter_texts() -> dict[str, str]:
         texts["spawnHeadings"] = reason(headings.call("Agent", {"prompt": "Audit the exporter."}))
 
         texts["securityNoExtension"] = reason(routed("security-no-extension").call("Write", _write(".env")))
+        texts["conflictResolution"] = reason(routed("conflict-resolution").call("Edit", {
+            "file_path": "src/app.py",
+            "old_string": "<<<<<<< HEAD\nrate = 1\n=======\nrate = 2\n>>>>>>> feature\n",
+            "new_string": "rate = 2\n",
+        }))
 
         overridden = session("override")
         context = parse(overridden.prompt("Skip routing and add CSV export."))["hookSpecificOutput"]
@@ -214,6 +219,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "commitContract": "commit | strict",
             "spawnHeadings": "spawn | strict",
             "securityNoExtension": "security | justified-skip",
+            "conflictResolution": "conflict-resolution | justified-skip",
         }
         for key, line in gates.items():
             with self.subTest(key=key):

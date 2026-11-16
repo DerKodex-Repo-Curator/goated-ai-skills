@@ -455,6 +455,139 @@ class SecurityHoldTests(AdapterTestCase):
                 self.assertEqual(decision(s.call("Edit", edit)), "pass")
 
 
+MERGE_CONFLICT = (
+    "Auto-merging src/app.py\n"
+    "CONFLICT (content): Merge conflict in src/app.py\n"
+    "Automatic merge failed; fix conflicts and then commit the result."
+)
+REBASE_CONFLICT = (
+    "Auto-merging src/app.py\n"
+    "CONFLICT (content): Merge conflict in src/app.py\n"
+    "error: could not apply 1a2b3c4... Add export\n"
+    "hint: Resolve all conflicts manually, mark them as resolved with\n"
+    'hint: "git add/rm <conflicted_files>", then run "git rebase --continue".'
+)
+REVERT_CONFLICT = (
+    "Auto-merging src/app.py\n"
+    "CONFLICT (content): Merge conflict in src/app.py\n"
+    "error: could not revert 1a2b3c4... Add export\n"
+    "hint: After resolving the conflicts, mark them with"
+)
+STASH_CONFLICT = (
+    "Auto-merging src/app.py\n"
+    "CONFLICT (content): Merge conflict in src/app.py\n"
+    "On branch main\n"
+    "The stash entry is kept in case you need it again."
+)
+CONFLICT_EDIT = {
+    "file_path": "src/app.py",
+    "old_string": "<<<<<<< HEAD\nrate = 1\n=======\nrate = 2\n>>>>>>> feature\n",
+    "new_string": "rate = 2\n",
+}
+
+
+class ConflictResolutionHoldTests(AdapterTestCase):
+    """G1: a write while a conflict is open in the turn needs `resolving-merge-conflicts`."""
+
+    def test_an_edit_of_conflict_markers_is_held(self) -> None:
+        s = self.routed()
+
+        held = s.call("Edit", CONFLICT_EDIT)
+        self.assertEqual(hold_line(held), "goated-hold: conflict-resolution | justified-skip")
+        loads = set(re.findall(r"`([a-z0-9-]+)`", reason(held)))
+        self.assertEqual(loads, {"resolving-merge-conflicts"})
+        self.assertEqual(decision(s.call("Edit", CONFLICT_EDIT)), "deny")
+
+    def test_a_multiedit_of_conflict_markers_is_held(self) -> None:
+        s = self.routed()
+        edit = {"file_path": "src/app.py", "edits": [
+            {"old_string": "a", "new_string": "b"},
+            {"old_string": CONFLICT_EDIT["old_string"], "new_string": "rate = 2\n"},
+        ]}
+        self.assertEqual(hold_line(s.call("MultiEdit", edit)),
+                         "goated-hold: conflict-resolution | justified-skip")
+
+    def test_markers_mentioned_mid_line_are_not_held(self) -> None:
+        s = self.routed()
+        for old in ("Git writes <<<<<<< and >>>>>>> around a conflict.",
+                    "Title\n=======\n", "a\n"):
+            with self.subTest(old=old):
+                edit = {"file_path": "notes.md", "old_string": old, "new_string": "x"}
+                self.assertEqual(decision(s.call("Edit", edit)), "pass")
+
+    def test_a_write_after_a_conflicting_git_result_is_held(self) -> None:
+        cases = (
+            ("git merge feature", MERGE_CONFLICT),
+            ("git pull origin main", MERGE_CONFLICT),
+            ("git rebase main", REBASE_CONFLICT),
+            ("git pull --rebase", REBASE_CONFLICT),
+            ("git cherry-pick 1a2b3c4", REBASE_CONFLICT),
+            ("git revert 1a2b3c4", REVERT_CONFLICT),
+        )
+        for command, output in cases:
+            with self.subTest(command=command):
+                s = self.fresh()
+                s.prompt("Bring the branch up to date.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.run(command, success=False, output=output)
+
+                edit = {"file_path": "notes.md", "old_string": "a", "new_string": "b"}
+                self.assertEqual(hold_line(s.call("Edit", edit)),
+                                 "goated-hold: conflict-resolution | justified-skip")
+                self.assertEqual(hold_line(s.call("Write", write("notes.md", 1))),
+                                 "goated-hold: conflict-resolution | justified-skip")
+                self.assertEqual(hold_line(s.call("Bash", {"command": "echo x > notes.md"})),
+                                 "goated-hold: conflict-resolution | justified-skip")
+                self.assertEqual(decision(s.call("Bash", {"command": "git status"})), "pass")
+
+    def test_near_misses_after_git_are_not_held(self) -> None:
+        cases = (
+            ("git merge feature", "Updating 1a2b3c4..5d6e7f8\nFast-forward\n src/app.py | 2 +-"),
+            ("git stash pop", STASH_CONFLICT),
+            ("git stash apply", STASH_CONFLICT),
+            ("grep -rn 'Automatic merge failed' docs", "docs/x.md:3:" + MERGE_CONFLICT),
+        )
+        for command, output in cases:
+            with self.subTest(command=command):
+                s = self.fresh()
+                s.prompt("Bring the branch up to date.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.run(command, output=output)
+
+                edit = {"file_path": "notes.md", "old_string": "a", "new_string": "b"}
+                self.assertEqual(decision(s.call("Edit", edit)), "pass")
+
+    def test_a_conflict_in_an_earlier_turn_does_not_hold_a_later_write(self) -> None:
+        s = self.routed()
+        s.run("git merge feature", success=False, output=MERGE_CONFLICT)
+        s.prompt("Now update the notes.")
+        s.say("goated-route: continue")
+
+        edit = {"file_path": "notes.md", "old_string": "a", "new_string": "b"}
+        self.assertEqual(decision(s.call("Edit", edit)), "pass")
+
+    def test_loading_the_skill_clears_the_hold(self) -> None:
+        s = self.routed()
+        self.assertEqual(decision(s.call("Edit", CONFLICT_EDIT)), "deny")
+
+        s.load("resolving-merge-conflicts")
+        self.assertEqual(decision(s.call("Edit", CONFLICT_EDIT)), "pass")
+
+    def test_a_skip_line_clears_the_hold(self) -> None:
+        s = self.routed()
+        s.run("git merge feature", success=False, output=MERGE_CONFLICT)
+        s.say("goated-skip: resolving-merge-conflicts: the conflict is in a generated lockfile")
+
+        self.assertEqual(decision(s.call("Edit", CONFLICT_EDIT)), "pass")
+
+    def test_a_typed_override_clears_the_hold(self) -> None:
+        s = self.routed(prompt="Fix the conflict; skip resolving-merge-conflicts.")
+
+        self.assertEqual(decision(s.call("Edit", CONFLICT_EDIT)), "pass")
+
+
 class SubagentActionTests(AdapterTestCase):
     """Inside a subagent, action gates apply and routing gates do not (spec R9)."""
 
@@ -964,7 +1097,7 @@ class HoldFormatTests(AdapterTestCase):
 
     FORMAT = re.compile(
         r"^goated-hold: (router-first|route-line|pipeline|commit|pull-request|spawn"
-        r"|design|security|closeout) \| (strict|justified-skip)$"
+        r"|design|security|conflict-resolution|closeout) \| (strict|justified-skip)$"
     )
 
     def test_every_hold_message_starts_with_the_documented_line(self) -> None:

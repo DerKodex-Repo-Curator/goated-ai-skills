@@ -339,13 +339,18 @@ class Session:
         self._tool_result(tool_use_id, "file text" if success else "File does not exist.",
                           is_error=not success)
 
-    def run(self, command: str, *, success: bool = True, tool: str = "Bash") -> dict:
-        """Run a shell command through PreToolUse, then record its result."""
+    def run(self, command: str, *, success: bool = True, tool: str = "Bash",
+            output: str | None = None) -> dict:
+        """Run a shell command through PreToolUse, then record its result;
+        `output` is the result text when the command was not held."""
 
-        tool_use_id, output = self._judge(tool, {"command": command})
-        ok = success and not reason(output)
-        self._tool_result(tool_use_id, "ok" if ok else "Exit code 1\nfailed", is_error=not ok)
-        return output
+        tool_use_id, judged = self._judge(tool, {"command": command})
+        ok = success and not reason(judged)
+        text = "ok" if ok else "Exit code 1\nfailed"
+        if output is not None and not reason(judged):
+            text = output if ok else f"Exit code 1\n{output}"
+        self._tool_result(tool_use_id, text, is_error=not ok)
+        return judged
 
     def spawn(self, agent_id: str, brief: str, tool: str = "Agent") -> dict:
         """Start a subagent: PreToolUse, then the result naming its agent id."""

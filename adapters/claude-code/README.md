@@ -3,7 +3,8 @@
 An optional set of Claude Code hooks that holds writes, spawns, and commands
 until the GOATED router and the skills its route requires have loaded in the
 current task. It also holds commits, pull requests, spawns, design changes,
-and security-sensitive edits until the skill that owns each has loaded, and
+security-sensitive edits, and writes during a merge conflict until the skill
+that owns each has loaded, and
 holds the end of a code-changing turn until it has fresh proof. It enforces
 the portable contracts in
 `skills/agent-workflows/using-goated-ai-skills/SKILL.md`, `stack/AGENTS.md`,
@@ -96,6 +97,7 @@ of hold:
 | `spawn` | strict | Starting an agent or session with a brief | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, all in the turn; and the brief passes the [content check](#content-checks) |
 | `design` | justified-skip | A write adding five or more lines to a code file | `software-design-principles` loads in the turn |
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` loads in the turn |
+| `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an `Edit` or `MultiEdit` whose old text has a `<<<<<<<` or `>>>>>>>` marker at a line start, or any write, by a write tool or a shell command, after a git merge, rebase, cherry-pick, revert, or pull whose result in the turn reported a conflict. Only the turn is read, not the repository, so a conflict opened in an earlier turn is caught only by its markers. A conflicting stash pop or apply is not held | `resolving-merge-conflicts` loads in the turn |
 | `closeout` | justified-skip | The end of a turn that changed code, or that loaded `code-security-review` and changed a security-sensitive file (a `Stop` hook) | Every item below is met or skipped |
 
 The closeout items, each judged against the turn's last code change. A code
@@ -285,7 +287,8 @@ goated-hold: <gate> | <kind>
 ```
 
 - `<gate>` is one of `router-first`, `route-line`, `pipeline`, `commit`,
-  `pull-request`, `spawn`, `design`, `security`, or `closeout`.
+  `pull-request`, `spawn`, `design`, `security`, `conflict-resolution`, or
+  `closeout`.
 - `<kind>` is `strict` or `justified-skip`.
 - The first line matches
   `^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-skip)$`.
@@ -366,8 +369,8 @@ change it and this table together.
 A hook call from inside a subagent carries `agent_id`. There:
 
 - the routing gates do not apply, because the parent's brief carries the route;
-- the action gates (`commit`, `pull-request`, `spawn`, `design`, `security`)
-  apply, judged from the subagent's own transcript, which Claude Code keeps in
+- the action gates (`commit`, `pull-request`, `spawn`, `design`, `security`,
+  `conflict-resolution`) apply, judged from the subagent's own transcript, which Claude Code keeps in
   `<session-id>/subagents/agent-<agent_id>.jsonl` beside the main one. A
   subagent must load the skill itself: the parent's loads do not count;
 - no override applies, because nobody types a subagent's prompts;
@@ -502,7 +505,9 @@ of the call's prompt, which is normally already there.
   transcript catches up.
 - The design gate judges size by lines added in the tool input, not by what
   the change does, and does not see shell writes. The security gate judges by
-  path alone.
+  path alone. The conflict-resolution gate reads git's English messages
+  (`Automatic merge failed`, `could not apply`, `could not revert`), so a git
+  set to another language is not seen.
 - The adapter guards against agents skipping skills, not against an agent
   working to defeat it. An agent with shell access could edit the transcript,
   the state file, or the settings that install the hooks. Defending against

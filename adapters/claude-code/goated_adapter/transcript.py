@@ -98,10 +98,10 @@ class Call:
     `ok` is False when the tool result was an error, which includes a call a
     hook held; `held` is True only when this adapter held it, so it never ran.
     `agent_id` is the subagent a spawn started, from the result's
-    `toolUseResult.agentId`, else None.
+    `toolUseResult.agentId`, else None. `output` is the result's text.
     """
 
-    __slots__ = ("name", "input", "ok", "held", "agent_id")
+    __slots__ = ("name", "input", "ok", "held", "agent_id", "output")
 
     def __init__(
         self,
@@ -110,12 +110,14 @@ class Call:
         ok: bool,
         agent_id: str | None = None,
         held: bool = False,
+        output: str = "",
     ) -> None:
         self.name = name
         self.input = tool_input
         self.ok = ok
         self.held = held
         self.agent_id = agent_id
+        self.output = output
 
 
 class RouteMark(NamedTuple):
@@ -408,12 +410,13 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                 if finished is not None:
                     result = entry.get("toolUseResult")
                     agent = result.get("agentId") if isinstance(result, dict) else None
+                    text = _result_text(block)
                     turn.calls.append(Call(
                         *finished,
                         ok=not block.get("is_error"),
                         agent_id=agent if isinstance(agent, str) else None,
-                        held=bool(block.get("is_error"))
-                        and bool(HOLD_RESULT_RE.match(_result_text(block))),
+                        held=bool(block.get("is_error")) and bool(HOLD_RESULT_RE.match(text)),
+                        output=text,
                     ))
                 if (
                     block.get("tool_use_id") in skill_calls

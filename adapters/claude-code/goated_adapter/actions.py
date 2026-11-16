@@ -1,4 +1,5 @@
-"""Action gates (commit, pull request, spawn, design, security) and the closeout gate.
+"""Action gates (commit, pull request, spawn, design, security,
+conflict resolution) and the closeout gate.
 
 These enforce skill triggers the skills already state (ADR 0003): commit with
 `commit-message`, open a pull request with `pr-description`, brief a new agent
@@ -33,7 +34,7 @@ import re
 from . import contracts, shell
 from .gates import COMMAND_TOOLS, STRICT, Hold, goated_skill_name
 from .markers import parse_reply
-from .transcript import Turn, skill_name
+from .transcript import Call, Turn, skill_name
 
 JUSTIFIED_SKIP = "justified-skip"
 
@@ -76,6 +77,20 @@ DIFF_ONLY_READ = (
     "this turn changed no file it can name, so print the diff with a git diff or git "
     "show command; a listing of names or counts, such as --stat or --name-only, does "
     "not count"
+)
+# Merge conflicts (spec G1). Markers count only at a line start, as git
+# writes them; `=======` alone is also a heading underline, so it is not one.
+CONFLICT_SKILL = "resolving-merge-conflicts"
+CONFLICT_MARKER_RE = re.compile(r"^(?:<{7}|>{7})(?: |$)", re.MULTILINE)
+# A command naming one of the operations the skill covers; a `pull` merges or rebases.
+GIT_CONFLICT_COMMAND_RE = re.compile(
+    r"(?<![\w-])git(?:\.exe)?\s(?:[^;&|\n]*\s)?(?:merge|rebase|cherry-pick|revert|pull)(?![\w-])"
+)
+# The line git prints when one of them stops on a conflict: a merge's, or a
+# rebase's, cherry-pick's, or revert's (older git prefixes `error: `).
+GIT_CONFLICT_RESULT_RE = re.compile(
+    r"^(?:Automatic merge failed|(?:error: )?could not (?:apply|revert) )",
+    re.MULTILINE | re.IGNORECASE,
 )
 # An edit adding at least this many lines is a design change, not a tiny fix.
 DESIGN_MIN_LINES = 5
@@ -190,7 +205,9 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     changes = lambda: _Changes(turn, subagents() if subagents else {}, cwd)
     if tool_name in COMMAND_TOOLS:
         command = shell.analyze(str(tool_input.get("command") or ""))
-        hold = _commit_hold(command.commit_message, proof, changes) if command.commit else None
+        hold = _conflict_hold(tool_input, proof) if command.writes else None
+        if hold is None and command.commit:
+            hold = _commit_hold(command.commit_message, proof, changes)
         if hold is None and command.opens_pr:
             hold = _pr_hold(proof, changes)
         for target in command.write_targets:
@@ -207,7 +224,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         return _spawn_hold(brief, proof) if brief.strip() else None
     if tool_name in FILE_WRITE_TOOLS:
         path = _norm(str(tool_input.get(FILE_WRITE_TOOLS[tool_name]) or ""))
-        return _security_hold(path, proof) or _design_hold(path, tool_input, proof)
+        return (_conflict_hold(tool_input, proof) or _security_hold(path, proof)
+                or _design_hold(path, tool_input, proof))
     return None
 
 
@@ -341,6 +359,44 @@ def _security_hold(path: str, proof: _Proof) -> Hold | None:
         f"`goated-skip: {SECURITY_SKILL}: <reason>` on its own line instead, then make the "
         "edit again. This edit was not applied.",
     )
+
+
+def _conflict_hold(tool_input: dict, proof: _Proof) -> Hold | None:
+    """Hold a write while a conflict is open in the turn (spec G1): the write
+    edits conflict markers, or follows a git merge, rebase, cherry-pick, revert,
+    or pull whose result reported a conflict. Only the turn is read, never the
+    repository on disk, so a conflict opened in an earlier turn is seen only
+    through its markers."""
+
+    if proof.loaded_or_skipped(CONFLICT_SKILL):
+        return None
+    edits = tool_input.get("edits")
+    olds = [tool_input.get("old_string")] + (
+        [e.get("old_string") for e in edits if isinstance(e, dict)]
+        if isinstance(edits, list) else []
+    )
+    edits_markers = any(isinstance(old, str) and CONFLICT_MARKER_RE.search(old) for old in olds)
+    follows_conflict = any(
+        call.name in COMMAND_TOOLS and _reports_conflict(call) for call in proof.turn.calls
+    )
+    if not (edits_markers or follows_conflict):
+        return None
+    return Hold(
+        "conflict-resolution", JUSTIFIED_SKIP,
+        "A merge conflict is open in this turn. Load "
+        f"`{CONFLICT_SKILL}` with the Skill tool in this turn and resolve it from the "
+        "intent behind both sides. If this write does not resolve the conflict, write "
+        f"`goated-skip: {CONFLICT_SKILL}: <reason>` on its own line instead, then make "
+        "the write again. This write was not applied.",
+    )
+
+
+def _reports_conflict(call: Call) -> bool:
+    """True when a git merge, rebase, cherry-pick, revert, or pull reported a
+    conflict. A conflicting stash pop or apply prints none of these lines."""
+
+    return bool(GIT_CONFLICT_COMMAND_RE.search(str(call.input.get("command") or ""))
+                and GIT_CONFLICT_RESULT_RE.search(call.output))
 
 
 def _design_hold(path: str, tool_input: dict, proof: _Proof) -> Hold | None:
