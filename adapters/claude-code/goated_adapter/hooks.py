@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
-from . import gates
+from . import actions, gates
 from .overrides import parse_overrides
 from .policy import router_skill_installed, shared_policy_loaded
 from .state import StateStore, StateUnsafe
@@ -28,6 +29,7 @@ from .transcript import (
 STATE_DIR_ENV = "GOATED_ADAPTER_STATE_DIR"
 NAMESPACES_ENV = "GOATED_ADAPTER_SKILL_NAMESPACES"
 STATE_DIR_NAME = "goated-claude-code-adapter"
+AGENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 NAME = "GOATED Claude Code adapter"
 POLICY_NOTICE = (
     "the GOATED shared policy is not loaded in this session, so the "
@@ -120,14 +122,14 @@ def run_hook(raw_input: str, config: Config) -> str:
 
 
 def _pre_tool_use(payload: dict, config: Config) -> str:
-    if payload.get("agent_id"):
-        # Routing gates do not apply in subagents: the parent's brief carries
-        # the route (spec R9).
-        return ""
     tool_name = str(payload.get("tool_name") or "")
-    if tool_name not in gates.GATED_TOOLS:
+    if tool_name not in gates.GATED_TOOLS and not actions.is_action_tool(tool_name):
         return ""
+    tool_input = payload.get("tool_input")
+    tool_input = tool_input if isinstance(tool_input, dict) else {}
     session_id, transcript_path = _session_fields(payload)
+    if payload.get("agent_id"):
+        return _subagent_pre_tool_use(payload, config, tool_name, tool_input, transcript_path)
 
     store = StateStore(config.state_dir)
     state, state_warning = store.load(session_id)
@@ -142,19 +144,81 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
         raise _FailOpen(str(exc)) from exc
     gates.fold_turns(state, turns, config.skill_namespaces)
     current = turns[-1]
-    hold = gates.check_routing(
-        state, tool_name, current, _overrides_for(state, current, payload.get("prompt_id"))
+    overrides = _overrides_for(state, current, payload.get("prompt_id"))
+    hold = gates.check_routing(state, tool_name, tool_input, current, overrides)
+    if hold is None:
+        hold = actions.check_action(
+            tool_name, tool_input, current, overrides, config.skill_namespaces
+        )
+    warnings = [state_warning, _save(store, session_id, state)]
+    return _with_warnings(_deny(hold), warnings)
+
+
+def _subagent_pre_tool_use(
+    payload: dict, config: Config, tool_name: str, tool_input: dict, transcript_path: str
+) -> str:
+    """Apply only the action gates, from the subagent's own transcript (spec R9).
+
+    Routing gates do not apply: the parent's brief carries the route. Claude
+    Code passes the parent's `transcript_path`; the subagent's entries live
+    beside it in `<session>/subagents/agent-<agent_id>.jsonl`. Nobody types a
+    subagent's prompts, so no override applies.
+    """
+
+    agent_id = str(payload.get("agent_id"))
+    if not AGENT_ID_RE.match(agent_id):
+        raise _FailOpen("the hook input has an unexpected agent_id")
+    main = Path(transcript_path)
+    path = main.parent / main.stem / "subagents" / f"agent-{agent_id}.jsonl"
+    try:
+        turns = read_recent_turns(
+            path,
+            since_key=None,
+            tool_use_id=payload.get("tool_use_id"),
+            wait_seconds=config.lag_wait_seconds,
+            sidechain=True,
+        )
+    except TranscriptUnreadable as exc:
+        raise _FailOpen(f"in a subagent, {exc}") from exc
+    hold = actions.check_action(tool_name, tool_input, turns[-1], {}, config.skill_namespaces)
+    return _with_warnings(_deny(hold), [])
+
+
+def _stop(payload: dict, config: Config) -> str:
+    """Hold the end of a turn that changed code until its closeout items are met."""
+
+    session_id, transcript_path = _session_fields(payload)
+    store = StateStore(config.state_dir)
+    state, state_warning = store.load(session_id)
+    try:
+        turns = read_recent_turns(
+            transcript_path, since_key=state.last_turn, tool_use_id=None, wait_seconds=0.0
+        )
+    except TranscriptUnreadable as exc:
+        raise _FailOpen(str(exc)) from exc
+    gates.fold_turns(state, turns, config.skill_namespaces)
+    current = turns[-1]
+    hold = actions.check_closeout(
+        current,
+        _overrides_for(state, current, payload.get("prompt_id")),
+        config.skill_namespaces,
+        str(payload.get("last_assistant_message") or ""),
     )
     warnings = [state_warning, _save(store, session_id, state)]
+    output = {"decision": "block", "reason": hold.message()} if hold else {}
+    return _with_warnings(output, warnings)
 
-    output: dict = {}
-    if hold is not None:
-        output["hookSpecificOutput"] = {
+
+def _deny(hold) -> dict:
+    if hold is None:
+        return {}
+    return {
+        "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
             "permissionDecisionReason": hold.message(),
         }
-    return _with_warnings(output, warnings)
+    }
 
 
 def _session_start(payload: dict, config: Config) -> str:
@@ -269,6 +333,7 @@ def _fail_open(why: str) -> str:
 
 _HANDLERS = {
     "PreToolUse": _pre_tool_use,
+    "Stop": _stop,
     "UserPromptSubmit": _user_prompt_submit,
     "SessionStart": _session_start,
 }

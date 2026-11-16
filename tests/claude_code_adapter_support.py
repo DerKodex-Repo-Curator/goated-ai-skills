@@ -21,6 +21,12 @@ if str(ADAPTER_DIR) not in sys.path:
 from goated_adapter import Config, run_hook  # noqa: E402
 
 ROUTER = "using-goated-ai-skills"
+# A Windows-style install path, so the reader's path matching covers backslashes.
+SPAWN_BRIEF_PATH = "D:\\goated\\skills\\handoff\\references\\spawn-brief.md"
+BRIEF = (
+    "## Goal\n\nAudit the exporter.\n\n## Scope\n\n- Work in: src/export/\n\n"
+    "## Done Means\n\n- A list of findings.\n"
+)
 
 
 class Session:
@@ -42,13 +48,32 @@ class Session:
         self.prompt_id: str | None = None
         self._last_uuid: str | None = None
         self._counter = 0
+        # A subagent writes its own sidechain transcript, but its hook input
+        # names the parent's transcript.
+        self.sidechain = False
+        self.hook_transcript = self.transcript
+
+    def subagent(self, agent_id: str) -> "Session":
+        """A subagent of this session, writing where Claude Code puts its transcript."""
+
+        agent = Session.__new__(Session)
+        agent.__dict__.update(self.__dict__)
+        folder = self.root / self.session_id / "subagents"
+        folder.mkdir(parents=True, exist_ok=True)
+        agent.transcript = folder / f"agent-{agent_id}.jsonl"
+        agent.transcript.write_text("", encoding="utf-8")
+        agent.sidechain = True
+        agent.prompt_id = None
+        agent._last_uuid = None
+        agent._counter = 1000
+        return agent
 
     # Transcript writers -------------------------------------------------
 
     def _append(self, entry: dict) -> None:
         entry.setdefault("uuid", str(uuid.uuid4()))
         entry.setdefault("parentUuid", self._last_uuid)
-        entry.setdefault("isSidechain", False)
+        entry.setdefault("isSidechain", self.sidechain)
         entry.setdefault("sessionId", self.session_id)
         if self.prompt_id and entry.get("type") == "user":
             # Claude Code records promptId on user entries only.
@@ -219,6 +244,32 @@ class Session:
                 is_error=True,
             )
 
+    def read(self, path: str, *, success: bool = True) -> None:
+        """Record a finished Read tool call, as Claude Code does."""
+
+        tool_use_id = self._tool_use("Read", {"file_path": path})
+        self._tool_result(tool_use_id, "file text" if success else "File does not exist.",
+                          is_error=not success)
+
+    def run(self, command: str, *, success: bool = True, tool: str = "Bash") -> dict:
+        """Run a shell command through PreToolUse, then record its result."""
+
+        tool_input = {"command": command}
+        tool_use_id = self._tool_use(tool, tool_input)
+        output = self.hook(
+            "PreToolUse", tool_name=tool, tool_input=tool_input, tool_use_id=tool_use_id
+        )
+        held = parse(output).get("hookSpecificOutput", {}).get("permissionDecision") == "deny"
+        ok = success and not held
+        self._tool_result(tool_use_id, "ok" if ok else "Exit code 1\nfailed", is_error=not ok)
+        return parse(output)
+
+    def brief_with_handoff(self) -> None:
+        """Load `handoff` and read its spawn-brief template, as the spawn hold asks."""
+
+        self.load("handoff")
+        self.read(SPAWN_BRIEF_PATH)
+
     def compact(self) -> str:
         """Record a compaction boundary and run the compact SessionStart hook."""
 
@@ -239,7 +290,7 @@ class Session:
     def hook(self, event: str, **fields) -> str:
         payload = {
             "session_id": self.session_id,
-            "transcript_path": str(self.transcript),
+            "transcript_path": str(self.hook_transcript),
             "cwd": str(self.project),
             "hook_event_name": event,
         }
@@ -260,7 +311,9 @@ class Session:
             tool_use_id=tool_use_id,
             **fields,
         )
-        self._tool_result(tool_use_id, "ok")
+        # Claude Code records a held call as an error result carrying the reason.
+        held = reason(parse(output))
+        self._tool_result(tool_use_id, held or "ok", is_error=bool(held))
         return parse(output)
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,7 @@ import yaml
 
 from claude_code_adapter_support import (
     ADAPTER_DIR,
+    BRIEF,
     REPO_ROOT,
     ROUTER,
     Config,
@@ -295,24 +297,34 @@ class SpawnTests(AdapterTestCase):
             with self.subTest(tool=tool):
                 (self.root / tool).mkdir()
                 s = Session(self.root / tool, session_id=f"spawn-{tool}")
+                brief = {"prompt": BRIEF, "remaining_plan": BRIEF}
                 s.prompt("Delegate the export work.")
-                self.assertEqual(decision(s.call(tool, {"prompt": "x"})), "deny")
+                self.assertEqual(decision(s.call(tool, brief)), "deny")
                 s.load(ROUTER)
-                self.assertEqual(decision(s.call(tool, {"prompt": "x"})), "deny")
+                self.assertEqual(decision(s.call(tool, brief)), "deny")
                 s.say("goated-route: standard | requires: tdd")
-                held = s.call(tool, {"prompt": "x"})
+                held = s.call(tool, brief)
                 self.assertTrue(reason(held).startswith("goated-hold: pipeline"))
                 s.load("tdd")
-                self.assertEqual(decision(s.call(tool, {"prompt": "x"})), "pass")
+                s.brief_with_handoff()
+                self.assertEqual(decision(s.call(tool, brief)), "pass")
 
     def test_the_settings_snippet_matches_every_gated_tool(self) -> None:
-        from goated_adapter import gates
+        from goated_adapter import actions, gates
 
         snippet = json.loads((ADAPTER_DIR / "settings.snippet.json").read_text(encoding="utf-8"))
         matcher = snippet["hooks"]["PreToolUse"][0]["matcher"]
-        self.assertEqual(set(matcher.split("|")), set(gates.GATED_TOOLS))
-        hook = snippet["hooks"]["PreToolUse"][0]["hooks"][0]
-        self.assertEqual(hook["args"], ["<adapter-dir>/goated_hook.py"])
+        names = [*gates.GATED_TOOLS, *actions.SPAWN_BRIEF_FIELDS, *actions.FILE_WRITE_TOOLS,
+                 "mcp__github__create_pull_request", "mcp__gitlab__create_merge_request"]
+        for name in names:
+            self.assertTrue(re.fullmatch(matcher, name), name)
+            self.assertTrue(name in gates.GATED_TOOLS or actions.is_action_tool(name), name)
+        self.assertIsNone(re.fullmatch(matcher, "Read"))
+        self.assertEqual(
+            set(snippet["hooks"]), {"SessionStart", "UserPromptSubmit", "PreToolUse", "Stop"}
+        )
+        for entries in snippet["hooks"].values():
+            self.assertEqual(entries[0]["hooks"][0]["args"], ["<adapter-dir>/goated_hook.py"])
 
 
 class OverrideTests(AdapterTestCase):
@@ -443,7 +455,8 @@ class TaskNotificationTests(AdapterTestCase):
         s.prompt("Run the audit in the background, then fix what it finds.")
         s.load(ROUTER)
         s.say("goated-route: direct")
-        self.assertEqual(decision(s.call("Agent", {"prompt": "audit"})), "pass")
+        s.brief_with_handoff()
+        self.assertEqual(decision(s.call("Agent", {"prompt": BRIEF})), "pass")
 
         s.notify("Found one stale import.")
         self.assertEqual(decision(s.call("Edit")), "pass")

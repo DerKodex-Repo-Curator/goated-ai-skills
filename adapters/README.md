@@ -26,4 +26,4 @@ standard library, and no skill file refers to an adapter.
 
 | Folder | Framework | Status |
 | --- | --- | --- |
-| [`claude-code/`](claude-code/README.md) | Claude Code | Routing gates (Ticket 030); action and closeout gates follow in Ticket 031 |
+| [`claude-code/`](claude-code/README.md) | Claude Code | Routing gates (Ticket 030); action, shell-write, and closeout gates (Ticket 031) |

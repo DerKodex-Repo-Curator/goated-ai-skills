@@ -1,8 +1,9 @@
-"""The adapter's rule table and its routing-gate decisions.
+"""The routing gates, and the hold type and load naming every gate shares.
 
-This module owns which tools each gate holds, which skill loads count, and
-when a hold clears. The rules enforce contracts defined elsewhere, never new
-ones (ADR 0003):
+This module owns which tools the routing gates hold, which skill loads count,
+and when a routing hold clears; `actions.py` owns the action and closeout
+gates. The rules enforce contracts defined elsewhere, never new ones
+(ADR 0003):
 
 - router first: `using-goated-ai-skills` says to load it before the first edit
   or command of a task;
@@ -15,6 +16,7 @@ ones (ADR 0003):
 
 from __future__ import annotations
 
+from . import shell
 from .state import SessionState, Task
 from .transcript import Turn
 
@@ -85,11 +87,24 @@ def fold_turns(
         state.last_turn = turn.key
 
 
-def check_routing(state: SessionState, tool_name: str, turn: Turn, overrides: dict) -> Hold | None:
+def writes_like_an_edit(tool_name: str, tool_input: dict) -> bool:
+    """True for a write or spawn tool, or a shell command that writes files."""
+
+    if tool_name in HELD_LIKE_WRITES:
+        return True
+    if tool_name in COMMAND_TOOLS:
+        return shell.analyze(str(tool_input.get("command") or "")).writes
+    return False
+
+
+def check_routing(
+    state: SessionState, tool_name: str, tool_input: dict, turn: Turn, overrides: dict
+) -> Hold | None:
     """Return the first routing hold that applies to this main-agent call, if any.
 
     `turn` is the current turn, already folded into `state`. `overrides` are
     the ones the user typed for this turn (see `overrides.parse_overrides`).
+    Commands meet only router-first unless they write files.
     """
 
     if tool_name not in GATED_TOOLS or overrides.get("routing"):
@@ -104,7 +119,7 @@ def check_routing(state: SessionState, tool_name: str, turn: Turn, overrides: di
             "Reads stay free. If that skill is not installed, tell the user: they "
             "can type `skip routing` in their prompt to proceed without it.",
         )
-    if tool_name not in HELD_LIKE_WRITES:
+    if not writes_like_an_edit(tool_name, tool_input):
         return None
     if turn.route is None:
         return Hold("route-line", STRICT, _route_line_instruction(turn))

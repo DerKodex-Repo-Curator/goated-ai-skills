@@ -24,7 +24,18 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Agent|mcp__ccd_session__start_session|mcp__ccd_session__hand_off_to_session|Bash|PowerShell",
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Agent|mcp__ccd_session__start_session|mcp__ccd_session__hand_off_to_session|Bash|PowerShell|mcp__.*__create_pull_request|mcp__.*__create_merge_request",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["<adapter-dir>/goated_hook.py"]
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
         "hooks": [
           {
             "type": "command",
