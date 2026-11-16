@@ -1,4 +1,5 @@
-"""Action gates (commit, pull request, spawn, design, security) and the closeout gate.
+"""Action gates (commit, pull request, spawn, design, security,
+conflict resolution) and the closeout gate.
 
 These enforce skill triggers the skills already state (ADR 0003): commit with
 `commit-message`, open a pull request with `pr-description`, brief a new agent
@@ -77,6 +78,26 @@ DIFF_ONLY_READ = (
     "this turn changed no file it can name, so print the diff with a git diff or git "
     "show command; a listing of names or counts, such as --stat or --name-only, does "
     "not count"
+)
+# Merge conflicts (spec G1). Markers count only at a line start, as git
+# writes them, or after the line number a Read result puts there; `=======`
+# alone is also a heading underline, so it is not one.
+CONFLICT_SKILL = "resolving-merge-conflicts"
+CONFLICT_MARKER_RE = re.compile(r"^(?:[ \t]*\d+(?:\t|→))?(?:<{7}|>{7})(?: |\r?$)", re.MULTILINE)
+# `git` and any global options before its subcommand, within one simple command.
+_GIT = r"(?<![\w-])git(?:\.exe)?\s(?:[^;&|\n]*\s)?"
+_GIT_OPERATIONS = r"merge|rebase|cherry-pick|revert"
+# A command naming one of the operations the skill covers; a `pull` merges or rebases.
+GIT_CONFLICT_COMMAND_RE = re.compile(rf"{_GIT}(?:{_GIT_OPERATIONS}|pull)(?![\w-])")
+# A command that ends one, whether the conflict was resolved or given up.
+GIT_CONFLICT_END_RE = re.compile(
+    rf"{_GIT}(?:{_GIT_OPERATIONS})\s(?:[^;&|\n]*\s)?--(?:abort|quit|continue|skip)(?![\w-])"
+)
+# The line git prints when one of them stops on a conflict: a merge's, or a
+# rebase's, cherry-pick's, or revert's (older git prefixes `error: `).
+GIT_CONFLICT_RESULT_RE = re.compile(
+    r"^(?:Automatic merge failed|(?:error: )?could not (?:apply|revert) )",
+    re.MULTILINE | re.IGNORECASE,
 )
 # An edit adding at least this many lines is a design change, not a tiny fix.
 DESIGN_MIN_LINES = 5
@@ -192,7 +213,9 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     changes = lambda: _Changes(turn, subagents() if subagents else {}, project)
     if tool_name in COMMAND_TOOLS:
         command = shell.analyze(str(tool_input.get("command") or ""))
-        hold = _commit_hold(command.commit_message, proof, changes) if command.commit else None
+        hold = _conflict_hold(command.write_targets, tool_input, proof) if command.writes else None
+        if hold is None and command.commit:
+            hold = _commit_hold(command.commit_message, proof, changes)
         if hold is None and command.opens_pr:
             hold = _pr_hold(proof, changes)
         for target in command.write_targets:
@@ -210,8 +233,11 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         return _spawn_hold(brief, proof) if brief.strip() else None
     if tool_name in FILE_WRITE_TOOLS:
         path = _norm(str(tool_input.get(FILE_WRITE_TOOLS[tool_name]) or ""))
-        if not _in_project(path, project):
-            return None  # A scratch file elsewhere is not the project's design or security.
+        # A conflict is open wherever the file lives (a worktree may sit outside
+        # the project folder), as the shell branch above holds every write target.
+        hold = _conflict_hold([path], tool_input, proof)
+        if hold is not None or not _in_project(path, project):
+            return hold  # A scratch file elsewhere is not the project's design or security.
         return _security_hold(path, proof) or _design_hold(path, tool_input, proof)
     return None
 
@@ -346,6 +372,62 @@ def _security_hold(path: str, proof: _Proof) -> Hold | None:
         f"`goated-skip: {SECURITY_SKILL}: <reason>` on its own line instead. This edit "
         "was not applied. " + unseen_line_advice("skip line", f"skip {SECURITY_SKILL}"),
     )
+
+
+def _conflict_hold(paths: list[str], tool_input: dict, proof: _Proof) -> Hold | None:
+    """Hold a write to `paths` while a conflict is open in the turn (spec G1):
+    the write edits conflict markers, writes a file the turn read with markers
+    in it, or follows a git merge, rebase, cherry-pick, revert, or pull whose
+    result reported a conflict that no later abort, continue, or commit ended.
+    Only the turn is read, never the repository on disk, so a conflict opened
+    in an earlier turn is seen only through its markers."""
+
+    if proof.loaded_or_skipped(CONFLICT_SKILL):
+        return None
+    edits = tool_input.get("edits")
+    olds = [tool_input.get("old_string")] + (
+        [e.get("old_string") for e in edits if isinstance(e, dict)]
+        if isinstance(edits, list) else []
+    )
+    edits_markers = any(isinstance(old, str) and CONFLICT_MARKER_RE.search(old) for old in olds)
+    git_open, marked_files = _open_conflict(proof.turn)
+    writes_marked = any(_same_file(marked, path) for marked in marked_files for path in paths)
+    if not (edits_markers or git_open or writes_marked):
+        return None
+    return Hold(
+        "conflict-resolution", JUSTIFIED_SKIP,
+        "A merge conflict is open in this turn. Load "
+        f"`{CONFLICT_SKILL}` with the Skill tool in this turn and resolve it from the "
+        "intent behind both sides. If this write does not resolve the conflict, write "
+        f"`goated-skip: {CONFLICT_SKILL}: <reason>` on its own line instead. This write "
+        "was not applied. " + unseen_line_advice("skip line", f"skip {CONFLICT_SKILL}"),
+    )
+
+
+def _open_conflict(turn: Turn) -> tuple[bool, list[str]]:
+    """Read the turn's calls in order and return whether a git conflict is still
+    open, and the files a Read showed with markers since the last conflict ended.
+
+    A git merge, rebase, cherry-pick, revert, or pull whose result reports a
+    conflict opens one (a conflicting stash pop or apply prints none of git's
+    stop lines). A finished abort, quit, continue, or skip of one of them, or
+    a finished commit, ends it, unless that same call reports a new conflict.
+    """
+
+    git_open, marked_files = False, []
+    for call in turn.calls:
+        if call.name == "Read":
+            if call.ok and CONFLICT_MARKER_RE.search(call.output):
+                marked_files.append(str(call.input.get("file_path") or ""))
+            continue
+        if call.name not in COMMAND_TOOLS:
+            continue
+        command = str(call.input.get("command") or "")
+        if GIT_CONFLICT_COMMAND_RE.search(command) and GIT_CONFLICT_RESULT_RE.search(call.output):
+            git_open = True
+        elif call.ok and (GIT_CONFLICT_END_RE.search(command) or shell.analyze(command).commit):
+            git_open, marked_files = False, []
+    return git_open, marked_files
 
 
 def _design_hold(path: str, tool_input: dict, proof: _Proof) -> Hold | None:

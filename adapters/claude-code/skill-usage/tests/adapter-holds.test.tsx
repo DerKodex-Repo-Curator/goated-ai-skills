@@ -12,7 +12,7 @@ import { historyEvents, hookEvents, isObservedRow, markerEvents, rowEvents, summ
 import type { HistoryMessage, Row } from '../hooks/classify'
 import { ADAPTER_TEXTS } from './adapter-texts'
 
-const SKILLS = ['using-goated-ai-skills', 'tdd', 'doc-sync', 'commit-message', 'pr-description', 'handoff', 'subagent-driven-development', 'software-design-principles', 'code-security-review']
+const SKILLS = ['using-goated-ai-skills', 'tdd', 'doc-sync', 'commit-message', 'pr-description', 'handoff', 'subagent-driven-development', 'software-design-principles', 'code-security-review', 'resolving-merge-conflicts']
 
 const denied = (tool: string, text: string) => `PreToolUse:${tool} hook error: ${text}`
 // A blocked Stop, as both a live hook-context row and the rebuilt history carry it (the run's command path aside).
@@ -45,6 +45,7 @@ test('each action hold reads as its gate and kind and names the skills it asks f
     ['security', 'Write', ADAPTER_TEXTS.securityNoExtension, 'justified-skip', ['code-security-review']],
     // A shell write is held like a write tool's.
     ['security', 'Bash', ADAPTER_TEXTS.shellWrite, 'justified-skip', ['code-security-review']],
+    ['conflict-resolution', 'Edit', ADAPTER_TEXTS.conflictResolution, 'justified-skip', ['resolving-merge-conflicts']],
   ]
   for (const [gate, tool, text, kind, named] of cases) {
     expect(preHold(tool, text, 1)).toEqual([expect.objectContaining({ kind: 'nudge', hook: gate, holdKind: kind, named })])
@@ -233,6 +234,7 @@ for (const [gate, tool, text, skill] of [
   ['design', 'Write', ADAPTER_TEXTS.design, 'software-design-principles'],
   ['security', 'Write', ADAPTER_TEXTS.security, 'code-security-review'],
   ['security', 'Bash', ADAPTER_TEXTS.shellWrite, 'code-security-review'],
+  ['conflict-resolution', 'Edit', ADAPTER_TEXTS.conflictResolution, 'resolving-merge-conflicts'],
 ] as const) {
   const reason = 'the edit changes one constant and nothing else'
   test(`the ${gate} hold on ${tool} is followed by loading ${skill}, declined by a skip line with its reason, and otherwise ignored`, async () => {

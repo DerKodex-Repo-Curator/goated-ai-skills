@@ -3,7 +3,8 @@
 An optional set of Claude Code hooks that holds writes, spawns, and commands
 until the GOATED router and the skills its route requires have loaded in the
 current task. It also holds commits, pull requests, spawns, design changes,
-and security-sensitive edits until the skill that owns each has loaded, and
+security-sensitive edits, and writes during a merge conflict until the skill
+that owns each has loaded, and
 holds the end of a code-changing turn until it has fresh proof. It enforces
 the portable contracts in
 `skills/agent-workflows/using-goated-ai-skills/SKILL.md`, `stack/AGENTS.md`,
@@ -96,6 +97,7 @@ of hold:
 | `spawn` | strict | Starting an agent or session with a brief | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, all in the turn; and the brief passes the [content check](#content-checks) |
 | `design` | justified-skip | A write adding five or more lines to a code file inside the project folder | `software-design-principles` loads in the turn |
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` loads in the turn |
+| `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an `Edit` or `MultiEdit` whose old text has a `<<<<<<<` or `>>>>>>>` marker at a line start; a write, by a write tool or a shell command such as `git checkout --theirs`, to a file a Read in the turn showed with such a marker; or any write after a git merge, rebase, cherry-pick, revert, or pull whose result in the turn reported a conflict. A finished abort, quit, continue, or skip of that operation, or a finished commit, ends the conflict and drops the Reads before it. Only the turn is read, not the repository, so a conflict opened in an earlier turn is caught only by markers the turn shows: an edit whose old text spans only `=======` and one side, in a file not read this turn, is not held, because `=======` alone is also a heading underline. A conflicting stash pop or apply is not held | `resolving-merge-conflicts` loads in the turn |
 | `closeout` | justified-skip | The end of a turn that changed code, or that loaded `code-security-review` and changed a security-sensitive file (a `Stop` hook) | Every item below is met or skipped |
 
 The closeout items, each judged against the turn's last code change. A code
@@ -103,7 +105,9 @@ change is a write tool's file, or a file a shell command writes (its redirect
 target, copy destination, or removed, moved, or edited file), inside the
 project folder; a scratch or temp file elsewhere does not count. The `design`
 and `security` gates use the same rule, so a scratch script outside the
-project is not held.
+project is not held. The `conflict-resolution` gate holds a write wherever
+its file is, since a worktree with a conflict may sit outside the project
+folder.
 
 **A file counts as outside the project only when the adapter is certain.**
 When in doubt, it is inside. The project's folders are `CLAUDE_PROJECT_DIR`
@@ -224,7 +228,8 @@ backtick in PowerShell). A `Bash` or `PowerShell` command meets the
 - downloads to a file: `curl -o <file>` (also `-sSLo <file>`) or `curl -O`,
   `wget` unless it writes to standard output, or `Invoke-WebRequest -OutFile`;
 - runs `git apply`, `git am`, `git restore`, `git mv`, `git rm`, `git clean`,
-  `git checkout -- <path>`, `git checkout <rev> <path>`, `git reset --hard`, or
+  `git checkout -- <path>`, `git checkout <rev> <path>`,
+  `git checkout --theirs|--ours <path>`, `git reset --hard`, or
   `git stash pop|apply`.
 
 Text inside quotes, heredoc bodies, PowerShell here-strings, and comments is
@@ -356,7 +361,8 @@ goated-hold: <gate> | <kind>
 ```
 
 - `<gate>` is one of `router-first`, `route-line`, `pipeline`, `commit`,
-  `pull-request`, `spawn`, `design`, `security`, or `closeout`.
+  `pull-request`, `spawn`, `design`, `security`, `conflict-resolution`, or
+  `closeout`.
 - `<kind>` is `strict` or `justified-skip`.
 - The first line matches
   `^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-skip)$`.
@@ -373,8 +379,8 @@ goated-hold: <gate> | <kind>
 - A hold asks for a load in the current turn. A skill loaded in an earlier
   turn does not answer it.
 - A hold that a route or skip line can clear (`route-line`, `pipeline`,
-  `design`, `security`) says that a line in the held call's own message is not
-  visible yet, and to make the call again without repeating the line. It says
+  `design`, `security`, `conflict-resolution`) says that a line in the held
+  call's own message is not visible yet, and to make the call again without repeating the line. It says
   this may still fail (see [Known Limits](#known-limits)), and that the user
   can then type the matching override.
 - A hold or closeout item that asks for a [change read](#change-reads) once
@@ -442,8 +448,8 @@ change it and this table together.
 A hook call from inside a subagent carries `agent_id`. There:
 
 - the routing gates do not apply, because the parent's brief carries the route;
-- the action gates (`commit`, `pull-request`, `spawn`, `design`, `security`)
-  apply, judged from the subagent's own transcript, which Claude Code keeps in
+- the action gates (`commit`, `pull-request`, `spawn`, `design`, `security`,
+  `conflict-resolution`) apply, judged from the subagent's own transcript, which Claude Code keeps in
   `<session-id>/subagents/agent-<agent_id>.jsonl` beside the main one. A
   subagent must load the skill itself: the parent's loads do not count;
 - no override applies, because nobody types a subagent's prompts;
@@ -552,8 +558,8 @@ of the call's prompt, which is normally already there.
   rewritten summary, in a thinking block, that drops the line, so the adapter
   never sees it. A bare retry is then held again, and a line written again
   beside a read-only call can be summarized the same way. The
-  route-line, pipeline, design, and security holds give the bare retry as
-  worth one try, not as a sure fix, and then point the user to the typed
+  route-line, pipeline, design, security, and conflict-resolution holds give
+  the bare retry as worth one try, not as a sure fix, and then point the user to the typed
   override: `skip routing`, or `skip <skill>` for a skip line. Reading the
   line from somewhere other than reply text is planned as a separate change.
 
@@ -601,7 +607,9 @@ of the call's prompt, which is normally already there.
     one Claude Code passes to hooks is not seen.
 - The design gate judges size by lines added in the tool input, not by what
   the change does, and does not see shell writes. The security gate judges by
-  path alone.
+  path alone. The conflict-resolution gate reads git's English messages
+  (`Automatic merge failed`, `could not apply`, `could not revert`), so a git
+  set to another language is not seen.
 - The adapter guards against agents skipping skills, not against an agent
   working to defeat it. An agent with shell access could edit the transcript,
   the state file, or the settings that install the hooks. Defending against

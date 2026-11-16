@@ -41,6 +41,7 @@ export const HOOK: Record<string, string> = {
   // Earlier versions recorded tips under these three keys; the adapter's meaning wins.
   design: 'design hold',
   security: 'security hold',
+  'conflict-resolution': 'conflict-resolution hold',
   closeout: 'closeout hold',
   'router-rule': 'GOATED router rule',
   'route-hold': 'route check',

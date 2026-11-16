@@ -1199,6 +1199,18 @@ test("each adapter gate reads by its own name, not as an earlier hook's tip that
   expect(report).not.toContain('tip')
 })
 
+test("the conflict-resolution hold counts apart from the earlier hooks' merge-conflict tips", async () => {
+  const s = summarize([
+    { kind: 'prompt', t: 1, named: [] },
+    { kind: 'nudge', t: 2, hook: 'merge-conflict', named: ['resolving-merge-conflicts'] },
+    { kind: 'nudge', t: 3, hook: 'conflict-resolution', named: ['resolving-merge-conflicts'], holdKind: 'justified-skip' },
+  ], true)
+  expect(Object.keys(s.nudges).sort()).toEqual(['conflict-resolution', 'merge-conflict'])
+  const report = reportText(addSession(null, s), null)
+  expect(report).toContain('- conflict-resolution hold: ')
+  expect(report).toContain('- merge conflict: ')
+})
+
 test('a load the agent made of its own accord says so, apart from one a subagent made', async ($, on) => {
   const stored: Record<string, unknown> = {
     tab: 'session',
