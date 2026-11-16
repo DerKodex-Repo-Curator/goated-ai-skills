@@ -1,10 +1,12 @@
-"""Action gates (commit, pull request, spawn, design, security) and the closeout gate.
+"""Action gates (commit, pull request, spawn, design, security, repeated failure)
+and the closeout gate.
 
 These enforce skill triggers the skills already state (ADR 0003): commit with
 `commit-message`, open a pull request with `pr-description`, brief a new agent
 with `handoff`'s spawn brief or `subagent-driven-development`, design with
 `software-design-principles`, review sensitive surfaces with
-`code-security-review`, and close a code-changing turn with proof, `doc-sync`,
+`code-security-review`, investigate a check that keeps failing with
+`diagnose`, and close a code-changing turn with proof, `doc-sync`,
 `handoff`, and the design red flags.
 
 Every decision is a pure function of the current turn as the transcript
@@ -44,6 +46,9 @@ SECURITY_SKILL = "code-security-review"
 DOC_SYNC_SKILL = "doc-sync"
 HANDOFF_SKILL = "handoff"
 PROOF_SKILL = "verification-before-completion"
+DIAGNOSE_SKILL = "diagnose"
+# How many failures of one check command, in one turn, make the repeated-failure hold.
+REPEATED_FAILURES = 2
 RED_FLAGS_REFERENCE = "software-design-principles/references/red-flags.md"
 
 # Tools that start another agent, each with the input field that carries the
@@ -195,6 +200,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
             hold = _pr_hold(proof, changes)
         for target in command.write_targets:
             hold = hold or _security_hold(_norm(target), proof)
+        if command.writes and not command.is_check:
+            hold = hold or _repeated_failure_hold(proof)
         return hold
     if PR_TOOL_RE.match(tool_name):
         return _pr_hold(proof, changes, by_tool=True)
@@ -207,7 +214,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         return _spawn_hold(brief, proof) if brief.strip() else None
     if tool_name in FILE_WRITE_TOOLS:
         path = _norm(str(tool_input.get(FILE_WRITE_TOOLS[tool_name]) or ""))
-        return _security_hold(path, proof) or _design_hold(path, tool_input, proof)
+        return (_security_hold(path, proof) or _design_hold(path, tool_input, proof)
+                or _repeated_failure_hold(proof))
     return None
 
 
@@ -354,6 +362,39 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof) -> Hold | None:
         "this turn and apply its 'Before changing code' rules to it. If the edit is "
         f"mechanical, with no design in it, write `goated-skip: {DESIGN_SKILL}: <reason>` "
         "on its own line instead, then make the edit again. This edit was not applied.",
+    )
+
+
+def _repeated_failure_hold(proof: _Proof) -> Hold | None:
+    """Hold a write once one check command has failed twice in the turn.
+
+    "The same check" is the same command text, whitespace aside (spec G2): a
+    narrowed rerun, such as one test file of a failing suite, is another
+    command. A call the adapter held never ran, so it is no failure.
+    """
+
+    if proof.loaded_or_skipped(DIAGNOSE_SKILL):
+        return None
+    failures: dict[str, int] = {}
+    for call in proof.turn.calls:
+        if call.name not in COMMAND_TOOLS or call.ok or call.held:
+            continue
+        text = " ".join(str(call.input.get("command") or "").split())
+        if text and shell.analyze(text).is_check:
+            failures[text] = failures.get(text, 0) + 1
+            if failures[text] == REPEATED_FAILURES:
+                break
+    else:
+        return None
+    shown = text if len(text) <= 80 else text[:77] + "..."
+    return Hold(
+        "repeated-failure", JUSTIFIED_SKIP,
+        # The command is quoted, not backticked: backticks name a skill to load.
+        f"The check \"{shown.replace('`', chr(39))}\" has failed {REPEATED_FAILURES} times in "
+        f"this turn. Load `{DIAGNOSE_SKILL}` with the Skill tool in this turn and find the "
+        "root cause before changing more. If the cause is already known, write "
+        f"`goated-skip: {DIAGNOSE_SKILL}: <reason>` on its own line instead, then make the "
+        "write again. This write was not applied; rerunning the check is not held.",
     )
 
 

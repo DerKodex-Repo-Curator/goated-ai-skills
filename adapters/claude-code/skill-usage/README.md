@@ -60,7 +60,7 @@ as the skill of a `goated-skip:` line it offers. The pane counts a held skill
 as followed when the agent then loads it (or reads its files), and as not
 loaded when the turn ends without that. A Skill call whose result is an error
 loaded nothing, so it neither counts as a load nor answers a hold. A
-`justified-skip` hold (`design`, `security`, `closeout`) also counts as
+`justified-skip` hold (`design`, `security`, `repeated-failure`, `closeout`) also counts as
 declined when a skip line names the skill in the same turn, before or after
 the hold; a `strict` hold (`router-first`, `route-line`, `pipeline`,
 `commit`, `pull-request`, `spawn`) never does, because only loading the skill

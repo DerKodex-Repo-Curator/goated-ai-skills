@@ -455,6 +455,96 @@ class SecurityHoldTests(AdapterTestCase):
                 self.assertEqual(decision(s.call("Edit", edit)), "pass")
 
 
+CHECK = "uv run python -m unittest discover -s tests"
+FIX = {"file_path": "src/export.py", "old_string": "a", "new_string": "b"}
+
+
+class RepeatedFailureTests(AdapterTestCase):
+    """The same check failing twice in a turn holds the next write until `diagnose`."""
+
+    def failed_twice(self, command: str = CHECK, other: str | None = None) -> Session:
+        s = self.routed()
+        s.run(command, success=False)
+        s.call("Edit", FIX)
+        s.run(other or command, success=False)
+        return s
+
+    def test_the_same_check_failing_twice_holds_the_next_write(self) -> None:
+        s = self.failed_twice()
+
+        held = s.call("Edit", FIX)
+        self.assertEqual(hold_line(held), "goated-hold: repeated-failure | justified-skip")
+        self.assertIn(CHECK, reason(held))
+        names = set(re.findall(r"`([a-z0-9]+(?:-[a-z0-9]+)*)`", reason(held)))
+        self.assertEqual(names, {"diagnose"})
+        self.assertEqual(decision(s.call("Edit", FIX)), "deny")
+        self.assertEqual(decision(s.call("Bash", {"command": "echo x > src/notes.txt"})), "deny")
+
+    def test_rerunning_the_check_and_reading_stay_free(self) -> None:
+        s = self.failed_twice()
+
+        self.assertEqual(decision(s.run(CHECK, success=False)), "pass")
+        self.assertEqual(decision(s.call("Bash", {"command": "git diff"})), "pass")
+
+    def test_whitespace_alone_does_not_make_a_different_command(self) -> None:
+        s = self.failed_twice("pytest -q", other="pytest   -q ")
+
+        self.assertEqual(decision(s.call("Edit", FIX)), "deny")
+
+    def test_near_misses_are_not_held(self) -> None:
+        once = self.routed()
+        once.run(CHECK, success=False)
+        self.assertEqual(decision(once.call("Edit", FIX)), "pass", "one failure")
+
+        for first, second in (
+            (CHECK, "uv run ruff check ."),
+            ("pytest tests/", "pytest tests/test_export.py -k rounding"),
+            ("ls missing", "ls missing"),  # not a check
+        ):
+            with self.subTest(first=first, second=second):
+                self.session = self.fresh()
+                s = self.failed_twice(first, other=second)
+                self.assertEqual(decision(s.call("Edit", FIX)), "pass")
+
+    def test_passing_runs_are_not_failures(self) -> None:
+        s = self.routed()
+        s.run(CHECK, success=False)
+        s.run(CHECK)
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass")
+
+    def test_failures_in_an_earlier_turn_do_not_count(self) -> None:
+        s = self.failed_twice()
+        s.prompt("Carry on.")
+        s.say("goated-route: continue")
+        s.run(CHECK, success=False)
+
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass")
+
+    def test_loading_diagnose_clears_it(self) -> None:
+        s = self.failed_twice()
+        self.assertEqual(decision(s.call("Edit", FIX)), "deny")
+
+        s.load("diagnose")
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass")
+
+    def test_a_skip_line_clears_it(self) -> None:
+        s = self.failed_twice()
+        self.assertEqual(decision(s.call("Edit", FIX)), "deny")
+
+        s.say("goated-skip: diagnose: the failure is a known typo I just introduced")
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass")
+
+    def test_a_typed_skip_diagnose_override_clears_it(self) -> None:
+        s = self.session
+        s.prompt("Fix the exporter; skip diagnose this time.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        s.run(CHECK, success=False)
+        s.run(CHECK, success=False)
+
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass")
+
+
 class SubagentActionTests(AdapterTestCase):
     """Inside a subagent, action gates apply and routing gates do not (spec R9)."""
 
