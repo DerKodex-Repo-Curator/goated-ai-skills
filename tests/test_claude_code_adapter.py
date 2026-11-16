@@ -341,6 +341,23 @@ class OverrideTests(AdapterTestCase):
         s.prompt("Now update the changelog.")
         self.assertEqual(decision(s.call("Edit")), "deny")
 
+    def test_a_typed_override_is_also_returned_as_hook_context_a_mod_can_read(self) -> None:
+        # A notice reaches a mod with no text; hook context arrives with it.
+        output = parse(self.session.prompt("Skip routing and just fix the typo in README.md."))
+
+        sentence = 'recorded your override for this prompt: "Skip routing"'
+        self.assertIn(sentence, output["systemMessage"])
+        specific = output["hookSpecificOutput"]
+        self.assertEqual(specific["hookEventName"], "UserPromptSubmit")
+        self.assertEqual(
+            specific["additionalContext"], f"GOATED Claude Code adapter: {sentence}."
+        )
+
+    def test_a_prompt_with_no_override_returns_no_hook_context(self) -> None:
+        output = parse(self.session.prompt("Fix the typo in README.md."))
+
+        self.assertNotIn("hookSpecificOutput", output)
+
     def test_user_typed_skill_skip_stands_that_pipeline_requirement_down(self) -> None:
         s = self.session
         s.prompt("Add the flag, and skip doc-sync for this one.")

@@ -253,6 +253,11 @@ async function observeRow($: Dollar, e: SessionAppendInput) {
   if (!isObservedRow(e)) return
   const kept = await read($, events)
   const isPrompt = e.door === 'prompt' || e.door === 'command'
-  const seen = { hasTool: kept.some(ev => ev.kind === 'tool'), lastKind: kept.at(-1)?.kind }
+  let lastBoundary: 'response' | 'results' | undefined
+  for (let i = kept.length - 1; i >= 0 && !lastBoundary; i--) {
+    const kind = kept[i]?.kind
+    if (kind === 'response' || kind === 'results') lastBoundary = kind
+  }
+  const seen = { hasTool: kept.some(ev => ev.kind === 'tool'), lastKind: kept.at(-1)?.kind, lastBoundary }
   await record($, rowEvents(e, await knownSkills($, isPrompt), await $.clock.now(), seen))
 }

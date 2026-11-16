@@ -235,10 +235,10 @@ test('the hooks of earlier installs are still read beside the adapter', async ()
 // ---------- overrides ---------------------------------------------------------------
 
 // The adapter's notice for one phrase, and as it reads for two.
-const NOTICE = ADAPTER_TEXTS.overrideNotice.replace('"Skip routing"', '"Skip routing", "skip the tdd skill"')
+const NOTICE = ADAPTER_TEXTS.overrideContext.replace('"Skip routing"', '"Skip routing", "skip the tdd skill"')
 
 test('the adapter\'s own notice for one override reads as that phrase', async () => {
-  expect(overrideEvents(ADAPTER_TEXTS.overrideNotice, 3)).toEqual([{ kind: 'override', t: 3, phrases: ['skip routing'] }])
+  expect(overrideEvents(ADAPTER_TEXTS.overrideContext, 3)).toEqual([{ kind: 'override', t: 3, phrases: ['skip routing'] }])
 })
 
 test("the adapter's override notice records each phrase you typed, and nothing else does", async () => {
@@ -411,7 +411,7 @@ test("the adapter's notice row, as Claude Code 2.1.325 hands it to a mod, carrie
 })
 
 test('the override sentence in a main hook-context row is an override; in a subagent row it is not', async () => {
-  const context = [{ type: 'text', text: ADAPTER_TEXTS.overrideNotice }]
+  const context = [{ type: 'text', text: ADAPTER_TEXTS.overrideContext }]
   expect(rowEvents(row('hook-context', context, { name: 'hook_additional_context' }), SKILLS, 1, SEEN)).toEqual([{ kind: 'override', t: 1, phrases: ['skip routing'] }])
   expect(rowEvents(row('hook-context', context, { name: 'hook_additional_context', agentId: 'a1' }), SKILLS, 1, SEEN)).toEqual([])
 })
@@ -421,8 +421,9 @@ test("a held call's errored tool result is a hold; a plain one is not", async ()
   expect(rowEvents(result(PIPELINE, true), SKILLS, 1, SEEN)).toEqual([
     { kind: 'nudge', t: 1, hook: 'pipeline', named: ['tdd', 'doc-sync'], holdKind: 'strict' },
     { kind: 'refused', t: 1, id: 'u1' },
+    { kind: 'results', t: 1 },
   ])
-  expect(rowEvents(result(PIPELINE, false), SKILLS, 1, SEEN)).toEqual([])
+  expect(rowEvents(result(PIPELINE, false), SKILLS, 1, SEEN)).toEqual([{ kind: 'results', t: 1 }])
 })
 
 test('a reply row gives its route line, then its writes; a typed prompt row is a prompt; other rows are not read', async () => {
@@ -430,7 +431,7 @@ test('a reply row gives its route line, then its writes; a typed prompt row is a
     { type: 'text', text: 'goated-route: direct' },
     { type: 'tool_use', id: 'u1', name: 'Edit', input: { file_path: 'a.md' } },
   ])
-  expect(rowEvents(reply, SKILLS, 1, SEEN)).toEqual([{ kind: 'route', t: 1, form: 'direct' }, { kind: 'write', t: 1, id: 'u1' }])
+  expect(rowEvents(reply, SKILLS, 1, SEEN)).toEqual([{ kind: 'response', t: 1 }, { kind: 'route', t: 1, form: 'direct' }, { kind: 'write', t: 1, id: 'u1' }])
   expect(rowEvents(row('prompt', [{ type: 'text', text: 'Use tdd here.' }]), SKILLS, 1, SEEN)).toEqual([{ kind: 'prompt', t: 1, named: ['tdd'] }])
   expect(isObservedRow(row('attachment', [{ type: 'text', text: 'x' }], { name: 'environment' }))).toBe(false)
 })
@@ -442,10 +443,11 @@ test('a spawn or write the adapter held is refused by its errored result: the sp
   const refusal = (id: string, reason: string) => row('tool-result', [{ type: 'tool_result', tool_use_id: id, content: held('Agent', reason), is_error: true }])
   const reply = (...uses: { id: string; name: string; input: Record<string, unknown> }[]) => row('response', uses.map(u => ({ type: 'tool_use', ...u })))
   expect(rowEvents(reply(agent('u1')), SKILLS, 1, SEEN)).toEqual([
+    { kind: 'response', t: 1 },
     { kind: 'spawn', t: 1, id: 'u1', agentType: 'Explore', description: 'Scan the repo' },
     { kind: 'write', t: 1, id: 'u1' },
   ])
-  expect(rowEvents(refusal('u1', ADAPTER_TEXTS.routerFirst), SKILLS, 2, SEEN).at(-1)).toEqual({ kind: 'refused', t: 2, id: 'u1' })
+  expect(rowEvents(refusal('u1', ADAPTER_TEXTS.routerFirst), SKILLS, 2, SEEN).find(e => e.kind === 'refused')).toEqual({ kind: 'refused', t: 2, id: 'u1' })
 
   // Held at router-first, then at the route line, then run once a route line was written.
   const s = summarize([

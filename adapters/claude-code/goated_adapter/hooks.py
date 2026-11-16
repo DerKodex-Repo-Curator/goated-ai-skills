@@ -328,10 +328,18 @@ def _user_prompt_submit(payload: dict, config: Config) -> str:
     state.overrides = {"prompt_id": payload.get("prompt_id"), **found}
 
     notes = [state_warning, _save(store, session_id, state)]
+    output: dict = {}
     if found["phrases"]:
         typed = ", ".join(f'"{phrase}"' for phrase in found["phrases"])
-        notes.insert(0, f"recorded your override for this prompt: {typed}")
-    return _with_warnings({}, notes)
+        recorded = f"recorded your override for this prompt: {typed}"
+        notes.insert(0, recorded)
+        # The notice above reaches a mod with no text; hook context arrives with
+        # it, so the skill-usage mod reads the same sentence from here.
+        output["hookSpecificOutput"] = {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": _sentence([recorded]),
+        }
+    return _with_warnings(output, notes)
 
 
 def _overrides_for(state, turn, payload_prompt_id: object) -> dict:
@@ -356,10 +364,17 @@ def _save(store: StateStore, session_id: str, state) -> str | None:
     return None
 
 
+def _sentence(parts) -> str:
+    """The adapter's one notice sentence for these parts, or "" when there are none."""
+
+    text = "; ".join(p.rstrip(".") for p in parts if p)
+    return f"{NAME}: {text}." if text else ""
+
+
 def _with_warnings(output: dict, warnings) -> str:
-    text = "; ".join(w.rstrip(".") for w in warnings if w)
+    text = _sentence(warnings)
     if text:
-        output["systemMessage"] = f"{NAME}: {text}."
+        output["systemMessage"] = text
     return json.dumps(output) if output else ""
 
 

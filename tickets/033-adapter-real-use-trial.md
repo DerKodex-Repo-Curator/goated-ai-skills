@@ -22,6 +22,11 @@ real sessions, compare the mod's data against AC9:
 Review the justified-skip reasons for throwaway answers, and record the
 decision in the spec.
 
+Once the personal hooks are gone, remove `LEGACY_MARKERS` and the rest of the
+legacy hook handling from the skill-usage mod's `hooks/classify.ts`, with its
+tests and README mentions (maintainer decision recorded in Ticket 034,
+2026-11-16).
+
 ## Recommended First Reads
 
 - The spec's Acceptance Criteria, Rollout, and Risks sections.

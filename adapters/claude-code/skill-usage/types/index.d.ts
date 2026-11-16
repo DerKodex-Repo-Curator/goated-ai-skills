@@ -35,6 +35,13 @@ export type UsageEvent = Stamp &
     /** A call whose result was an error, such as one the adapter held: it did not run, so its spawn or write did not happen. */
     | { kind: 'refused'; id: string }
     | { kind: 'tool' }
+    /**
+     * Boundaries of the main agent's round trips: a reply begins (`response`), then
+     * its tool results come back (`results`). Each marks only the first row of its
+     * stretch, so a hold can tell what the reply holding its call already did.
+     */
+    | { kind: 'response' }
+    | { kind: 'results' }
     | { kind: 'compact' }
   )
 
