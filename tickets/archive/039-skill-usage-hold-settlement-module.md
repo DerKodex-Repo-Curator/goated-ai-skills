@@ -53,3 +53,16 @@ blocked `Stop`.
 ## Scope Exclusions
 
 - Any change to what the pane shows or counts.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-16.
+
+- Merged as `ffb83d7`. Hold settlement lives in `hooks/holds.ts` behind
+  `observe`, `wasAsked`, and `finish`.
+- An independent review replayed 6,000 random sessions through the old and
+  new code and found identical output; the existing tests passed unchanged.
+- Every check passed on a scratch merge with Ticket 041: the validator, unit
+  tests on Python 3.14 and 3.11, the V1/V2 context comparison, plugin
+  validate, 137 mod tests, and a TypeScript check that added no errors.
+- No live check was needed: nothing the pane shows changed.

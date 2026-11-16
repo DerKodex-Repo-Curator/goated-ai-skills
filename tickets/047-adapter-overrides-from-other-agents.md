@@ -93,7 +93,7 @@ a shape real messages do not have, so they missed this.
 
 ## Blocked By
 
-- `tickets/041-adapter-review-holds-read-the-change.md` (same files)
+- `tickets/archive/041-adapter-review-holds-read-the-change.md` (same files)
 
 ## Scope Exclusions
 

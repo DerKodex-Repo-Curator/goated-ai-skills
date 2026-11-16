@@ -66,7 +66,7 @@ README as a documented stand-in, as the design gate's five lines are.
 ## Blocked By
 
 - `tickets/archive/033-adapter-real-use-trial.md` (the trial's keep decision)
-- `tickets/041-adapter-review-holds-read-the-change.md` (the change read
+- `tickets/archive/041-adapter-review-holds-read-the-change.md` (the change read
   this gate also requires)
 
 ## Scope Exclusions

@@ -13,7 +13,7 @@ Source spec: `docs/specs/2026-11-16-adapter-skill-activation-gates.md`
    - Enables: `setup-scribe` when a turn changed setup.
 4. `tickets/038-adapter-large-pull-request-review.md`
    - Blocked by: `tickets/archive/033-adapter-real-use-trial.md`,
-     `tickets/041-adapter-review-holds-read-the-change.md`
+     `tickets/archive/041-adapter-review-holds-read-the-change.md`
    - Enables: `standards-and-spec-review` before a large pull request.
 
 The four tickets touch the same adapter files (`actions.py`, the README's

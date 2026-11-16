@@ -113,3 +113,22 @@ to load. Each hold keeps its first line and kind.
   ticket's change read to it.
 - The other adapter issues logged during the 033 trial, unless the trial's
   revise decision folds them into this ticket.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-16.
+
+- Merged as `1e06c43`, with the review fixes in `953c215`: an MCP commit or
+  pull request with no project change passes, the commit and pull-request
+  holds follow the last change to any project file and see subagent changes,
+  the Security item counts from the last sensitive change, and the shell
+  analysis recognises more diff forms.
+- Every check passed on a scratch merge with Ticket 039: the validator, unit
+  tests on Python 3.14 and 3.11, the V1/V2 context comparison, plugin
+  validate, and 137 mod tests.
+- Live check, in the orchestrating session after the merge: a one-line edit,
+  a passing check, and a red-flags read were held at the turn's end with the
+  Design item asking for the change itself; printing the diff and, after a
+  revert, reading the changed file cleared it. The same check showed a
+  doc-sync skip line written just before a tool call going unseen, the
+  narration case Ticket 045 covers.

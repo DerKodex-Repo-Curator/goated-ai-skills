@@ -37,7 +37,8 @@ Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
    - Blocked by: `tickets/archive/028-discoverable-skill-descriptions.md`,
      `tickets/archive/034-skill-usage-mod-action-holds.md`
    - Enables: the maintainer's keep, revise, or revert decision.
-8. `tickets/039-skill-usage-hold-settlement-module.md`
+8. `tickets/archive/039-skill-usage-hold-settlement-module.md`
+   - Status: Completed, merged and archived on 2026-11-16.
    - Blocked by: `tickets/archive/033-adapter-real-use-trial.md` (its legacy removal)
    - Enables: hold-outcome fixes in one module instead of inside `summarize`.
 9. `tickets/archive/040-skill-usage-all-time-picture-badges.md`
@@ -46,12 +47,13 @@ Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
      counts, so it landed during the 033 trial.
    - Enables: an All time picture without per-case badges, and Session badges
      whose colours each mean one thing.
-10. `tickets/041-adapter-review-holds-read-the-change.md`
+10. `tickets/archive/041-adapter-review-holds-read-the-change.md`
+   - Status: Completed, merged and archived on 2026-11-16.
    - Blocked by: `tickets/archive/033-adapter-real-use-trial.md` (its keep decision)
    - Enables: review holds that clear only after the agent reads the change,
      not on a skill load alone; ticket 038 builds on it.
 11. `tickets/047-adapter-overrides-from-other-agents.md`
-   - Blocked by: `tickets/041-adapter-review-holds-read-the-change.md`
+   - Blocked by: `tickets/archive/041-adapter-review-holds-read-the-change.md`
    - Enables: overrides recorded and announced only for a prompt a person
      typed, never for a message from another agent or session.
 12. `tickets/042-adapter-fresh-session-routing.md`
@@ -86,12 +88,9 @@ their write scopes do not overlap. Ticket 034 needs both.
 
 ## Ready Frontier
 
-- `tickets/041-adapter-review-holds-read-the-change.md`
-- `tickets/039-skill-usage-hold-settlement-module.md`
+- `tickets/047-adapter-overrides-from-other-agents.md`
 
-The two touch separate folders (the adapter and the mod), so they can run in
-parallel. Merge 039 first: 041's small mod change then goes into 039's
-settlement module.
+Then 042 to 046, one after another.
 
 ## Coverage
 
