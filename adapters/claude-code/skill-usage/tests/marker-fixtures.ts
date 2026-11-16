@@ -1,6 +1,6 @@
 // Generated from stack/fixtures/markers/lines.yaml by
 // `uv run python tests/test_skill_usage_mod.py --write`; do not edit by hand.
-// tests/test_skill_usage_mod.py fails when this copy drifts from the fixtures.
+// tests/test_skill_usage_mod.py fails when this copy drifts from its source.
 
 export const MARKER_FIXTURES = {
   "schema_version": "1.0.0",
@@ -207,6 +207,52 @@ export const MARKER_FIXTURES = {
           {
             "skill": "doc-sync",
             "reason": "change touches only test fixtures"
+          }
+        ],
+        "malformed": []
+      }
+    },
+    {
+      "identifier": "backtick-unwrapping-strips-inside",
+      "text": "` goated-skip: handoff: work finishes in this turn `\n`goated-route: direct `\n",
+      "expect": {
+        "route": {
+          "form": "direct"
+        },
+        "skips": [
+          {
+            "skill": "handoff",
+            "reason": "work finishes in this turn"
+          }
+        ],
+        "malformed": []
+      }
+    },
+    {
+      "identifier": "backtick-unwrapping-keeps-inner-backticks",
+      "text": "`goated-skip: doc-sync: the `README` is unchanged`\n",
+      "expect": {
+        "route": null,
+        "skips": [
+          {
+            "skill": "doc-sync",
+            "reason": "the `README` is unchanged"
+          }
+        ],
+        "malformed": []
+      }
+    },
+    {
+      "identifier": "carriage-returns-end-lines",
+      "text": "goated-skip: handoff: work finishes in this turn\rgoated-route: direct\r\n",
+      "expect": {
+        "route": {
+          "form": "direct"
+        },
+        "skips": [
+          {
+            "skill": "handoff",
+            "reason": "work finishes in this turn"
           }
         ],
         "malformed": []

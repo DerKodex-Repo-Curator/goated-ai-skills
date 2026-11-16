@@ -12,18 +12,16 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface as Dollar, Register, SessionAppendInput } from 'claude-code'
 
 import type { AllTime, Available, SessionSummary, Tab, UsageEvent } from '../types'
-import { addSession, closeOpen, historyEvents, hookEvents, markerEvents, mergeSummaries, overrideEvents, promptEvents, short, summarize, textOf, toolUseEvents } from './classify'
+import { addSession, closeOpen, historyEvents, isObservedRow, mergeSummaries, rowEvents, short, summarize } from './classify'
 import type { HistoryMessage } from './classify'
 import { allTimeTab, forgetPictures, PANE_COLUMNS, PREVIEW_MS, reportText, sessionTab, statusText, unusedTab } from './view'
 import type { View } from './view'
 
 const PANE = 'skill-usage'
 const SESSION_KEY = 's:'
-const LEGACY_STORE_KEY = 'sessions' // v0.1.0 kept every session under one key
+const LEGACY_STORE_KEY = 'sessions' // an earlier layout kept every session under one key
 const MAX_EVENTS = 5000
 const MAX_SESSIONS = 300
-// The attachment rows that carry hook output; other hook_* rows repeat it.
-const HOOK_ATTACHMENTS = new Set(['hook_additional_context', 'hook_blocking_error'])
 const OWN_SOURCES = new Set(['userSettings', 'projectSettings'])
 
 const events = atom({ plugin: 'skill-usage', key: 'events' } as const, [], { shape: 'events-1' })
@@ -199,8 +197,6 @@ async function backfill($: Dollar) {
 /** All-time totals from every other stored session, pruning the oldest past the cap. */
 async function loadAllTime($: Dollar, id: string) {
   await $.store.delete(LEGACY_STORE_KEY)
-  // A trace left by an animation diagnosis; nothing reads it.
-  await $.store.delete('diag-trail')
   const keys = (await $.store.keys()).filter(k => k.startsWith(SESSION_KEY))
   const sessions: [string, Stored][] = []
   for (const key of keys) {
@@ -249,42 +245,14 @@ async function noteError($: Dollar, error: unknown) {
 }
 
 /**
- * Turns one conversation row into events: the person's prompts and slash
- * commands, skill loads, skill-file reads, subagent spawns, the first tool,
- * route and skip lines, hook messages, holds, override notices and
- * compactions. Rows come in conversation order, so a prompt always
- * precedes the rows of its turn; a prompt typed mid-turn is folded into the
- * running turn by another door and starts nothing.
+ * Records one conversation row's events. Rows come in conversation order, so
+ * a prompt always precedes the rows of its turn; a prompt typed mid-turn is
+ * folded into the running turn by another door and starts nothing.
  */
 async function observeRow($: Dollar, e: SessionAppendInput) {
-  const isMain = !e.agentId
-  const isHookRow = e.door === 'hook-context' || (e.door === 'attachment' && HOOK_ATTACHMENTS.has(e.message.name ?? ''))
-  // Every row of the conversation passes here: leave the others at no cost.
-  if (!['prompt', 'command', 'response', 'tool-result', 'compaction'].includes(e.door) && !isHookRow) return
-  const blocks = e.message.content
-  const t = await $.clock.now()
-  const add: UsageEvent[] = []
-
-  if ((e.door === 'prompt' || e.door === 'command') && isMain && !e.message.isMeta) {
-    add.push(...promptEvents(textOf(blocks), await knownSkills($, true), t))
-  } else if (e.door === 'response') {
-    const uses = blocks.filter(b => b.type === 'tool_use').map(b => ({ name: String(b.name), input: (b.input ?? {}) as Record<string, unknown> }))
-    const hasToolBefore = uses.length > 0 && (await read($, events)).some(ev => ev.kind === 'tool')
-    add.push(...markerEvents(textOf(blocks.filter(b => b.type === 'text')), t, e.agentId), ...toolUseEvents(uses, !isMain, hasToolBefore, t, e.agentId))
-  } else if (isHookRow) {
-    // Which subagent a row belongs to, so its own turn end and skip lines settle its own nudges.
-    // A hook's notice to you (`hook_system_message`) reaches a mod with no text, so the adapter's override sentence is read from its hook context.
-    const text = textOf(blocks)
-    add.push(...hookEvents(text, await knownSkills($), t, { agent: e.agentId }), ...(isMain ? overrideEvents(text, t) : []))
-  } else if (e.door === 'tool-result') {
-    const skills = await knownSkills($)
-    for (const b of blocks) {
-      if (b.type === 'tool_result' && b.is_error) add.push(...hookEvents(textOf(b.content), skills, t, { agent: e.agentId, holdsOnly: true }))
-    }
-  } else if (e.door === 'compaction' && isMain) {
-    // A compaction appends a boundary and a summary: count it once.
-    const last = (await read($, events)).at(-1)
-    if (last?.kind !== 'compact') add.push({ kind: 'compact', t })
-  }
-  await record($, add)
+  if (!isObservedRow(e)) return
+  const kept = await read($, events)
+  const isPrompt = e.door === 'prompt' || e.door === 'command'
+  const seen = { hasTool: kept.some(ev => ev.kind === 'tool'), lastKind: kept.at(-1)?.kind }
+  await record($, rowEvents(e, await knownSkills($, isPrompt), await $.clock.now(), seen))
 }

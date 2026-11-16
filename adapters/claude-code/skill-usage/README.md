@@ -38,8 +38,10 @@ Holds reach a session as denied tool calls. The pane counts a hold as
 followed when the agent then loads the skill (or reads its files), and as not
 loaded when the turn ends without that. A `justified-skip` hold also counts as
 declined when a skip line names the skill in the same turn; a `strict` hold
-never does, because only loading the skill clears it. A `router-first` hold
-asks for the router, and a `route-line` hold asks for a route line.
+never does, because only loading the skill clears it. A `pipeline` hold also
+counts as followed for a skill that a corrected route line drops, as the
+hold tells the agent to do. A `router-first` hold asks for the router, and a
+`route-line` hold asks for a route line.
 
 ## The Pane
 
@@ -62,8 +64,10 @@ Unused tabs as markdown, and `/skill-usage preview` plays every animation once.
 
 ## Install
 
-1. Copy this `skill-usage/` folder to a stable place, for example next to the
-   adapter as `<goated-root>/adapters/claude-code/skill-usage/`.
+1. Find the mod's folder: `adapters/claude-code/skill-usage/` in your GOATED
+   clone or download (`<goated-root>` below). The marketplace points at this
+   folder, so leave it in place, or copy it somewhere stable first and use
+   that path.
 2. Add the folder as a local marketplace and install the mod from it:
 
    ```bash
@@ -103,7 +107,10 @@ a new session to be sure the change applies.
    claude plugin marketplace remove goated-skill-usage
    ```
 
-2. Delete the copied `skill-usage/` folder.
+2. Uninstalling leaves the stored summaries behind. To delete them too,
+   delete the mod's store file,
+   `~/.claude/plugins/store/skill-usage_goated-skill-usage-<id>.json`.
+3. If you copied the folder somewhere for the install, delete that copy.
 
 ## Stored Data
 
@@ -116,11 +123,19 @@ the event list lives in session state and is capped at 5,000 events.
 Summaries saved by earlier versions of the mod still read: fields added since
 are optional, so an older summary simply has none of them.
 
-The All time tab reads only the store of the installed plugin. Claude Code
-may key that store by the plugin's install, so moving from another copy of
-this mod to this one may start All time afresh. Check the tab after
-switching, and keep the old copy installed but disabled if you want to
-compare.
+Claude Code keeps the store in one file per plugin and marketplace, under
+`~/.claude/plugins/store/` as `<plugin>_<marketplace>-<id>.json`. So
+installing this mod as `skill-usage@goated-skill-usage` **starts All time
+afresh**, even if another copy of the mod ran before. To carry the old
+history over:
+
+1. Install this copy and start one session, so its store file exists.
+2. Quit every Claude Code session.
+3. Copy the old copy's store file (`skill-usage_<old-marketplace>-<id>.json`)
+   over the new one, keeping the new file's name. The session from step 1 is
+   lost; the older ones read as before.
+
+This has not been tested end to end. Keep a backup of both files.
 
 ## Known Limits
 
@@ -153,10 +168,11 @@ claude plugin test .
 claude plugin validate .
 ```
 
-The tests in `tests/goated-adapter.test.tsx` read the marker fixtures through
-`tests/marker-fixtures.ts`, generated from `stack/fixtures/markers/lines.yaml`.
-In the GOATED source repo, `tests/test_skill_usage_mod.py` fails when that copy
-drifts. Regenerate it with
+The tests in `tests/goated-adapter.test.tsx` read two generated modules:
+`tests/marker-fixtures.ts`, from `stack/fixtures/markers/lines.yaml`, and
+`tests/adapter-texts.ts`, the hold reasons and override notice the adapter
+produces when the generator drives it. In the GOATED source repo,
+`tests/test_skill_usage_mod.py` fails when either copy drifts. Regenerate it with
 `uv run python tests/test_skill_usage_mod.py --write` from the repo root.
 
 CI runs that drift check on every change. The `Skill-usage mod` workflow

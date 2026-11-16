@@ -7,8 +7,10 @@ import { expect, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
 import type { UsageEvent } from '../types'
-import { addSession, hookEvents, markerEvents, markerLines, mergeSummaries, overrideEvents, ROUTE_LINE, ROUTER, summarize, toolUseEvents } from '../hooks/classify'
+import { addSession, hookEvents, isObservedRow, markerEvents, markerLines, mergeSummaries, overrideEvents, ROUTE_LINE, ROUTER, rowEvents, summarize, toolUseEvents } from '../hooks/classify'
+import type { Row } from '../hooks/classify'
 import { reportText } from '../hooks/view'
+import { ADAPTER_TEXTS } from './adapter-texts'
 import { MARKER_FIXTURES } from './marker-fixtures'
 
 const SKILLS = ['using-goated-ai-skills', 'tdd', 'doc-sync', 'writing-plans', 'commit-message', 'handoff']
@@ -133,19 +135,11 @@ test('the report says how many writing turns had a route line', async () => {
 
 // ---------- the adapter's routing holds --------------------------------------------
 
-// As a held call's errored tool result reads in a real transcript.
-const held = (tool: string, gate: string, body: string) => `PreToolUse:${tool} hook error: goated-hold: ${gate} | strict\n${body}`
-const ROUTER_FIRST = held(
-  'Write',
-  'router-first',
-  'Load the `using-goated-ai-skills` skill with the Skill tool before the first write, spawn, or command of a task, and follow the route it selects. Reads stay free. If that skill is not installed, tell the user: they can type `skip routing` in their prompt to proceed without it.',
-)
-const ROUTE_MISSING = held('Edit', 'route-line', 'Before the first write after a user prompt, end routing with a route line on its own line: `goated-route: direct`, `goated-route: continue`, or `goated-route: <intensity> | requires: <skills>`.')
-const PIPELINE = held(
-  'Edit',
-  'pipeline',
-  'The current route requires `tdd`, `doc-sync` before the first write or spawn. Load each with the Skill tool and follow it; only loads after the route line that started this task count, so load again if you loaded it earlier. If one does not apply, write a corrected route line without it; the last route line wins.',
-)
+// As a held call's errored tool result reads in a real transcript: Claude Code's prefix, then the adapter's own reason.
+const held = (tool: string, reason: string) => `PreToolUse:${tool} hook error: ${reason}`
+const ROUTER_FIRST = held('Write', ADAPTER_TEXTS.routerFirst)
+const ROUTE_MISSING = held('Edit', ADAPTER_TEXTS.routeLine)
+const PIPELINE = held('Edit', ADAPTER_TEXTS.pipeline)
 
 test("each adapter hold names its gate, its kind and what it asks for: the router, a route line, or the route's missing skills", async () => {
   expect(hookEvents(ROUTER_FIRST, SKILLS, 1, { holdsOnly: true })).toEqual([{ kind: 'nudge', t: 1, hook: 'router-first', named: [ROUTER], holdKind: 'strict' }])
@@ -153,6 +147,33 @@ test("each adapter hold names its gate, its kind and what it asks for: the route
   expect(hookEvents(PIPELINE, SKILLS, 1, { holdsOnly: true })).toEqual([{ kind: 'nudge', t: 1, hook: 'pipeline', named: ['tdd', 'doc-sync'], holdKind: 'strict' }])
   // An ordinary failure that quotes a hold mid-line is not one.
   expect(hookEvents('Error: grep found "goated-hold: pipeline | strict" in a file', SKILLS, 1, { holdsOnly: true })).toEqual([])
+})
+
+test("a hold line is a hold only as the result's first line, so failing output that prints one is not", async () => {
+  const output = `FAIL test_holds (tests.test_claude_code_adapter)\n${ADAPTER_TEXTS.pipeline}\nAssertionError: 'deny' != 'pass'`
+  expect(hookEvents(output, SKILLS, 1, { holdsOnly: true })).toEqual([])
+})
+
+test("an adapter hold names every skill it backticks, even before the session's skill listing has loaded", async () => {
+  expect(hookEvents(PIPELINE, [], 1, { holdsOnly: true })).toEqual([{ kind: 'nudge', t: 1, hook: 'pipeline', named: ['tdd', 'doc-sync'], holdKind: 'strict' }])
+})
+
+test('a corrected route line that drops a held skill follows the pipeline hold for it; continue keeps the route', async () => {
+  const s = summarize([
+    { kind: 'prompt', t: 1, named: [] },
+    ...markerEvents('goated-route: standard | requires: tdd, doc-sync', 2),
+    ...hookEvents(PIPELINE, SKILLS, 3, { holdsOnly: true }),
+    { kind: 'load', t: 4, skill: 'tdd', via: 'tool', isSubagent: false },
+    ...markerEvents('goated-route: continue', 5),
+    ...markerEvents('goated-route: standard | requires: tdd', 6),
+  ])
+  const row = s.timeline.find(e => e.kind === 'nudge')
+  expect(row?.kind === 'nudge' && row.skills).toEqual([
+    { skill: 'tdd', status: 'followed', at: 4 },
+    { skill: 'doc-sync', status: 'followed', at: 6 },
+  ])
+  const direct = summarize([{ kind: 'prompt', t: 1, named: [] }, ...hookEvents(PIPELINE, SKILLS, 2, { holdsOnly: true }), ...markerEvents('goated-route: direct', 3)])
+  expect(direct.nudges).toEqual({ pipeline: { followed: 2 } })
 })
 
 test('the router-first hold is followed by loading the router, the route-line hold by a route line, the pipeline hold by each skill', async () => {
@@ -213,7 +234,12 @@ test('the hooks of earlier installs are still read beside the adapter', async ()
 
 // ---------- overrides ---------------------------------------------------------------
 
-const NOTICE = 'GOATED Claude Code adapter: recorded your override for this prompt: "Skip routing", "skip the tdd skill".'
+// The adapter's notice for one phrase, and as it reads for two.
+const NOTICE = ADAPTER_TEXTS.overrideNotice.replace('"Skip routing"', '"Skip routing", "skip the tdd skill"')
+
+test('the adapter\'s own notice for one override reads as that phrase', async () => {
+  expect(overrideEvents(ADAPTER_TEXTS.overrideNotice, 3)).toEqual([{ kind: 'override', t: 3, phrases: ['skip routing'] }])
+})
 
 test("the adapter's override notice records each phrase you typed, and nothing else does", async () => {
   expect(overrideEvents(NOTICE, 3)).toEqual([{ kind: 'override', t: 3, phrases: ['skip routing', 'skip the tdd skill'] }])
@@ -241,15 +267,16 @@ test('overrides are counted by phrase, logged, and add up across sessions', asyn
 // ---------- required-reference reads -----------------------------------------------
 
 test('a read of a reference file the route requires is recorded against its skill, loaded or not', async () => {
-  const uses = [{ name: 'Read', input: { file_path: '/home/me/.claude/skills/tdd/references/mocking.md' } }]
+  // A reference the design skill requires before its red-flag scan.
+  const uses = [{ name: 'Read', input: { file_path: '/home/me/.claude/skills/software-design-principles/references/red-flags.md' } }]
   const s = summarize([
     { kind: 'prompt', t: 1, named: [] },
-    { kind: 'route', t: 2, form: 'route', intensity: 'standard', requires: ['tdd'] },
+    { kind: 'route', t: 2, form: 'route', intensity: 'standard', requires: ['software-design-principles'] },
     ...toolUseEvents(uses, false, false, 3),
-    { kind: 'load', t: 4, skill: 'tdd', via: 'tool', isSubagent: false },
+    { kind: 'load', t: 4, skill: 'software-design-principles', via: 'tool', isSubagent: false },
     ...toolUseEvents(uses, false, true, 5),
   ])
-  expect(s.refs).toEqual({ tdd: { 'references/mocking.md': 2 } })
+  expect(s.refs).toEqual({ 'software-design-principles': { 'references/red-flags.md': 2 } })
   expect(s.refsUnloaded).toBe(1)
 })
 
@@ -366,4 +393,41 @@ test('the report lists route lines, adapter holds by kind, overrides and subagen
   expect(report).toContain('- Adapter holds: 1 strict')
   expect(report).toContain('- Overrides: "skip routing" 1 · "skip the tdd skill" 1')
   expect(report).toContain('- Subagents: 1 started · 0 start messages · 0 skill bodies read')
+})
+
+// ---------- rows as session.append carries them ------------------------------------
+
+// The kit raises only a plugin's own rows (door `note`), so these drive the row reader that observeRow hands each row to.
+const row = (door: string, content: Row['message']['content'], more: Partial<Row['message']> & { agentId?: string } = {}): Row => {
+  const { agentId, ...message } = more
+  return { door, ...(agentId ? { agentId } : {}), message: { content, ...message } }
+}
+const SEEN = { hasTool: true }
+
+test("the adapter's notice row, as Claude Code 2.1.325 hands it to a mod, carries no text and yields nothing", async () => {
+  const notice = row('hook-context', [], { name: 'hook_system_message' })
+  expect(isObservedRow(notice)).toBe(true)
+  expect(rowEvents(notice, SKILLS, 1, SEEN)).toEqual([])
+})
+
+test('the override sentence in a main hook-context row is an override; in a subagent row it is not', async () => {
+  const context = [{ type: 'text', text: ADAPTER_TEXTS.overrideNotice }]
+  expect(rowEvents(row('hook-context', context, { name: 'hook_additional_context' }), SKILLS, 1, SEEN)).toEqual([{ kind: 'override', t: 1, phrases: ['skip routing'] }])
+  expect(rowEvents(row('hook-context', context, { name: 'hook_additional_context', agentId: 'a1' }), SKILLS, 1, SEEN)).toEqual([])
+})
+
+test("a held call's errored tool result is a hold; a plain one is not", async () => {
+  const result = (text: string, isError: boolean) => row('tool-result', [{ type: 'tool_result', tool_use_id: 'u1', content: text, is_error: isError }])
+  expect(rowEvents(result(PIPELINE, true), SKILLS, 1, SEEN)).toEqual([{ kind: 'nudge', t: 1, hook: 'pipeline', named: ['tdd', 'doc-sync'], holdKind: 'strict' }])
+  expect(rowEvents(result(PIPELINE, false), SKILLS, 1, SEEN)).toEqual([])
+})
+
+test('a reply row gives its route line, then its writes; a typed prompt row is a prompt; other rows are not read', async () => {
+  const reply = row('response', [
+    { type: 'text', text: 'goated-route: direct' },
+    { type: 'tool_use', id: 'u1', name: 'Edit', input: { file_path: 'a.md' } },
+  ])
+  expect(rowEvents(reply, SKILLS, 1, SEEN)).toEqual([{ kind: 'route', t: 1, form: 'direct' }, { kind: 'write', t: 1 }])
+  expect(rowEvents(row('prompt', [{ type: 'text', text: 'Use tdd here.' }]), SKILLS, 1, SEEN)).toEqual([{ kind: 'prompt', t: 1, named: ['tdd'] }])
+  expect(isObservedRow(row('attachment', [{ type: 'text', text: 'x' }], { name: 'environment' }))).toBe(false)
 })

@@ -94,6 +94,30 @@ replies:
       skips:
         - {skill: doc-sync, reason: change touches only test fixtures}
       malformed: []
+  - identifier: backtick-unwrapping-strips-inside
+    text: |
+      ` goated-skip: handoff: work finishes in this turn `
+      `goated-route: direct `
+    expect:
+      route: {form: direct}
+      skips:
+        - {skill: handoff, reason: work finishes in this turn}
+      malformed: []
+  - identifier: backtick-unwrapping-keeps-inner-backticks
+    text: |
+      `goated-skip: doc-sync: the `README` is unchanged`
+    expect:
+      route: null
+      skips:
+        - {skill: doc-sync, reason: the `README` is unchanged}
+      malformed: []
+  - identifier: carriage-returns-end-lines
+    text: "goated-skip: handoff: work finishes in this turn\rgoated-route: direct\r\n"
+    expect:
+      route: {form: direct}
+      skips:
+        - {skill: handoff, reason: work finishes in this turn}
+      malformed: []
   - identifier: fenced-examples-do-not-count
     text: |
       The grammar allows:

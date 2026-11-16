@@ -129,31 +129,36 @@ export function skillsBackticked(text: string, skills: readonly string[]): strin
   return skills.filter(s => ticked.has(s))
 }
 
-// An adapter hold's first line, as Claude Code relays a denied call: `PreToolUse:<Tool> hook error: goated-hold: <gate> | <kind>`.
+// An adapter hold is a denied call whose reason starts `goated-hold: <gate> | <kind>`, which Claude Code relays as the
+// result's first line, `PreToolUse:<Tool> hook error: goated-hold: …`. A hold line anywhere else, such as in a failing
+// command's output, is not one.
 const ADAPTER_HOLD = /^(?:\S+ hook error: )?goated-hold:[ \t]+([a-z0-9]+(?:-[a-z0-9]+)*)[ \t]+\|[ \t]+(strict|justified-skip)[ \t]*$/
+const BACKTICKED_SKILL = /`([a-z0-9]+(?:-[a-z0-9]+)*)`/g
+/** The adapter's gate for a route's required skills. */
+const PIPELINE_GATE = 'pipeline'
 
-/** What one adapter hold asks for: the router, a route line, or the skills its text backticks. */
-function adapterHoldNamed(gate: string, body: string, skills: readonly string[]): string[] {
+/**
+ * What an adapter hold asks for: the router, a route line, or every skill its
+ * text backticks. The adapter backticks only skill names, so the names are
+ * taken as they stand, whether or not the session's skill listing has loaded.
+ */
+function adapterHoldNamed(gate: string, body: string): string[] {
   if (gate === 'router-first') return [ROUTER]
   if (gate === 'route-line') return [ROUTE_LINE]
-  return skillsBackticked(body, skills)
+  return [...new Set([...body.matchAll(BACKTICKED_SKILL)].flatMap(m => (m[1] ? [m[1]] : [])))]
 }
 
 /**
  * The hook messages in one piece of hook output, each with the skills it
- * names. An adapter hold runs from its `goated-hold:` line to the next one,
- * and its `hook` is its gate. Otherwise a legacy marked paragraph starts a
- * message, and unmarked paragraphs after it belong to it. `holdsOnly` keeps
- * only holds, for errored tool results, where other text can quote a marker.
+ * names. Output whose first line is an adapter hold is that one hold, and its
+ * `hook` is its gate. Otherwise a legacy marked paragraph starts a message,
+ * and unmarked paragraphs after it belong to it. `holdsOnly` keeps only
+ * holds, for errored tool results, where other text can quote a marker.
  */
 export function hookNudges(text: string, skills: readonly string[], holdsOnly = false): { hook: string; named: string[]; holdKind?: HoldKind }[] {
-  const holds: { gate: string; kind: HoldKind; body: string[] }[] = []
-  for (const line of text.split('\n')) {
-    const m = ADAPTER_HOLD.exec(line.trim())
-    if (m) holds.push({ gate: m[1] ?? '', kind: m[2] as HoldKind, body: [] })
-    else holds.at(-1)?.body.push(line)
-  }
-  if (holds.length > 0) return holds.map(h => ({ hook: h.gate, named: adapterHoldNamed(h.gate, h.body.join('\n'), skills), holdKind: h.kind }))
+  const [first = '', ...body] = text.trimStart().split('\n')
+  const hold = ADAPTER_HOLD.exec(first.trim())
+  if (hold) return [{ hook: hold[1] ?? '', named: adapterHoldNamed(hold[1] ?? '', body.join('\n')), holdKind: hold[2] as HoldKind }]
 
   const messages: { hook: string; body: string }[] = []
   for (const paragraph of text.split('\n\n')) {
@@ -275,6 +280,17 @@ const MIN_REASON_WORDS = 3
 
 type Skip = { skill: string; reason: string }
 
+// The line breaks Python's `str.splitlines` splits on, so the mod cuts a reply into lines as the repo's readers do.
+const LINE_BREAK = /\r\n|[\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029]/
+
+/**
+ * A stripped line unwrapped from one pair of enclosing single backticks, then
+ * stripped again: `candidate_line` in the repo's Python marker readers.
+ */
+function candidateLine(trimmed: string): string {
+  return trimmed.length > 2 && trimmed.startsWith('`') && trimmed.endsWith('`') && trimmed[1] !== '`' ? trimmed.slice(1, -1).trim() : trimmed
+}
+
 function readRoute(line: string): Route | null {
   const m = ROUTE_RE.exec(line)
   if (!m) return null
@@ -302,14 +318,14 @@ export function markerLines(text: string): { route: Route | null; skips: Skip[];
   const skips: Skip[] = []
   const malformed: string[] = []
   let isInFence = false
-  for (const raw of text.split('\n')) {
+  for (const raw of text.split(LINE_BREAK)) {
     const trimmed = raw.trim()
     if (FENCE.test(trimmed)) {
       isInFence = !isInFence
       continue
     }
     if (isInFence) continue
-    const line = /^`[^`]+`$/.test(trimmed) ? trimmed.slice(1, -1) : trimmed
+    const line = candidateLine(trimmed)
     const kind = MARKER_PREFIX.exec(line)?.[1]?.toLowerCase()
     if (kind === 'route') {
       const found = readRoute(line)
@@ -384,6 +400,52 @@ export function historyEvents(messages: readonly HistoryMessage[], skills: reado
     events.push(...opening, ...after)
   }
   return events.map(e => ({ ...e, isEarlier: true as const }))
+}
+
+/** One conversation row as `session.append` carries it, as far as the mod reads it. */
+export type Row = {
+  door: string
+  agentId?: string
+  message: { content: readonly { type: string; [field: string]: unknown }[]; name?: string; isMeta?: boolean }
+}
+
+// The attachment rows that carry hook output; other hook_* rows repeat it.
+const HOOK_ATTACHMENTS = new Set(['hook_additional_context', 'hook_blocking_error'])
+const OBSERVED_DOORS = new Set(['prompt', 'command', 'response', 'tool-result', 'compaction'])
+const isHookRow = (row: Row) => row.door === 'hook-context' || (row.door === 'attachment' && HOOK_ATTACHMENTS.has(row.message.name ?? ''))
+
+/** Whether a row can carry events at all. Every row of the conversation passes the mod, so the rest cost nothing. */
+export const isObservedRow = (row: Row) => OBSERVED_DOORS.has(row.door) || isHookRow(row)
+
+/**
+ * The events of one conversation row: the person's prompts and slash
+ * commands; a reply's route and skip lines, skill loads, spawns, writes and
+ * skill-file reads; hook messages, holds and override sentences; and
+ * compactions. `seen`: whether the session's events already hold a real
+ * tool, and the kind of the last one.
+ *
+ * A hook's notice to you (`hook_system_message`) comes in by the
+ * `hook-context` door with no text (Claude Code 2.1.325), so it yields
+ * nothing: the adapter's override sentence is read from its hook context.
+ */
+export function rowEvents(row: Row, skills: readonly string[], t: number, seen: { hasTool: boolean; lastKind?: UsageEvent['kind'] }): UsageEvent[] {
+  const isMain = !row.agentId
+  const blocks = row.message.content
+  if (row.door === 'prompt' || row.door === 'command') return isMain && !row.message.isMeta ? promptEvents(textOf(blocks), skills, t) : []
+  if (row.door === 'response') {
+    const uses = blocks.filter(b => b.type === 'tool_use').map(b => ({ name: String(b.name), input: (b.input ?? {}) as Record<string, unknown> }))
+    return [...markerEvents(textOf(blocks.filter(b => b.type === 'text')), t, row.agentId), ...toolUseEvents(uses, !isMain, seen.hasTool, t, row.agentId)]
+  }
+  if (isHookRow(row)) {
+    const text = textOf(blocks)
+    return [...hookEvents(text, skills, t, { agent: row.agentId }), ...(isMain ? overrideEvents(text, t) : [])]
+  }
+  if (row.door === 'tool-result') {
+    return blocks.flatMap(b => (b.type === 'tool_result' && b.is_error ? hookEvents(textOf(b.content), skills, t, { agent: row.agentId, holdsOnly: true }) : []))
+  }
+  // A compaction appends a boundary and a summary: count it once.
+  if (row.door === 'compaction' && isMain && seen.lastKind !== 'compact') return [{ kind: 'compact', t }]
+  return []
 }
 
 /** An event's time, as a timeline row carries it. */
@@ -546,6 +608,12 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
           if (turnWrites === 'none') turnWrites = 'late'
         }
         settle(n => n.skill === ROUTE_LINE && n.agent === e.agent, 'followed', e)
+        // The pipeline hold says to drop a skill that does not apply by writing a corrected route line, the last one
+        // winning: a new route that no longer requires a held skill follows that hold. `continue` keeps the route.
+        if (e.form !== 'continue') {
+          const requires: readonly string[] = e.form === 'route' ? e.requires : []
+          settle(n => n.hook === PIPELINE_GATE && n.agent === e.agent && !requires.includes(n.skill), 'followed', e)
+        }
         const route: Route = e.form === 'route' ? { form: e.form, intensity: e.intensity, requires: e.requires } : { form: e.form }
         timeline.push({ ...stamp(e), kind: 'route', ...route, ...(e.isSubagent ? { isSubagent: true as const } : {}) })
         break
