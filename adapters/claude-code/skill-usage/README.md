@@ -36,9 +36,11 @@ adapter replaces those hooks.
 
 Holds reach a session as denied tool calls, and the closeout hold as a
 blocked `Stop`. The mod reads each hold's gate and kind from its first line,
-and the skills it asks for from the skill names its text backticks. The pane
-counts a held skill as followed when the agent then loads it (or reads its
-files), and as not loaded when the turn ends without that. A
+and the skills it asks for from the skill names its text backticks, alone or
+as the skill of a `goated-skip:` line it offers. The pane counts a held skill
+as followed when the agent then loads it (or reads its files), and as not
+loaded when the turn ends without that. A Skill call whose result is an error
+loaded nothing, so it neither counts as a load nor answers a hold. A
 `justified-skip` hold (`design`, `security`, `closeout`) also counts as
 declined when a skip line names the skill in the same turn, before or after
 the hold; a `strict` hold (`router-first`, `route-line`, `pipeline`,
@@ -62,8 +64,28 @@ clears it. In particular:
 - A `spawn` hold names two ways to write the brief, `handoff` or
   `subagent-driven-development`. It counts once: its row shows "handoff or
   subagent-driven-development" until the agent loads one, then names that one.
+- A call's hold that holds again in the same turn, asking for nothing its
+  gate's earlier holds did not, is one row marked `×N` and counts once in the
+  rates; the adapter holds count each time. That covers the agent retrying a
+  held call, and a retry held again because the adapter had not yet seen the
+  load or skip line written beside it. What the earlier holds asked and the
+  repeat no longer does was met.
+- A skill a hold offers only as a skip line, such as
+  `verification-before-completion` for the closeout's proof item, is answered
+  by a skip line or by the adapter letting the turn end, never by loading it:
+  the adapter counts a check run, or a read of the red-flags file, not a load.
 - A blocked `Stop` does not end the turn, so the closeout hold waits for the
-  agent's next move; each time the adapter blocks again is its own hold.
+  agent's next move. Every block of the turn joins one closeout row. A block
+  that asks again for an item after a load or a skip line means the adapter
+  did not accept it, so the item waits again and that skip line no longer
+  declines it.
+- When the turn ends as an answer after the agent replied to the last block,
+  the adapter let the `Stop` through, so each item still waiting counts as
+  followed. That covers the items no load answers, a check run for the proof
+  item or a fix for unfinished work. A turn you interrupt, or one an error
+  ends, passes nothing. Claude Code ends a turn after nine blocks in a row
+  whatever the hook says: then what the last block asked counts as not
+  loaded, and what only earlier blocks asked counts as followed.
 
 ## The Pane
 
@@ -71,7 +93,15 @@ clears it. In particular:
   the holds went, the router rule, and route lines, writing turns, adapter
   holds, overrides, and subagents. Below them is an activity log, newest first, with per-hold
   and per-skill tables.
-- **All time**: the same totals across stored sessions.
+- **All time**: the same totals across every stored session, reread after
+  each turn, so sessions running beside this one count as they go.
+
+In the tables, each hook's bar is split by what became of its holds:
+followed in green, declined with a reason in pale green, not followed in red.
+Its rate is the share **handled**, followed or declined, of the holds that
+settled, so a justified skip never lowers it. Each skill's and reference
+file's bar is its count to scale beside the table's largest; a count has no
+limit, so none is drawn as a ring that fills.
 - **Unused**: your own skills by how often they loaded, and those that never
   have.
 
@@ -139,8 +169,10 @@ a new session to be sure the change applies.
 The mod keeps one summary per session in its own plugin store: counts,
 skill names, hold gates, override phrases, reference file paths within
 skills, and skip reasons. It keeps no prompt or reply text beyond those
-phrases and reasons. It keeps the 300 most recent sessions. Within a session,
-the event list lives in session state and is capped at 5,000 events.
+phrases and reasons. It keeps the 300 most recent sessions one by one and
+folds older ones into a single total under the key `older`, so All time
+still counts them. Within a session, the event list lives in session state
+and is capped at 5,000 events.
 
 Summaries saved by earlier versions of the mod still read: fields added since
 are optional, so an older summary simply has none of them.
@@ -163,12 +195,17 @@ This has not been tested end to end. Keep a backup of both files.
 
 - A hold is read only as far as its `goated-hold:` first line and the skill
   names it backticks allow. A hold that names no skill counts by gate and
-  kind with no per-skill result: the `spawn` holds that ask for a template
-  read or for missing brief headings, and the `commit` hold for a message
-  that breaks the contract. In the closeout hold, the proof item asks for a
-  check to run and the design item for a read of the red-flags reference,
-  neither of which is a skill load, so only the skills its other items name
-  (`doc-sync`, `handoff`) get a result.
+  kind with no per-skill result, and its row says what it asked for instead:
+  the `spawn` holds that ask for a template read or for missing brief
+  headings, and the `commit` hold for a message that breaks the contract.
+- The nine-block limit is Claude Code's as seen on 2.1.325. If a version
+  changes it, a closeout the agent never got past may count as followed.
+- A turn that ends as an answer after a blocked `Stop` counts as passed even
+  when the adapter failed open on the last `Stop` and judged nothing; the
+  mod cannot see that. When the mod rebuilds a session from history, which
+  has no turn ends, it passes no closeout: the next prompt closes the turn
+  and cannot tell a pass from an interruption, so items still waiting count
+  as not loaded.
 - Overrides reach the mod through the adapter's `UserPromptSubmit` hook
   context. A notice reaches a mod as a row with no text, so the notice
   itself is not read. When the mod loads mid-session, the history it
@@ -182,6 +219,18 @@ This has not been tested end to end. Keep a backup of both files.
   turn here, and so does a background result, as it does for the adapter.
 - Only the subagent start message of the hand-written hooks
   (`DELEGATED AGENT`) is recognized; the adapter does not send one yet.
+- A hold still waiting when the session ends counts as not followed. That
+  includes a session you resume later: the turn it waited in is over. A mod
+  reloaded mid-turn, such as by a plugin update, starts its events afresh, so
+  a hold waiting at that moment also counts as not followed, even if the agent
+  follows it a moment later.
+- Two sessions folding the same old sessions into the `older` total at the
+  same moment can count them twice. Folding happens only past 300 sessions.
+- A session already folded into `older` and then resumed counts twice: its
+  own key is gone, so the mod rebuilds it from history and stores it again,
+  while `older` still holds its earlier sum, which keeps no per-session
+  parts to take back. Only a session older than the 300 most recent can be
+  folded.
 - The mod judges nothing. Whether a skip reason is specific to the action is
   for you to read in the log.
 

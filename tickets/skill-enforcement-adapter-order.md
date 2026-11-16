@@ -36,6 +36,9 @@ Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
    - Blocked by: `tickets/archive/028-discoverable-skill-descriptions.md`,
      `tickets/archive/034-skill-usage-mod-action-holds.md`
    - Enables: the maintainer's keep, revise, or revert decision.
+8. `tickets/039-skill-usage-hold-settlement-module.md`
+   - Blocked by: `tickets/033-adapter-real-use-trial.md` (its legacy removal)
+   - Enables: hold-outcome fixes in one module instead of inside `summarize`.
 
 Tickets 028 and 029 ran in parallel and were merged on 2026-11-15. Ticket 032
 was split on 2026-11-16 so it can run alongside 031: 031 works in

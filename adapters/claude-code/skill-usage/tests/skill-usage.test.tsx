@@ -3,8 +3,9 @@ import type { TestBody } from 'claude-code/testing'
 
 import type { TimelineEntry, UsageEvent } from '../types'
 import type { HistoryMessage } from '../hooks/classify'
-import { addSession, ANY_SPECIALIST, closeOpen, historyEvents, hookNudges, mergeSummaries, skillFiles, skillsInPath, skillsNamed, markerEvents, summarize, toolUseEvents } from '../hooks/classify'
-import { DECLINED_COLOR, followCounts, PANE_COLUMNS, PREVIEW_MS, playQueue, previewTimeline, reportText, statusText } from '../hooks/view'
+import { addSession, allTimeOf, ANY_SPECIALIST, closeOpen, historyEvents, hookNudges, mergeSummaries, skillFiles, skillsInPath, skillsNamed, markerEvents, summarize, toolUseEvents } from '../hooks/classify'
+import { DECLINED_COLOR, followCounts, PANE_COLUMNS, READ_COLOR, reportText, statusText } from '../hooks/view'
+import { PREVIEW_MS, playQueue, previewTimeline } from '../hooks/picture'
 
 // `run` is a real built-in skill name that also appears as a plain word in hook messages.
 const SKILLS = ['using-goated-ai-skills', 'software-design-principles', 'code-security-review', 'tdd', 'commit-message', 'run']
@@ -41,6 +42,33 @@ test('a stored session that never ended cleanly has no nudge left waiting', asyn
   expect(stored.nudges).toEqual({ 'design-hold': { pending: 1 } })
   expect(closeOpen(stored).nudges).toEqual({ 'design-hold': { ignored: 1 } })
   expect(stored.nudges).toEqual({ 'design-hold': { pending: 1 } })
+})
+
+test('all time keeps every session: past the cap, the oldest fold into one total of older sessions instead of being dropped', async () => {
+  const session = (skill: string, t: number) => ({ t, summary: summarize([{ kind: 'prompt', t, named: [] }, { kind: 'load', t, skill, via: 'tool', isSubagent: false }]) })
+  const stored: [string, ReturnType<typeof session>][] = [['s:b', session('tdd', 2)], ['s:a', session('tdd', 1)], ['s:c', session('diagnose', 3)], ['s:now', session('handoff', 4)]]
+  // The running session is left out (the pane adds it live); of the other three, the oldest is past a cap of two.
+  const { total, older, folded } = allTimeOf(stored, null, 2, 's:now')
+  expect(folded).toEqual(['s:a'])
+  expect(older?.sessions).toBe(1)
+  expect(older?.loads).toEqual({ tdd: { 'self-initiated': 1 } })
+  expect(total?.sessions).toBe(3)
+  expect(total?.loads).toEqual({ tdd: { 'self-initiated': 2 }, diagnose: { 'self-initiated': 1 } })
+  // A later fold adds to the older total kept before, so its sessions still count.
+  const again = allTimeOf([['s:c', session('diagnose', 3)], ['s:d', session('tdd', 5)], ['s:e', session('tdd', 6)]], older, 2, 's:none')
+  expect(again.folded).toEqual(['s:c'])
+  expect(again.older?.sessions).toBe(2)
+  expect(again.total?.sessions).toBe(4)
+  expect(again.total?.loads).toEqual({ tdd: { 'self-initiated': 3 }, diagnose: { 'self-initiated': 1 } })
+  // Nothing past the cap folds nothing, and a waiting nudge in a stored session counts as ignored, as before.
+  const waiting = { t: 1, summary: summarize([{ kind: 'prompt', t: 1, named: [] }, { kind: 'nudge', t: 2, hook: 'design', named: ['software-design-principles'], holdKind: 'justified-skip' }]) }
+  const quiet = allTimeOf([['s:w', waiting]], null, 2, 's:none')
+  expect(quiet.folded).toEqual([])
+  expect(quiet.older).toBeNull()
+  expect(quiet.total?.nudges).toEqual({ design: { ignored: 1 } })
+  expect(allTimeOf([], null, 2, 's:none').total).toBeNull()
+  // The running session is never folded, even when it is old (a resume): it is stored again at its next turn.
+  expect(allTimeOf(stored, null, 1, 's:a').folded).toEqual(['s:c', 's:b'])
 })
 
 test('a resumed session adds to what was stored before', async () => {
@@ -256,8 +284,8 @@ test("the report uses the pane's words, not internal labels", async () => {
     { kind: 'prompt', t: 5, named: [] },
   ])
   const text = reportText(addSession(null, s), { names: SKILLS, own: ['tdd'], total: 6, included: 6 })
-  expect(text).toContain('- GOATED router rule: 1 of 1 followed (100%) · loaded 1')
-  expect(text).toContain('- repeated failure: 0 of 1 followed (0%) · not loaded 1')
+  expect(text).toContain('- GOATED router rule: 1 of 1 handled (100%) · loaded 1')
+  expect(text).toContain('- repeated failure: 0 of 1 handled (0%) · not loaded 1')
   expect(text).toContain('- using-goated-ai-skills: 1 (after a hook 1)')
   expect(text).toContain('GOATED router rule: router loaded first in 1 of 1 session.')
   expect(text).not.toMatch(/hook-nudged|router-rule|diagnose:/)
@@ -311,10 +339,9 @@ test('the pane shows the session and switches tabs, on every surface', async ($,
     const all = await $.ui.mount({ ...PANE, surface })
     expect(await all.find({ type: 'Text', text: /^GOATED router rule$/ })).toBeDefined()
     expect(await all.find({ type: 'Text', text: /^1 of 1$/ })).toBeDefined()
-    // The follow rate: one followed of one settled fills the whole bar green on the terminal, and a ring elsewhere.
+    // The outcome bar: one followed of one settled fills the whole bar green, on every surface.
     const fills = (await all.findAll({ type: 'Box' })).filter(b => b.props.backgroundColor === 'success')
-    if (surface === 'terminal') expect(fills.map(b => b.props.width)).toContain('100%')
-    else expect((await all.findAll({ type: 'Svg' })).map(x => x.props.alt)).toContain('1 of 1 followed')
+    expect(fills.map(b => b.props.width)).toContain('100%')
     // The All time picture is still: it plays no moments.
     if (surface !== 'terminal') expect((await frameOf(all))?.source).not.toContain('<animateMotion')
     await all.press({ key: 'tab-unused' })
@@ -1052,18 +1079,30 @@ test('Agent has Subagents as a small node beside it, joined by a line nothing fl
   expect(refsNode(still)).toMatch(/<circle cx="210" cy="312" r="21"/)
 })
 
-test('the tables show each count as a small ring beside its words on surfaces that draw vectors', async ($, on) => {
+test('the tables chart each count by what it is: a hook by its split of outcomes, a skill or a file by its size beside the largest', async ($, on) => {
+  const design = (t: number) => ({ kind: 'nudge', t, hook: 'design', named: ['software-design-principles'], holdKind: 'justified-skip' })
   const stored: Record<string, unknown> = {
     tab: 'session',
     events: {
       shape: 'events-1',
       value: [
+        // Four design holds, one turn each: two followed, one declined with a reason, one left unanswered.
         { kind: 'prompt', t: 1, named: [] },
-        { kind: 'nudge', t: 2, hook: 'commit-hold', named: ['commit-message'] },
-        { kind: 'load', t: 3, skill: 'commit-message', via: 'tool', isSubagent: false },
-        { kind: 'load', t: 4, skill: 'tdd', via: 'tool', isSubagent: false },
-        { kind: 'load', t: 5, skill: 'tdd', via: 'tool', isSubagent: false },
-        { kind: 'ref', t: 6, skill: 'tdd', file: 'references/mocking.md' },
+        design(2),
+        { kind: 'load', t: 3, skill: 'software-design-principles', via: 'tool', isSubagent: false },
+        { kind: 'prompt', t: 4, named: [] },
+        design(5),
+        { kind: 'load', t: 6, skill: 'software-design-principles', via: 'tool', isSubagent: false },
+        { kind: 'prompt', t: 7, named: [] },
+        design(8),
+        { kind: 'skip', t: 9, skill: 'software-design-principles', reason: 'the edit renames one variable' },
+        { kind: 'prompt', t: 10, named: [] },
+        design(11),
+        { kind: 'prompt', t: 12, named: [] },
+        { kind: 'load', t: 13, skill: 'tdd', via: 'tool', isSubagent: false },
+        { kind: 'ref', t: 14, skill: 'tdd', file: 'references/mocking.md' },
+        { kind: 'ref', t: 15, skill: 'tdd', file: 'references/mocking.md' },
+        { kind: 'ref', t: 16, skill: 'tdd', file: 'references/test-design.md' },
       ],
     },
   }
@@ -1073,18 +1112,49 @@ test('the tables show each count as a small ring beside its words on surfaces th
     return { value: key in stored ? { value: stored[key], version: 1 } : { value: undefined, version: 0 } }
   })
   on('state.set', () => ({ value: { isSet: true, version: 2 } }))
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    // No count is drawn as a ring, which would read as progress towards a limit.
+    expect((await ui.findAll({ type: 'Svg' })).filter(x => x.props.isInteractive !== true && x.props.width === 16)).toEqual([])
+    const fills = (await ui.findAll({ type: 'Box' })).flatMap(b => (b.props.backgroundColor ? [[b.props.backgroundColor, b.props.width]] : []))
+    await ui.unmount()
+    expect(fills).toEqual([
+      // The design hold's four settled holds, split left to right: two followed, one declined, one not.
+      ['success', '50%'], [DECLINED_COLOR, '25%'], ['error', '25%'],
+      // Skills scale to the most loaded: software-design-principles fills its bar, tdd half of it.
+      ['success', '100%'], ['success', '50%'],
+      // Files scale to the most read, in the reads' pink.
+      [READ_COLOR, '100%'], [READ_COLOR, '50%'],
+    ])
+  }
+})
+
+test('rates count declines with what was acted on, so they say "handled", not "followed"', async ($, on) => {
+  const events: UsageEvent[] = [
+    { kind: 'prompt', t: 1, named: [] },
+    { kind: 'nudge', t: 2, hook: 'design', named: ['software-design-principles'], holdKind: 'justified-skip' },
+    { kind: 'skip', t: 3, skill: 'software-design-principles', reason: 'the edit renames one variable' },
+  ]
+  const stored: Record<string, unknown> = { tab: 'all', events: { shape: 'events-1', value: events } }
+  on('clock.now', () => ({ value: 100_000 }))
+  on('state.get', (_, e) => {
+    const key = (e as { key: string }).key
+    return { value: key in stored ? { value: stored[key], version: 1 } : { value: undefined, version: 0 } }
+  })
+  on('state.set', () => ({ value: { isSet: true, version: 2 } }))
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  const rings = (await ui.findAll({ type: 'Svg' })).filter(x => x.props.isInteractive !== true && x.props.width === 16)
+  expect((await frameOf(ui))?.source).toContain('100% handled')
+  expect(await ui.find({ type: 'Text', text: /how often each hold was handled/ })).toBeDefined()
   await ui.unmount()
-  expect(rings.map(x => x.props.alt)).toEqual(['1 of 1 followed', '2 loads', '1 load', '1 read'])
-  const ringOf = (alt: string) => String(rings.find(x => x.props.alt === alt)?.props.source)
-  // Filled as the picture's core ring fills, from the top: all of it green for one followed of one.
-  expect(ringOf('1 of 1 followed')).toMatch(/stroke="#5fcf8f"[^>]*stroke-dasharray="100 100"/)
-  // Loads scale to the most loaded skill: tdd fills its ring, commit-message half of it.
-  expect(ringOf('1 load')).toMatch(/stroke-dasharray="50 100"/)
-  // Reads in the picture's pink, and repainted on a light theme like the picture.
-  expect(ringOf('1 read')).toContain('stroke="#f07aa8"')
-  expect(ringOf('1 read')).toContain('{stroke:#c2457a}')
+  expect(reportText(addSession(null, summarize(events, true)), null)).toContain('- design hold: 1 of 1 handled (100%) · declined 1')
+})
+
+test("each adapter gate reads by its own name, not as an earlier hook's tip that shared its key", async () => {
+  const gates = ['commit', 'pull-request', 'spawn', 'design', 'security', 'closeout']
+  const s = summarize([{ kind: 'prompt', t: 1, named: [] }, ...gates.map((hook, i): UsageEvent => ({ kind: 'nudge', t: 2 + i, hook, named: ['tdd'], holdKind: 'strict' }))], true)
+  const report = reportText(addSession(null, s), null)
+  for (const name of ['commit hold', 'pull-request hold', 'spawn hold', 'design hold', 'security hold', 'closeout hold']) expect(report).toContain(`- ${name}: `)
+  expect(report).not.toContain('tip')
 })
 
 test('a load the agent made of its own accord says so, apart from one a subagent made', async ($, on) => {
@@ -1342,7 +1412,7 @@ test('a decline counts as handled in the rates, and the status line names declin
   ])
   expect(statusText(s)).toBe('skills 0 · hooks: 0 followed · 1 declined')
   const report = reportText(addSession(null, s), { names: [...SKILLS, 'pr-description'], own: [], total: 7, included: 7 })
-  expect(report).toContain('- PR check: 1 of 1 followed (100%) · declined 1')
+  expect(report).toContain('- PR check: 1 of 1 handled (100%) · declined 1')
 })
 
 test('a declined row reads in pale green and reveals its reason on hover', async ($, on) => {
@@ -1365,7 +1435,7 @@ test('a declined row reads in pale green and reveals its reason on hover', async
   })
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
-    expect((await ui.find({ type: 'Text', text: /→/ }))?.text).toBe('closeout check → software-design-principles declined')
+    expect((await ui.find({ type: 'Text', text: /→/ }))?.text).toBe('closeout hold → software-design-principles declined')
     // The row's tone is the decline's, so its sentence takes the pale green; the hook's name inside stays plain.
     expect((await ui.find({ type: 'Text', text: /→/ }))?.props.color).toBe(DECLINED_COLOR)
     expect((await ui.find({ type: 'Text', text: /hooks:/ }))?.text).toBe('0 skill loads · hooks: 0 followed · 1 declined')
@@ -1377,4 +1447,39 @@ test('a declined row reads in pale green and reveals its reason on hover', async
     expect((await ui.find({ type: 'Text', text: /this turn changed no files/ }))?.text).toBe('reason: this turn changed no files')
     await ui.unmount()
   }
+})
+
+test('a hold that held again reads once with how many times, and one that asks for a fix says so instead of naming no skill', async ($, on) => {
+  const hold = (t: number, hook: string, named: string[]) => ({ kind: 'nudge', t, hook, named, holdKind: 'strict' })
+  const stored: Record<string, unknown> = {
+    tab: 'session',
+    events: {
+      shape: 'events-1',
+      value: [
+        { kind: 'prompt', t: 1, named: [] },
+        hold(2, 'route-line', ['(route line)']),
+        hold(3, 'route-line', ['(route line)']),
+        hold(4, 'route-line', ['(route line)']),
+        { kind: 'route', t: 5, form: 'direct' },
+        hold(6, 'commit', []),
+        hold(7, 'spawn', []),
+        hold(8, 'pull-request', []),
+      ],
+    },
+  }
+  on('clock.now', () => ({ value: 60_000 }))
+  on('state.get', (_, e) => {
+    const key = (e as { key: string }).key
+    return { value: key in stored ? { value: stored[key], version: 1 } : { value: undefined, version: 0 } }
+  })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  // Each row's whole sentence; its hook's name is a run of its own inside it.
+  const rows = (await ui.findAll({ type: 'Text', text: /→ ./ })).map(t => t.text)
+  await ui.unmount()
+  expect(rows).toEqual([
+    'pull-request hold → asked for a fix, not a skill',
+    'spawn hold → asked for the brief template or its headings',
+    'commit hold → asked to fix the commit message',
+    'route-line hold ×3 → a route line loaded',
+  ])
 })

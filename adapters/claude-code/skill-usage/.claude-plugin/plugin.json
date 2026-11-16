@@ -1,6 +1,7 @@
 {
   "name": "skill-usage",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Live view of which skills load, why they load, and whether GOATED hook nudges and holds are followed",
+  "author": { "name": "ZakkFromSource" },
   "types": "./types/index.d.ts"
 }

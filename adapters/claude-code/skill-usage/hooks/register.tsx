@@ -3,23 +3,27 @@
 // result in a pane, the status line and `/skill-usage report`.
 //
 // The session's events live in $.state. Each finished main turn writes the
-// session's summary to $.store under its own key (`s:<session id>`), and the
-// all-time view is the sum of the other sessions' summaries plus this one,
-// live. Observing never breaks the conversation: a failure is kept in
+// session's summary to $.store under its own key (`s:<session id>`), and
+// rereads the others: the all-time view is the sum of the other sessions'
+// summaries, of the older sessions folded into one total (`older`), plus this
+// one, live. Observing never breaks the conversation: a failure is kept in
 // `lastError` and shown in the pane until the next successful save.
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface as Dollar, Register, SessionAppendInput } from 'claude-code'
 
 import type { AllTime, Available, SessionSummary, Tab, UsageEvent } from '../types'
-import { addSession, closeOpen, historyEvents, isObservedRow, mergeSummaries, rowEvents, short, summarize } from './classify'
+import { addSession, allTimeOf, closeOpen, historyEvents, isObservedRow, mergeSummaries, rowEvents, short, summarize } from './classify'
 import type { HistoryMessage } from './classify'
-import { allTimeTab, forgetPictures, PANE_COLUMNS, PREVIEW_MS, reportText, sessionTab, statusText, unusedTab } from './view'
-import type { View } from './view'
+import type { View } from './meaning'
+import { forgetPictures, PREVIEW_MS } from './picture'
+import { allTimeTab, PANE_COLUMNS, reportText, sessionTab, statusText, unusedTab } from './view'
 
 const PANE = 'skill-usage'
 const SESSION_KEY = 's:'
 const LEGACY_STORE_KEY = 'sessions' // an earlier layout kept every session under one key
+/** The total of the sessions folded out of the store once more than `MAX_SESSIONS` others were kept. */
+const OLDER_KEY = 'older'
 const MAX_EVENTS = 5000
 const MAX_SESSIONS = 300
 const OWN_SOURCES = new Set(['userSettings', 'projectSettings'])
@@ -65,8 +69,12 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     // Every hook hears a subagent's turn end too: it settles that subagent's nudges. Only the main loop's is saved.
     try {
-      await record($, [{ kind: 'turn-end', t: await $.clock.now(), ...(e.agentId ? { agent: e.agentId } : {}) }])
-      if (!e.agentId) await persist($, false)
+      await record($, [{ kind: 'turn-end', t: await $.clock.now(), reason: e.reason, ...(e.agentId ? { agent: e.agentId } : {}) }])
+      if (!e.agentId) {
+        await persist($, false)
+        // Sessions running beside this one store their turns too: reread them, so All time stays current.
+        await loadAllTime($, await claimSession($))
+      }
     } catch (error) {
       await noteError($, error)
     }
@@ -194,7 +202,13 @@ async function backfill($: Dollar) {
   await update($, events, () => rebuilt.slice(-MAX_EVENTS))
 }
 
-/** All-time totals from every other stored session, pruning the oldest past the cap. */
+/**
+ * All-time totals from every other stored session and the older sessions'
+ * total. Past the cap, the oldest sessions fold into that total: it is stored
+ * before their keys are removed, so a failure between the two can count a
+ * session twice but never lose one. Two sessions folding at the same moment
+ * can count the same session twice too.
+ */
 async function loadAllTime($: Dollar, id: string) {
   await $.store.delete(LEGACY_STORE_KEY)
   const keys = (await $.store.keys()).filter(k => k.startsWith(SESSION_KEY))
@@ -203,10 +217,14 @@ async function loadAllTime($: Dollar, id: string) {
     const value = (await $.store.get(key)) as Stored | undefined
     if (value) sessions.push([key, value])
   }
-  sessions.sort(([, a], [, b]) => b.t - a.t)
-  for (const [key] of sessions.slice(MAX_SESSIONS)) await $.store.delete(key)
-  const others = sessions.slice(0, MAX_SESSIONS).filter(([key]) => key !== SESSION_KEY + id)
-  await update($, allTime, () => others.reduce<AllTime | null>((acc, [, v]) => addSession(acc, closeOpen(v.summary)), null))
+  const older = ((await $.store.get(OLDER_KEY)) as AllTime | undefined) ?? null
+  const result = allTimeOf(sessions, older, MAX_SESSIONS, SESSION_KEY + id)
+  if (result.folded.length > 0) {
+    await $.store.set(OLDER_KEY, result.older)
+    for (const key of result.folded) await $.store.delete(key)
+  }
+  // Every write redraws the pane: rewrite only what changed, as most turns change no other session.
+  if (JSON.stringify(await read($, allTime)) !== JSON.stringify(result.total)) await update($, allTime, () => result.total)
 }
 
 /** This session so far: the stored baseline plus what was observed since. */
