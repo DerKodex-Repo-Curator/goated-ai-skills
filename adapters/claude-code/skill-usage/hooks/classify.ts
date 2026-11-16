@@ -22,6 +22,7 @@ import type {
   Route,
   RouterStatus,
   SessionSummary,
+  SubagentCounts,
   TimelineEntry,
   UsageEvent,
 } from '../types'
@@ -31,6 +32,8 @@ export const ROUTER = 'using-goated-ai-skills'
 export const ANY_SPECIALIST = '(any specialist)'
 /** The adapter's route-line hold asks for a route line, which no skill load settles. */
 export const ROUTE_LINE = '(route line)'
+/** Subagent counts before any subagent did anything. */
+export const NO_SUBAGENTS: Readonly<SubagentCounts> = { spawns: 0, starts: 0, bodyReads: 0 }
 
 // Hand-written hook messages, the first match winning within one paragraph of hook output.
 // `subagent-start` is a SubagentStart hook's contract for a subagent: recorded as its start, not as a nudge.
@@ -394,7 +397,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   const lastUsed: Record<string, number> = {}
   const refs: Refs = {}
   let refsUnloaded = 0
-  const measures: Required<Measures> = { routes: {}, holds: {}, overrides: {}, subagents: { spawns: 0, starts: 0, bodyReads: 0 } }
+  const measures: Required<Measures> = { routes: {}, holds: {}, overrides: {}, subagents: { ...NO_SUBAGENTS } }
   const timeline: TimelineEntry[] = []
   let loaded = new Set<string>()
   let turnNamed = new Set<string>()
@@ -568,7 +571,7 @@ function addMeasures(into: Measures, from: Measures) {
   addFlat((into.routes ??= {}), from.routes)
   addFlat((into.holds ??= {}), from.holds)
   addFlat((into.overrides ??= {}), from.overrides)
-  addFlat((into.subagents ??= { spawns: 0, starts: 0, bodyReads: 0 }), from.subagents)
+  addFlat((into.subagents ??= { ...NO_SUBAGENTS }), from.subagents)
 }
 
 function addCounts<K extends string>(into: Record<string, Counts<K>>, from: Record<string, Counts<K>>) {

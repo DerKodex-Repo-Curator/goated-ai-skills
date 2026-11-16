@@ -13,7 +13,7 @@
 import type { ElementTable, RenderSurface } from 'claude-code'
 
 import type { AllTime, Available, Counts, Measures, Origin, Outcome, Refs, RouteForm, SessionSummary, TimelineEntry } from '../types'
-import { ANY_SPECIALIST, ORIGINS, OUTCOMES, ROUTE_LINE, total } from './classify'
+import { ANY_SPECIALIST, NO_SUBAGENTS, ORIGINS, OUTCOMES, ROUTE_LINE, total } from './classify'
 
 /** Where a drawing goes: the surface's elements and its name. */
 export type View = { ui: ElementTable<RenderSurface>; surface: RenderSurface }
@@ -1047,14 +1047,18 @@ function feedRow(entry: TimelineEntry): { mark: string; kind: string; runs: Run[
   }
 }
 
+/** Each count of a table that is not zero, as `<n> <label>`, joined by commas; empty when none is. */
+const countWords = (c: Counts<string> | undefined, label: (k: string) => string = k => k) =>
+  Object.entries(c ?? {}).flatMap(([k, n]) => (n ? [`${n} ${label(k)}`] : [])).join(', ')
+const routeWords = (m: Measures) => countWords(m.routes, k => ROUTE_FORM[k as RouteForm] ?? k)
+const holdWords = (m: Measures) => countWords(m.holds)
+
 /**
  * Route lines, adapter holds, overrides and subagents in one line of words,
  * each part only when it has a count; undefined when none has.
  */
 function measuresText(m: Measures): string | undefined {
-  const counts = (c: Counts<string> | undefined, label: (k: string) => string) =>
-    Object.entries(c ?? {}).flatMap(([k, n]) => (n ? [`${n} ${label(k)}`] : [])).join(', ')
-  const sub = m.subagents ?? { spawns: 0, starts: 0, bodyReads: 0 }
+  const sub = m.subagents ?? NO_SUBAGENTS
   const subParts = [
     ...(sub.spawns ? [`${sub.spawns} started`] : []),
     ...(sub.starts ? [plural(sub.starts, 'start message')] : []),
@@ -1062,8 +1066,8 @@ function measuresText(m: Measures): string | undefined {
   ]
   const overrides = total(m.overrides)
   const parts = [
-    ['Routes', counts(m.routes, k => ROUTE_FORM[k as RouteForm] ?? k)],
-    ['Adapter holds', counts(m.holds, k => k)],
+    ['Routes', routeWords(m)],
+    ['Adapter holds', holdWords(m)],
     ['Overrides', overrides ? String(overrides) : ''],
     ['Subagents', subParts.join(', ')],
   ].flatMap(([name, text]) => (text ? [`${name}: ${text}`] : []))
@@ -1315,13 +1319,11 @@ export function reportText(all: AllTime, avail: Available | null): string {
   for (const [skill, c] of Object.entries(all.loads).sort(([, x], [, y]) => total(y) - total(x))) {
     out.push(`- ${skill}: ${total(c)} (${ORIGINS.filter(o => c[o]).map(o => `${BECAUSE[o]} ${c[o]}`).join(' · ')})`)
   }
-  const forms = Object.entries(all.routes ?? {}).flatMap(([k, n]) => (n ? [`${n} ${ROUTE_FORM[k as RouteForm] ?? k}`] : []))
-  const holds = Object.entries(all.holds ?? {}).flatMap(([k, n]) => (n ? [`${n} ${k}`] : []))
   const overrides = Object.entries(all.overrides ?? {}).sort(([, x], [, y]) => y - x).map(([phrase, n]) => `"${phrase}" ${n}`)
-  const sub = all.subagents ?? { spawns: 0, starts: 0, bodyReads: 0 }
+  const sub = all.subagents ?? NO_SUBAGENTS
   out.push('', '## Routes and adapter holds', '')
-  out.push(`- Route lines: ${forms.join(', ') || 'none'}`)
-  out.push(`- Adapter holds: ${holds.join(', ') || 'none'}`)
+  out.push(`- Route lines: ${routeWords(all) || 'none'}`)
+  out.push(`- Adapter holds: ${holdWords(all) || 'none'}`)
   out.push(`- Overrides: ${overrides.join(' · ') || 'none'}`)
   out.push(`- Subagents: ${sub.spawns} started · ${plural(sub.starts, 'start message')} · ${sub.bodyReads} skill bodies read`)
   const refs = refRows(all.refs)
