@@ -50,7 +50,8 @@ class Session:
         entry.setdefault("parentUuid", self._last_uuid)
         entry.setdefault("isSidechain", False)
         entry.setdefault("sessionId", self.session_id)
-        if self.prompt_id and entry.get("type") in {"user", "assistant"}:
+        if self.prompt_id and entry.get("type") == "user":
+            # Claude Code records promptId on user entries only.
             entry.setdefault("promptId", self.prompt_id)
         self._last_uuid = entry["uuid"]
         with self.transcript.open("a", encoding="utf-8") as handle:
@@ -60,8 +61,13 @@ class Session:
         with self.transcript.open("a", encoding="utf-8") as handle:
             handle.write(text + "\n")
 
-    def prompt(self, text: str, *, hook: bool = True) -> str:
-        """Record a typed user prompt; run the user-prompt hook first."""
+    def prompt(self, text: str, *, hook: bool = True, **fields) -> str:
+        """Record a typed user prompt; run the user-prompt hook first.
+
+        By default the entry carries `origin.kind: human`, as the desktop app
+        records typed prompts. Pass `origin=None` for the bare shape `claude -p`
+        records, or other `fields` to imitate prompts Claude Code writes itself.
+        """
 
         self.prompt_id = str(uuid.uuid4())
         output = ""
@@ -69,10 +75,47 @@ class Session:
             output = self.hook(
                 "UserPromptSubmit", prompt=text, prompt_id=self.prompt_id
             )
+        entry = {"type": "user", "origin": {"kind": "human"}, "turnOrigin": "human"}
+        entry.update(fields)
+        if entry.get("origin") is None:
+            entry.pop("origin")
+        entry["message"] = {"role": "user", "content": text}
+        self._append(entry)
+        return output
+
+    def slash(self, skill: str, args: str = "") -> str:
+        """Record a skill the user invoked by typing `/<skill>`, as Claude Code does."""
+
+        text = (
+            f"<command-message>{skill}</command-message>\n"
+            f"<command-name>/{skill}</command-name>\n"
+            f"<command-args>{args}</command-args>"
+        )
+        output = self.prompt(text)
         self._append(
-            {"type": "user", "message": {"role": "user", "content": text}}
+            {
+                "type": "user",
+                "isMeta": True,
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": f"Base directory for this skill: {skill}"}
+                    ],
+                },
+            }
         )
         return output
+
+    def peer(self, text: str) -> str:
+        """Record a message another Claude session sent, which nobody typed here."""
+
+        return self.prompt(
+            f'<cross-session-message from="local_peer" from-name="Peer">\n{text}\n'
+            "</cross-session-message>",
+            origin=None,
+            promptSource="sdk",
+            turnOrigin="sdk",
+        )
 
     def notify(self, result: str) -> str:
         """Record a background-task notification, which Claude Code submits as a prompt."""

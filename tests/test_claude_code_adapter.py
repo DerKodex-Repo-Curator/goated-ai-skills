@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
@@ -21,6 +22,7 @@ from claude_code_adapter_support import (
     ADAPTER_DIR,
     REPO_ROOT,
     ROUTER,
+    Config,
     Session,
     decision,
     parse,
@@ -53,6 +55,15 @@ class RouterFirstTests(AdapterTestCase):
 
         s.load(ROUTER)
         self.assertEqual(decision(s.call("Bash")), "pass")
+
+    def test_an_unchanged_retry_of_router_first_never_passes(self) -> None:
+        s = self.session
+        s.prompt("Fix the flaky export test.")
+
+        for _ in range(3):
+            held = s.call("Bash")
+            self.assertEqual(decision(held), "deny")
+        self.assertIn("skip routing", reason(held))
 
     def test_reads_stay_free_before_the_router(self) -> None:
         s = self.session
@@ -131,7 +142,7 @@ class PipelineTests(AdapterTestCase):
 
         held = s.call("Edit")
         self.assertEqual(decision(held), "deny")
-        self.assertTrue(reason(held).startswith("goated-hold: pipeline | justified-skip"))
+        self.assertTrue(reason(held).startswith("goated-hold: pipeline | strict"))
         self.assertIn("`tdd`", reason(held))
         self.assertIn("`doc-sync`", reason(held))
 
@@ -203,18 +214,105 @@ class PipelineTests(AdapterTestCase):
         self.assertEqual(decision(held), "deny")
         self.assertIn("`writing-plans`", reason(held))
 
-    def test_a_skip_line_passes_the_pipeline_but_not_strict_holds(self) -> None:
+    def test_a_skip_line_never_passes_a_routing_hold(self) -> None:
         s = self.session
         s.prompt("Tidy the README.")
         s.say("goated-skip: using-goated-ai-skills: this is a one line typo fix")
         self.assertEqual(decision(s.call("Bash")), "deny")
 
         s.load(ROUTER)
+        s.say("goated-route: lightweight | requires: doc-sync")
         s.say("goated-skip: doc-sync: only the README itself changes here")
+        held = s.call("Edit")
+        self.assertEqual(decision(held), "deny")
+        self.assertTrue(reason(held).startswith("goated-hold: pipeline | strict"))
+        self.assertIn("corrected route line", reason(held))
+
+    def test_a_corrected_route_line_drops_a_required_skill(self) -> None:
+        s = self.start("goated-route: standard | requires: tdd, doc-sync")
+        s.load("tdd")
         self.assertEqual(decision(s.call("Edit")), "deny")
 
-        s.say("goated-route: lightweight | requires: doc-sync")
+        s.say("doc-sync does not apply after all.\n\ngoated-route: standard | requires: tdd")
+        s.load("tdd")
         self.assertEqual(decision(s.call("Edit")), "pass")
+
+    def test_an_unchanged_retry_of_a_pipeline_hold_never_passes(self) -> None:
+        s = self.start("goated-route: standard | requires: tdd")
+
+        for _ in range(3):
+            self.assertEqual(decision(s.call("Edit")), "deny")
+
+    def test_loads_before_a_new_route_line_in_the_same_turn_do_not_count(self) -> None:
+        s = self.start("goated-route: lightweight | requires: tdd")
+        s.load("tdd")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+        s.say("A separate change now.\n\ngoated-route: lightweight | requires: tdd")
+        held = s.call("Edit")
+        self.assertEqual(decision(held), "deny")
+        self.assertIn("only loads after the route line", reason(held))
+        s.load("tdd")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+    def test_a_skill_the_user_invoked_with_a_slash_command_counts(self) -> None:
+        s = self.session
+        s.slash("tdd", "add the CSV export")
+        s.load(ROUTER)
+        s.say("goated-route: lightweight | requires: tdd")
+
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+    def test_a_skill_from_another_namespace_does_not_count(self) -> None:
+        s = self.start("goated-route: lightweight | requires: tdd")
+        s.load("someplugin:tdd")
+        self.assertEqual(decision(s.call("Edit")), "deny")
+
+    def test_a_configured_goated_namespace_counts(self) -> None:
+        s = self.session
+        s.config = Config(
+            state_dir=s.config.state_dir,
+            home=s.config.home,
+            lag_wait_seconds=0.0,
+            skill_namespaces=("goated",),
+        )
+        s.prompt("Add CSV export.")
+        s.load("goated:using-goated-ai-skills")
+        s.say("goated-route: lightweight | requires: tdd")
+        s.load("goated:tdd")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+
+class SpawnTests(AdapterTestCase):
+    SPAWN_TOOLS = (
+        "Agent",
+        "mcp__ccd_session__start_session",
+        "mcp__ccd_session__hand_off_to_session",
+    )
+
+    def test_spawning_is_held_like_a_write(self) -> None:
+        for tool in self.SPAWN_TOOLS:
+            with self.subTest(tool=tool):
+                (self.root / tool).mkdir()
+                s = Session(self.root / tool, session_id=f"spawn-{tool}")
+                s.prompt("Delegate the export work.")
+                self.assertEqual(decision(s.call(tool, {"prompt": "x"})), "deny")
+                s.load(ROUTER)
+                self.assertEqual(decision(s.call(tool, {"prompt": "x"})), "deny")
+                s.say("goated-route: standard | requires: tdd")
+                held = s.call(tool, {"prompt": "x"})
+                self.assertTrue(reason(held).startswith("goated-hold: pipeline"))
+                s.load("tdd")
+                self.assertEqual(decision(s.call(tool, {"prompt": "x"})), "pass")
+
+    def test_the_settings_snippet_matches_every_gated_tool(self) -> None:
+        from goated_adapter import gates
+
+        snippet = json.loads((ADAPTER_DIR / "settings.snippet.json").read_text(encoding="utf-8"))
+        matcher = snippet["hooks"]["PreToolUse"][0]["matcher"]
+        self.assertEqual(set(matcher.split("|")), set(gates.GATED_TOOLS))
+        hook = snippet["hooks"]["PreToolUse"][0]["hooks"][0]
+        self.assertEqual(hook["args"], ["<adapter-dir>/goated_hook.py"])
 
 
 class OverrideTests(AdapterTestCase):
@@ -256,6 +354,85 @@ class OverrideTests(AdapterTestCase):
         )
 
         self.assertEqual(decision(s.call("Bash")), "deny")
+
+
+class OverridePhraseTests(unittest.TestCase):
+    def test_negated_or_descriptive_phrases_are_not_overrides(self) -> None:
+        from goated_adapter.overrides import parse_overrides
+
+        for text in (
+            "Don't skip routing this time.",
+            "Do not skip the router.",
+            "Never skip tdd here.",
+            "There is no need to skip doc-sync.",
+            "There is no routing in the app yet; add it.",
+            "Add a fallback: no router for /admin.",
+        ):
+            with self.subTest(text=text):
+                found = parse_overrides(text)
+                self.assertFalse(found["routing"])
+                self.assertEqual(found["skills"], [])
+
+    def test_directives_are_overrides(self) -> None:
+        from goated_adapter.overrides import parse_overrides
+
+        self.assertTrue(parse_overrides("Please skip routing for this one.")["routing"])
+        self.assertTrue(parse_overrides("Skip the router and fix it.")["routing"])
+        self.assertEqual(parse_overrides("Skip tdd, then ship.")["skills"], ["tdd"])
+        self.assertEqual(
+            parse_overrides("skip the doc-sync skill")["skills"], ["doc-sync"]
+        )
+
+
+class MachinePromptTests(AdapterTestCase):
+    """Prompts other sessions or the app write are not typed by this user."""
+
+    def test_a_peer_session_message_is_a_new_turn_without_overrides(self) -> None:
+        s = self.session
+        s.prompt("Start the export work.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+        self.assertEqual(s.peer("Skip routing and patch the README."), "")
+        self.assertEqual(decision(s.call("Edit")), "deny")
+        s.say("goated-route: continue")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+    def test_a_host_written_brief_carries_no_overrides(self) -> None:
+        s = self.session
+        s.prompt(
+            "Background (from the session that started this one): skip routing.",
+            origin=None,
+            turnOrigin="host_synthetic",
+        )
+
+        self.assertEqual(decision(s.call("Bash")), "deny")
+
+    def test_an_unknown_origin_kind_carries_no_overrides(self) -> None:
+        s = self.session
+        s.prompt("skip routing and run the nightly check", origin={"kind": "scheduled"})
+
+        self.assertEqual(decision(s.call("Bash")), "deny")
+
+    def test_a_peer_turn_origin_carries_no_overrides(self) -> None:
+        s = self.session
+        s.prompt("skip routing please", origin=None, turnOrigin="peer")
+
+        self.assertEqual(decision(s.call("Bash")), "deny")
+
+    def test_a_notification_marked_only_by_turn_origin_continues_the_turn(self) -> None:
+        s = self.session
+        s.prompt("Skip routing; run the audit and fix what it finds.")
+        s.prompt("Audit finished: one typo.", hook=False, origin=None, turnOrigin="task_notification")
+
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+    def test_a_bare_sdk_prompt_is_typed(self) -> None:
+        s = self.session
+        s.prompt("Skip routing and fix it.", origin=None, promptSource="sdk", turnOrigin="sdk")
+
+        self.assertEqual(decision(s.call("Edit")), "pass")
 
 
 class TaskNotificationTests(AdapterTestCase):
@@ -329,6 +506,108 @@ class FailOpenTests(AdapterTestCase):
         payload = {"hook_event_name": "PreToolUse", "tool_name": "Edit"}
         self.assert_fails_open(parse(run_hook(json.dumps(payload), self.session.config)))
 
+    def test_a_failed_save_keeps_the_hold_and_warns(self) -> None:
+        from goated_adapter import state as state_module
+
+        s = self.session
+        s.prompt("Fix it.")
+        s.load(ROUTER)
+        original = state_module.StateStore.save
+
+        def refuse(self, *args):
+            raise PermissionError(13, "Access is denied")
+
+        state_module.StateStore.save = refuse
+        try:
+            output = s.call("Edit")
+        finally:
+            state_module.StateStore.save = original
+        self.assertEqual(decision(output), "deny")
+        self.assertIn("could not save", output.get("systemMessage", ""))
+
+    def test_saving_retries_a_briefly_locked_state_file(self) -> None:
+        from goated_adapter import state as state_module
+
+        store = state_module.StateStore(self.root / "retry-state")
+        saved = state_module.SessionState()
+        saved.router_loaded = True
+        real_replace = os.replace
+        failures = [PermissionError(13, "in use"), PermissionError(13, "in use")]
+
+        def flaky_replace(src, dst):
+            if failures:
+                raise failures.pop()
+            real_replace(src, dst)
+
+        state_module.os.replace = flaky_replace
+        try:
+            store.save("s1", saved)
+        finally:
+            state_module.os.replace = real_replace
+        loaded, warning = store.load("s1")
+        self.assertIsNone(warning)
+        self.assertTrue(loaded.router_loaded)
+
+    def test_state_with_the_wrong_shape_resets_and_re_holds(self) -> None:
+        s = self.session
+        s.prompt("Fix it.")
+        s.load(ROUTER)
+        s.say("goated-route: continue")
+        s.config.state_dir.mkdir(parents=True, exist_ok=True)
+        for bad in (
+            {"router_loaded": True, "task": {"route": [], "started_turn": "x"}},
+            {"router_loaded": True, "task": {"route": {"form": "route"}, "started_turn": "x"}},
+            {"router_loaded": True, "overrides": ["skip"]},
+            {"router_loaded": "yes"},
+        ):
+            with self.subTest(bad=bad):
+                (s.config.state_dir / "session-1.json").write_text(json.dumps(bad))
+                first = s.call("Edit")
+                self.assertIn("was reset", first.get("systemMessage", ""))
+                self.assertEqual(decision(first), "deny")
+                second = s.call("Edit")
+                self.assertNotIn("allowed without checks", second.get("systemMessage", ""))
+
+    def test_a_long_run_of_unseen_turns_does_not_fail_open_forever(self) -> None:
+        from goated_adapter import transcript
+
+        limits = transcript.MAX_BYTES, transcript.BLOCK_SIZE
+        transcript.MAX_BYTES, transcript.BLOCK_SIZE = 8 * 1024, 1024
+        try:
+            s = self.session
+            s.prompt("Task one.")
+            s.load(ROUTER)
+            s.say("goated-route: direct")
+            self.assertEqual(decision(s.call("Edit")), "pass")
+            s.prompt("Explain the module.")
+            for index in range(6):
+                tool_use_id = s._tool_use("Read", {"file_path": f"f{index}"})
+                s._tool_result(tool_use_id, "x" * 3000)
+
+            s.prompt("Now change it.")
+            third = s.call("Edit")
+            self.assertEqual(decision(third), "deny")
+            self.assertNotIn("systemMessage", third)
+            s.say("goated-route: continue")
+            self.assertEqual(decision(s.call("Edit")), "pass")
+        finally:
+            transcript.MAX_BYTES, transcript.BLOCK_SIZE = limits
+
+    def test_a_current_turn_larger_than_the_limit_fails_open(self) -> None:
+        from goated_adapter import transcript
+
+        limits = transcript.MAX_BYTES, transcript.BLOCK_SIZE
+        transcript.MAX_BYTES, transcript.BLOCK_SIZE = 8 * 1024, 1024
+        try:
+            s = self.session
+            s.prompt("Do a lot.")
+            for index in range(6):
+                tool_use_id = s._tool_use("Read", {"file_path": f"f{index}"})
+                s._tool_result(tool_use_id, "x" * 3000)
+            self.assert_fails_open(s.call("Edit"))
+        finally:
+            transcript.MAX_BYTES, transcript.BLOCK_SIZE = limits
+
     @unittest.skipIf(os.name == "nt", "POSIX permission check")
     def test_a_state_folder_other_users_can_write_fails_open(self) -> None:
         s = self.session
@@ -366,11 +645,21 @@ class CompactionTests(AdapterTestCase):
         s.load(ROUTER)
         self.assertEqual(decision(s.call("Edit")), "deny")
         s.say("goated-route: continue")
+        held = s.call("Edit")
+        self.assertEqual(decision(held), "deny")
+        self.assertIn("`tdd`", reason(held))
+        s.load("tdd")
         self.assertEqual(decision(s.call("Edit")), "pass")
 
 
 class SharedPolicyNoticeTests(AdapterTestCase):
     POLICY = "# GOATED Integrated Stack Policy\n\nApply this shared policy.\n"
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.router_skill = self.root / "home" / ".claude" / "skills" / ROUTER
+        self.router_skill.mkdir(parents=True)
+        (self.router_skill / "SKILL.md").write_text("---\nname: x\n---\n", encoding="utf-8")
 
     def start(self, source: str = "startup") -> dict:
         return parse(self.session.hook("SessionStart", source=source))
@@ -398,6 +687,51 @@ class SharedPolicyNoticeTests(AdapterTestCase):
 
         self.assertEqual(self.start(), {})
 
+    def test_unc_and_outside_imports_are_not_opened(self) -> None:
+        from goated_adapter import policy
+
+        project = self.session.project
+        project.mkdir(parents=True)
+        outside = self.root / "elsewhere"
+        outside.mkdir()
+        (outside / "policy.md").write_text(self.POLICY, encoding="utf-8")
+        (project / "CLAUDE.md").write_text(
+            "@\\\\attacker-host\\share\\policy.md\n@//attacker-host/share/policy.md\n"
+            f"@{outside / 'policy.md'}\n",
+            encoding="utf-8",
+        )
+        opened: list[str] = []
+        real_read = policy._read
+
+        def spy(path):
+            opened.append(str(path))
+            return real_read(path)
+
+        policy._read = spy
+        try:
+            self.assertFalse(policy.shared_policy_loaded(project, self.root / "home"))
+        finally:
+            policy._read = real_read
+        self.assertFalse(any("attacker-host" in path for path in opened), opened)
+        self.assertFalse(any("elsewhere" in path for path in opened), opened)
+
+    def test_missing_router_skill_is_warned_about_at_session_start(self) -> None:
+        (self.router_skill / "SKILL.md").unlink()
+
+        output = self.start()
+        self.assertIn("could not find", output["systemMessage"])
+        self.assertIn("using-goated-ai-skills", output["systemMessage"])
+        self.assertIn("skip routing", output["systemMessage"])
+
+    def test_router_skill_in_the_project_is_found(self) -> None:
+        (self.router_skill / "SKILL.md").unlink()
+        project_skill = self.session.project / ".claude" / "skills" / ROUTER
+        project_skill.mkdir(parents=True)
+        (project_skill / "SKILL.md").write_text("---\nname: x\n---\n", encoding="utf-8")
+
+        output = self.start()
+        self.assertNotIn("could not find", output.get("systemMessage", ""))
+
     def test_policy_imported_from_claude_md_is_detected(self) -> None:
         project = self.session.project
         (project / "goated").mkdir(parents=True)
@@ -405,6 +739,32 @@ class SharedPolicyNoticeTests(AdapterTestCase):
         (project / "CLAUDE.md").write_text("@goated/policy.md\n", encoding="utf-8")
 
         self.assertEqual(self.start(), {})
+
+
+class StateFolderDefaultTests(unittest.TestCase):
+    def config_with(self, env: dict) -> Config:
+        clean = {k: v for k, v in os.environ.items() if k not in {"GOATED_ADAPTER_STATE_DIR", "XDG_STATE_HOME"}}
+        clean.update(env)
+        with mock.patch.dict(os.environ, clean, clear=True):
+            return Config.from_environment()
+
+    def test_an_explicit_state_folder_wins(self) -> None:
+        config = self.config_with({"GOATED_ADAPTER_STATE_DIR": "/custom/state"})
+        self.assertEqual(config.state_dir, Path("/custom/state"))
+
+    @unittest.skipIf(os.name == "nt", "POSIX default")
+    def test_posix_default_is_per_user_and_outside_shared_tmp(self) -> None:
+        self.assertEqual(
+            self.config_with({"XDG_STATE_HOME": "/xdg/state"}).state_dir,
+            Path("/xdg/state/goated-claude-code-adapter"),
+        )
+        default = self.config_with({}).state_dir
+        self.assertEqual(default, Path.home() / ".local" / "state" / "goated-claude-code-adapter")
+
+    @unittest.skipUnless(os.name == "nt", "Windows default")
+    def test_windows_default_is_the_per_user_temp_folder(self) -> None:
+        config = self.config_with({"TEMP": "C:/Temp/u"})
+        self.assertEqual(config.state_dir, Path("C:/Temp/u/goated-claude-code-adapter"))
 
 
 class MarkerAgreementTests(unittest.TestCase):

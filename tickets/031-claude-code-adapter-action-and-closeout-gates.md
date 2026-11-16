@@ -32,6 +32,19 @@ Extend the adapter with these gates, none of which allows a free retry.
 - `handoff` when work is left unfinished;
 - the `software-design-principles` red-flags reference when design applied.
 
+**Shell writes:** a `Bash` or `PowerShell` command that writes files meets the
+same route-line and pipeline gates as an `Edit` (maintainer decision,
+2026-11-16). Ticket 030 holds shell commands only at router-first. Recognize at
+least:
+
+- output redirects (`>`, `>>`) and `tee`;
+- in-place edits such as `sed -i`;
+- `Set-Content`, `Out-File`, and `Add-Content`;
+- `cp`, `mv`, and `rm`, and their PowerShell equivalents;
+- `git apply` and `git checkout -- <path>`.
+
+Reads, test runs, and `git status` stay free.
+
 **Rules for every hold:**
 
 - A hold stops firing once its skill has been applied for that action.
@@ -62,7 +75,9 @@ instead of copying them.
   - [ ] a commit message breaking the `commit-message` contract is held;
   - [ ] a user-typed commit message stands the commit hold down;
   - [ ] a hold does not refire after compliance;
-  - [ ] action gates apply in subagents.
+  - [ ] action gates apply in subagents;
+  - [ ] each shell-write pattern listed above meets the route-line and
+        pipeline holds, while reads, test runs, and `git status` stay free.
 - [ ] The tests run in CI on Python 3.11 and 3.14.
 - [ ] Hold messages follow one documented format that the mod can parse.
 

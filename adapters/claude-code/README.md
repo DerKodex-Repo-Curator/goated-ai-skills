@@ -1,16 +1,16 @@
 # GOATED Adapter For Claude Code
 
-An optional set of Claude Code hooks that holds writes and commands until the
-GOATED router and the skills its route requires have loaded in the current
-task. It enforces the portable contracts in
+An optional set of Claude Code hooks that holds writes, spawns, and commands
+until the GOATED router and the skills its route requires have loaded in the
+current task. It enforces the portable contracts in
 `skills/agent-workflows/using-goated-ai-skills/SKILL.md`, `stack/AGENTS.md`,
 and `stack/fixtures/markers/README.md`; it adds no rules of its own
 ([ADR 0003](../../docs/adr/0003-opt-in-framework-enforcement-adapters.md)).
 
 Skills work the same without it. Install it only if you want enforcement.
 
-This release has the **routing gates** (Ticket 030). Commit, PR, spawn,
-design, security, and closeout gates arrive in Ticket 031.
+This release has the **routing gates** (Ticket 030). Commit, PR, spawn-brief,
+design, security, shell-write, and closeout gates arrive in Ticket 031.
 
 ## Requirements
 
@@ -69,32 +69,46 @@ with every other hook you have.
 
 1. Remove the three adapter entries from the settings file.
 2. Delete the copied `claude-code/` folder.
-3. Delete the state folder: `goated-claude-code-adapter/` in the operating
-   system's temporary folder, or the folder `GOATED_ADAPTER_STATE_DIR` names.
+3. Delete the state folder `goated-claude-code-adapter/` (see [State](#state)).
 
 Skills keep working unchanged.
 
 ## What It Holds
 
 The rule table lives in [`goated_adapter/gates.py`](goated_adapter/gates.py).
+Every gate is strict: a hold clears only on proof of use or a typed user
+override.
 
-| Gate | Holds | Clears when | Kind |
-| --- | --- | --- | --- |
-| `router-first` | Writes and commands while the router has not loaded in this session, or since the last compaction | `using-goated-ai-skills` loads with the Skill tool | strict |
-| `route-line` | The first write after each user prompt until the current turn has a valid `goated-route:` line; also `goated-route: continue` when the session has no task to continue | A valid route line appears in the turn | strict |
-| `pipeline` | Writes while a `requires:` skill of the current task has not loaded | Each listed skill loads, or has a `goated-skip: <skill>: <reason>` line | justified-skip |
+| Gate | Holds | Clears when |
+| --- | --- | --- |
+| `router-first` | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction | `using-goated-ai-skills` loads |
+| `route-line` | The first write or spawn after each user prompt until the current turn has a valid `goated-route:` line; also `goated-route: continue` when the session has no task to continue | A valid route line appears in the turn |
+| `pipeline` | Writes and spawns while a `requires:` skill of the current task has not loaded | Each listed skill loads, or a corrected route line drops it |
 
 - **Writes** are `Edit`, `Write`, `MultiEdit`, and `NotebookEdit`.
-  **Commands** are `Bash` and `PowerShell`. Every other tool, including reads
-  and the Skill tool, is never held.
+  **Spawns** are `Agent`, `mcp__ccd_session__start_session`, and
+  `mcp__ccd_session__hand_off_to_session`; they hand work on, so they are held
+  like writes. **Commands** are `Bash` and `PowerShell`. Every other tool,
+  including reads and the Skill tool, is never held.
 - **A task** starts at the turn whose route line is not `continue` and runs
-  through later `goated-route: continue` turns. Loads and skips count for the
-  task they happen in. A new route starts a new task, so a load from an
-  earlier task never satisfies it. `goated-route: direct` exempts the task from
-  the pipeline gate.
-- **Proof of use** is a successful Skill-tool load read from the transcript:
-  a `Skill` tool call whose result is not an error. Naming a skill in text is
-  not proof.
+  through later `goated-route: continue` turns. Only loads after the route line
+  that starts a task count for it, so a load from an earlier task never
+  satisfies a new one, even within one turn. `goated-route: direct` exempts the
+  task from the pipeline gate.
+- **Dropping a required skill.** A `goated-skip` line does not clear a routing
+  hold. If a route names a skill that does not apply, the agent writes a
+  corrected route line without it; the last route line wins, as the shared
+  policy says.
+- **Compaction** clears the proof: the router and the task's required skills
+  must load again. The route itself carries over, so `goated-route: continue`
+  still works.
+- **Proof of use** is a successful Skill-tool load read from the transcript (a
+  `Skill` tool call whose result is not an error), or a skill the user invoked
+  by typing `/<skill>`. Naming a skill in text is not proof. A load counts by
+  its bare name only: `someplugin:tdd` does not satisfy `requires: tdd`. If you
+  installed GOATED as a Claude Code plugin, set `GOATED_ADAPTER_SKILL_NAMESPACES`
+  to its namespace (comma-separated for several), for example in the settings
+  file's `env` block.
 - **No free retry.** Every hold is decided from the transcript, so repeating a
   held call unchanged gives the same answer until the proof appears.
 
@@ -102,27 +116,37 @@ A held call returns its reason to the agent. The first line names the gate and
 its kind, and the rest says what to do:
 
 ```text
-goated-hold: <gate> | <strict|justified-skip>
+goated-hold: <gate> | strict
 <what the agent must do>
 ```
 
-Ticket 031 fixes this as the stable format the skill-usage mod parses.
+Ticket 031 adds justified-skip holds and fixes this as the stable format the
+skill-usage mod parses.
 
 ## User Overrides
 
-The user-prompt hook reads only what the user typed, so text an agent writes
-never counts. An override applies to the turn of the prompt that contains it.
-Matching ignores case and harness `<system-reminder>` blocks.
+Overrides come only from prompts a person typed. The user-prompt hook records
+the phrases below, and the gates apply them only to the turn that prompt
+opened, after checking the transcript's record of who wrote it. Text an agent
+writes never counts. Matching ignores case and harness `<system-reminder>`
+blocks, and a phrase negated just before it, such as "don't skip routing",
+"never skip tdd", or "no need to skip doc-sync", is not an override.
 
 | Typed phrase | Effect for that turn |
 | --- | --- |
-| `skip routing`, `skip the router`, `no routing` | Stands down `router-first`, `route-line`, and `pipeline` |
+| `skip routing`, `skip the router` | Stands down `router-first`, `route-line`, and `pipeline` |
 | `skip <skill>`, `skip the <skill> skill` | Stands down the `pipeline` requirement for that skill; `skip using-goated-ai-skills` also stands down `router-first` |
 
-Claude Code also submits some prompts itself, such as the
-`<task-notification>` that reports a finished background task. Those carry
-agent output, so they never yield overrides, and they do not start a new turn:
-the typed prompt's route line and overrides still cover the work that follows.
+Claude Code also submits prompts nobody typed in this session:
+
+- **Background results**, such as the `<task-notification>` that reports a
+  finished background task, or a desktop-app side-session event. They carry
+  agent output, so they never yield overrides, and they do not start a new
+  turn: the typed prompt's route line and overrides still cover what follows.
+- **Requests from elsewhere**, such as a message from another Claude session,
+  a brief from the session that started this one, or any prompt whose recorded
+  origin is not a person. They start a new turn, which needs its own route
+  line, and never carry overrides.
 
 Claude Code shows a short notice when the adapter records an override. The
 phrase set lives in [`goated_adapter/overrides.py`](goated_adapter/overrides.py);
@@ -133,6 +157,16 @@ change it and this table together.
 A hook call from inside a subagent carries `agent_id`. The routing gates skip
 those calls, because the parent's brief carries the route.
 
+## Session Start Notices
+
+At the first session start the adapter says once, in a notice you see and in
+the agent's context, when:
+
+- the GOATED shared policy is not in any instruction file Claude Code loads;
+- the `using-goated-ai-skills` skill is not among your user, project, or
+  plugin skills. Without it, router-first never clears; type `skip routing` in
+  a prompt to proceed, or install the router.
+
 ## Failing Open
 
 The adapter never blocks because of its own failure. It lets the call through
@@ -140,38 +174,48 @@ and shows a warning that starts `GOATED Claude Code adapter:` when:
 
 - the hook input is not readable JSON or lacks `session_id` or
   `transcript_path`;
-- the transcript cannot be read, or the current turn starts more than 64 MB
-  from its end;
+- the transcript cannot be read, or the current turn alone is larger than the
+  64 MB read limit. Older turns beyond the limit are simply not read, as if
+  they had been seen;
 - the transcript has not caught up with the call being judged. Claude Code
   writes the transcript asynchronously, so the hook waits up to 1.5 seconds
   for the call's own `tool_use` entry first (see [Latency](#latency));
-- the adapter hits an internal error.
+- the adapter hits an internal error;
+- on macOS and Linux, its state folder is a link, belongs to another user, or
+  is writable by others, because planted state there could make holds pass.
 
-Unreadable saved state is reset with a warning; a reset can only re-hold, never
-pass. On macOS and Linux the adapter also fails open, with a warning, when its
-state folder is a link, belongs to another user, or is writable by others,
-because planted state there could make holds pass.
+Saved state that cannot be read, or has an unexpected shape, is reset with a
+warning; a reset can only re-hold, never pass. If saving state fails, for
+example while a parallel hook has the file open on Windows, the hold decision
+still stands and a warning says the state was not saved.
 
 ## State
 
-One small JSON file per session in `goated-claude-code-adapter/` under the
-operating system's temporary folder, or under `GOATED_ADAPTER_STATE_DIR` when
-set. It holds the current task's route, loads, and skip reasons, whether the
-router loaded, the last turn seen, and the latest typed overrides. It holds no
-prompt or reply text beyond the short override phrases.
+One small JSON file per session in a `goated-claude-code-adapter/` folder:
+
+- on macOS and Linux, under `$XDG_STATE_HOME`, or `~/.local/state` when that
+  is not set, rather than the shared `/tmp`, so another local user cannot
+  pre-create it;
+- on Windows, under the per-user temporary folder (`%TEMP%`);
+- anywhere you choose with `GOATED_ADAPTER_STATE_DIR`.
+
+It holds the current task's route and loads, whether the router loaded, the
+last turn seen, and the latest typed overrides. It holds no prompt or reply
+text beyond the short override phrases. Files are not pruned automatically;
+deleting the folder between sessions is safe.
 
 ## Latency
 
-Measured on 2026-11-15 on Windows 11 with Python 3.13 and an Intel Core
+Measured on 2026-11-16 on Windows 11 with Python 3.13 and an Intel Core
 i9-14900K, spawning `goated_hook.py` in exec form, 30 runs each:
 
 | Case | Median | p90 |
 | --- | --- | --- |
-| Interpreter start alone (`python -c pass`) | 22 ms | 24 ms |
-| `UserPromptSubmit` or `SessionStart` | 53 ms | 55 ms |
-| `PreToolUse`, 20 KB transcript | 54 ms | 60 ms |
-| `PreToolUse`, real 2.9 MB session transcript | 69 ms | 71 ms |
-| `PreToolUse`, 88 MB synthetic transcript, 300-call current turn | 64 ms | 68 ms |
+| Interpreter start alone (`python -c pass`) | 22 ms | 23 ms |
+| `UserPromptSubmit` or `SessionStart` | 56 ms | 59 ms |
+| `PreToolUse`, 20 KB transcript | 58 ms | 63 ms |
+| `PreToolUse`, real 5.3 MB session transcript | 70 ms | 79 ms |
+| `PreToolUse`, 88 MB synthetic transcript, 300-call current turn | 70 ms | 78 ms |
 
 The reader reads only the current turn from the end of the file, so
 transcript size barely matters. Most of the cost is interpreter start-up and
@@ -185,13 +229,22 @@ budget leaves headroom before the hook fails open.
 
 ## Known Limits
 
-- A file written through `Bash` or `PowerShell` meets only `router-first`.
-  Telling reading commands from writing ones is not reliable from a command
-  string.
+- Until Ticket 031, a file written through `Bash` or `PowerShell` meets only
+  `router-first`. Ticket 031 holds shell commands that write files like edits.
+- The adapter guards against agents skipping skills, not against an agent
+  working to defeat it. An agent with shell access could edit the transcript,
+  the state file, or the settings that install the hooks. Defending against
+  that is out of scope; review what agents change if it matters to you.
+- Prompt classification relies on transcript fields and text wrappers seen in
+  Claude Code 2.1.3xx (`origin`, `turnOrigin`, `<task-notification>`,
+  `<cross-session-message>`, and others). A new kind of machine-written prompt
+  with no `origin` and an unknown wrapper would be treated as typed.
 - Shared-policy detection looks for the policy's title in the instruction
   files Claude Code reads and in their one-level `@` imports. It does not model
-  the setting under which a `CLAUDE.md` stops `AGENTS.md` from loading, and it
-  stops its parent-folder walk at your home folder.
+  the setting under which a `CLAUDE.md` stops `AGENTS.md` from loading, it
+  stops its parent-folder walk at your home folder, and it opens imports only
+  inside the project, your home folder, or the importing file's folder, never
+  on a network (UNC) path.
 - Hooks for parallel tool calls can race on the state file. Each call
   re-derives its turn from the transcript, so a lost update can cause a repeat
   hold, never a pass.

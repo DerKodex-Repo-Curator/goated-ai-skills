@@ -14,16 +14,30 @@ from pathlib import Path
 
 from . import gates
 from .overrides import parse_overrides
-from .policy import shared_policy_loaded
+from .policy import router_skill_installed, shared_policy_loaded
 from .state import StateStore, StateUnsafe
-from .transcript import TranscriptUnreadable, is_harness_prompt, read_recent_turns
+from .transcript import (
+    CONTINUATION,
+    NOT_PROMPT,
+    TYPED,
+    TranscriptUnreadable,
+    prompt_text_kind,
+    read_recent_turns,
+)
 
 STATE_DIR_ENV = "GOATED_ADAPTER_STATE_DIR"
+NAMESPACES_ENV = "GOATED_ADAPTER_SKILL_NAMESPACES"
+STATE_DIR_NAME = "goated-claude-code-adapter"
 NAME = "GOATED Claude Code adapter"
 POLICY_NOTICE = (
     "the GOATED shared policy is not loaded in this session, so the "
     "`using-goated-ai-skills` router runs from its standalone fallback. To load "
     "it, follow the Claude Code steps in the GOATED install guide."
+)
+ROUTER_NOTICE = (
+    f"could not find the `{gates.ROUTER_SKILL}` skill among your user, project, "
+    "or plugin skills, so writes, spawns, and commands will stay held. Install it, "
+    "or type `skip routing` in a prompt to proceed without it."
 )
 
 
@@ -31,36 +45,52 @@ class Config:
     """Where the adapter keeps state and finds instruction files.
 
     `lag_wait_seconds` bounds how long a PreToolUse call waits for the
-    transcript to show the call being judged. `from_environment` gives the
-    installed defaults; tests pass their own.
+    transcript to show the call being judged. `skill_namespaces` lists plugin
+    namespaces whose `ns:skill` loads count as GOATED skills, for a GOATED
+    distribution installed as a plugin. `from_environment` gives the installed
+    defaults; tests pass their own.
     """
 
-    __slots__ = ("state_dir", "home", "lag_wait_seconds")
+    __slots__ = ("state_dir", "home", "lag_wait_seconds", "skill_namespaces")
 
     def __init__(
-        self, state_dir: Path, home: Path | None = None, lag_wait_seconds: float = 1.5
+        self,
+        state_dir: Path,
+        home: Path | None = None,
+        lag_wait_seconds: float = 1.5,
+        skill_namespaces: tuple[str, ...] = (),
     ) -> None:
         self.state_dir = Path(state_dir)
         self.home = Path(home) if home is not None else Path.home()
         self.lag_wait_seconds = lag_wait_seconds
+        self.skill_namespaces = tuple(skill_namespaces)
 
     @classmethod
     def from_environment(cls) -> "Config":
         override = os.environ.get(STATE_DIR_ENV)
-        return cls(state_dir=Path(override) if override else _temp_root() / STATE_DIR_NAME)
+        namespaces = os.environ.get(NAMESPACES_ENV, "")
+        return cls(
+            state_dir=Path(override) if override else _default_state_root() / STATE_DIR_NAME,
+            skill_namespaces=tuple(n.strip() for n in namespaces.split(",") if n.strip()),
+        )
 
 
-STATE_DIR_NAME = "goated-claude-code-adapter"
+def _default_state_root() -> Path:
+    """A per-user folder no other local user can pre-create.
 
+    POSIX uses `$XDG_STATE_HOME` or `~/.local/state`, not the shared `/tmp`.
+    Windows uses the per-user temp folder, found as `tempfile` would, without
+    the import cost.
+    """
 
-def _temp_root() -> Path:
-    """The OS temporary folder, found as `tempfile` would, without importing it."""
-
-    for name in ("TMPDIR", "TEMP", "TMP"):
+    if os.name != "nt":
+        xdg = os.environ.get("XDG_STATE_HOME")
+        return Path(xdg) if xdg else Path.home() / ".local" / "state"
+    for name in ("TEMP", "TMP"):
         value = os.environ.get(name)
         if value:
             return Path(value)
-    return Path("/tmp") if os.name != "nt" else Path.home() / "AppData" / "Local" / "Temp"
+    return Path.home() / "AppData" / "Local" / "Temp"
 
 
 class _FailOpen(Exception):
@@ -110,11 +140,12 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
         )
     except TranscriptUnreadable as exc:
         raise _FailOpen(str(exc)) from exc
-    gates.fold_turns(state, turns)
+    gates.fold_turns(state, turns, config.skill_namespaces)
+    current = turns[-1]
     hold = gates.check_routing(
-        state, tool_name, turns[-1], _overrides_for(state, payload.get("prompt_id"))
+        state, tool_name, current, _overrides_for(state, current, payload.get("prompt_id"))
     )
-    store.save(session_id, state)
+    warnings = [state_warning, _save(store, session_id, state)]
 
     output: dict = {}
     if hold is not None:
@@ -123,13 +154,16 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
             "permissionDecision": "deny",
             "permissionDecisionReason": hold.message(),
         }
-    if state_warning:
-        output["systemMessage"] = f"{NAME}: {state_warning}."
-    return json.dumps(output) if output else ""
+    return _with_warnings(output, warnings)
 
 
 def _session_start(payload: dict, config: Config) -> str:
-    """Reset router proof after compaction and note a missing shared policy once."""
+    """Reset skill proof after compaction; note a missing policy or router once.
+
+    After compaction the router and the task's required skills must load
+    again, because their text was summarized away; the route itself carries
+    over (spec R5). Turns from before the boundary are never folded back in.
+    """
 
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
@@ -137,72 +171,84 @@ def _session_start(payload: dict, config: Config) -> str:
     store = StateStore(config.state_dir)
     state, state_warning = store.load(session_id)
     if payload.get("source") in {"compact", "clear"}:
-        # The router must load again for the next task (spec R5), and turns
-        # from before the boundary must not be folded back in.
         state.router_loaded = False
         state.last_turn = None
+        if state.task is not None:
+            state.task.loads = []
 
     output: dict = {}
+    notices = []
     if not state.policy_notice_shown:
         state.policy_notice_shown = True
         cwd = Path(str(payload.get("cwd") or "."))
         if not shared_policy_loaded(cwd, config.home):
-            output = {
-                "systemMessage": f"{NAME}: {POLICY_NOTICE}",
-                "hookSpecificOutput": {
-                    "hookEventName": "SessionStart",
-                    "additionalContext": POLICY_NOTICE,
-                },
-            }
-    store.save(session_id, state)
-    if state_warning:
-        output["systemMessage"] = " ".join(
-            filter(None, [output.get("systemMessage"), f"{NAME}: {state_warning}."])
-        )
-    return json.dumps(output) if output else ""
+            notices.append(POLICY_NOTICE)
+        if not router_skill_installed(cwd, config.home, gates.ROUTER_SKILL):
+            notices.append(ROUTER_NOTICE)
+    if notices:
+        output["hookSpecificOutput"] = {
+            "hookEventName": "SessionStart",
+            "additionalContext": " ".join(notices),
+        }
+    warnings = [*notices, state_warning, _save(store, session_id, state)]
+    return _with_warnings(output, warnings)
 
 
 def _user_prompt_submit(payload: dict, config: Config) -> str:
     """Record the overrides the user typed; they apply to this prompt's turn only.
 
-    Prompts Claude Code submits itself, such as task notifications, are not
-    typed and never yield overrides. They continue the current turn, so the
-    typed prompt's overrides also cover them.
+    The hook sees only the prompt text. Text that continues the turn, such as a
+    task notification, leaves the typed prompt's overrides in place; text
+    another session or the app wrote starts a turn with none. The gates check
+    again against the transcript, which shows who wrote the prompt.
     """
 
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         raise _FailOpen("the hook input has no session_id")
     prompt = str(payload.get("prompt") or "")
+    kind = prompt_text_kind(prompt)
+    if kind in (CONTINUATION, NOT_PROMPT):
+        return ""
     store = StateStore(config.state_dir)
     state, state_warning = store.load(session_id)
-    if is_harness_prompt(prompt):
-        found = {"phrases": []}
-        if state.overrides and payload.get("prompt_id"):
-            continued = state.overrides.setdefault("continued_prompt_ids", [])
-            continued.append(payload["prompt_id"])
-    else:
-        found = parse_overrides(prompt)
-        state.overrides = {"prompt_id": payload.get("prompt_id"), **found}
-    store.save(session_id, state)
+    found = parse_overrides(prompt) if kind == TYPED else parse_overrides("")
+    state.overrides = {"prompt_id": payload.get("prompt_id"), **found}
 
-    notes = []
+    notes = [state_warning, _save(store, session_id, state)]
     if found["phrases"]:
         typed = ", ".join(f'"{phrase}"' for phrase in found["phrases"])
-        notes.append(f"recorded your override for this prompt: {typed}")
-    if state_warning:
-        notes.append(state_warning)
-    return json.dumps({"systemMessage": f"{NAME}: " + "; ".join(notes) + "."}) if notes else ""
+        notes.insert(0, f"recorded your override for this prompt: {typed}")
+    return _with_warnings({}, notes)
 
 
-def _overrides_for(state, prompt_id: object) -> dict:
-    """Return stored overrides only when they belong to the prompt being handled."""
+def _overrides_for(state, turn, payload_prompt_id: object) -> dict:
+    """Return stored overrides only for the typed prompt that opened `turn`."""
 
     stored = state.overrides or {}
-    owned = {stored.get("prompt_id"), *stored.get("continued_prompt_ids", [])} - {None}
-    if owned and prompt_id and prompt_id not in owned:
+    if not turn.typed:
+        return {}
+    turn_prompt = turn.prompt_id or payload_prompt_id
+    if stored.get("prompt_id") and turn_prompt and stored["prompt_id"] != turn_prompt:
         return {}
     return stored
+
+
+def _save(store: StateStore, session_id: str, state) -> str | None:
+    """Save best effort: a hold already decided stands even if saving fails."""
+
+    try:
+        store.save(session_id, state)
+    except OSError as exc:
+        return f"could not save its session state ({exc.strerror or type(exc).__name__})"
+    return None
+
+
+def _with_warnings(output: dict, warnings) -> str:
+    text = "; ".join(w.rstrip(".") for w in warnings if w)
+    if text:
+        output["systemMessage"] = f"{NAME}: {text}."
+    return json.dumps(output) if output else ""
 
 
 def _session_fields(payload: dict) -> tuple[str, str]:

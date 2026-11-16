@@ -125,6 +125,14 @@ installs it. It enforces:
   `goated-route: continue`.
 - **Pipeline gates.** Writes are held until the skills listed in the current
   route's `requires:` have loaded for this task. `direct` exempts the task.
+  The hold is strict: a skill that does not apply is dropped by writing a
+  corrected route line. Spawning an agent or session is held like a write.
+  After compaction the required skills must load again.
+- **Shell writes.** A `Bash` or `PowerShell` command that writes files meets
+  the same gates as an edit: redirects, `tee`, `sed -i`, `Set-Content`,
+  `Out-File`, `Add-Content`, `cp`, `mv`, `rm`, `git apply`, and
+  `git checkout --`. Reads, test runs, and `git status` stay free. Ticket 031
+  delivers this; Ticket 030 holds shell commands only at router-first.
 - **Action gates.** Commit, PR creation, and spawning an agent or session are
   held strictly. Design and security holds accept a justified skip.
 - **Closeout.** After a turn that changed code: fresh proof is required, plus
@@ -284,29 +292,40 @@ Claude Code adapter structure, settled in Ticket 030:
   raw hook input to one function. That function dispatches on
   `hook_event_name`, owns fail-open handling, and is the tests' surface.
 - **Turn reader.** It reads the transcript backward from the end to the latest
-  user prompt or compaction boundary, never crossing a compaction boundary.
-  Prompts Claude Code submits itself, such as task notifications, do not open a
-  turn and never yield overrides. A turn yields its assistant text, its
-  successful Skill loads, and its route and skip lines. Claude Code writes the
-  transcript asynchronously; in live runs the call being judged appeared 54 to
-  114 ms after its hook started. So the reader waits up to 1.5 seconds for
-  that call's own `tool_use` entry. If it does not appear, the hook fails open
-  with a visible warning.
+  prompt or compaction boundary, never crossing a compaction boundary. It
+  classifies each prompt from the entry's `origin`, `turnOrigin`, and text
+  wrapper: a person typed it; another session or the app wrote it (a
+  cross-session message, a host brief, any non-`human` origin), which starts a
+  turn but carries no overrides; or it reports background work (a task
+  notification or side-session event), which continues the current turn. A
+  turn yields its successful Skill loads, including a skill the prompt invoked
+  as `/<skill>`, and its route line. Claude Code writes the transcript
+  asynchronously; in live runs the call being judged appeared 54 to 114 ms
+  after its hook started. So the reader waits up to 1.5 seconds for that
+  call's own `tool_use` entry. If it does not appear, the hook fails open with
+  a visible warning. Older unseen turns beyond the 64 MB read limit are given
+  up; only a current turn larger than the limit fails open.
 - **Task state.** A task starts at the turn whose winning route line is not
-  `continue`, and runs through later `continue` turns. Loads and skips count
-  for the task they occur in, never for a later task. Per-session state holds
-  the current task, whether the router loaded since the last compaction, the
-  last turn seen, and the latest user overrides. When a turn change is
-  detected, unseen turns back to the last one seen are folded in, so a load
-  that ended a turn still counts.
+  `continue`, and runs through later `continue` turns. Only loads after the
+  route line that starts a task, plus a skill the prompt itself invoked, count
+  for it, so proof never carries over from an earlier task, even in the same
+  turn. Compaction clears the task's loads but keeps its route. Per-session
+  state holds the current task, whether the router loaded since the last
+  compaction, the last turn seen, and the latest user overrides; a file of any
+  other shape is reset. When a turn change is detected, unseen turns back to
+  the last one seen are folded in, so a load that ended a turn still counts.
 - **Rule table.** Write tools (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`)
-  meet all three routing gates; command tools (`Bash`, `PowerShell`) meet only
-  router-first; every other tool is free. Router-first and route-line are
-  strict. The pipeline gate accepts a `goated-skip` line for a required skill,
-  because the shared policy tells agents to write one when a route names a
-  skill that does not apply.
-- **Overrides.** The user-prompt hook reads only the typed `prompt` field and
-  stores overrides with its `prompt_id`; they apply to that prompt's turn.
+  and spawn tools (`Agent`, `mcp__ccd_session__start_session`,
+  `mcp__ccd_session__hand_off_to_session`) meet all three routing gates;
+  command tools (`Bash`, `PowerShell`) meet only router-first until Ticket 031;
+  every other tool is free. All three gates are strict: to drop a required
+  skill, the agent writes a corrected route line (maintainer decision,
+  2026-11-16). Only a bare skill name, or one in a configured GOATED plugin
+  namespace, counts as a load.
+- **Overrides.** The user-prompt hook stores the overrides in the prompt text
+  with its `prompt_id`, ignoring negated phrases. The gates apply them only to
+  the turn that prompt opened, and only when the transcript shows a person
+  typed it.
 - **Subagents.** A hook input carrying `agent_id` skips the routing gates.
 
 ## Rollout
