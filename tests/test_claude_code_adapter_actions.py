@@ -690,6 +690,15 @@ class SetupCloseoutTests(AdapterTestCase):
             ("Bash", "brew install jq"),
             ("Bash", "sudo apt-get install -y ripgrep"),
             ("Bash", "cd web && npm install lodash"),
+            ("Bash", "npm i -f lodash"),
+            ("Bash", "cargo install -f ripgrep"),
+            ("Bash", "brew install -f jq"),
+            ("Bash", "npm install --workspace=app lodash"),
+            ("Bash", "pnpm add --filter web zod"),
+            ("Bash", "yarn global add pnpm"),
+            ("Bash", "pip install -e git+https://example.com/org/pkg.git#egg=pkg"),
+            ("Bash", "cargo install --git https://example.com/org/tool.git"),
+            ("Bash", "npm install foo || true"),
             ("PowerShell", "winget install --id Git.Git -e"),
             ("PowerShell", "choco install nodejs -y"),
         ):
@@ -744,6 +753,18 @@ class SetupCloseoutTests(AdapterTestCase):
             ("Bash", "pnpm install --frozen-lockfile"),
             ("Bash", "pip install -r requirements.txt"),
             ("Bash", "pip install -e ."),
+            ("Bash", "pip install -e ../lib"),
+            ("Bash", "pnpm install --filter web"),
+            ("Bash", "pnpm install -F web"),
+            ("Bash", "npm install --workspace app"),
+            ("Bash", "npm install -w app"),
+            ("Bash", "npm install --prefix web"),
+            ("Bash", "uv pip install -r requirements.txt --python 3.12"),
+            ("Bash", "uv pip install -p 3.12 -r requirements.txt"),
+            ("Bash", "pip install --index-url https://example.com/simple -r requirements.txt"),
+            ("Bash", "pip install --target vendor -r requirements.txt"),
+            ("Bash", "conda install --file requirements.txt"),
+            ("Bash", "npm install --registry https://example.com/npm"),
             ("Bash", "uv sync"),
             ("Bash", "cargo build"),
             ("Bash", "npm run build"),
@@ -816,6 +837,56 @@ class SetupCloseoutTests(AdapterTestCase):
         self.assertEqual(closeout_line(held), "goated-hold: closeout | justified-skip")
         for item in ("- Proof:", "- Docs:", "- Setup:"):
             self.assertIn(item, held["reason"])
+
+    def subagent_install(self, agent_id: str, *after: str) -> Session:
+        """A turn whose subagent ran `uv add httpx`, then each of `after`: a
+        skill to load, or a skip line to say."""
+
+        s = self.routed()
+        s.brief_with_handoff()
+        agent = s.subagent(agent_id)
+        agent.prompt("Add httpx.", hook=False)
+        agent.run("uv add httpx")
+        for step in after:
+            if step.startswith("goated-skip:"):
+                agent.say(step)
+            else:
+                agent.load(step)
+        self.assertEqual(decision(s.spawn(agent_id, BRIEF)), "pass")
+        return s
+
+    def test_a_subagent_install_needs_setup_scribe(self) -> None:
+        s = self.subagent_install("c1")
+
+        held = stop(s)
+        self.assertEqual(closeout_line(held), "goated-hold: closeout | justified-skip")
+        self.assertIn("- Setup:", held["reason"])
+        s.load("setup-scribe")
+        self.assertEqual(stop(s), {})
+
+    def test_a_subagents_own_load_meets_its_install(self) -> None:
+        self.assertEqual(stop(self.subagent_install("c2", "setup-scribe")), {})
+
+    def test_a_subagents_own_skip_line_meets_its_install(self) -> None:
+        s = self.subagent_install("c3", "goated-skip: setup-scribe: the lockfile already records it")
+
+        self.assertEqual(stop(s), {})
+
+    def test_a_subagents_load_does_not_meet_the_parents_own_install(self) -> None:
+        s = self.subagent_install("c4", "setup-scribe")
+        s.run("brew install jq")
+
+        self.assertIn("- Setup:", stop(s)["reason"])
+
+    def test_the_header_names_setup_when_only_the_setup_item_is_left(self) -> None:
+        s = self.routed()
+        s.load("code-security-review")
+        s.call("Edit", {"file_path": ".env.local", "old_string": "A=1", "new_string": "A=2"})
+        s.run("git diff .env.local")
+
+        held = stop(s)
+        self.assertIn("which changed setup:", held["reason"])
+        self.assertNotIn("- Security:", held["reason"])
 
     def test_it_does_not_carry_into_the_next_turn(self) -> None:
         s = self.installed()

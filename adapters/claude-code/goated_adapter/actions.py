@@ -405,18 +405,14 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
                 f"change itself and review it: {CHANGE_READ}. Or, if it crosses no trust "
                 f"boundary, write `goated-skip: {SECURITY_SKILL}: <reason>`."
             )
-    setup = _setup_changes(turn, subagents or {})
-    if setup and not proof.loaded_or_skipped(SETUP_SKILL):
-        items.append(
-            f"- Setup: this turn {setup}. Load `{SETUP_SKILL}` and record the setup so it "
-            "can be repeated, or, if it leaves nothing to record, write "
-            f"`goated-skip: {SETUP_SKILL}: <reason>`."
-        )
+    setup_item = _setup_item(turn, subagents or {}, proof)
+    if setup_item:
+        items.append(setup_item)
     if not items:
         return None
     what = (
-        "changed code" if changes.code
-        else "changed a security-sensitive file" if sensitive else "changed setup"
+        "changed setup" if items == [setup_item]
+        else "changed code" if changes.code else "changed a security-sensitive file"
     )
     return Hold(
         "closeout", JUSTIFIED_SKIP,
@@ -482,13 +478,42 @@ def _code_items(changes: "_Changes", proof: _Proof) -> list[str]:
     return items
 
 
-def _setup_changes(turn: Turn, subagents: dict) -> str:
-    """What setup the finished calls of the turn and its subagents changed, as
-    a phrase for the Setup item ('installed a package', 'wrote ".env"'), or ""."""
+def _setup_item(turn: Turn, subagents: dict, proof: _Proof) -> str:
+    """The Setup item, or "" when the turn changed no setup or met it.
 
+    The turn's own `setup-scribe` load or skip line meets every setup change,
+    its subagents' included; a subagent's own load or skip line meets only the
+    changes that subagent made, as its own check proves its own code.
+    """
+
+    if proof.loaded_or_skipped(SETUP_SKILL):
+        return ""
     calls = list(turn.calls) + [
-        c for sub_turns in subagents.values() for sub_turn in sub_turns for c in sub_turn.calls
+        call for sub_turns in subagents.values() if not _setup_met(sub_turns, proof.namespaces)
+        for sub_turn in sub_turns for call in sub_turn.calls
     ]
+    setup = _setup_changes(calls)
+    if not setup:
+        return ""
+    return (
+        f"- Setup: this turn {setup}. Load `{SETUP_SKILL}` and record the setup so it "
+        "can be repeated, or, if it leaves nothing to record, write "
+        f"`goated-skip: {SETUP_SKILL}: <reason>`."
+    )
+
+
+def _setup_met(sub_turns: list[Turn], namespaces: tuple[str, ...]) -> bool:
+    """True when a subagent loaded `setup-scribe` or wrote a skip line naming it."""
+
+    return any(
+        goated_skill_name(raw, namespaces) == SETUP_SKILL for t in sub_turns for raw in t.loads
+    ) or any(skip["skill"] == SETUP_SKILL for t in sub_turns for skip in t.skips)
+
+
+def _setup_changes(calls) -> str:
+    """What setup the finished `calls` changed, as a phrase for the Setup item
+    ('installed a package', 'wrote ".env"'), or ""."""
+
     installed, files = False, []
     for call in calls:
         if not call.ok:

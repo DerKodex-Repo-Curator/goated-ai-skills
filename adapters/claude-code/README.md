@@ -121,14 +121,25 @@ finished `npm`, `pnpm`, or `bun` `add` or `install`, `yarn add`, `pip install`
 (also `python -m pip`), `uv add`, `uv pip install`, `uv tool install`,
 `poetry add`, `pipx install`, `conda install`, `cargo add` or `install`,
 `go get` or `install`, `gem install`, or `brew`, `apt`, `apt-get`, `winget`,
-`choco`, or `scoop` `install`, that names a package. A bare `npm install`,
-`pip install -r requirements.txt`, or `pip install -e .` restores what a
-manifest records or installs a local path, so it does not count. An **env or
-settings file** is `.env` or `.env.*` (`.env.example` included), or a
-`settings*.json` under `.claude/` or `.vscode/`, written by a write tool or a
-shell command. These count wherever they are, inside the project or not,
-since machine and application settings are setup too. A subagent's installs
-and writes count toward the parent's closeout.
+`choco`, or `scoop` `install`, or `yarn global add`, that names a package. A
+bare `npm install`, `pip install -r requirements.txt`, or `pip install -e .`
+restores what a manifest records or installs a local path, so it does not
+count; a URL, such as `pip install -e git+https://…`, is a package. Each
+manager's options that take a value (`--filter`, `--workspace`, `--python`,
+`--file`, `--prefix`, `--registry`, `--index-url`, `--target`, and the like;
+`PACKAGE_MANAGERS` in `shell.py`) are skipped with their value, so
+`pnpm install --filter web` names no package. An **env or settings file** is
+`.env` or `.env.*` (`.env.example` included), or a `settings*.json` under
+`.claude/` or `.vscode/`, written by a write tool or a shell command. These
+count wherever they are, inside the project or not, since machine and
+application settings are setup too. A subagent's installs and writes count
+toward the parent's closeout; that subagent's own `setup-scribe` load or skip
+line meets them, as the parent's does.
+
+Two limits: an install inside `bash -c "…"` or another wrapped command string
+is not seen, as with every shell reading here; and an install whose failure
+the command hides (`npm install foo || true`) still counts, since the adapter
+sees only the whole command's result.
 
 - **Writes** are `Edit`, `Write`, `MultiEdit`, and `NotebookEdit`, and a
   `Bash` or `PowerShell` command that writes files (see
