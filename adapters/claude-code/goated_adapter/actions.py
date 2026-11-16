@@ -196,7 +196,7 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         if hold is None and command.opens_pr:
             hold = _pr_hold(proof, changes)
         for target in command.write_targets:
-            if _in_project(target, project):
+            if _in_project(target, project, target not in command.unplaced_targets):
                 hold = hold or _security_hold(_norm(target), proof)
         return hold
     if PR_TOOL_RE.match(tool_name):
@@ -552,71 +552,125 @@ def _changed_paths(call, project: Project | None) -> list[str]:
         return []
     if call.name in FILE_WRITE_TOOLS:
         targets = [str(call.input.get(FILE_WRITE_TOOLS[call.name]) or "")]
-        unnamed = False
+        unnamed, unplaced = False, []
     elif call.name in COMMAND_TOOLS:
         command = shell.analyze(str(call.input.get("command") or ""))
         targets, unnamed = command.write_targets, command.unknown_writes
+        unplaced = command.unplaced_targets
     else:
         return []
-    paths = [_norm(t) for t in targets if t and _in_project(t, project)]
+    paths = [_norm(t) for t in targets if t and _in_project(t, project, t not in unplaced)]
     return paths + ([UNNAMED_FILES] if unnamed else [])
 
 
 class Project(NamedTuple):
-    """The project folder (`root`) and the folder the session works in
-    (`cwd`), which relative paths start from; `find_project` finds them."""
+    """Where the project is: `roots`, the folders whose files count as the
+    project's, in comparable form, and `cwd`, the session's folder as the
+    hook input names it, which relative paths start from."""
 
-    root: str
+    roots: tuple[str, ...]
     cwd: str
 
 
 def find_project(cwd: str | None, project_dir: str | None = None) -> Project | None:
-    """Return the project for a hook input's `cwd`, or None when it names none.
+    """Return the project for a hook input's `cwd`, or None, when every file
+    counts as inside: `cwd` is missing, or a folder below cannot be read for certain.
 
-    The root is `project_dir` (Claude Code's `CLAUDE_PROJECT_DIR`) when set;
-    else the nearest folder at or above `cwd` that holds a `.git` entry, so a
-    session that changed folder below its checkout still has the whole
-    checkout as its project; else `cwd` itself.
+    A file is outside only when it is outside every root, so each candidate
+    root is one: `project_dir` (Claude Code's `CLAUDE_PROJECT_DIR`), `cwd`,
+    each in every reading it could have (see `_readings`), and the nearest
+    folder at or above each that holds a `.git` entry. So a session that
+    changed folder below its checkout still has the whole checkout.
     """
 
     if not cwd:
         return None
-    if project_dir:
-        return Project(project_dir, cwd)
-    folder = os.path.abspath(cwd)
+    roots: list[str] = []
+    for folder in filter(None, (project_dir, cwd)):
+        readings = _readings(folder, drives=())
+        if readings is None:
+            return None
+        roots += readings
+    roots += [top for top in map(_git_top, roots) if top]
+    return Project(tuple(dict.fromkeys(roots)), cwd)
+
+
+def _git_top(folder: str) -> str | None:
     while True:
         if os.path.exists(os.path.join(folder, ".git")):
-            return Project(folder, cwd)
+            return folder
         parent = os.path.dirname(folder)
         if parent == folder:
-            return Project(cwd, cwd)
+            return None
         folder = parent
 
 
-def _in_project(path: str, project: Project | None) -> bool:
-    """True when `path` is the project's root or under it; with no project, always.
+def _in_project(path: str, project: Project | None, placed: bool = True) -> bool:
+    """True unless `path` is certainly outside the project: when in doubt, inside.
 
-    A relative path is taken from the session's folder, a leading `~` is the
-    user's home, and on Windows a Git Bash drive path (`/c/x`) is `C:/x`. A
-    rooted path with no drive, such as `/tmp/x`, is on the session's drive, as
-    Windows takes it. Touches the disk only to expand Windows 8.3 short names.
+    With no project, every path is inside, and so is a relative path that is
+    not `placed` (a shell wrote it from a folder the command left unknown).
+    A relative path is taken from the session's folder. A path is outside
+    only when none of its readings (see `_readings`) is a root or under one;
+    a path with no certain reading is inside. Touches the disk only to expand
+    Windows 8.3 short names.
     """
 
-    if project is None:
+    if project is None or not placed:
         return True
-    root = _comparable(project.root)
-    full = _comparable(os.path.join(_native(project.cwd), _native(os.path.expanduser(path))))
-    return full == root or full.startswith(root.rstrip(os.sep) + os.sep)
+    rooted = path.startswith(("/", "\\", "~")) or (os.name == "nt" and DRIVE_RE.match(path))
+    if not rooted:
+        path = project.cwd.rstrip("/\\") + "/" + path
+    drives = {os.path.splitdrive(root)[0] for root in project.roots}
+    readings = _readings(path, drives)
+    if readings is None:
+        return True
+    return any(
+        full == root or full.startswith(root.rstrip(os.sep) + os.sep)
+        for full in readings for root in project.roots
+    )
 
 
+DRIVE_RE = re.compile(r"^[A-Za-z]:")
 # Git Bash names a Windows drive as a one-letter top folder: `/c/Users` is `C:/Users`.
-GIT_BASH_DRIVE_RE = re.compile(r"^[/\\]([A-Za-z])(?=[/\\]|$)")
+GIT_BASH_DRIVE_RE = re.compile(r"^/([A-Za-z])(?=/|$)")
+# Characters a shell or Windows expands, so a path holding one names no file for certain.
+EXPANDED_CHARS = frozenset("$`%*?")
 
 
-def _native(path: str) -> str:
-    if os.name != "nt":
-        return path
-    return GIT_BASH_DRIVE_RE.sub(lambda m: m.group(1).upper() + ":/", path, count=1)
+def _readings(path: str, drives) -> list[str] | None:
+    """Every file absolute `path` may name, in comparable form, or None when
+    it cannot be read for certain.
+
+    None for a path a shell expands (a variable, a glob), one under `~-`,
+    `~+`, or another user's `~name`, and the Windows forms this does not
+    normalize: device paths (`\\\\?\\`, `//?/`, `\\\\.\\`), network paths, and
+    a drive-relative `C:x`. A leading `~` is the user's home. On Windows a
+    path rooted with no drive, such as `/tmp/x` or `/w/x`, may be on any of
+    `drives` or the process's own drive, and a one-letter top folder may also
+    be Git Bash's name for a drive (`/c/x` is `C:/x`), so each is a reading.
+    """
+
+    if any(ch in EXPANDED_CHARS for ch in path):
+        return None
+    if path.startswith("~"):
+        if path != "~" and path[1] not in "/\\":
+            return None
+        path = os.path.expanduser(path)
+    slashed = path.replace("\\", "/")
+    if slashed.startswith("//"):
+        return None
+    readings = [path]
+    if os.name == "nt":
+        if DRIVE_RE.match(slashed) and slashed[2:3] != "/":
+            return None
+        if slashed.startswith("/"):
+            on_drives = set(drives) | {os.path.splitdrive(os.getcwd())[0]}
+            readings = [drive + slashed for drive in sorted(on_drives)]
+            git_bash = GIT_BASH_DRIVE_RE.match(slashed)
+            if git_bash:
+                readings.append(git_bash.group(1).upper() + ":" + (slashed[2:] or "/"))
+    return [_comparable(reading) for reading in readings]
 
 
 def _comparable(path: str) -> str:

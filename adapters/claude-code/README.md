@@ -101,20 +101,36 @@ of hold:
 The closeout items, each judged against the turn's last code change. A code
 change is a write tool's file, or a file a shell command writes (its redirect
 target, copy destination, or removed, moved, or edited file), inside the
-project folder; a scratch or temp file elsewhere does not count. The project
-folder is `CLAUDE_PROJECT_DIR` when Claude Code sets it; otherwise the nearest
-folder at or above the session's working folder (the hook input's `cwd`) that
-holds a `.git` entry; otherwise the working folder itself. So a session that
-changed folder below its checkout still counts the whole checkout. A relative
-path is taken from the working folder, and a shell write target from any `cd`
-earlier in its command (see [Shell writes](#shell-writes)). On Windows a Git
-Bash drive path such as `/c/work` is read as `C:/work`, a rooted path with no
-drive such as `/tmp` is on the working folder's drive, and 8.3 short names
-such as `PROGRA~1` are expanded where the folders exist. The `design` and
-`security` gates use the same rule, so a scratch script outside the project is
-never held. A shell write whose files the command does not name (`git apply`,
-`patch`, a download without an output name) counts as a change to non-test code. Code a subagent
-changed counts too, at the point the parent spawned it; if the subagent ran a
+project folder; a scratch or temp file elsewhere does not count. The `design`
+and `security` gates use the same rule, so a scratch script outside the
+project is not held.
+
+**A file counts as outside the project only when the adapter is certain.**
+When in doubt, it is inside. The project's folders are `CLAUDE_PROJECT_DIR`
+when Claude Code sets it, the session's working folder (the hook input's
+`cwd`), and the nearest folder at or above either that holds a `.git` entry,
+so a session that changed folder below its checkout still counts the whole
+checkout. A file is outside only when it is under none of them in any way the
+path can be read:
+
+- A relative path is taken from the working folder; a shell write target is
+  taken from a `cd` before it only as [Shell writes](#shell-writes) says, and
+  counts as inside when its folder is unknown.
+- A leading `~` or `~/` is your home folder. On Windows, 8.3 short names such
+  as `PROGRA~1` are expanded where the folders exist.
+- On Windows, a path rooted with no drive, such as `/tmp/x` or `/w/proj`, may
+  be on any drive the project's folders use, and a one-letter top folder may
+  also be Git Bash's name for a drive (`/c/work` is `C:/work`). Each of these
+  readings is checked, and the same applies to a project folder given in Git
+  Bash form.
+- These count as inside, since the adapter does not read them: a path holding
+  a variable or glob (`$`, `%`, a backtick, `*`, `?`), `~-`, `~+`, or another
+  user's `~name`, device paths (`\\?\`, `//?/`, `\\.\`), network paths
+  (`\\server\share`), and a drive-relative path such as `C:x`.
+
+A shell write whose files the command does not name (`git apply`, `patch`, a
+download without an output name) counts as a change to non-test code. Code a
+subagent changed counts too, at the point the parent spawned it; if the subagent ran a
 check after its own last change, that change is already proved.
 
 | Item | Needed when | Met by | Skip line names |
@@ -210,18 +226,33 @@ runs, `git status`, and `git checkout <branch>` stay free. Commit and
 pull-request commands are recognized the same way, per command, so
 `echo gh pr create` opens nothing.
 
-A write target is read from the folder its command runs in. A `cd`, `chdir`,
-`pushd`, `Set-Location`, `sl`, or `Push-Location` earlier in the same command
-moves that folder, so `cd /elsewhere && mv a.py b.py` moves
-`/elsewhere/a.py`, outside the project, and `cd sub && mv a.py b.py` moves
-`sub/a.py`, inside it. A `cd` to an absolute path, a drive path, or a path
-under `~` replaces the folder; a relative one is joined to it. A `cd` the
-analysis cannot follow leaves later targets as written, so they count as
-inside the project, until a later `cd` to an absolute path. That is a `cd` to
-a variable, `cd -`, a bare `cd`, `popd`, or `Pop-Location`, and any `cd` that
-may not carry over: one inside `( )` or `$( )`, in a pipeline (`cd x | …`), in
-the background, or on either side of `||`, since it may have failed. Only a
-`cd` in the same command is followed, not one in an earlier call.
+A write target is read from the folder its command runs in, and a `cd` moves
+that folder only when the adapter is certain it ran. **Only a `cd` in the
+command's leading `&&` chain is followed**: the first command, or one joined
+to everything before it by `&&` alone. So `cd /elsewhere && mv a.py b.py`
+moves `/elsewhere/a.py`, outside the project, and `cd sub && mv a.py b.py`
+moves `sub/a.py`, inside it. This covers `cd`, `chdir`, `pushd`,
+`Set-Location`, `sl`, and `Push-Location`. The target must be a plain path:
+an absolute path, a drive path, `~` or a path under it, or a relative path
+from a folder already known.
+
+Anything else makes the folder unknown for the rest of the command, and
+nothing later makes it known again. Relative targets written from an unknown
+folder count as inside the project. That is:
+
+- a `cd` to a variable, a glob, a command substitution, `-`, `~-`, or `~+`,
+  and a bare `cd`, `popd`, or `Pop-Location`;
+- a `cd` after `;`, a newline, `||`, `|`, or `&`, or that is followed by `|`,
+  `||`, or `&`, since it may have failed, never run, or run apart;
+- a `cd` inside `( )`, `{ }`, `$( )`, `case`, `if`, a loop, or a PowerShell
+  script block;
+- any separator other than `&&` after a followed `cd`, since what runs next
+  runs even if that `cd` failed.
+
+PowerShell 5.1 has no `&&`, and `;` is not a safe chain, so there a
+`Set-Location` before a write leaves the write's relative targets counted as
+inside; in PowerShell 7, `Set-Location <absolute path> && …` is followed. Only
+a `cd` in the same command is followed, not one in an earlier call.
 
 ### Change reads
 

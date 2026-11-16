@@ -456,6 +456,13 @@ class SecurityHoldTests(AdapterTestCase):
                 self.assertEqual(decision(s.call("Edit", edit)), "pass")
 
 
+def git_bash(path: str) -> str:
+    """A Windows path as Git Bash writes it: `C:\\x` is `/c/x`."""
+
+    path = path.replace("\\", "/")
+    return "/" + path[0].lower() + path[2:]
+
+
 class OutOfProjectTests(AdapterTestCase):
     """The design and security gates, and the closeout, count only project files (AC11).
 
@@ -513,11 +520,17 @@ class OutOfProjectTests(AdapterTestCase):
             ("Bash", "cd ~/.claude/hooks && mv a.ps1 b.ps1"),
             ("Bash", "cd src && cd ../.. && mv a.py b.py"),
             ("Bash", f'pushd "{self.outside}" && mv a.py b.py && popd'),
-            ("PowerShell", f"Set-Location -Path '{self.outside}'; Move-Item a.py b.py"),
-            ("Bash", f'cd "$dir" && cd "{self.outside}" && mv a.py b.py'),
+            ("PowerShell", f"Set-Location -Path '{self.outside}' && Move-Item a.py b.py"),
         ):
             with self.subTest(command=command):
                 self.assertEqual(self.changed_by(command, tool), {})
+
+    def test_a_scratch_write_under_the_temp_folder_is_outside(self) -> None:
+        s = self.routed()
+        scratch = Path(tempfile.gettempdir()) / "goated-scratch-043" / "probe.py"
+
+        self.assertEqual(decision(s.call("Write", write(str(scratch), lines=40))), "pass")
+        self.assertEqual(decision(s.call("Write", write(scratch.as_posix(), lines=40))), "pass")
 
     def test_a_move_after_a_cd_inside_is_a_project_change(self) -> None:
         for tool, command in (
@@ -549,18 +562,68 @@ class OutOfProjectTests(AdapterTestCase):
         ):
             self.assert_security_held(s, command)
         self.assert_security_held(s, f'cd "{self.outside}" && echo K=1 > .env', held=False)
-        self.assert_security_held(s, f'(cd x) ; cd "{self.outside}"; echo K=1 > .env', held=False)
+
+    def test_only_a_leading_and_chain_of_cds_is_followed(self) -> None:
+        """A `cd` outside a leading `&&` chain makes the folder unknown for the
+        rest of the command, so relative targets after it count as inside."""
+
+        s = self.routed()
+        for command in (
+            # An unknown folder stays unknown, even after a later `cd`.
+            'cd "$X" && cd ../.. && echo K=1 > .env',
+            f'cd "$X" && cd "{self.outside}" && echo K=1 > .env',
+            f'(cd x) ; cd "{self.outside}"; echo K=1 > .env',
+            # A `cd` that may fail or never run.
+            "cd /tmp/nope; echo K=1 > .env",
+            "cd /tmp/nope\necho K=1 > .env",
+            "test -d /tmp/nope && cd /tmp/nope; echo K=1 > .env",
+            "if cd /tmp/nope; then :; fi; echo K=1 > .env",
+            "if true; then cd /tmp; fi; echo K=1 > .env",
+            "case x in y) cd /tmp;; esac; echo K=1 > .env",
+            "false || cd /tmp && echo K=1 > .env",
+            # Brace groups.
+            "{ cd /tmp; } | cat; echo K=1 > .env",
+            "{ cd /tmp; } & echo K=1 > .env",
+            "{ cd /tmp; } || true; echo K=1 > .env",
+            "{ cd /tmp; } && echo K=1 > .env",
+            # Bash's previous and current folders, and a glob.
+            "cd /tmp && cd ~- && echo K=1 > .env",
+            "cd /tmp && cd ~+ && echo K=1 > .env",
+            "cd /tm* && echo K=1 > .env",
+        ):
+            self.assert_security_held(s, command)
+        for command in (
+            "Set-Location C:/nope; Set-Content .env x",
+            "Set-Location /tmp | Out-Null; Set-Content .env x",
+            "Start-Job { Set-Location /tmp }; Set-Content .env x",
+        ):
+            with self.subTest(command=command):
+                held = s.run(command, tool="PowerShell")
+                self.assertEqual(hold_line(held), "goated-hold: security | justified-skip")
+        # Near misses: a leading `&&` chain is followed.
+        self.assert_security_held(s, f'cd "{self.outside}" && cd sub && echo K=1 > .env',
+                                  held=False)
+        self.assert_security_held(s, f"pushd '{self.outside}' && echo K=1 > .env", held=False)
+
+    def test_device_network_and_unexpanded_paths_count_as_inside(self) -> None:
+        s = self.routed()
+        native = self.inside.replace("/", "\\")
+        posix = self.inside.replace("\\", "/")
+        for path in (f"\\\\?\\{native}\\.env", f"//?/{posix}/.env", f"\\\\.\\{native}\\.env",
+                     "\\\\server\\share\\.env", "//server/share/.env", "~other/.env",
+                     "~-/.env", "$HOME/.env", "%USERPROFILE%/.env"):
+            with self.subTest(path=path):
+                edit = {"file_path": path, "old_string": "a", "new_string": "b"}
+                self.assertEqual(hold_line(s.call("Edit", edit)),
+                                 "goated-hold: security | justified-skip")
+                self.assert_security_held(s, f"echo K=1 > '{path}'")
 
     @unittest.skipUnless(os.name == "nt", "Git Bash drive paths exist only on Windows")
     def test_git_bash_drive_paths_are_read_as_windows_paths(self) -> None:
         s = self.routed()
-
-        def git_bash(path: str) -> str:
-            path = path.replace("\\", "/")
-            return "/" + path[0].lower() + path[2:]
-
         inside, outside = git_bash(self.inside), git_bash(self.outside)
         self.assert_security_held(s, f"echo K=1 > {inside}/.env")
+        self.assert_security_held(s, f"echo K=1 > {inside.upper()}/.env")
         self.assert_security_held(s, f"cd {inside} && echo K=1 > .env")
         self.assert_security_held(s, f"echo K=1 > {outside}/.env", held=False)
         self.assert_security_held(s, f"cd {outside} && echo K=1 > .env", held=False)
@@ -568,6 +631,35 @@ class OutOfProjectTests(AdapterTestCase):
         self.assertEqual(hold_line(s.call("Edit", edit)), "goated-hold: security | justified-skip")
         edit = {"file_path": f"{outside}/.env", "old_string": "a", "new_string": "b"}
         self.assertEqual(decision(s.call("Edit", edit)), "pass")
+
+    @unittest.skipUnless(os.name == "nt", "Git Bash drive paths exist only on Windows")
+    def test_a_project_folder_in_git_bash_form_is_read_as_a_windows_path(self) -> None:
+        for setting in ("cwd", "project_dir"):
+            with self.subTest(setting=setting):
+                s = self.fresh()
+                s.project.mkdir(parents=True)
+                if setting == "cwd":
+                    s.cwd = git_bash(str(s.project))
+                else:
+                    s.config.project_dir = git_bash(str(s.project))
+                s.prompt("Tidy it.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                for path in (f"{s.project}/.env", ".env"):
+                    edit = {"file_path": path, "old_string": "a", "new_string": "b"}
+                    self.assertEqual(hold_line(s.call("Edit", edit)),
+                                     "goated-hold: security | justified-skip")
+                edit = {"file_path": f"{self.outside}/.env", "old_string": "a", "new_string": "b"}
+                self.assertEqual(decision(s.call("Edit", edit)), "pass")
+
+    @unittest.skipUnless(os.name == "nt", "drive letters exist only on Windows")
+    def test_a_one_letter_top_folder_may_be_a_folder_not_a_drive(self) -> None:
+        from goated_adapter.actions import _in_project, find_project
+
+        project = find_project("D:\\w\\proj")
+        self.assertTrue(_in_project("/w/proj/.env", project))
+        self.assertTrue(_in_project("/d/w/proj/.env", project))
+        self.assertFalse(_in_project("/w/other/.env", project))
 
     @unittest.skipUnless(os.name == "nt", "8.3 short names exist only on Windows")
     def test_a_short_and_a_long_name_for_the_project_match(self) -> None:
