@@ -45,16 +45,23 @@ the hold; a `strict` hold (`router-first`, `route-line`, `pipeline`,
 `commit`, `pull-request`, `spawn`) never does, because only loading the skill
 clears it. In particular:
 
+- An adapter hold asks for a load in the current turn, so a skill loaded in
+  an earlier turn shows as loaded only when the agent loads it again, never
+  as already loaded. ("Already loaded" is for the earlier hand-written hooks,
+  which asked once a session.)
 - A `router-first` hold asks for the router, and a `route-line` hold asks
-  for a route line. A `route-line` hold that comes after a route line written
-  in the same turn counts as followed: Claude Code records a call only after
-  its hold returns, so a line written beside the held call is not visible to
-  the adapter yet, and the agent only has to make the call again.
+  for a route line.
+- Claude Code records a call only after its hold returns, so the adapter does
+  not yet see a route line or skill load written in the same reply as the
+  held call, and the agent only has to make the call again. A hold that the
+  held call's own reply already answered counts as followed. A route line or
+  load in an earlier reply does not count, and nor does a `continue` route
+  line while there is no task to continue, which the adapter holds as well.
 - A `pipeline` hold also counts as followed for a skill that a corrected route
   line drops, as the hold tells the agent to do.
 - A `spawn` hold names two ways to write the brief, `handoff` or
-  `subagent-driven-development`; loading either follows it, and the other
-  drops off the hold's row.
+  `subagent-driven-development`. It counts once: its row shows "handoff or
+  subagent-driven-development" until the agent loads one, then names that one.
 - A blocked `Stop` does not end the turn, so the closeout hold waits for the
   agent's next move; each time the adapter blocks again is its own hold.
 
@@ -156,17 +163,17 @@ This has not been tested end to end. Keep a backup of both files.
 
 - A hold is read only as far as its `goated-hold:` first line and the skill
   names it backticks allow. A hold that names no skill counts by gate and
-  kind with no per-skill result, such as the `spawn` holds that ask for a
-  template read or for missing brief headings. A `commit` hold for a message
-  that breaks the contract names `commit-message`, so once it has loaded the
-  pane shows that hold as already loaded, not as whether the message was
-  fixed. The closeout hold's proof item asks for a check to run,
-  which is no skill, so only the skills its other items name (`doc-sync`,
-  `handoff`) get a result.
-- Overrides reach the mod through the adapter's hook context. A notice
-  reaches a mod as a row with no text (checked on Claude Code 2.1.325), so
-  the notice itself is not read. When the mod loads mid-session, the history
-  it rebuilds from has no hook context, so earlier overrides go uncounted.
+  kind with no per-skill result: the `spawn` holds that ask for a template
+  read or for missing brief headings, and the `commit` hold for a message
+  that breaks the contract. In the closeout hold, the proof item asks for a
+  check to run and the design item for a read of the red-flags reference,
+  neither of which is a skill load, so only the skills its other items name
+  (`doc-sync`, `handoff`) get a result.
+- Overrides reach the mod through the adapter's `UserPromptSubmit` hook
+  context. A notice reaches a mod as a row with no text, so the notice
+  itself is not read. When the mod loads mid-session, the history it
+  rebuilds from does not carry `UserPromptSubmit` hook context, so earlier
+  overrides go uncounted. Both were checked on Claude Code 2.1.325.
 - A slash command counts as a prompt only when it loads a skill. Other
   commands, such as `/skill-usage` or `/compact`, run without a model turn,
   so neither they nor their output start a turn in the pane.
@@ -192,7 +199,7 @@ claude plugin validate .
 
 The tests in `tests/goated-adapter.test.tsx` read two generated modules:
 `tests/marker-fixtures.ts`, from `stack/fixtures/markers/lines.yaml`, and
-`tests/adapter-texts.ts`, the hold reasons and override notice the adapter
+`tests/adapter-texts.ts`, the hold reasons and override context the adapter
 produces when the generator drives it. In the GOATED source repo,
 `tests/test_skill_usage_mod.py` fails when either copy drifts. Regenerate it with
 `uv run python tests/test_skill_usage_mod.py --write` from the repo root.

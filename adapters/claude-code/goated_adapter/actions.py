@@ -176,7 +176,7 @@ def _commit_hold(message: str | None, proof: _Proof) -> Hold | None:
             f"Load the `{COMMIT_SKILL}` skill with the Skill tool in this turn and draft "
             "the message with it, then run the commit again. The whole command was "
             "held, so rerun any steps chained before it too. This hold is strict: a "
-            "`goated-skip` line does not clear it. A commit message the user typed in "
+            "goated-skip line does not clear it. A commit message the user typed in "
             "their prompt stands it down when the commit uses that message.",
         )
     if message is None or COMMIT_SKILL in proof.user_skips:
@@ -186,7 +186,8 @@ def _commit_hold(message: str | None, proof: _Proof) -> Hold | None:
         return None
     return Hold(
         "commit", STRICT,
-        f"The commit message breaks the `{COMMIT_SKILL}` contract: "
+        # No backticks: this hold asks for a fix, not a load, and backticks name a skill to load.
+        f"The commit message breaks the {COMMIT_SKILL} contract: "
         + "; ".join(problems) + ". Fix the message and run the commit again.",
     )
 
@@ -199,7 +200,7 @@ def _pr_hold(proof: _Proof) -> Hold | None:
         f"Load the `{PR_SKILL}` skill with the Skill tool in this turn and draft the "
         "title and body with it, then open the pull request again. The whole command "
         "was held, so rerun any steps chained before it too. This hold is strict: a "
-        "`goated-skip` line does not clear it.",
+        "goated-skip line does not clear it.",
     )
 
 
@@ -215,7 +216,7 @@ def _spawn_hold(brief: str, proof: _Proof) -> Hold | None:
             "write the brief from that template (Goal, Scope, Done Means at least). For a "
             "scoped implementation or review task, load `subagent-driven-development` "
             "and fill its implementer or reviewer prompt instead. Nothing was started. "
-            "This hold is strict: a `goated-skip` line does not clear it.",
+            "This hold is strict: a goated-skip line does not clear it.",
         )
     read =[t for t in loaded if proof.read(t.reference)]
     if not read:
@@ -245,7 +246,7 @@ def _security_hold(path: str, proof: _Proof) -> Hold | None:
         return None
     return Hold(
         "security", JUSTIFIED_SKIP,
-        f"`{path.rsplit('/', 1)[-1]}` is a security-sensitive surface ({category}). Load "
+        f"\"{path.rsplit('/', 1)[-1]}\" is a security-sensitive surface ({category}). Load "
         f"`{SECURITY_SKILL}` with the Skill tool in this turn and review this change with "
         "it. If the change crosses no trust boundary and touches no auth, secrets, "
         "persistence, execution, dependency, or deployment behaviour, write "

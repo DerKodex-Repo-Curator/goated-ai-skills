@@ -337,7 +337,7 @@ def _user_prompt_submit(payload: dict, config: Config) -> str:
         # it, so the skill-usage mod reads the same sentence from here.
         output["hookSpecificOutput"] = {
             "hookEventName": "UserPromptSubmit",
-            "additionalContext": f"{NAME}: {recorded}.",
+            "additionalContext": _sentence([recorded]),
         }
     return _with_warnings(output, notes)
 
@@ -364,10 +364,17 @@ def _save(store: StateStore, session_id: str, state) -> str | None:
     return None
 
 
+def _sentence(parts) -> str:
+    """The adapter's one notice sentence for these parts, or "" when there are none."""
+
+    text = "; ".join(p.rstrip(".") for p in parts if p)
+    return f"{NAME}: {text}." if text else ""
+
+
 def _with_warnings(output: dict, warnings) -> str:
-    text = "; ".join(w.rstrip(".") for w in warnings if w)
+    text = _sentence(warnings)
     if text:
-        output["systemMessage"] = f"{NAME}: {text}."
+        output["systemMessage"] = text
     return json.dumps(output) if output else ""
 
 

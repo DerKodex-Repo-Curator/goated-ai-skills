@@ -228,9 +228,16 @@ goated-hold: <gate> | <kind>
   `^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-skip)$`.
 - The lines after it are guidance for the agent and may change between
   releases; do not parse their wording. They backtick each skill they ask
-  for by its bare name, which is all the skill-usage mod reads from them.
-  Other backticked text, such as `goated-skip`, a file path, or a heading,
-  is not a skill name.
+  for by its bare name, which is all the skill-usage mod reads from them,
+  and backtick no other bare word: a file name is quoted, and the grammar's
+  words appear backticked only inside a whole line such as
+  `goated-skip: <skill>: <reason>`. A test checks every hold text against
+  the registry's skill names.
+- Each named skill is a separate requirement, except in the `spawn` hold,
+  whose two skills are alternatives: `handoff` or
+  `subagent-driven-development`, either of which answers it.
+- A hold asks for a load in the current turn. A skill loaded in an earlier
+  turn does not answer it.
 
 Claude Code records a denied call as a `tool_result` with `is_error: true`
 whose content carries this reason, and a blocked `Stop` as the reason shown

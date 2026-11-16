@@ -94,6 +94,28 @@ Left as known limits (mod README): holds that name no skill by its bare name
 (the spawn template-read and heading holds) count by gate and kind only, and
 the closeout proof item, which asks for a check run, has no per-skill result.
 
+Review fixes (2026-11-16, after an independent review):
+
+- The adapter's hold texts now backtick only skill names. A security hold
+  quotes its file name, strict holds write "goated-skip line" without
+  backticks, and the contract-break commit hold no longer backticks
+  `commit-message`. A Python test checks every generated hold text against
+  the registry.
+- Adapter holds ask for a load in the current turn, so the mod no longer
+  shows them as "already loaded" because of an earlier turn's load.
+- The mod marks where each main round trip begins (`response`, `results`). A
+  hold counts as answered at once only when the held call's own reply already
+  had the route line or load. A `continue` with no task to continue answers
+  nothing.
+- The spawn hold's alternatives are one ask with one count.
+- The mod reads holds only from an errored result or a blocked Stop, with the
+  documented line exactly, and handles CRLF.
+- A headless run with the mod capturing real rows and history showed that a
+  blocked Stop arrives once live (plus an unobserved `note` row) and once in
+  history, in the blocking-error form only, so the "Stop hook feedback" form
+  was dropped. That history carries no `UserPromptSubmit` hook context, so
+  rebuilt history cannot count overrides (README limit).
+
 Found, outside this ticket's scope: in headless Haiku runs the closeout
 gate's proof item blocked `Stop` up to Claude Code's limit of nine in a row,
 even after the agent ran `python -c` checks and wrote a

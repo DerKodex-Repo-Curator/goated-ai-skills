@@ -4,7 +4,7 @@ The mod's tests run inside Claude Code's plugin test kit, which has no file
 system, YAML parser, or Python, so they read two generated TypeScript modules:
 
 - `marker-fixtures.ts`, the marker fixtures in `stack/fixtures/markers/lines.yaml`;
-- `adapter-texts.ts`, the hold reasons and the override notice the Claude Code
+- `adapter-texts.ts`, the hold reasons and the override context the Claude Code
   adapter actually produces, from driving it with synthetic sessions.
 
 This test fails when either module no longer matches its source. Regenerate
@@ -16,6 +16,7 @@ both with:
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -26,6 +27,8 @@ import yaml
 from claude_code_adapter_support import BRIEF, ROUTER, Session, parse, reason
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+# A whole backticked token shaped like a skill name, as the mod reads one from a hold.
+BARE_BACKTICKED = re.compile(r"`([a-z0-9]+(?:-[a-z0-9]+)*)`")
 MARKER_FIXTURES = REPO_ROOT / "stack" / "fixtures" / "markers" / "lines.yaml"
 MOD_ROOT = REPO_ROOT / "adapters" / "claude-code" / "skill-usage"
 GENERATED_MARKERS = MOD_ROOT / "tests" / "marker-fixtures.ts"
@@ -51,6 +54,12 @@ def _write(path: str, lines: int = 6) -> dict:
     """A write tool's input adding enough lines to count as a substantial change."""
 
     return {"file_path": path, "content": "\n".join(f"line {n}" for n in range(lines))}
+
+
+def _stop_reason(s: Session) -> str:
+    """The reason the closeout gate blocks `Stop` with, or "" when it lets the turn end."""
+
+    return parse(s.hook("Stop", stop_hook_active=False, last_assistant_message="")).get("reason", "")
 
 
 def _adapter_texts() -> dict[str, str]:
@@ -106,13 +115,28 @@ def _adapter_texts() -> dict[str, str]:
         closing = routed("closeout")
         closing.say("goated-skip: software-design-principles: one mechanical constant change")
         closing.call("Write", _write("src/export.py"))
-        texts["closeout"] = parse(closing.hook("Stop", stop_hook_active=False, last_assistant_message="")).get(
-            "reason", ""
-        )
+        texts["closeout"] = _stop_reason(closing)
+
+        # The other closeout items: a failed last check (Unfinished) and the design skill's red flags.
+        unfinished = routed("closeout-unfinished")
+        unfinished.load("software-design-principles")
+        unfinished.call("Write", _write("src/export.py"))
+        unfinished.run("pytest -q", success=False)
+        texts["closeoutUnfinished"] = _stop_reason(unfinished)
+
+        contract = routed("commit-contract")
+        contract.load("commit-message")
+        texts["commitContract"] = reason(contract.call("Bash", {"command": f'git commit -m "{"x" * 80}"'}))
+
+        headings = routed("spawn-headings")
+        headings.brief_with_handoff()
+        texts["spawnHeadings"] = reason(headings.call("Agent", {"prompt": "Audit the exporter."}))
+
+        texts["securityNoExtension"] = reason(routed("security-no-extension").call("Write", _write(".env")))
 
         overridden = session("override")
         context = parse(overridden.prompt("Skip routing and add CSV export."))["hookSpecificOutput"]
-        texts["overrideNotice"] = context["additionalContext"]
+        texts["overrideContext"] = context["additionalContext"]
     return texts
 
 
@@ -143,7 +167,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
         self.assertTrue(texts["routerFirst"].startswith("goated-hold: router-first | strict\n"))
         self.assertTrue(texts["routeLine"].startswith("goated-hold: route-line | strict\n"))
         self.assertTrue(texts["pipeline"].startswith("goated-hold: pipeline | strict\n"))
-        self.assertIn('recorded your override for this prompt: "Skip routing"', texts["overrideNotice"])
+        self.assertIn('recorded your override for this prompt: "Skip routing"', texts["overrideContext"])
         gates = {
             "commit": "commit | strict",
             "pullRequest": "pull-request | strict",
@@ -153,10 +177,38 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "security": "security | justified-skip",
             "shellWrite": "security | justified-skip",
             "closeout": "closeout | justified-skip",
+            "closeoutUnfinished": "closeout | justified-skip",
+            "commitContract": "commit | strict",
+            "spawnHeadings": "spawn | strict",
+            "securityNoExtension": "security | justified-skip",
         }
         for key, line in gates.items():
             with self.subTest(key=key):
                 self.assertTrue(texts[key].startswith(f"goated-hold: {line}\n"), texts[key])
+        self.assertIn("- Unfinished:", texts["closeoutUnfinished"])
+        self.assertIn("- Design:", texts["closeoutUnfinished"])
+
+    def test_holds_backtick_only_skill_names(self) -> None:
+        # The mod reads every bare backticked name in a hold as a skill it asks for (README "Hold messages"),
+        # so a backticked file name, such as a security hold's `credentials`, would read as a phantom skill.
+        registry = yaml.safe_load((REPO_ROOT / "stack" / "goated-stack.yaml").read_text(encoding="utf-8"))
+        skills = {entry["name"] for entry in registry["skills"]}
+        for key, text in _adapter_texts().items():
+            if not text.startswith("goated-hold: "):
+                continue
+            with self.subTest(key=key):
+                names = set(BARE_BACKTICKED.findall(text.split("\n", 1)[1]))
+                self.assertEqual(names - skills, set(), text)
+
+    def test_a_security_hold_on_a_file_named_like_a_word_names_no_extra_skill(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            s = Session(Path(tmp))
+            s.prompt("Add CSV export.")
+            s.load(ROUTER)
+            s.say("goated-route: direct")
+            held = reason(s.call("Write", _write("src/credentials")))
+        self.assertTrue(held.startswith("goated-hold: security | justified-skip\n"), held)
+        self.assertEqual(set(BARE_BACKTICKED.findall(held)), {"code-security-review"})
 
     def test_mod_manifest_names_its_type_contract(self) -> None:
         manifest = json.loads((MOD_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
