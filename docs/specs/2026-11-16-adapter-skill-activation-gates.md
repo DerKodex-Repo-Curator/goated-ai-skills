@@ -5,7 +5,9 @@
 Approved in direction by the maintainer on 2026-11-16, in the grill that
 closed the skill-usage mod's quality check. The four gates below were each
 chosen. Thresholds and the open questions are provisional until the ticket
-that delivers each gate settles them. Builds on
+that delivers each gate settles them. Revised the same day after an
+independent review: distinct gate names, G4 as a gate of its own, and the
+portable text each gate enforces (ADR 0003, rule 2). Builds on
 [the skill enforcement spec](2026-11-15-skill-enforcement-adapter.md) and
 [ADR 0003](../adr/0003-opt-in-framework-enforcement-adapters.md).
 
@@ -46,29 +48,40 @@ and a gate on a guess would hold good work.
 
 - Gates for skills whose moment cannot be recognised from tool calls and
   their results.
-- Changing the hold format, `goated-hold: <gate> | <kind>`, or any existing
-  gate's behaviour.
+- Changing the hold format, `goated-hold: <gate> | <kind>`, or what any
+  existing gate holds and how it clears. G3 adds an item to the closeout gate,
+  which keeps its first line and kind; G4 is a gate of its own beside
+  `pull-request`, which stays as it is.
 - Strict holds. Every gate here is `justified-skip`.
 
 ## Requirements
 
 ### G1: Merge conflicts → `resolving-merge-conflicts`
 
-- A new action gate, `merge-conflict`, holds a write to a file while a
+- A new action gate, `conflict-resolution`, holds a write to a file while a
   conflict is open in the turn: an `Edit` whose `old_string` holds conflict
   markers (`<<<<<<<`, `=======`, `>>>>>>>` at line starts), or any write after
-  a `git merge`, `rebase`, `cherry-pick`, `revert`, `pull`, or
-  `stash pop|apply` whose result in the turn reports a conflict.
+  a `git merge`, `rebase`, `cherry-pick`, `revert`, or `pull` whose result in
+  the turn reports a conflict.
 - It clears when `resolving-merge-conflicts` loads in the turn, or on a skip
   line naming it.
+- Grounded in the skill's description: "Use when an in-progress Git merge,
+  rebase, cherry-pick, or revert has conflicts". A `pull` is a merge or a
+  rebase. A conflicting `git stash pop` or `apply` is not in the description,
+  so the gate leaves it alone.
 
 ### G2: Repeated failure → `diagnose`
 
-- A new action gate, `diagnose`, holds the next write after the same check
-  command (as the closeout gate recognises checks) has failed twice in the
-  turn.
+- A new action gate, `repeated-failure`, holds the next write after the same
+  check command (as the closeout gate recognises checks) has failed twice in
+  the turn.
 - It clears when `diagnose` loads in the turn, or on a skip line naming it.
 - Provisional threshold: two failures of the same command.
+- Grounded in the skill's description ("Use when investigating ... failing
+  behavior, flaky tests, build failures ... before proposing or implementing
+  fixes") and the router's gate table ("`diagnose` for failures"). The text
+  applies from the first failure; two failures is a narrower stand-in that
+  holds less than the text asks, to keep the hold rare. It adds no rule.
 
 ### G3: Setup changes → `setup-scribe`
 
@@ -79,20 +92,37 @@ and a gate on a guess would hold good work.
   a `settings*.json` under `.claude/` or `.vscode/`, and the like).
 - It is met when `setup-scribe` loads in the turn, or by a skip line naming
   it.
+- Grounded in the skill's description ("Use after installing project
+  dependencies or tools, changing environment variables, application or
+  machine settings") and the shared policy ("Select `setup-scribe` only when
+  project setup knowledge is missing, changed, stale, or automation-ready").
 
 ### G4: Large pull requests → `standards-and-spec-review`
 
-- The `pull-request` gate gains a second item. When the change the pull
-  request opens is large, it also needs `standards-and-spec-review` loaded in
-  the turn, or a skip line naming it. The existing `pr-description`
-  requirement stays strict. The new item is justified-skip.
+- A new action gate, `pr-review`, holds the same pull-request commands the
+  `pull-request` gate holds, once that gate has passed, when the change the
+  pull request opens is large. It clears when `standards-and-spec-review`
+  loads in the turn, or on a skip line naming it. The `pull-request` gate and
+  its strict `pr-description` requirement stay as they are: one hold has one
+  kind, so the justified-skip review is a hold of its own.
 - Provisional threshold: 400 or more changed lines against the base branch.
+- Grounded in the skill's description ("Use when a change is large or risky
+  enough to review before it lands") and the shared policy ("Load
+  standards/spec review when diff size, risk, acceptance, scope, or convention
+  uncertainty warrants it"). Neither gives a number. Ticket 038 either puts
+  the threshold into that portable text first, or records it in the adapter
+  README as a documented mechanical stand-in for "large", as the design
+  gate's five added lines are.
 
 ### Shared
 
 - Each new hold uses the documented first line and backticks only the skill
   it asks for, so the skill-usage mod reads it with no grammar change. The mod
   gains a display name for each new gate.
+- Each new gate name differs from every gate key of the earlier hand-written
+  hooks the mod still reads (`merge-conflict` and `diagnose` among them), so
+  All time keeps their counts apart from the new gates' follow and decline
+  rates.
 - User overrides (`skip <skill>`) stand each new requirement down, as they
   do for the existing gates.
 - The adapter README's gate tables and the generated

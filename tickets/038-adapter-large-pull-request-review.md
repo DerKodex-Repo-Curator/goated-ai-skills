@@ -10,14 +10,19 @@ HITL. The maintainer decides how the adapter learns a change's size.
 
 ## What To Build
 
-Give the `pull-request` gate a second, justified-skip item: when the change
-the pull request opens is large, it also needs `standards-and-spec-review`
-loaded in the turn, or a skip line naming it. The existing `pr-description`
-requirement stays strict.
+Add the `pr-review` action gate, justified-skip. It holds the pull-request
+commands the `pull-request` gate holds, once that gate has passed, when the
+change the pull request opens is large; it clears when
+`standards-and-spec-review` loads in the turn, or on a skip line naming it.
+The `pull-request` gate and its strict `pr-description` requirement stay as
+they are.
 
 Settle the spec's G4 open question with the maintainer first: how the adapter
 learns the change's size, within the hook latency budget. Provisional
-threshold: 400 or more changed lines against the base branch.
+threshold: 400 or more changed lines against the base branch. The portable
+text says "large" with no number (spec G4): either put the threshold into the
+skill's description or the shared policy first, or record it in the adapter
+README as a documented stand-in, as the design gate's five lines are.
 
 ## Recommended First Reads
 
@@ -33,13 +38,16 @@ threshold: 400 or more changed lines against the base branch.
 ## Acceptance Criteria
 
 - [ ] A pull request over the threshold with `pr-description` loaded is
-      held for the review item; one under it is not.
-- [ ] The strict `pr-description` requirement is unchanged.
-- [ ] The review item's hold has the first line
-      `goated-hold: pull-request | justified-skip` and backticks only
-      `standards-and-spec-review`.
+      held by `pr-review`; one under it is not.
+- [ ] The `pull-request` gate and its strict `pr-description` requirement are
+      unchanged.
+- [ ] The hold's first line is `goated-hold: pr-review | justified-skip`, and
+      its text backticks only `standards-and-spec-review`.
+- [ ] The threshold is grounded in portable text or recorded as a documented
+      stand-in, as the spec's G4 says.
 - [ ] The size check stays within the adapter's measured latency budget.
-- [ ] The adapter README's gate table describes the new item.
+- [ ] The adapter README's gate table and hold-message gate list name it, and
+      the mod shows it as "pr-review hold".
 - [ ] Loading `standards-and-spec-review` in the turn, a skip line naming it, and a typed
       `skip standards-and-spec-review` override each clear it.
 - [ ] `tests/adapter-texts.ts` is regenerated with the new hold text, and the
@@ -60,4 +68,4 @@ threshold: 400 or more changed lines against the base branch.
 ## Scope Exclusions
 
 - Reviewing the pull request itself: that is the skill's work.
-- Changes to any existing gate's behaviour or to the hold format.
+- Changes to the hold format, or to the `pull-request` gate.

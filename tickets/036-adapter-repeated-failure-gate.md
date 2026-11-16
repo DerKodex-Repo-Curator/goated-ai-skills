@@ -10,7 +10,7 @@ AFK.
 
 ## What To Build
 
-Add the `diagnose` action gate. It holds the next write after the same
+Add the `repeated-failure` action gate. It holds the next write after the same
 check command, as the closeout gate recognises checks, has failed twice in the
 turn.
 
@@ -33,11 +33,11 @@ the same command text or the same check tool.
 - [ ] Two failing runs of the same check, then a write: held.
 - [ ] One failure, or two failures of different checks, then a write: not
       held.
-- [ ] The hold's first line is `goated-hold: diagnose | justified-skip`, and
+- [ ] The hold's first line is `goated-hold: repeated-failure | justified-skip`, and
       its text backticks only `diagnose`.
 - [ ] The adapter README's gate table and hold-message gate list name it, and
-      the mod shows it as "diagnose hold" (the earlier hooks' `diagnose` key
-      read "repeated failure"; the adapter's meaning wins, as for `design`).
+      the mod shows it as "repeated-failure hold", apart from the earlier
+      hooks' `diagnose` counts.
 - [ ] Loading `diagnose` in the turn, a skip line naming it, and a typed
       `skip diagnose` override each clear it.
 - [ ] `tests/adapter-texts.ts` is regenerated with the new hold text, and the

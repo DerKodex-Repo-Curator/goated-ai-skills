@@ -54,4 +54,5 @@ the turn, or by a skip line naming it.
 ## Scope Exclusions
 
 - Recording the setup itself: that is `setup-scribe`'s work, not the gate's.
-- Changes to any existing gate's behaviour or to the hold format.
+- Changes to the hold format, or to what the closeout gate already holds
+  and how its other items clear.

@@ -10,10 +10,11 @@ AFK.
 
 ## What To Build
 
-Add the `merge-conflict` action gate. It holds a write to a file while a
+Add the `conflict-resolution` action gate. It holds a write to a file while a
 conflict is open in the turn: an `Edit` whose old text holds conflict markers
-at line starts, or any write after a merge, rebase, cherry-pick, revert,
-pull, or stash apply whose result in the turn reports a conflict.
+at line starts, or any write after a merge, rebase, cherry-pick, revert, or
+pull whose result in the turn reports a conflict. A conflicting stash pop or
+apply is left alone: the skill's description does not cover it (spec G1).
 
 Settle the spec's G1 open question first. Provisional default: no read of
 repository state on disk, so the gate stays a pure function of the turn.
@@ -35,10 +36,11 @@ repository state on disk, so the gate stays a pure function of the turn.
       one that only mentions the markers mid-line is not.
 - [ ] A write after a conflicting `git merge` result in the turn is held; a
       write after a clean merge is not.
-- [ ] The hold's first line is `goated-hold: merge-conflict | justified-skip`,
+- [ ] The hold's first line is `goated-hold: conflict-resolution | justified-skip`,
       and its text backticks only `resolving-merge-conflicts`.
 - [ ] The adapter README's gate table and hold-message gate list name it, and
-      the mod shows it as "merge-conflict hold".
+      the mod shows it as "conflict-resolution hold", apart from the earlier
+      hooks' `merge-conflict` counts.
 - [ ] Loading `resolving-merge-conflicts` in the turn, a skip line naming it, and a typed
       `skip resolving-merge-conflicts` override each clear it.
 - [ ] `tests/adapter-texts.ts` is regenerated with the new hold text, and the
