@@ -34,11 +34,16 @@ tests and README mentions (maintainer decision recorded in Ticket 034,
 
 ## Acceptance Criteria
 
-- [ ] The adapter and mod are installed from the repo, and the personal scripts
-      are disabled but restorable.
-- [ ] Data from several real sessions is summarised against each AC9 target.
-- [ ] The maintainer's keep, revise, or revert decision is recorded in the
-      spec.
+- [x] The adapter and mod are installed from the repo, and the personal scripts
+      are disabled but restorable. (2026-11-16: the adapter's hooks in the
+      user settings point at the main checkout, and the mod is installed from
+      its folder there. The two personal scripts were renamed, not deleted,
+      and the settings file was backed up first. A probe session was held by
+      `router-first`, and the mod recorded it.)
+- [x] Data from several real sessions is summarised against each AC9 target.
+      (13 sessions, 166 holds; spec, Trial Result.)
+- [x] The maintainer's keep, revise, or revert decision is recorded in the
+      spec. (Revise: fixes in Tickets 041–046, before 035.)
 
 ## Expected Proof
 

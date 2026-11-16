@@ -18,13 +18,15 @@ Source spec: `docs/specs/2026-11-16-adapter-skill-activation-gates.md`
 
 The four tickets touch the same adapter files (`actions.py`, the README's
 gate tables, the generated hold texts) and the mod's gate names, so they run
-one after another in this order, not in parallel. Ticket 041, from the
-skill-enforcement order, edits the same files and runs before 035. Ticket
+one after another in this order, not in parallel. Tickets 041–046, from the
+skill-enforcement order, edit the same files and run before 035. Ticket
 037 adds an item to the closeout gate rather than a new gate.
 
 ## Ready Frontier
 
-- None until `tickets/033-adapter-real-use-trial.md` records a keep decision.
+- None until `tickets/046-adapter-pipeline-after-compaction.md` lands. Ticket
+  033 recorded a revise decision on 2026-11-16, which keeps the adapter
+  installed and counts as the keep decision these tickets wait for.
 
 ## Coverage
 

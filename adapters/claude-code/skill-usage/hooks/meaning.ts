@@ -5,7 +5,7 @@
 import type { ElementTable, RenderSurface } from 'claude-code'
 
 import type { Counts, Origin, Outcome, RouteForm } from '../types'
-import { ANY_SPECIALIST, ROUTE_LINE } from './classify'
+import { ROUTE_LINE } from './classify'
 
 /** Where a drawing goes: the surface's elements and its name. */
 export type View = { ui: ElementTable<RenderSurface>; surface: RenderSurface }
@@ -30,7 +30,7 @@ export const BECAUSE: Record<Origin, string> = {
   'self-initiated': 'the agent chose it',
   subagent: 'a subagent chose it',
 }
-/** The GOATED hooks by what they do, not by their internal labels: the adapter's gates first, then earlier hand-written hooks. */
+/** The GOATED hooks by what they do, not by their internal labels: the adapter's gates first, then the hooks that summaries stored by earlier versions name. */
 export const HOOK: Record<string, string> = {
   'router-first': 'router-first hold',
   'route-line': 'route-line hold',
@@ -38,7 +38,7 @@ export const HOOK: Record<string, string> = {
   commit: 'commit hold',
   'pull-request': 'pull-request hold',
   spawn: 'spawn hold',
-  // The adapter's gates share these two keys with the earlier hooks' tips; the adapter's meaning wins.
+  // Earlier versions recorded tips under these three keys; the adapter's meaning wins.
   design: 'design hold',
   security: 'security hold',
   closeout: 'closeout hold',
@@ -63,7 +63,7 @@ export const RESULT: Record<Outcome, string> = {
   ignored: 'not loaded',
   pending: 'waiting',
 }
-export const skillName = (skill: string) => (skill === ANY_SPECIALIST ? 'a specialist skill' : skill === ROUTE_LINE ? 'a route line' : skill)
+export const skillName = (skill: string) => (skill === ROUTE_LINE ? 'a route line' : skill)
 /** A route line's form, as the pane counts it. */
 export const ROUTE_FORM: Record<RouteForm, string> = { direct: 'direct', continue: 'continue', route: 'routed' }
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`

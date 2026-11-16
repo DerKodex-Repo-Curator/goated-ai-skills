@@ -28,7 +28,9 @@ const MAX_EVENTS = 5000
 const MAX_SESSIONS = 300
 const OWN_SOURCES = new Set(['userSettings', 'projectSettings'])
 
-const events = atom({ plugin: 'skill-usage', key: 'events' } as const, [], { shape: 'events-1' })
+// Bump the shape tag whenever what a stored event means changes: a reload then drops the session's events instead of
+// misreading them. `events-2`: Ticket 033 stopped reading the retired hand-written hooks.
+const events = atom({ plugin: 'skill-usage', key: 'events' } as const, [], { shape: 'events-2' })
 const owner = atom({ plugin: 'skill-usage', key: 'owner' } as const, null)
 const backfilled = atom({ plugin: 'skill-usage', key: 'backfilled' } as const, null)
 const baseline = atom({ plugin: 'skill-usage', key: 'baseline' } as const, null, { shape: 'summary-1' })
@@ -276,6 +278,6 @@ async function observeRow($: Dollar, e: SessionAppendInput) {
     const kind = kept[i]?.kind
     if (kind === 'response' || kind === 'results') lastBoundary = kind
   }
-  const seen = { hasTool: kept.some(ev => ev.kind === 'tool'), lastKind: kept.at(-1)?.kind, lastBoundary }
+  const seen = { lastKind: kept.at(-1)?.kind, lastBoundary }
   await record($, rowEvents(e, await knownSkills($, isPrompt), await $.clock.now(), seen))
 }
