@@ -15,6 +15,17 @@ installed or added a dependency or tool by a command that names a package, or
 wrote an environment or settings file. It is met when `setup-scribe` loads in
 the turn, or by a skip line naming it.
 
+## Decisions
+
+Settled with the maintainer on 2026-11-16:
+
+- Spec open question G3: a bare install that names no package (`npm install`,
+  `pip install -r requirements.txt`) is not a setup change.
+- Env and settings files count wherever they are, inside the project or not,
+  since machine and application settings are setup too.
+- The env and settings files are the spec's list only: `.env` and `.env.*`,
+  and `settings*.json` under `.claude/` or `.vscode/`.
+
 ## Recommended First Reads
 
 - The spec's Requirements, Constraints, and Open Questions.

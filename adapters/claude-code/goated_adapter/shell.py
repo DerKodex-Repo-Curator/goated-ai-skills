@@ -145,11 +145,14 @@ class ShellCommand:
     content to the agent: a git diff or show, a patch log, or patches on
     stdout; a listing of names or counts (`--stat`, `--name-only`) does not.
     Only git is read; another version control system's diff is not seen.
+    `installs_package` says it installs or adds a dependency or tool it names
+    (`uv add httpx`), not a bare restore such as `npm install`.
     """
 
     __slots__ = (
         "writes", "write_targets", "unplaced_targets", "unknown_writes", "commit",
         "commit_message", "opens_pr", "is_check", "non_check_writes", "prints_changes",
+        "installs_package",
     )
 
     def __init__(self) -> None:
@@ -163,6 +166,7 @@ class ShellCommand:
         self.is_check = False
         self.non_check_writes = False
         self.prints_changes = False
+        self.installs_package = False
 
 
 def analyze(command: str) -> ShellCommand:
@@ -232,6 +236,8 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
     is_check = _is_check(name, original, args)
     if is_check:
         result.is_check = True
+    if _installs_package(name, args):
+        result.installs_package = True
     for target in filter(None, targets):
         if directory is None and not _is_absolute(target):
             result.unplaced_targets.append(target)
@@ -862,3 +868,78 @@ def _commit_message(args: list[str], heredocs: list[str]) -> str | None:
         else:
             resolved.append(part)
     return "\n\n".join(resolved) if resolved else None
+
+
+# Package installs ---------------------------------------------------------------
+
+_PIP_VALUES = frozenset({
+    "-r", "--requirement", "-c", "--constraint", "-i", "--index-url", "--extra-index-url",
+    "-f", "--find-links", "-t", "--target", "--prefix", "--root", "--python", "--platform",
+    "--src", "--cache-dir",
+})
+# Package managers by command word: the subcommands that install or add a
+# dependency or tool (spec G3), and the options that take a separate value (a
+# file, folder, index, filter, or version) which is not a package. An option
+# missing here leaves its value behind as a package; an `--opt=value` is one
+# word and never does. Pip's `-e` is left out on purpose: its value is a local
+# path (not a package) or a VCS URL (a package), which the word itself tells.
+PACKAGE_MANAGERS: dict[str, tuple[tuple[tuple[str, ...], ...], frozenset[str]]] = {
+    "npm": ((("install",), ("i",), ("add",)), frozenset({
+        "-w", "--workspace", "--prefix", "--registry", "--tag", "--omit", "--include",
+        "--cache", "--userconfig"})),
+    "pnpm": ((("add",), ("install",), ("i",)), frozenset({
+        "-F", "--filter", "-C", "--dir", "--registry", "--store-dir"})),
+    "yarn": ((("add",), ("global", "add")), frozenset({"--cwd", "--registry", "--modules-folder"})),
+    "bun": ((("add",), ("install",), ("i",)), frozenset({"--cwd", "--registry", "--backend",
+                                                       "--cache-dir"})),
+    "pip": ((("install",),), _PIP_VALUES),
+    "pip3": ((("install",),), _PIP_VALUES),
+    "uv": ((("add",), ("pip", "install"), ("tool", "install")), _PIP_VALUES | frozenset({
+        "--requirements", "--constraints", "-p", "--index", "--default-index", "--directory",
+        "--project", "--package", "--group", "--optional", "--extra", "--branch", "--tag",
+        "--rev", "--from", "-w", "--with", "--with-requirements"})),
+    "poetry": ((("add",),), frozenset({"-G", "--group", "--source", "--python", "-E", "--extras",
+                                      "-C", "--directory"})),
+    "pipx": ((("install",),), frozenset({"--python", "--suffix", "-i", "--index-url",
+                                        "--pip-args"})),
+    "conda": ((("install",),), frozenset({"--file", "-c", "--channel", "-n", "--name", "-p",
+                                         "--prefix"})),
+    "cargo": ((("add",), ("install",)), frozenset({
+        "--path", "--branch", "--tag", "--rev", "--version", "--vers", "--root", "--features",
+        "-F", "--package", "-p", "--registry", "--index", "--target", "--manifest-path",
+        "--rename", "-j", "--jobs", "--profile", "--target-dir", "--config"})),
+    "go": ((("get",), ("install",)), frozenset({"-C", "-modfile"})),
+    "gem": ((("install",),), frozenset({"-v", "--version", "-i", "--install-dir", "-s", "--source",
+                                       "-n", "--bindir"})),
+    "brew": ((("install",),), frozenset()),
+    "apt": ((("install",),), frozenset({"-o", "--option", "-t", "--target-release", "-c",
+                                       "--config-file"})),
+    "apt-get": ((("install",),), frozenset({"-o", "--option", "-t", "--target-release", "-c",
+                                           "--config-file"})),
+    "winget": ((("install",),), frozenset({
+        "-s", "--source", "-v", "--version", "--scope", "-l", "--location", "--override",
+        "--custom", "-o", "--log", "-a", "--architecture", "--locale", "-m", "--manifest",
+        "--header"})),
+    "choco": ((("install",),), frozenset({"--version", "-s", "--source", "--params",
+                                         "--package-parameters", "--install-arguments", "--ia",
+                                         "--cache-location"})),
+    "scoop": ((("install",),), frozenset({"-a", "--arch"})),
+}
+LOCAL_PATH_RE = re.compile(r"^(?:[.~/\\]|[A-Za-z]:[\\/])")
+
+
+def _installs_package(name: str, args: list[str]) -> bool:
+    """True when the command installs or adds a package it names, so a bare
+    restore (`npm install`, `pip install -r requirements.txt`) is not one. A
+    local path (`.`, `../lib`, `C:/pkg`) is not a package; a URL is."""
+
+    if name in ("python", "python3", "py") and args[:2] == ["-m", "pip"]:
+        name, args = "pip", args[2:]
+    if name not in PACKAGE_MANAGERS:
+        return False
+    subcommands, value_options = PACKAGE_MANAGERS[name]
+    words = [a for a in _drop_values(args, value_options) if not a.startswith("-")]
+    for sub in subcommands:
+        if tuple(words[: len(sub)]) == sub:
+            return any("://" in w or not LOCAL_PATH_RE.match(w) for w in words[len(sub):])
+    return False

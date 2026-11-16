@@ -284,6 +284,18 @@ test('the closeout hold is followed by loading the skill it names, declined by a
   expect(ignored.holds).toEqual({ 'justified-skip': 1 })
 })
 
+test('the closeout Setup item asks for setup-scribe: a load follows it, a skip line declines it, and otherwise it is ignored', async () => {
+  const text = ADAPTER_TEXTS.closeoutSetup
+  expect(stopHold(1, text)).toEqual([{ kind: 'nudge', t: 1, hook: 'closeout', named: ['setup-scribe'], holdKind: 'justified-skip', isStop: true }])
+  expect(summarize([prompt(), ...stopHold(2, text), load('setup-scribe', 3), turnEnd(4)]).nudges).toEqual({ closeout: { followed: 1 } })
+  const reason = 'the lockfile already records it'
+  const declined = summarize([prompt(), ...stopHold(2, text), ...markerEvents(`goated-skip: setup-scribe: ${reason}`, 3), turnEnd(4)])
+  expect(declined.nudges).toEqual({ closeout: { declined: 1 } })
+  const nudge = declined.timeline.find(e => e.kind === 'nudge' && e.hook === 'closeout')
+  expect(nudge?.kind === 'nudge' && nudge.skills).toEqual([{ skill: 'setup-scribe', status: 'declined', at: 3, reason }])
+  expect(summarize([prompt(), ...stopHold(2, text), turnEnd(3)]).nudges).toEqual({ closeout: { ignored: 1 } })
+})
+
 test('a blocked Stop does not end the turn: blocks in a row are one hold, and the load that follows answers it once', async () => {
   const s = summarize([prompt(), response(1), ...stopHold(2), results(2), response(3), ...stopHold(4), results(4), response(5), load('doc-sync', 5), results(6), turnEnd(7)])
   expect(s.nudges.closeout).toEqual({ followed: 2 })

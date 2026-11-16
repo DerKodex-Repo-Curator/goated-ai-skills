@@ -5,9 +5,11 @@ These enforce skill triggers the skills already state (ADR 0003): commit with
 `commit-message`, open a pull request with `pr-description`, brief a new agent
 with `handoff`'s spawn brief or `subagent-driven-development`, design with
 `software-design-principles`, review sensitive surfaces with
-`code-security-review`, investigate a check that keeps failing with
-`diagnose`, and close a code-changing turn with proof, `doc-sync`,
-`handoff`, and the design red flags.
+`code-security-review`, resolve a merge conflict with
+`resolving-merge-conflicts`, investigate a check that keeps failing with
+`diagnose`, close a code-changing turn with proof, `doc-sync`, `handoff`,
+and the design red flags, and close a turn that changed setup with
+`setup-scribe`.
 
 Every decision is a pure function of the current turn as the transcript
 records it, plus the user's typed overrides for that turn. So an unchanged
@@ -68,6 +70,7 @@ FAILURE_SIGNS_RE = re.compile(
     r"|^npm error\b|\berror TS\d+|\berror\[E\d+\]|test result: FAILED|^error: ",
     re.MULTILINE,
 )
+SETUP_SKILL = "setup-scribe"
 RED_FLAGS_REFERENCE = "software-design-principles/references/red-flags.md"
 
 # Tools that start another agent, each with the input field that carries the
@@ -157,6 +160,12 @@ SECURITY_CATEGORIES = (
 )
 # Only dependency manifests among docs-like files (`requirements.txt`) are sensitive.
 ALWAYS_CHECKED_CATEGORIES = frozenset({"dependencies"})
+# Env and settings files whose change is setup (spec G3): `.env` and `.env.*`,
+# and `settings*.json` under `.claude/` or `.vscode/`. They count wherever they
+# are, since machine and application settings are setup too.
+SETUP_FILE_RE = re.compile(
+    r"(?:^|/)\.env(?:\.[^/]*)?$|(?:^|/)\.(?:claude|vscode)/settings[^/]*\.json$", re.IGNORECASE
+)
 
 
 class _Proof:
@@ -540,8 +549,10 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     `software-design-principles` was loaded. A turn that loaded
     `code-security-review` and changed a security-sensitive file, code or
     not, needs a security review. The doc-sync, design, and security items
-    each also need a change read after their load or red-flags read. Each
-    item accepts a skip line; `final_text` is the reply being finished, which
+    each also need a change read after their load or red-flags read. A turn
+    that installed a package it names, or wrote an env or settings file, needs
+    `setup-scribe` loaded at any point in the turn (Setup). Each item accepts
+    a skip line; `final_text` is the reply being finished, which
     may not be in the transcript yet.
 
     `subagents` maps the agent id of each subagent this turn spawned to its
@@ -564,9 +575,15 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
                 f"change itself and review it: {CHANGE_READ}. Or, if it crosses no trust "
                 f"boundary, write `goated-skip: {SECURITY_SKILL}: <reason>`."
             )
+    setup_item = _setup_item(turn, subagents or {}, proof)
+    if setup_item:
+        items.append(setup_item)
     if not items:
         return None
-    what = "changed code" if changes.code else "changed a security-sensitive file"
+    what = (
+        "changed setup" if items == [setup_item]
+        else "changed code" if changes.code else "changed a security-sensitive file"
+    )
     return Hold(
         "closeout", JUSTIFIED_SKIP,
         f"Before finishing this turn, which {what}:\n" + "\n".join(items)
@@ -629,6 +646,65 @@ def _code_items(changes: "_Changes", proof: _Proof) -> list[str]:
                 f"`goated-skip: {DESIGN_SKILL}: <reason>`."
             )
     return items
+
+
+def _setup_item(turn: Turn, subagents: dict, proof: _Proof) -> str:
+    """The Setup item, or "" when the turn changed no setup or met it.
+
+    The turn's own `setup-scribe` load or skip line meets every setup change,
+    its subagents' included; a subagent's own load or skip line meets only the
+    changes that subagent made, as its own check proves its own code.
+    """
+
+    if proof.loaded_or_skipped(SETUP_SKILL):
+        return ""
+    calls = list(turn.calls) + [
+        call for sub_turns in subagents.values() if not _setup_met(sub_turns, proof.namespaces)
+        for sub_turn in sub_turns for call in sub_turn.calls
+    ]
+    setup = _setup_changes(calls)
+    if not setup:
+        return ""
+    return (
+        f"- Setup: this turn {setup}. Load `{SETUP_SKILL}` and record the setup so it "
+        "can be repeated, or, if it leaves nothing to record, write "
+        f"`goated-skip: {SETUP_SKILL}: <reason>`."
+    )
+
+
+def _setup_met(sub_turns: list[Turn], namespaces: tuple[str, ...]) -> bool:
+    """True when a subagent loaded `setup-scribe` or wrote a skip line naming it."""
+
+    return any(
+        goated_skill_name(raw, namespaces) == SETUP_SKILL for t in sub_turns for raw in t.loads
+    ) or any(skip["skill"] == SETUP_SKILL for t in sub_turns for skip in t.skips)
+
+
+def _setup_changes(calls) -> str:
+    """What setup the finished `calls` changed, as a phrase for the Setup item
+    ('installed a package', 'wrote ".env"'), or ""."""
+
+    installed, files = False, []
+    for call in calls:
+        if not call.ok:
+            continue
+        if call.name in FILE_WRITE_TOOLS:
+            targets = [str(call.input.get(FILE_WRITE_TOOLS[call.name]) or "")]
+        elif call.name in COMMAND_TOOLS:
+            command = shell.analyze(str(call.input.get("command") or ""))
+            installed = installed or command.installs_package
+            targets = command.write_targets
+        else:
+            continue
+        for target in targets:
+            name = _norm(target).rsplit("/", 1)[-1]
+            if SETUP_FILE_RE.search(_norm(target)) and name not in files:
+                files.append(name)
+    # Names are quoted, not backticked: the skill-usage mod reads a backticked name as a skill.
+    done = (["installed a package"] if installed else []) + (
+        ["wrote " + ", ".join(f'"{name}"' for name in files)] if files else []
+    )
+    return " and ".join(done)
 
 
 class _Change:

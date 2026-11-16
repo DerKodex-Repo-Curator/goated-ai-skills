@@ -99,7 +99,7 @@ of hold:
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` loads in the turn |
 | `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an `Edit` or `MultiEdit` whose old text has a `<<<<<<<` or `>>>>>>>` marker at a line start; a write, by a write tool or a shell command such as `git checkout --theirs`, to a file a Read in the turn showed with such a marker; or any write after a git merge, rebase, cherry-pick, revert, or pull whose result in the turn reported a conflict. A finished abort, quit, continue, or skip of that operation, or a finished commit, ends the conflict and drops the Reads before it. Only the turn is read, not the repository, so a conflict opened in an earlier turn is caught only by markers the turn shows: an edit whose old text spans only `=======` and one side, in a file not read this turn, is not held, because `=======` alone is also a heading underline. A conflicting stash pop or apply is not held | `resolving-merge-conflicts` loads in the turn |
 | `repeated-failure` | justified-skip | A write, by a write tool or a shell command, once one check command (as the closeout's Proof item recognises checks) has failed twice in a row in the turn. A shell command is held when any of its simple commands writes and is not itself a check, so `sed -i … && pytest` and `pytest \| tee out.txt` are held, while `pytest > out.txt` is a rerun. "The same check" is the same command text, whitespace aside, without a trailing pipe into output filters (`tail`, `head`, `grep`, `findstr`, `more`, `less`, `tee`, `Select-Object`, `Select-String`, `Out-Host`, `Out-String`) or a `2>&1` before it; so `pytest -q \| tail -20` and `pytest -q \| tail -40` are one check, and a narrowed rerun such as one test file of a failing suite is another. A piped run fails by what it prints (`N failed`, `N errors`, `FAILED (`, `FAIL`, `npm ERR!`, `error TS…`, `test result: FAILED`, and the like), since the exit code is the filter's; any other run fails by its exit code. A pass of the check resets its count; other commands between runs do not. A call that never ran does not count: one the adapter or another hook held, one refused at a permission prompt, or one interrupted | `diagnose` loads in the turn |
-| `closeout` | justified-skip | The end of a turn that changed code, or that loaded `code-security-review` and changed a security-sensitive file (a `Stop` hook) | Every item below is met or skipped |
+| `closeout` | justified-skip | The end of a turn that changed code, that loaded `code-security-review` and changed a security-sensitive file, or that changed setup (a `Stop` hook) | Every item below is met or skipped |
 
 The closeout items, each judged against the turn's last code change. A code
 change is a write tool's file, or a file a shell command writes (its redirect
@@ -149,6 +149,32 @@ check after its own last change, that change is already proved.
 | Docs | A code file outside the tests changed | `doc-sync` loads, then a [change read](#change-reads) after the load and the last code change | `doc-sync` |
 | Design red flags | `software-design-principles` loaded in the turn | `software-design-principles/references/red-flags.md` is read after the last change, then a [change read](#change-reads) after that read | `software-design-principles` |
 | Security | `code-security-review` loaded in the turn and a security-sensitive file (the `security` gate's paths, code or not) changed | A [change read](#change-reads) after the load and the last sensitive change | `code-security-review` |
+| Setup | The turn installed or added a dependency or tool by a command that names a package, or wrote an env or settings file (see below) | `setup-scribe` loads in the turn, before or after the change | `setup-scribe` |
+
+The Setup item is not judged against code changes. A **package install** is a
+finished `npm`, `pnpm`, or `bun` `add` or `install`, `yarn add`, `pip install`
+(also `python -m pip`), `uv add`, `uv pip install`, `uv tool install`,
+`poetry add`, `pipx install`, `conda install`, `cargo add` or `install`,
+`go get` or `install`, `gem install`, or `brew`, `apt`, `apt-get`, `winget`,
+`choco`, or `scoop` `install`, or `yarn global add`, that names a package. A
+bare `npm install`, `pip install -r requirements.txt`, or `pip install -e .`
+restores what a manifest records or installs a local path, so it does not
+count; a URL, such as `pip install -e git+https://…`, is a package. Each
+manager's options that take a value (`--filter`, `--workspace`, `--python`,
+`--file`, `--prefix`, `--registry`, `--index-url`, `--target`, and the like;
+`PACKAGE_MANAGERS` in `shell.py`) are skipped with their value, so
+`pnpm install --filter web` names no package. An **env or settings file** is
+`.env` or `.env.*` (`.env.example` included), or a `settings*.json` under
+`.claude/` or `.vscode/`, written by a write tool or a shell command. These
+count wherever they are, inside the project or not, since machine and
+application settings are setup too. A subagent's installs and writes count
+toward the parent's closeout; that subagent's own `setup-scribe` load or skip
+line meets them, as the parent's does.
+
+Two limits: an install inside `bash -c "…"` or another wrapped command string
+is not seen, as with every shell reading here; and an install whose failure
+the command hides (`npm install foo || true`) still counts, since the adapter
+sees only the whole command's result.
 
 - **Writes** are `Edit`, `Write`, `MultiEdit`, and `NotebookEdit`, and a
   `Bash` or `PowerShell` command that writes files (see
