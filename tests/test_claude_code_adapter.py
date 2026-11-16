@@ -1033,6 +1033,53 @@ class CompactionTests(AdapterTestCase):
         s.load("tdd")
         self.assertEqual(decision(s.call("Edit")), "pass")
 
+    def trial_session_compacted(self) -> Session:
+        """The Ticket 033 trial shape: a task needing `commit-message`, a
+        `continue` turn, then a new prompt that an auto-compaction followed
+        before the reply."""
+
+        s = self.session
+        s.prompt("Close ticket 040.")
+        s.load(ROUTER)
+        s.say("goated-route: standard | requires: commit-message")
+        s.load("commit-message")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+        s.prompt("Push main.")
+        s.say("goated-route: continue")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+        s.prompt("I found a real bug when the model loads skills.")
+        s.compact()
+        return s
+
+    def test_direct_after_compaction_and_continue_clears_the_earlier_pipeline(
+        self,
+    ) -> None:
+        s = self.trial_session_compacted()
+        s.say("goated-route: continue")
+        self.assertEqual(decision(s.call("Bash")), "deny")
+        s.load(ROUTER)
+        for _ in range(2):
+            held = s.call("Edit")
+            self.assertTrue(reason(held).startswith("goated-hold: pipeline | strict"))
+            self.assertIn("`commit-message`", reason(held))
+
+        s.say("goated-route: direct")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+    def test_the_route_carries_over_a_compaction_into_a_later_continue_turn(
+        self,
+    ) -> None:
+        s = self.trial_session_compacted()
+        s.load(ROUTER)
+        s.say("Summary read; picking the work back up.")
+        s.hook("Stop")
+        s.prompt("Carry on.")
+        s.say("goated-route: continue")
+        held = s.call("Edit")
+        self.assertIn("`commit-message`", reason(held))
+        s.load("commit-message")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
 
 class SharedPolicyNoticeTests(AdapterTestCase):
     POLICY = "# GOATED Integrated Stack Policy\n\nApply this shared policy.\n"

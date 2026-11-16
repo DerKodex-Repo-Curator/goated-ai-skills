@@ -183,7 +183,11 @@ check after its own last change, that change is already proved.
   policy says.
 - **Compaction** clears the proof: the router and the task's required skills
   must load again. The route itself carries over, so `goated-route: continue`
-  still works. A compaction also starts a new turn, so action proof restarts.
+  still works, and keeps the earlier task's `requires:` skills, which must
+  then load again. When the work after a compaction is a new task, write its
+  own route line; a `direct` or corrected line in a message before the write
+  replaces the earlier route at once. A compaction also starts a new turn, so
+  action proof restarts.
 - **Proof of use** is a successful Skill-tool load read from the transcript (a
   `Skill` tool call whose result is not an error), or a skill the user invoked
   by typing `/<skill>`. Naming a skill in text is not proof. A load counts by
