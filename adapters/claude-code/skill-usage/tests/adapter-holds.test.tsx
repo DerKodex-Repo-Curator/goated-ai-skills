@@ -10,6 +10,7 @@ import { expect, test } from 'claude-code/testing'
 import type { UsageEvent } from '../types'
 import { historyEvents, hookEvents, isObservedRow, markerEvents, rowEvents, summarize, toolUseEvents } from '../hooks/classify'
 import type { HistoryMessage, Row } from '../hooks/classify'
+import { hookName } from '../hooks/meaning'
 import { ADAPTER_TEXTS } from './adapter-texts'
 
 const SKILLS = ['using-goated-ai-skills', 'tdd', 'doc-sync', 'commit-message', 'pr-description', 'handoff', 'subagent-driven-development', 'software-design-principles', 'code-security-review']
@@ -38,6 +39,7 @@ test('each action hold reads as its gate and kind and names the skills it asks f
   const cases: [string, string, string, string, string[]][] = [
     ['commit', 'Bash', ADAPTER_TEXTS.commit, 'strict', ['commit-message']],
     ['pull-request', 'Bash', ADAPTER_TEXTS.pullRequest, 'strict', ['pr-description']],
+    ['pr-review', 'Bash', ADAPTER_TEXTS.prReview, 'justified-skip', ['standards-and-spec-review']],
     ['spawn', 'Agent', ADAPTER_TEXTS.spawn, 'strict', ['handoff', 'subagent-driven-development']],
     ['design', 'Write', ADAPTER_TEXTS.design, 'justified-skip', ['software-design-principles']],
     ['security', 'Write', ADAPTER_TEXTS.security, 'justified-skip', ['code-security-review']],
@@ -66,6 +68,17 @@ test('holds that ask for a read, missing headings or a message fix name no skill
     const nudge = s.timeline.find(e => e.kind === 'nudge')
     expect(nudge?.kind === 'nudge' && nudge.skills).toEqual([])
   }
+})
+
+test('the pr-review change-read hold names no skill, so a read that clears it is not counted as ignored', async () => {
+  expect(preHold('Bash', ADAPTER_TEXTS.prReviewRead, 1)).toEqual([{ kind: 'nudge', t: 1, hook: 'pr-review', named: [], holdKind: 'justified-skip' }])
+  const s = summarize([prompt(), ...preHold('Bash', ADAPTER_TEXTS.prReviewRead, 2), turnEnd(3)])
+  expect(s.holds).toEqual({ 'justified-skip': 1 })
+  expect(s.nudges).toEqual({})
+})
+
+test('the pr-review hold reads under its own name', async () => {
+  expect(hookName('pr-review')).toBe('pr-review hold')
 })
 
 // ---------- the closeout hold, a blocked Stop ---------------------------------------
@@ -233,6 +246,7 @@ for (const [gate, tool, text, skill] of [
   ['design', 'Write', ADAPTER_TEXTS.design, 'software-design-principles'],
   ['security', 'Write', ADAPTER_TEXTS.security, 'code-security-review'],
   ['security', 'Bash', ADAPTER_TEXTS.shellWrite, 'code-security-review'],
+  ['pr-review', 'Bash', ADAPTER_TEXTS.prReview, 'standards-and-spec-review'],
 ] as const) {
   const reason = 'the edit changes one constant and nothing else'
   test(`the ${gate} hold on ${tool} is followed by loading ${skill}, declined by a skip line with its reason, and otherwise ignored`, async () => {

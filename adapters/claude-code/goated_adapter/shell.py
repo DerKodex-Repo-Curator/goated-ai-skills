@@ -68,6 +68,8 @@ GIT_NO_PATCH_FLAGS = (
 GIT_SILENT_FLAGS_RE = re.compile(r"--quiet|--output(?:=.*)?")
 # `gh pr diff` and `glab mr diff` print a pull or merge request's patch.
 FORGE_DIFFS = {"gh": "pr", "glab": "mr"}
+# The options that name the branch a pull or merge request merges into.
+PR_BASE_OPTIONS = {"gh": ("--base", "-B"), "glab": ("--target-branch", "-b")}
 
 # Wrappers that run the next word as the command, with the options of each
 # that take a value.
@@ -135,7 +137,9 @@ class ShellCommand:
     download without an output name). `commit` is True for a `git commit`
     that records one (not `--dry-run`); `commit_message` is its message when
     that commit carries it inline, else None. `opens_pr` covers
-    `gh pr create|new` and `glab mr create|new`. `is_check` says it runs a
+    `gh pr create|new` and `glab mr create|new`; `pr_base` is the base
+    branch such a command names (`--base`/`-B` for gh, `--target-branch`/`-b`
+    for glab), else None. `is_check` says it runs a
     test, lint, build, or check. `prints_changes` says it prints changes'
     content to the agent: a git diff or show, a patch log, or patches on
     stdout; a listing of names or counts (`--stat`, `--name-only`) does not.
@@ -144,7 +148,7 @@ class ShellCommand:
 
     __slots__ = (
         "writes", "write_targets", "unknown_writes", "commit", "commit_message",
-        "opens_pr", "is_check", "prints_changes",
+        "opens_pr", "pr_base", "is_check", "prints_changes",
     )
 
     def __init__(self) -> None:
@@ -154,6 +158,7 @@ class ShellCommand:
         self.commit = False
         self.commit_message: str | None = None
         self.opens_pr = False
+        self.pr_base: str | None = None
         self.is_check = False
         self.prints_changes = False
 
@@ -206,6 +211,7 @@ def _add_segment(result: ShellCommand, segment: "_Segment") -> None:
         noun = FORGE_DIFFS[name]
         if rest[:1] == [noun] and rest[1:2] in (["create"], ["new"]):
             result.opens_pr = True
+            result.pr_base = _option_value(rest[2:], PR_BASE_OPTIONS[name]) or result.pr_base
         if rest[:2] == [noun, "diff"] and "--name-only" not in rest:
             prints = True
     # Output redirected into a file never reached the agent; a stderr redirect leaves it.
@@ -491,6 +497,21 @@ def _ps_paths(args: list[str]) -> list[str]:
         positional.append(arg)
         i += 1
     return named + positional
+
+
+def _option_value(args: list[str], names: tuple[str, ...]) -> str | None:
+    """The value of the last of `names` in `args`, as `--name value`, `--name=value`, or `-Xvalue`."""
+
+    value = None
+    for i, arg in enumerate(args):
+        if arg in names and i + 1 < len(args):
+            value = args[i + 1]
+        for name in names:
+            if name.startswith("--") and arg.startswith(name + "="):
+                value = arg[len(name) + 1:]
+            elif not name.startswith("--") and arg.startswith(name) and len(arg) > len(name):
+                value = arg[len(name):]
+    return value
 
 
 def _skip_options(args: list[str], takes_value: set[str]) -> list[str]:

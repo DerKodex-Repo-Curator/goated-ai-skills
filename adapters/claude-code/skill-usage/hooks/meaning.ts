@@ -37,6 +37,7 @@ export const HOOK: Record<string, string> = {
   pipeline: 'pipeline hold',
   commit: 'commit hold',
   'pull-request': 'pull-request hold',
+  'pr-review': 'pr-review hold',
   spawn: 'spawn hold',
   // Earlier versions recorded tips under these three keys; the adapter's meaning wins.
   design: 'design hold',

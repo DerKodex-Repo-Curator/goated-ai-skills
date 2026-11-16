@@ -1,7 +1,8 @@
-"""Action gates (commit, pull request, spawn, design, security) and the closeout gate.
+"""Action gates (commit, pull request and its review, spawn, design, security) and the closeout gate.
 
 These enforce skill triggers the skills already state (ADR 0003): commit with
-`commit-message`, open a pull request with `pr-description`, brief a new agent
+`commit-message`, open a pull request with `pr-description` (and, when it is
+large, `standards-and-spec-review`), brief a new agent
 with `handoff`'s spawn brief or `subagent-driven-development`, design with
 `software-design-principles`, review sensitive surfaces with
 `code-security-review`, and close a code-changing turn with proof, `doc-sync`,
@@ -12,13 +13,16 @@ records it, plus the user's typed overrides for that turn. So an unchanged
 retry always gets the same answer (spec R6), and a hold stops firing as soon
 as the turn shows compliance. Proof counts only within the current turn
 (spec R7): a skill loaded in an earlier turn does not cover a later action.
+The one input from outside the transcript is a pull request's size, which
+the `pr-review` gate asks git for, and only when its hold would otherwise
+fire.
 
 Strict holds clear only on proof or a user override. Justified-skip holds also
 clear on a `goated-skip: <skill>: <reason>` line in the current turn.
 
 Holds whose step reviews or describes the change (the closeout's design,
-docs, and security items, the commit, and the pull request) also need a
-change read (spec R7): a finished call, after the skill load or reference
+docs, and security items, the commit, the pull request, and its review) also
+need a change read (spec R7): a finished call, after the skill load or reference
 read and after the last code change, that put the change's content in front
 of the agent. That is a command printing the diff, or a Read of a file the
 turn changed. It shows the agent the change; it cannot prove a review.
@@ -29,6 +33,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 import re
+import subprocess
 
 from . import contracts, shell
 from .gates import COMMAND_TOOLS, STRICT, Hold, goated_skill_name
@@ -44,6 +49,7 @@ SECURITY_SKILL = "code-security-review"
 DOC_SYNC_SKILL = "doc-sync"
 HANDOFF_SKILL = "handoff"
 PROOF_SKILL = "verification-before-completion"
+REVIEW_SKILL = "standards-and-spec-review"
 RED_FLAGS_REFERENCE = "software-design-principles/references/red-flags.md"
 
 # Tools that start another agent, each with the input field that carries the
@@ -79,6 +85,12 @@ DIFF_ONLY_READ = (
 )
 # An edit adding at least this many lines is a design change, not a tiny fix.
 DESIGN_MIN_LINES = 5
+# A pull request changing at least this many lines against its base, added
+# plus deleted, is large enough to review before it lands: the adapter's
+# stand-in for the skill's "large" (adapter README, Large pull requests).
+REVIEW_MIN_LINES = 400
+# How long the size check may take before it gives up and holds nothing.
+SIZE_TIMEOUT_SECONDS = 2.0
 
 CODE_EXTENSIONS = frozenset(
     ".py .js .jsx .ts .tsx .mjs .cjs .go .rs .java .kt .kts .swift .c .h .cpp .hpp .cc .cs "
@@ -192,12 +204,15 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         command = shell.analyze(str(tool_input.get("command") or ""))
         hold = _commit_hold(command.commit_message, proof, changes) if command.commit else None
         if hold is None and command.opens_pr:
-            hold = _pr_hold(proof, changes)
+            hold = _pr_hold(proof, changes) or _pr_review_hold(
+                command.pr_base, cwd, proof, changes)
         for target in command.write_targets:
             hold = hold or _security_hold(_norm(target), proof)
         return hold
     if PR_TOOL_RE.match(tool_name):
-        return _pr_hold(proof, changes, by_tool=True)
+        base = tool_input.get("base") or tool_input.get("target_branch")
+        return _pr_hold(proof, changes, by_tool=True) or _pr_review_hold(
+            base if isinstance(base, str) else None, cwd, proof, changes, by_tool=True)
     if COMMIT_TOOL_RE.match(tool_name):
         message = tool_input.get("message")
         return _commit_hold(message if isinstance(message, str) else None, proof, changes,
@@ -265,10 +280,71 @@ def _pr_hold(proof: _Proof, changes: Callable[[], "_Changes"],
     )
 
 
+def _pr_review_hold(base: str | None, cwd: str | None, proof: _Proof,
+                    changes: Callable[[], "_Changes"], by_tool: bool = False) -> Hold | None:
+    """Hold a pull request that changes `REVIEW_MIN_LINES` or more lines against
+    `base` until `standards-and-spec-review` loads and the change is read after
+    it, or a skip line names it. Checked after the `pull-request` gate passes,
+    and measured only when the turn's proof would not already clear it."""
+
+    if proof.skipped(REVIEW_SKILL):
+        return None
+    hold = None
+    if proof.loaded(REVIEW_SKILL):
+        hold = _change_read_hold(
+            "pr-review", REVIEW_SKILL, proof, changes(), by_tool, "opening the pull request",
+            "review it and open the pull request again", skippable=True,
+        )
+        if hold is None:
+            return None
+    size = changed_lines(cwd, base)
+    if size is None or size < REVIEW_MIN_LINES:
+        return None
+    return hold or Hold(
+        "pr-review", JUSTIFIED_SKIP,
+        f"This pull request changes {size} lines against its base, {REVIEW_MIN_LINES} or "
+        f"more, so it is large enough to review before it lands. Load `{REVIEW_SKILL}` "
+        "with the Skill tool in this turn and review the change with it. If size is not "
+        "what makes it worth reviewing, such as generated or vendored files, write "
+        f"`goated-skip: {REVIEW_SKILL}: <reason>` on its own line instead. Then open the "
+        "pull request again. The whole command was held, so rerun any steps chained "
+        "before it too.",
+    )
+
+
+def changed_lines(cwd: str | None, base: str | None) -> int | None:
+    """Lines added plus deleted on HEAD since it left `base`, as git reports
+    them; None when that cannot be measured.
+
+    `base` is the branch the pull request merges into, tried on the remote
+    first (`origin/<base>`), then locally; without one, the remote's default
+    branch (`origin/HEAD`). One git call, two when the remote has no such
+    branch. A base that git would read as an option is refused, and external
+    diff and text-conversion programs are switched off, so only git runs.
+    """
+
+    if not cwd or (base is not None and (not base or base.startswith("-"))):
+        return None
+    for revision in ([f"origin/{base}", base] if base else ["origin/HEAD"]):
+        try:
+            result = subprocess.run(
+                ["git", "-c", "core.fsmonitor=false", "diff", "--shortstat", "--no-ext-diff",
+                 "--no-textconv", f"{revision}...HEAD", "--"],
+                cwd=cwd, capture_output=True, text=True, timeout=SIZE_TIMEOUT_SECONDS,
+                env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None  # No git, no such folder, or too slow: no hold.
+        if result.returncode == 0:
+            return sum(int(n) for n in re.findall(r"(\d+) (?:insertion|deletion)", result.stdout))
+    return None
+
+
 def _change_read_hold(gate: str, skill: str, proof: _Proof, changes: "_Changes", by_tool: bool,
-                      doing: str, then: str) -> Hold | None:
+                      doing: str, then: str, skippable: bool = False) -> Hold | None:
     """Hold a commit or pull request, whose skill has loaded, until a change read
-    follows both that load and the turn's last change to any project file.
+    follows both that load and the turn's last change to any project file;
+    `skippable`: the hold is justified-skip, so a skip line naming `skill` clears it.
 
     An MCP tool (`by_tool`) passes when the turn changed no project file: it
     carries the change in its own input, and outside a git checkout no diff
@@ -282,13 +358,16 @@ def _change_read_hold(gate: str, skill: str, proof: _Proof, changes: "_Changes",
         return None
     how = CHANGE_READ if changes.paths else DIFF_ONLY_READ
     after = " and after your last change" if changes.last_change >= 0 else ""
+    # Not backticked: the skill-usage mod would read a backticked skip line as an ask
+    # that only a skip line answers, and count a read that clears this hold as ignored.
+    tail = (f"Or write a skip line, goated-skip: {skill}: <reason>, on its own line." if skippable
+            else "This hold is strict: a goated-skip line does not clear it.")
     return Hold(
-        gate, STRICT,
+        gate, JUSTIFIED_SKIP if skippable else STRICT,
         f"Read the change before {doing}, after loading the {skill} skill{after}: "
         f"{how}. Then {then}. The whole command was held, so rerun "
         "any steps chained before it too. A read chained in the same command, or made "
-        "in parallel with this call, has not finished, so it does not count. This hold "
-        "is strict: a goated-skip line does not clear it.",
+        f"in parallel with this call, has not finished, so it does not count. {tail}",
     )
 
 

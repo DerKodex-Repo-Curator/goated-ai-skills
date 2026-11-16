@@ -27,7 +27,7 @@ from pathlib import Path
 
 import yaml
 
-from claude_code_adapter_support import BRIEF, ROUTER, Session, parse, reason
+from claude_code_adapter_support import BRIEF, ROUTER, Session, git_branch_with_change, parse, reason
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 # A whole backticked token shaped like a skill name, as the mod reads one from a hold.
@@ -148,6 +148,15 @@ def _adapter_texts() -> dict[str, str]:
         texts["pullRequestRead"] = reason(
             described.call("Bash", {"command": 'gh pr create --title "Add export" --body "Adds it."'})
         )
+        # A large pull request, once the pull-request gate passes: the review hold, then its change read.
+        large = routed("pr-review")
+        git_branch_with_change(large.project, 450)
+        large.load("pr-description")
+        large.run("git diff main...HEAD")
+        open_pr = {"command": 'gh pr create --base main --title "Add export" --body "Adds it."'}
+        texts["prReview"] = reason(large.call("Bash", open_pr))
+        large.load("standards-and-spec-review")
+        texts["prReviewRead"] = reason(large.call("Bash", open_pr))
         reviewed = routed("closeout-change-read")
         reviewed.load("software-design-principles")
         reviewed.load("code-security-review")
@@ -204,6 +213,8 @@ class SkillUsageModFixtureTests(unittest.TestCase):
         gates = {
             "commit": "commit | strict",
             "pullRequest": "pull-request | strict",
+            "prReview": "pr-review | justified-skip",
+            "prReviewRead": "pr-review | justified-skip",
             "spawn": "spawn | strict",
             "spawnRead": "spawn | strict",
             "design": "design | justified-skip",

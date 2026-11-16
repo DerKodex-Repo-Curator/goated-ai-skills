@@ -9,6 +9,7 @@ All content is synthetic.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import uuid
 from pathlib import Path
@@ -401,6 +402,35 @@ class Session:
         held = reason(output)
         self._tool_result(tool_use_id, held or "ok", is_error=bool(held))
         return output
+
+
+def git_branch_with_change(project: Path, changed_lines: int, *, remote_head: bool = False) -> None:
+    """Make `project` a git checkout on a branch `feature` whose diff against
+    `main` changes `changed_lines` lines; `remote_head`: also record `main` as
+    the remote's default branch, `origin/HEAD`, as a clone does."""
+
+    project.mkdir(parents=True, exist_ok=True)
+
+    def git(*args: str) -> None:
+        subprocess.run(
+            ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+             "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", *args],
+            cwd=project, check=True, capture_output=True,
+        )
+
+    git("init", "-q", "-b", "main")
+    (project / "base.txt").write_text("base\n", encoding="utf-8")
+    git("add", "base.txt")
+    git("commit", "-q", "-m", "Base")
+    if remote_head:
+        git("update-ref", "refs/remotes/origin/main", "HEAD")
+        git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+    git("checkout", "-q", "-b", "feature")
+    (project / "change.txt").write_text(
+        "".join(f"line {n}\n" for n in range(changed_lines)), encoding="utf-8"
+    )
+    git("add", "change.txt")
+    git("commit", "-q", "-m", "Change")
 
 
 def default_input(tool: str) -> dict:
