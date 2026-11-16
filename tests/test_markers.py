@@ -52,6 +52,33 @@ class ReplyParsingTests(unittest.TestCase):
         self.assertEqual(result.skips, [])
         self.assertEqual(result.malformed, ["goated-skip: doc-sync: not needed"])
 
+    def test_design_reads_lines_add_up_across_a_reply(self) -> None:
+        result = parse_reply(
+            "goated-design-reads: process.md, errors.md\n"
+            "goated-design-reads: none: the rest renames locals\n"
+            "goated-design-reads: errors.md , coding.md\n"
+        )
+
+        self.assertEqual(
+            result.design_read_files, ["process.md", "errors.md", "coding.md"]
+        )
+        self.assertEqual(result.malformed, [])
+
+    def test_design_reads_path_or_short_none_reason_is_malformed(self) -> None:
+        result = parse_reply(
+            "goated-design-reads: references/process.md\n"
+            "goated-design-reads: none: already read\n"
+        )
+
+        self.assertEqual(result.design_reads, [])
+        self.assertEqual(
+            result.malformed,
+            [
+                "goated-design-reads: references/process.md",
+                "goated-design-reads: none: already read",
+            ],
+        )
+
 
 class MarkerFixtureValidationTests(unittest.TestCase):
     def test_current_marker_fixtures_are_valid(self) -> None:
@@ -74,11 +101,29 @@ class MarkerFixtureValidationTests(unittest.TestCase):
             any("goated-route: direct" in finding.message for finding in findings)
         )
 
-    def test_missing_fixture_file_fails(self) -> None:
+    def test_each_missing_fixture_file_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             findings = validate_marker_fixtures(Path(temp_dir))
 
-        self.assertEqual(len(findings), 1)
+        # One finding each for lines.yaml and design-reads.yaml.
+        self.assertEqual(len(findings), 2)
+
+    def test_design_reads_fixture_that_disagrees_with_grammar_fails(self) -> None:
+        source = FIXTURE.with_name("design-reads.yaml")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target = Path(temp_dir) / "stack" / "fixtures" / "markers"
+            shutil.copytree(FIXTURE.parent, target)
+            data = yaml.safe_load(source.read_text(encoding="utf-8"))
+            data["design_reads_lines"]["valid"].append(
+                {"line": "goated-design-reads: references/process.md", "expect": {}}
+            )
+            (target / source.name).write_text(yaml.safe_dump(data), encoding="utf-8")
+
+            findings = validate_marker_fixtures(Path(temp_dir))
+
+        self.assertTrue(
+            any("references/process.md" in finding.message for finding in findings)
+        )
 
 
 if __name__ == "__main__":

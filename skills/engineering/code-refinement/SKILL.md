@@ -56,7 +56,7 @@ Fallback: If companion skills, tests, commands, or clean diffs are unavailable, 
 
 1. Confirm activation and scope:
    - Activate for explicit requests such as "clean this up", "simplify this diff", "make this easier to read", or "refactor this without behavior changes".
-   - Otherwise activate only after naming concrete debt in the scoped change; the red flags in `software-design-principles` (`#red-flags`) give the names. Substantially generated or agent-written code qualifies when focused review finds awkwardness or difficult local reasoning; its origin alone is not debt.
+   - Otherwise activate only after naming concrete debt in the scoped change; the red flags in `software-design-principles` (`red-flags.md#red-flags`) give the names. Substantially generated or agent-written code qualifies when focused review finds awkwardness or difficult local reasoning; its origin alone is not debt.
    - If there is no explicit request or concrete debt, return to the current workflow without loading this skill or producing a formal skip report.
    - Identify the target-project root and the refinement scope: current diff, staged diff, task-touched files, explicit user paths, or supplied patch.
    - Inspect working-tree state before editing. If files contain unrelated user-authored changes mixed with the refinement scope, edit around them carefully or propose changes first.

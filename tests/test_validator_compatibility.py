@@ -122,7 +122,7 @@ EXPECTED_SUCCESS_OUTPUT = "\n".join(
         "Source-grounded-research fixture validation passed for 6 scenarios.",
         "Setup Scribe fixture validation passed for 8 scenarios.",
         "Wayfinding fixture validation passed for 10 scenarios.",
-        "Route-and-skip-line marker fixture validation passed for 1 scenarios.",
+        "Marker-line fixture validation passed for 2 scenarios.",
         (
             "Word-budget report: shared policy 1199 words "
             "(within 800-1,200 target)."
@@ -134,6 +134,7 @@ EXPECTED_SUCCESS_OUTPUT = "\n".join(
             "skills/engineering/code-security-review/SKILL.md, "
             "skills/engineering/diagnose/SKILL.md, "
             "skills/engineering/grill-with-docs/SKILL.md, "
+            "skills/engineering/software-design-principles/SKILL.md, "
             "skills/engineering/receiving-code-review/SKILL.md, "
             "skills/engineering/tdd/SKILL.md"
         ),
@@ -166,7 +167,7 @@ EXPECTED_EMPTY_REPOSITORY_OUTPUT = "\n".join(
     (
         "GOATED skill validation failed for 0 implemented skills.",
         "",
-        "Blocking errors: 18",
+        "Blocking errors: 19",
         "- skills: missing skills directory",
         "- stack/goated-stack.yaml: missing required file",
         (
@@ -215,6 +216,7 @@ EXPECTED_EMPTY_REPOSITORY_OUTPUT = "\n".join(
         "- stack/fixtures/setup-scribe: no setup-scribe fixtures found",
         "- stack/fixtures/wayfinding: no wayfinding fixtures found",
         "- stack/fixtures/markers/lines.yaml: missing required file",
+        "- stack/fixtures/markers/design-reads.yaml: missing required file",
         (
             "Integrated registry checked with 0 catalog entries; "
             "shared policy is 0 words (below 800-1,200 target)."
