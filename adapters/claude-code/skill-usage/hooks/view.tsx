@@ -14,7 +14,8 @@ import type { AllTime, Available, Counts, Measures, Origin, Outcome, Refs, Route
 import { NO_SUBAGENTS, NO_WRITING_TURNS, ORIGINS, OUTCOMES, total } from './classify'
 import { BECAUSE, COLOR, followCounts, hookName, OUTCOME_TONE, plural, rateTone, RESULT, ROUTE_FORM, skillName, STATION } from './meaning'
 import type { Tone, View } from './meaning'
-import { picture, PREVIEW_MS, previewTimeline } from './picture'
+import { badgeWords, picture, PREVIEW_MS, previewTimeline } from './picture'
+import type { Badges } from './picture'
 
 export { DECLINED_COLOR, followCounts, READ_COLOR } from './meaning'
 export type { View } from './meaning'
@@ -271,12 +272,15 @@ export function sessionTab(v: View, s: SessionSummary, timeline: TimelineEntry[]
   const loadCount = Object.values(loads).reduce((a, b) => a + b, 0)
   const [routerText, routerTone] = ROUTER_LINE[s.router]
   const feed = timeline.slice(-rows).reverse()
+  const spawns = s.subagents?.spawns ?? 0
+  const badges: Badges = { notFollowed: outcomes.ignored ?? 0, waiting: outcomes.pending ?? 0, readsUnloaded: s.refsUnloaded ?? 0, started: spawns }
   return (
     <Box flexDirection="column">
       {picture(
         v,
-        { loads, outcomes, title: 'SKILLS', subtitle: `${Object.keys(s.loads).length} loaded`, refs: readCount(s.refs), refsUnloaded: s.refsUnloaded ?? 0, spawns: s.subagents?.spawns ?? 0 },
-        `Skill loads this session by who caused them: ${ORIGINS.map(o => `${STATION[o]} ${loads[o]}`).join(', ')}. Reference files read: ${readCount(s.refs)}.`,
+        { loads, outcomes, title: 'SKILLS', subtitle: `${Object.keys(s.loads).length} loaded`, refs: readCount(s.refs), spawns, badges },
+        `Skill loads this session by who caused them: ${ORIGINS.map(o => `${STATION[o]} ${loads[o]}`).join(', ')}. Reference files read: ${readCount(s.refs)}.` +
+          (badgeWords(badges) ? ` Badges: ${badgeWords(badges)}.` : ''),
         { now, timeline: preview != null && now < preview + PREVIEW_MS ? previewTimeline(preview) : timeline },
       )}
       {words(v, standing(loadCount, outcomes), 'plain', true)}
@@ -319,7 +323,7 @@ export function sessionTab(v: View, s: SessionSummary, timeline: TimelineEntry[]
  * in the titles). A count is a bar to scale beside the table's largest, never a
  * ring, which would read as progress towards a limit the count does not have.
  */
-function usageTables(v: View, counts: { nudges: Record<string, Counts<Outcome>>; loads: Record<string, Counts<Origin>>; refs?: Refs }, rows: number, suffix: string) {
+function usageTables(v: View, counts: { nudges: Record<string, Counts<Outcome>>; loads: Record<string, Counts<Origin>>; refs?: Refs; refsUnloaded?: number }, rows: number, suffix: string) {
   const { Box } = v.ui
   const hooks = Object.entries(counts.nudges).sort(([, x], [, y]) => total(y) - total(x))
   const skills = Object.entries(counts.loads).sort(([, x], [, y]) => total(y) - total(x))
@@ -373,7 +377,12 @@ function usageTables(v: View, counts: { nudges: Record<string, Counts<Outcome>>;
               )
             }),
           ]}
-      {title(v, `References${suffix}`, "each skill's supporting files read, most read first")}
+      {title(
+        v,
+        `References${suffix}`,
+        // Reads made before their skill loaded, in words on both tabs: the All time picture draws no badge for them.
+        `each skill's supporting files read, most read first${counts.refsUnloaded ? ` · ${counts.refsUnloaded} read before their skill loaded` : ''}`,
+      )}
       {refs.length === 0
         ? line(v, 'No skill reference file has been read yet.', 'dim')
         : [
@@ -416,7 +425,8 @@ export function allTimeTab(v: View, all: AllTime, rows: number) {
     <Box flexDirection="column">
       {picture(
         v,
-        { loads, outcomes, title: 'ALL TIME', subtitle: plural(all.sessions, 'session'), refs: readCount(all.refs), refsUnloaded: all.refsUnloaded ?? 0, spawns: all.subagents?.spawns ?? 0 },
+        // The long view: totals only, no per-case badges.
+        { loads, outcomes, title: 'ALL TIME', subtitle: plural(all.sessions, 'session'), refs: readCount(all.refs), spawns: all.subagents?.spawns ?? 0 },
         `Skill loads across ${plural(all.sessions, 'session')} by who caused them: ${ORIGINS.map(o => `${STATION[o]} ${loads[o]}`).join(', ')}. Reference files read: ${readCount(all.refs)}.`,
       )}
       {words(v, [{ text: `${plural(all.sessions, 'session')} · ` }, ...standing(loadCount, outcomes)], 'plain', true)}

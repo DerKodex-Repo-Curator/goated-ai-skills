@@ -95,6 +95,27 @@ clears it. In particular:
   and per-skill tables.
 - **All time**: the same totals across every stored session, reread after
   each turn, so sessions running beside this one count as they go.
+- **Unused**: your own skills by how often they loaded, and those that never
+  have.
+
+In the picture, each node around the core is a cause of skill loads, with its
+count beneath: **Your /cmd** (you typed a slash command), **You asked** (your
+message named the skill), **Router** (a route line required it), **Agent** (the
+main agent chose it), **Subagents** (a subagent chose it), and **Hooks** (it
+loaded after a hook held a call). **References** instead counts reads of
+skills' supporting files. The ring around the core fills with the share of
+settled holds that were handled.
+
+On the Session picture only, a badge on a node's corner counts single cases
+this session:
+
+- Hooks, red: holds not followed.
+- Hooks, amber edge, breathing: holds still waiting.
+- References, pink edged amber: reads made before their skill loaded.
+- Subagents, blue: subagents started.
+
+All time draws no badges; its lines and tables carry those totals, and the
+References table's heading counts reads made before their skill loaded.
 
 In the tables, each hook's bar is split by what became of its holds:
 followed in green, declined with a reason in pale green, not followed in red.
@@ -102,8 +123,6 @@ Its rate is the share **handled**, followed or declined, of the holds that
 settled, so a justified skip never lowers it. Each skill's and reference
 file's bar is its count to scale beside the table's largest; a count has no
 limit, so none is drawn as a ring that fills.
-- **Unused**: your own skills by how often they loaded, and those that never
-  have.
 
 `/skill-usage` opens the pane, `/skill-usage report` prints the All time and
 Unused tabs as markdown, and `/skill-usage preview` plays every animation once.

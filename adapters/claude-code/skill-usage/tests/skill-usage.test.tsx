@@ -5,7 +5,7 @@ import type { TimelineEntry, UsageEvent } from '../types'
 import type { HistoryMessage } from '../hooks/classify'
 import { addSession, allTimeOf, ANY_SPECIALIST, closeOpen, historyEvents, hookNudges, mergeSummaries, skillFiles, skillsInPath, skillsNamed, markerEvents, summarize, toolUseEvents } from '../hooks/classify'
 import { DECLINED_COLOR, followCounts, PANE_COLUMNS, READ_COLOR, reportText, statusText } from '../hooks/view'
-import { PREVIEW_MS, playQueue, previewTimeline } from '../hooks/picture'
+import { badgeWords, PREVIEW_MS, playQueue, previewTimeline } from '../hooks/picture'
 
 // `run` is a real built-in skill name that also appears as a plain word in hook messages.
 const SKILLS = ['using-goated-ai-skills', 'software-design-principles', 'code-security-review', 'tdd', 'commit-message', 'run']
@@ -816,7 +816,7 @@ test('the Session tab logs each reference read and lists the references this ses
 
 // ---------- references on the map ---------------------------------------------------
 
-/** Answers the clock and state over `stored` at `now()`; the returned draw mounts the Session or All time pane and hands back the still copy and the frame. */
+/** Answers the clock and state over `stored` at `now()`; the returned draw mounts the Session or All time pane and hands back the still copy, the frame and the picture's alt text. */
 function pictureRig(...[$, on, stored, now]: [...Parameters<TestBody>, Record<string, unknown>, () => number]) {
   on('clock.now', () => ({ value: now() }))
   on('state.get', (_, e) => {
@@ -826,9 +826,10 @@ function pictureRig(...[$, on, stored, now]: [...Parameters<TestBody>, Record<st
   on('state.set', () => ({ value: { isSet: true, version: 2 } }))
   return async () => {
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-    const [still = '', frame = ''] = (await ui.findAll({ type: 'Svg' })).map(x => String(x.props.source))
+    const svgs = await ui.findAll({ type: 'Svg' })
+    const [still = '', frame = ''] = svgs.map(x => String(x.props.source))
     await ui.unmount()
-    return { still, frame }
+    return { still, frame, alt: String(svgs[0]?.props.alt) }
   }
 }
 
@@ -951,7 +952,7 @@ test('a reference read flies a pink page from References to Agent, its file name
   expect(still).not.toContain('ref-label')
 })
 
-test('a subagent read flies to Subagents; a read without loading arrives outlined in amber and counts on an amber badge', async ($, on) => {
+test('a subagent read flies to Subagents; a read without loading arrives outlined in amber and counts on a pink badge edged in amber', async ($, on) => {
   const stored: Record<string, unknown> = {
     tab: 'session',
     events: {
@@ -969,29 +970,114 @@ test('a subagent read flies to Subagents; a read without loading arrives outline
   expect(page?.glyph).toContain('stroke="#ffa62b"')
   // A long name is cut short, to 22 characters with its ellipsis.
   expect(frame).toMatch(/>a-very-long-reference…<animate/)
-  // The amber badge counts reads without loading, in the frame and the still copy alike.
+  // The badge counts reads without loading, in the frame and the still copy alike: filled in the reads' pink and
+  // edged in amber, since a filled amber means a hold still waiting.
   const node = refsNode(frame) ?? ''
-  expect(node).toMatch(/fill="#ffa62b"\/><text[^>]*>1<\/text>/)
+  expect(node).toMatch(/fill="#f07aa8" stroke="#ffa62b"[^>]*\/><text[^>]*>1<\/text>/)
+  expect(node).not.toMatch(/fill="#ffa62b"/)
   expect(refsNode(still)).toBe(node)
 })
 
-test('the All time picture shows the References node, its count and badge, with nothing moving', async ($, on) => {
+test('the All time picture shows node counts and the core ring but no badge, with nothing moving', async ($, on) => {
   const stored: Record<string, unknown> = {
     tab: 'all',
-    events: { shape: 'events-1', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'ref', t: 400, skill: 'tdd', file: 'references/a.md' }] },
+    events: {
+      shape: 'events-1',
+      value: [
+        { kind: 'prompt', t: 1, named: [] },
+        { kind: 'ref', t: 400, skill: 'tdd', file: 'references/a.md' },
+        // Still waiting in the live session, which All time adds as it runs.
+        { kind: 'nudge', t: 450, hook: 'design-hold', named: ['software-design-principles'] },
+      ],
+    },
     allTime: {
       shape: 'all-time-1',
-      value: { sessions: 1, loads: {}, nudges: {}, router: {}, lastUsed: {}, refs: { tdd: { 'references/a.md': 4 } }, refsUnloaded: 2 },
+      value: {
+        sessions: 1,
+        loads: { tdd: { 'self-initiated': 2 } },
+        nudges: { 'commit-hold': { followed: 1, ignored: 2 } },
+        router: {},
+        lastUsed: {},
+        refs: { tdd: { 'references/a.md': 4 } },
+        refsUnloaded: 2,
+        subagents: { spawns: 3, starts: 0, bodyReads: 0 },
+      },
     },
   }
   const draw = pictureRig($, on, stored, () => 500)
-  const { frame } = await draw()
-  const node = refsNode(frame) ?? ''
-  // Four stored plus this session's one; two stored without loading plus this one.
-  expect(node).toMatch(/>5<\/text>/)
-  expect(node).toMatch(/fill="#ffa62b"\/><text[^>]*>3<\/text>/)
-  expect(frame).not.toContain('ref-page')
-  expect(frame).not.toContain('<animateMotion')
+  const { still, frame } = await draw()
+  for (const src of [still, frame]) {
+    const node = refsNode(src) ?? ''
+    // Four stored plus this session's one, as the node's count.
+    expect(node).toMatch(/>5<\/text>/)
+    expect(src).toMatch(/>2<\/text>/)
+    // The core ring: one handled of three settled.
+    expect(src).toContain('33% handled')
+    // No badge: not followed, waiting, read before loading, or started.
+    expect(src).not.toMatch(/fill="#e8654f"\/><text/)
+    expect(src).not.toContain('×')
+    expect(node).not.toMatch(/<circle[^>]*\/><text[^>]*>3<\/text>/)
+    expect(src).not.toContain('spawn-badge')
+    expect(src).not.toContain('ref-page')
+    expect(src).not.toContain('<animateMotion')
+  }
+})
+
+test("the Session picture's alt text names each badge it shows, and leaves out a count of none", async ($, on) => {
+  const stored: Record<string, unknown> = {
+    tab: 'session',
+    events: {
+      shape: 'events-1',
+      value: [
+        { kind: 'prompt', t: 1, named: [] },
+        { kind: 'ref', t: 2, skill: 'tdd', file: 'references/a.md' },
+        { kind: 'ref', t: 3, skill: 'tdd', file: 'references/b.md' },
+        { kind: 'nudge', t: 4, hook: 'design-hold', named: ['software-design-principles'] },
+      ],
+    },
+  }
+  const { alt } = await pictureRig($, on, stored, () => 10_000)()
+  expect(alt).toContain('Badges: 1 hold waiting, 2 reference reads before loading.')
+  expect(alt).not.toMatch(/not followed|started/)
+})
+
+test('badge words name every badge count above zero, singular or plural', async () => {
+  expect(badgeWords({ notFollowed: 9, waiting: 1, readsUnloaded: 4, started: 6 })).toBe('9 holds not followed, 1 hold waiting, 4 reference reads before loading, 6 subagents started')
+  expect(badgeWords({ notFollowed: 1, waiting: 0, readsUnloaded: 0, started: 1 })).toBe('1 hold not followed, 1 subagent started')
+  expect(badgeWords({ notFollowed: 0, waiting: 0, readsUnloaded: 0, started: 0 })).toBe('')
+})
+
+test("the References table's subtitle counts reads made before their skill loaded, on both tabs, and says nothing of none", async ($, on) => {
+  const stored: Record<string, unknown> = {
+    tab: 'session',
+    events: {
+      shape: 'events-1',
+      value: [
+        { kind: 'prompt', t: 1, named: [] },
+        { kind: 'ref', t: 2, skill: 'tdd', file: 'references/a.md' },
+        { kind: 'ref', t: 3, skill: 'tdd', file: 'references/b.md' },
+      ],
+    },
+    allTime: {
+      shape: 'all-time-1',
+      value: { sessions: 1, loads: {}, nudges: {}, router: {}, lastUsed: {}, refs: { tdd: { 'references/a.md': 4 } }, refsUnloaded: 3 },
+    },
+  }
+  pictureRig($, on, stored, () => 10_000)
+  const subtitle = async () => {
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const found = (await ui.findAll({ type: 'Text', text: /most read first/ })).map(t => t.text)
+    await ui.unmount()
+    return found
+  }
+  expect(await subtitle()).toEqual(["each skill's supporting files read, most read first · 2 read before their skill loaded"])
+  stored.tab = 'all'
+  // Three stored plus this session's two.
+  expect(await subtitle()).toEqual(["each skill's supporting files read, most read first · 5 read before their skill loaded"])
+  // Read after loading: the subtitle as it was.
+  stored.tab = 'session'
+  stored.events = { shape: 'events-1', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'load', t: 2, skill: 'tdd', via: 'tool', isSubagent: false }, { kind: 'ref', t: 3, skill: 'tdd', file: 'references/a.md' }] }
+  expect(await subtitle()).toEqual(["each skill's supporting files read, most read first"])
 })
 
 test('the preview plays a reference read and one without loading', async () => {

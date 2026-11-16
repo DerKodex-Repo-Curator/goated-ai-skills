@@ -322,9 +322,27 @@ function agentBorder({ p, r }: MapNode, o: { land: number; settle?: number; rele
   return out
 }
 
-/** Everything the picture says: loads per station, the core's words, the hooks' tallies, and reference reads (`refsUnloaded`: of those, the ones made before their skill loaded). */
-/** `spawns`: subagents started, which light Subagents even when none loaded a skill. */
-export type MapData = { loads: Record<Origin, number>; title: string; subtitle: string; outcomes: Counts<Outcome>; refs: number; refsUnloaded: number; spawns: number }
+/**
+ * Everything the picture says: loads per station, the core's words, the hooks'
+ * tallies, reference reads, and `spawns`, subagents started, which light
+ * Subagents even when none loaded a skill. `badges`: the per-case counts drawn
+ * on nodes' corners; a picture of the long view (All time) leaves them out.
+ */
+export type MapData = { loads: Record<Origin, number>; title: string; subtitle: string; outcomes: Counts<Outcome>; refs: number; spawns: number; badges?: Badges }
+
+/** Counts a node's corner badge shows: holds not followed and still waiting (Hooks), reads before loading (References), subagents started (Subagents). */
+export type Badges = { notFollowed: number; waiting: number; readsUnloaded: number; started: number }
+
+/** The badges a session's picture shows, in words for its alt text: each count above zero. */
+export function badgeWords(b: Badges): string {
+  const parts = [
+    [b.notFollowed, 'hold', 'not followed'],
+    [b.waiting, 'hold', 'waiting'],
+    [b.readsUnloaded, 'reference read', 'before loading'],
+    [b.started, 'subagent', 'started'],
+  ] as const
+  return parts.flatMap(([n, noun, what]) => (n > 0 ? [`${n} ${noun}${n === 1 ? '' : 's'} ${what}`] : [])).join(', ')
+}
 
 /**
  * The session's feed and the time it is drawn at, from which the picture plays
@@ -422,8 +440,11 @@ export const PREVIEW_MS = 13 * PREVIEW_STEP_MS + LEAD_MS + 2 * LEG_MS + Math.max
 /**
  * Where skill loads came from. A spoke wears thicker the more loads came from
  * its station; the ring around the core fills with the share of settled hook
- * nudges that were followed, in the rate's colour. On Hooks, a red dot counts
- * nudges not followed and an amber badge, breathing, counts those still waiting.
+ * nudges that were followed, in the rate's colour. With `badges`, nodes' corners
+ * count single cases: on Hooks, a red badge for nudges not followed and an
+ * amber-edged one, breathing, for those still waiting; on References, a pink
+ * one edged amber for reads made before their skill loaded; on Subagents, a
+ * blue one for subagents started.
  *
  * With `moments`, what just happened plays on top, one moment at a time in its
  * queue slot (`playQueue`). Whatever a node sends comes back to whoever receives
@@ -441,14 +462,13 @@ export const PREVIEW_MS = 13 * PREVIEW_STEP_MS + LEAD_MS + 2 * LEG_MS + Math.max
  *   and the page flies back (edged amber when its skill had not loaded),
  *   leaving a dotted pink way, its file's name beside References as it leaves;
  *   the reader's ring turns pink.
- * References counts reads, with an amber badge for those made without loading.
- * Subagents is a small node beside Agent, which starts each one; everything
+ * References counts reads. Subagents is a small node beside Agent, which starts each one; everything
  * reaches it directly.
  */
 function drawMap(d: MapData, moments?: Moments): string {
   const c = DARK
   const f = followCounts(d.outcomes)
-  const ignored = d.outcomes.ignored ?? 0
+  const badge = d.badges
   const core: Point = { x: CX, y: CY }
   const hooks = nodeOf('hook-nudged')
   const hooksAt = hooks.p
@@ -481,13 +501,14 @@ function drawMap(d: MapData, moments?: Moments): string {
     const node = nodeOf(spot)
     if (spot === 'subagent') {
       // Lit by a spawn as well as a load, so a subagent that loads no skill still shows; its spawn count on a badge.
-      const badge = { x: n1(node.p.x + node.r * 0.8), y: node.p.y - node.r * 0.8 }
+      const pin = { x: n1(node.p.x + node.r * 0.8), y: node.p.y - node.r * 0.8 }
+      const started = badge?.started ?? 0
       body += spoke(node, d.loads[spot])
       nodes +=
         station(node, ICON[spot], STATION[spot], d.loads[spot], d.loads[spot] > 0 || d.spawns > 0) +
-        (d.spawns > 0
-          ? `<g class="spawn-badge"><circle cx="${badge.x}" cy="${n1(badge.y)}" r="6.5" fill="${c.load}"/>` +
-            `<text x="${badge.x}" y="${n1(badge.y + 3)}" text-anchor="middle" ${FONT} font-size="8.5" font-weight="700" fill="${c.ground}">${d.spawns > 99 ? '99+' : d.spawns}</text></g>`
+        (started > 0
+          ? `<g class="spawn-badge"><circle cx="${pin.x}" cy="${n1(pin.y)}" r="6.5" fill="${c.load}"/>` +
+            `<text x="${pin.x}" y="${n1(pin.y + 3)}" text-anchor="middle" ${FONT} font-size="8.5" font-weight="700" fill="${c.ground}">${started > 99 ? '99+' : started}</text></g>`
           : '')
       continue
     }
@@ -496,14 +517,16 @@ function drawMap(d: MapData, moments?: Moments): string {
       nodes += station(node, ICON[spot], STATION[spot], d.loads[spot])
       continue
     }
-    // References counts reads, and reads made before their skill loaded on an amber badge, like the red not-followed one on Hooks.
-    const badge = { x: n1(node.p.x - node.r * 0.74), y: node.p.y - node.r * 0.74 }
+    // References counts reads, and reads made before their skill loaded on a pink badge edged in amber, as their
+    // pages fly: a reference read is pink, and amber alone is kept for holds still waiting.
+    const pin = { x: n1(node.p.x - node.r * 0.74), y: node.p.y - node.r * 0.74 }
+    const unloaded = badge?.readsUnloaded ?? 0
     body += spoke(node, d.refs, ' class="refs-spoke"')
     nodes +=
       `<g class="refs-node">${station(node, BOOK, 'References', d.refs)}` +
-      (d.refsUnloaded > 0
-        ? `<circle cx="${badge.x}" cy="${n1(badge.y)}" r="7.5" fill="${c.amber}"/>` +
-          `<text x="${badge.x}" y="${n1(badge.y + 3.1)}" text-anchor="middle" ${FONT} font-size="9" font-weight="700" fill="${c.ground}">${d.refsUnloaded > 99 ? '99+' : d.refsUnloaded}</text>`
+      (unloaded > 0
+        ? `<circle cx="${pin.x}" cy="${n1(pin.y)}" r="7.5" fill="${c.read}" stroke="${c.amber}" stroke-width="1.5"/>` +
+          `<text x="${pin.x}" y="${n1(pin.y + 3.1)}" text-anchor="middle" ${FONT} font-size="9" font-weight="700" fill="${c.ground}">${unloaded > 99 ? '99+' : unloaded}</text>`
         : '') +
       `</g>`
   }
@@ -517,17 +540,19 @@ function drawMap(d: MapData, moments?: Moments): string {
   // Badges on Hooks: red for not followed, amber breathing for still waiting.
   const corner = NODE * 0.74
   let badges = ''
+  const ignored = badge?.notFollowed ?? 0
+  const waiting = badge?.waiting ?? 0
   if (ignored > 0) {
     badges +=
       `<circle cx="${n1(hooksAt.x - corner)}" cy="${n1(hooksAt.y - corner)}" r="7.5" fill="${c.red}"/>` +
       `<text x="${n1(hooksAt.x - corner)}" y="${n1(hooksAt.y - corner + 3.1)}" text-anchor="middle" ${FONT} font-size="9" font-weight="700" fill="${c.ground}">${ignored > 99 ? '99+' : ignored}</text>`
   }
-  if (f.pending > 0) {
+  if (waiting > 0) {
     badges +=
       // Phased to the clock, so a rebuilt picture's badge breathes on in step instead of restarting.
       `<g><animate attributeName="opacity" values="1;.4;1" begin="${at(-(now % BREATH_MS || BREATH_MS))}" dur="${at(BREATH_MS)}" repeatCount="indefinite"/>` +
       `<circle cx="${n1(hooksAt.x + corner)}" cy="${n1(hooksAt.y - corner)}" r="8" fill="${c.raised}" stroke="${c.amber}" stroke-width="1.2"/>` +
-      `<text x="${n1(hooksAt.x + corner)}" y="${n1(hooksAt.y - corner + 3)}" text-anchor="middle" ${FONT} font-size="8.5" fill="${c.amber}">×${f.pending}</text></g>`
+      `<text x="${n1(hooksAt.x + corner)}" y="${n1(hooksAt.y - corner + 3)}" text-anchor="middle" ${FONT} font-size="8.5" fill="${c.amber}">×${waiting}</text></g>`
   }
 
   // What just happened plays over the still picture, in queue order; what still waits holds as a dotted trail under the stations.
