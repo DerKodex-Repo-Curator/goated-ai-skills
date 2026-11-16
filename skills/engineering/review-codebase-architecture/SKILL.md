@@ -64,7 +64,7 @@ Use target-project names for concrete modules and flows. Keep these review terms
 3. Find candidate architecture friction:
    - Look for shallow pass-through modules, thin layers, wrappers that mostly forward calls, and modules that fail the deletion test.
    - Look for tightly coupled concepts, behavior split across callers, repeated caller choreography, primitive clusters, and modules that require many public calls to prove one behavior.
-   - Look for information leakage, where one design decision is known in several modules, and temporal decomposition, where modules mirror execution order (`software-design-principles` `complexity-and-modules.md#information-hiding`).
+   - Look for information leakage, where one design decision is known in several modules, and temporal decomposition, where modules mirror execution order (`complexity-and-modules.md#information-hiding` in `software-design-principles`).
    - Look for hard-to-test areas: noisy setup, internal patching, private-state assertions, call-order tests, dependency construction hidden too deep, or tests coupled to implementation details.
    - Look for false seams: ports/adapters with only one real implementation, interfaces added only for tests, or seams that leak internal ordering and configuration back to callers.
    - Look for dependency shapes that block deepening: in-process logic, local-substitutable dependencies, remote-owned services, and true external services.

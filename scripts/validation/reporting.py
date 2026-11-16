@@ -45,7 +45,7 @@ FIXTURE_SUCCESS_LABELS = (
     ("source_grounded_research", "Source-grounded-research"),
     ("setup_scribe", "Setup Scribe"),
     ("wayfinding", "Wayfinding"),
-    ("markers", "Route-and-skip-line marker"),
+    ("markers", "Marker-line"),
 )
 
 

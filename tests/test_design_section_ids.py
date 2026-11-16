@@ -21,10 +21,16 @@ SKILL_DIR = REPO_ROOT / "skills" / "engineering" / SKILL_NAME
 ID_DECLARATION = re.compile(r"^<!-- id: #([a-z-]+) -->$", re.MULTILINE)
 # A citation is an id in backticks, named with its reference file, such as
 # `process.md#design-twice`. Bare ids appear only where the file is already
-# known: Section Index rows and each reference's own contents list.
-ID_CITATION = re.compile(r"`([a-z-]+\.md)?#([a-z-]+)`")
+# known: Section Index rows and each reference's own contents list. The
+# pattern also matches a path prefix, such as `references/process.md#id`, so
+# the tests can reject it instead of skipping it.
+ID_CITATION = re.compile(r"`((?:[a-z-]+/)*[a-z-]+\.md)?#([a-z-]+)`")
 # One row of the Section Index table: a linked reference file, then its ids.
 INDEX_ROW = re.compile(r"^\| \[[^\]]+\]\((references/[a-z-]+\.md)\) \| (.+) \|$")
+# A moment's read list starts with this line and ends at the first blank line
+# after its items.
+READ_NOW = "**Read now**"
+READ_LINK = re.compile(r"\]\((references/[a-z-]+\.md)\)")
 
 
 def declared_ids_by_file() -> dict[str, set[str]]:
@@ -66,6 +72,11 @@ class DesignSectionIdTests(unittest.TestCase):
             self.assertTrue(
                 file_name, f"{where} cites #{section_id} without its file"
             )
+            self.assertNotIn(
+                "/",
+                file_name,
+                f"{where} cites {file_name}#{section_id}; name the file alone",
+            )
             self.assertIn(
                 section_id,
                 self.declared_by_file.get(f"references/{file_name}", set()),
@@ -73,6 +84,18 @@ class DesignSectionIdTests(unittest.TestCase):
                 "does not declare",
             )
         return len(citations)
+
+    def test_every_reference_is_in_a_moments_read_list(self) -> None:
+        skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+        rules = skill[skill.index("## Rules") : skill.index("## Checklists")]
+
+        listed: set[str] = set()
+        for block in rules.split(READ_NOW)[1:]:
+            # The intro line, a blank line, then items up to the next blank.
+            items = block.split("\n\n")[1]
+            listed.update(READ_LINK.findall(items))
+
+        self.assertEqual(sorted(listed), sorted(self.declared_by_file))
 
     def test_each_id_is_declared_once(self) -> None:
         seen: dict[str, str] = {}

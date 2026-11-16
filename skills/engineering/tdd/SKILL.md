@@ -44,7 +44,7 @@ Fallback: If companion skills or docs are unavailable, inspect minimal evidence,
 1. Ground the behavior before writing code:
    - Identify the observable behavior that should change or be protected.
    - Identify the public interface that should prove it, such as a module API, CLI command, HTTP endpoint, UI flow, repository method, service boundary, or user-facing workflow.
-   - For a new module or public function, settle the interface before the first test (`software-design-principles` `process.md#design-twice`).
+   - For a new module or public function, settle the interface before the first test (`process.md#design-twice` in `software-design-principles`).
    - Identify the first focused failing test that can prove one behavior.
    - Name tests and interfaces in the project's documented domain language.
    - Proceed when the ticket or spec already makes behavior and interface clear, including any proof surface it names. Ask only when behavior, public interface, or test priorities are materially ambiguous.
@@ -84,7 +84,7 @@ Fallback: If companion skills or docs are unavailable, inspect minimal evidence,
 6. Refactor after green:
    - Read [Refactor After Green](references/refactor-after-green.md) before non-trivial cleanup.
    - Improve names, duplication, structure, locality, and interface shape only while tests are passing.
-   - Leave the change looking designed in, not patched on; prefer deeper modules that hide real complexity (`software-design-principles` `coding.md#refactoring`).
+   - Leave the change looking designed in, not patched on; prefer deeper modules that hide real complexity (`coding.md#refactoring` in `software-design-principles`).
    - Keep ordinary local refactoring inside this TDD cycle. Load `code-refinement` only for an explicit cleanup request or observed debt such as confusing names, duplication, excessive branching, shallow indirection, unnecessary abstraction, or difficult local reasoning.
    - Run tests after each meaningful refactor step.
 

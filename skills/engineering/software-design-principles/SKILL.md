@@ -48,42 +48,45 @@ references each moment names for the reasoning.
 1. Check what already decides the question: project instructions, documented
    standards, and the conventions in the surrounding code. Those win.
 2. At the start of design work in a turn, check each moment's **Read now**
-   list below and write the design-reads line naming the references whose
-   conditions hold. Read them before the work they serve. Write the line again
-   when the work changes and a new condition holds. A reference already read
-   in this context window need not be read again.
+   list below and write the design-reads line naming every reference whose
+   condition holds, even one already read. Read each before the work it
+   serves, unless it was already read in this context window. Write a new line
+   when the work changes and another condition holds.
 3. Apply the rules for the current moment. Scale the effort to the change: a
    one-line fix needs a glance at the rules, not a design exercise.
 4. Before reporting the work as done, read [Red Flags](references/red-flags.md)
    and scan the change against it.
-5. In the reply that reports the work, cite the references you read, following
-   the citation convention below.
+5. In the reply that reports the work, cite the references, following the
+   citation convention below.
+
+For review-only work, where nothing is changed, read `red-flags.md` and the
+references whose conditions the reviewed code meets; the design-reads line and
+citations apply to the review report.
 
 ### Design-reads line
 
-Write it on its own line, outside code blocks:
+Write it on its own line, outside code blocks and prose, bare or in one pair
+of backticks, in lowercase:
 
-- `goated-design-reads: <file>, <file>` names the references the triggers
-  select, by file name, such as `goated-design-reads: process.md, errors.md`;
-- `goated-design-reads: none: <reason>` declares a change with no design in
-  it, such as `goated-design-reads: none: renames one local variable`.
+- `goated-design-reads: <file>, <file>` names references by file name, without
+  `references/`, such as `goated-design-reads: process.md, errors.md`;
+- `goated-design-reads: none: <reason>` declares that no condition holds, with
+  a reason of at least three words, such as
+  `goated-design-reads: none: renames one local variable`.
 
-The line tells the user, and any reviewer, which reasoning the work rests on.
-`red-flags.md` is read at step 4 and need not be listed.
+A later line in the turn adds its files to the earlier ones; it never removes
+any. Listing `red-flags.md` is allowed but adds nothing, since step 4 always
+reads it. The line tells the user, and any reviewer, which reasoning the work
+rests on.
 
 ### Citations
 
 Cite a section as `file#id`, such as `process.md#design-twice`; the index
 below lists every id with its file. The reply that reports the work cites at
-least one id from each reference read for it, saying how it shaped the change
-or why it did not apply, such as "`errors.md#crash-early`: the parser now
-raises on a bad header instead of returning an empty record".
-
-### When rules pull apart
-
-At any moment, when two rules here seem to pull against each other, such as
-tests first against a quick spike, or more comments against fewer, read
-[Where The Books Differ](references/differences.md) before choosing.
+least one id from each file its design-reads lines name, whether or not it was
+re-read this turn, saying how it shaped the change or why it did not apply,
+such as "`errors.md#crash-early`: the parser now raises on a bad header
+instead of returning an empty record".
 
 ## Rules
 
@@ -91,15 +94,19 @@ tests first against a quick spike, or more comments against fewer, read
 
 **Read now**, when the condition holds:
 
-- [process.md](references/process.md): a new module or public interface, a
-  choice between designs, an unclear requirement, a first slice to pick, or a
-  problem that feels stuck.
-- [complexity-and-modules.md](references/complexity-and-modules.md): deciding
-  where a module boundary goes, what an interface exposes, or whether to split
-  or merge code.
-- [decoupling.md](references/decoupling.md): the knowledge may already exist
-  elsewhere, the change will touch several files, or it adds a setting, global
-  data, inheritance, a vendor wrapper, or a data pipeline.
+- [process.md](references/process.md): a new module or public interface,
+  competing designs, an unclear requirement, a first slice, a choice between a
+  prototype and real code, or a stuck problem.
+- [complexity-and-modules.md](references/complexity-and-modules.md): a module
+  boundary to place, an interface to shape, code to split or merge, a layer,
+  parameter, or pass-through function to add, or a term here you do not know.
+- [decoupling.md](references/decoupling.md): knowledge that may already exist
+  elsewhere, a change across several files, code that reaches through another
+  object, or a setting, global data, inheritance, a vendor wrapper, or a data
+  pipeline.
+- [readability.md](references/readability.md): a new public function, class,
+  or module to name and give an interface comment, or surrounding conventions
+  that are unclear.
 
 1. Read the surrounding code and follow its conventions for names, layout, and
    error handling. `readability.md#consistency`
@@ -118,21 +125,18 @@ tests first against a quick spike, or more comments against fewer, read
 
 ### While writing code
 
-**Read now**, when the condition holds:
+**Read now**, when the condition holds, along with any reference above whose
+condition first arises while writing:
 
-- [complexity-and-modules.md](references/complexity-and-modules.md): adding a
-  layer, a parameter, or a pass-through function, or splitting or merging
-  functions or classes.
-- [decoupling.md](references/decoupling.md): adding a setting, reaching into
-  another object, or writing the same knowledge in a second place.
 - [errors.md](references/errors.md): code that raises, catches, validates,
   asserts, or opens and closes a resource.
-- [readability.md](references/readability.md): naming something new, or
-  writing a comment or docstring.
 - [concurrency.md](references/concurrency.md): more than one task can reach
   the same data, steps are forced into an order, or code handles events.
-- [coding.md](references/coding.md): code works for reasons you cannot state,
-  you are refactoring or writing tests, or the question is speed.
+- [coding.md](references/coding.md): code that works for reasons you cannot
+  state, a refactor, a test, a bug fix, untrusted input or secrets, or a
+  question of speed.
+- [readability.md](references/readability.md): a comment or docstring inside
+  the code.
 
 6. Prefer one deep function or class to several thin ones that forward to each
    other. Judge by depth and independence, not line count.
@@ -161,11 +165,9 @@ tests first against a quick spike, or more comments against fewer, read
 
 **Read now**, when the condition holds:
 
-- [red-flags.md](references/red-flags.md): always, at Workflow step 4.
-- [coding.md](references/coding.md): the change refactors code or fixes a bug,
-  and the file was not already read while writing.
-- [readability.md](references/readability.md): the diff adds, changes, or sits
-  next to comments, and the file was not already read while writing.
+- [red-flags.md](references/red-flags.md): always.
+- [readability.md](references/readability.md): comments in or next to the
+  diff.
 
 15. The change should look as if the code had been designed for it. Do not
     leave a patch on the side. `coding.md#refactoring`
@@ -179,6 +181,13 @@ tests first against a quick spike, or more comments against fewer, read
 20. Keep the change within what was asked. Note other problems you saw,
     including known flaws left in place; do not fix them unasked.
     `complexity-and-modules.md#complexity-incremental`
+
+### At any moment
+
+**Read now**, when the condition holds:
+
+- [differences.md](references/differences.md): two rules seem to pull apart,
+  such as tests first against a quick spike, or more comments against fewer.
 
 ## Checklists
 
@@ -219,15 +228,15 @@ the file listed here.
 
 | Reference | Read when | Section ids |
 | --- | --- | --- |
-| [Red Flags](references/red-flags.md) | Before reporting done; reviewing a change | `#red-flags` |
-| [Complexity And Modules](references/complexity-and-modules.md) | Placing a module boundary, shaping an interface, splitting or merging code | `#complexity-defined` `#complexity-symptoms` `#complexity-incremental` `#etc` `#strategic` `#deep-modules` `#information-hiding` `#general-purpose` `#layers` `#pull-down` `#together-apart` `#what-matters` `#glossary` |
-| [Keeping Code Easy To Change](references/decoupling.md) | Duplicated knowledge, changes across files, settings, global data, inheritance | `#dry` `#orthogonality` `#tell-dont-ask` `#global-data` `#inheritance` `#reversibility` `#configuration` `#pipelines` |
-| [Errors And Defensive Code](references/errors.md) | Raising, catching, validating, asserting, managing a resource | `#error-decision` `#define-away` `#fewer-handlers` `#crash-early` `#contracts` `#assertions` `#resources` |
-| [Names, Comments And Obvious Code](references/readability.md) | Naming, commenting, checking comments near a change | `#obvious` `#naming` `#comments` `#comments-first` `#keeping-comments-true` `#consistency` |
-| [Designing And Planning](references/process.md) | New interface, competing designs, unclear requirement, first slice, stuck problem | `#small-steps` `#design-twice` `#tracer-bullets` `#prototypes` `#requirements` `#puzzles` `#domain-language` `#good-enough` `#starter-kit` `#agility` |
-| [While You Are Coding](references/coding.md) | Unexplained working code, refactoring, tests, bug fixes, speed | `#coincidence` `#refactoring` `#testing` `#algorithm-speed` `#performance` `#security` `#debugging` |
-| [Events And Concurrency](references/concurrency.md) | Shared data across tasks, forced ordering, events | `#shared-state` `#temporal-coupling` `#events` `#actors` |
-| [Where The Books Differ](references/differences.md) | Any moment, when two rules pull apart | `#differences` |
+| [Red Flags](references/red-flags.md) | Before reporting done; review | `#red-flags` |
+| [Complexity And Modules](references/complexity-and-modules.md) | Before changing code; while writing | `#complexity-defined` `#complexity-symptoms` `#complexity-incremental` `#etc` `#strategic` `#deep-modules` `#information-hiding` `#general-purpose` `#layers` `#pull-down` `#together-apart` `#what-matters` `#glossary` |
+| [Keeping Code Easy To Change](references/decoupling.md) | Before changing code; while writing | `#dry` `#orthogonality` `#tell-dont-ask` `#global-data` `#inheritance` `#reversibility` `#configuration` `#pipelines` |
+| [Errors And Defensive Code](references/errors.md) | While writing | `#error-decision` `#define-away` `#fewer-handlers` `#crash-early` `#contracts` `#assertions` `#resources` |
+| [Names, Comments And Obvious Code](references/readability.md) | Before changing code; while writing; before reporting done | `#obvious` `#naming` `#comments` `#comments-first` `#keeping-comments-true` `#consistency` |
+| [Designing And Planning](references/process.md) | Before changing code; while writing | `#small-steps` `#design-twice` `#tracer-bullets` `#prototypes` `#requirements` `#puzzles` `#domain-language` `#good-enough` `#starter-kit` `#agility` |
+| [While You Are Coding](references/coding.md) | While writing | `#coincidence` `#refactoring` `#testing` `#algorithm-speed` `#performance` `#security` `#debugging` |
+| [Events And Concurrency](references/concurrency.md) | While writing | `#shared-state` `#temporal-coupling` `#events` `#actors` |
+| [Where The Books Differ](references/differences.md) | Any moment | `#differences` |
 
 ## Output Contract
 
@@ -261,6 +270,4 @@ the same checks sequentially.
 
 ## References
 
-The linked support files are listed in the Section Index above. Read each at
-the moment its **Read now** condition holds, and when a `file#id` citation
-points into it.
+Each support file is linked from a **Read now** list and the Section Index.
