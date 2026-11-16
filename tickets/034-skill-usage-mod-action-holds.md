@@ -21,6 +21,12 @@ Teach the in-repo skill-usage mod to read the holds that Ticket 031 adds:
 - the end-of-turn (closeout) hold, which accepts a justified skip;
 - the shell-write hold.
 
+Make overrides visible to the mod (added 2026-11-16 from Ticket 032): the
+adapter's `UserPromptSubmit` hook also returns its sentence `recorded your
+override for this prompt: "<phrase>"` as `additionalContext`. A notice
+reaches a mod with no text; hook context arrives with it, and the mod already
+reads the sentence from there (`overrideEvents` in `hooks/classify.ts`).
+
 The mod records each hold's type and outcome: followed, declined with a
 reason, or ignored. It should parse the documented hold-message format that
 Ticket 031 fixes, not guess at wording. It also settles when the personal
@@ -41,6 +47,9 @@ in this ticket if 033 lands first.
       justified-skip hold that was declined, and the end-of-turn hold in the
       pane.
 - [ ] The decision on retiring the personal hooks' hold texts is recorded.
+- [ ] An adapter test shows a typed override yields the override sentence in
+      `additionalContext`, and the live session shows the override in the
+      pane.
 
 ## Expected Proof
 

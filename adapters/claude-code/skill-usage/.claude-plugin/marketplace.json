@@ -1,0 +1,5 @@
+{
+  "name": "goated-skill-usage",
+  "owner": { "name": "GOATED AI Skills" },
+  "plugins": [{ "name": "skill-usage", "source": "./" }]
+}

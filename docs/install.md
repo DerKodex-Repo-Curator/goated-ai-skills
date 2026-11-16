@@ -174,6 +174,11 @@ turn until the skill that owns each has been applied, install the opt-in adapter
 [README](../adapters/claude-code/README.md) covers installing, disabling, and
 removing it. Nothing else in the distribution depends on it.
 
+To see how the adapter's holds and the skills are used, install the optional
+skill-usage mod in `adapters/claude-code/skill-usage/`. Its
+[README](../adapters/claude-code/skill-usage/README.md) covers installing,
+disabling, and removing it.
+
 Use `agent-instructions-integrator` to help create the correct target-project routing instructions.
 
 ## Hermes Notes

@@ -1,0 +1,56 @@
+name: Skill-usage mod
+
+# The mod's own tests run in Claude Code's plugin test kit, so this job needs
+# the Claude Code CLI. It runs only when the mod, the marker grammar it reads,
+# or this workflow changes. The Python drift check of the mod's marker fixtures
+# (tests/test_skill_usage_mod.py) runs in validate.yml on every change.
+#
+# The CLI is pinned because its plugin API is early access and changes between
+# releases; bump CLAUDE_CODE_VERSION deliberately, after the tests pass on it
+# locally. The tests make no model calls and need no credentials.
+
+on:
+  pull_request:
+    paths:
+      - "adapters/claude-code/skill-usage/**"
+      - "stack/fixtures/markers/**"
+      - ".github/workflows/skill-usage-mod.yml"
+  push:
+    paths:
+      - "adapters/claude-code/skill-usage/**"
+      - "stack/fixtures/markers/**"
+      - ".github/workflows/skill-usage-mod.yml"
+
+permissions:
+  contents: read
+
+env:
+  CLAUDE_CODE_VERSION: "2.1.325"
+  DISABLE_AUTOUPDATER: "1"
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+
+jobs:
+  mod-tests:
+    name: Mod tests on the pinned Claude Code CLI
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      - name: Install the pinned Claude Code CLI
+        run: npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+
+      - name: Validate the mod
+        run: claude plugin validate adapters/claude-code/skill-usage
+
+      - name: Run the mod's tests
+        run: claude plugin test adapters/claude-code/skill-usage
