@@ -42,9 +42,16 @@ NOT_PROMPT_PREFIXES = (
 )
 # Results of background work: they continue the current turn.
 CONTINUATION_PREFIXES = ("<task-notification>", "<side-sessions-event>")
-# Requests written by another session or the app: they start a turn, but nobody
-# typed them here, so they never carry overrides.
+# Requests written by another agent, another session, or the app: they start a
+# turn, but nobody typed them here, so they never carry overrides. Claude Code
+# 2.1.3xx opens a subagent's hand-back and another session's message alike with
+# the first line below, then an `<agent-message>` or `<cross-session-message>`
+# tag; the hook input carries no field saying where a prompt came from, so the
+# first line is the prompt hook's only sign. The bare tags count too, in case
+# a prompt arrives without that line.
 MACHINE_PREFIXES = (
+    "Another Claude session sent a message:",
+    "<agent-message",
     "<cross-session-message",
     "Background (from the session that started this one)",
     "Task (from the session that started this one)",

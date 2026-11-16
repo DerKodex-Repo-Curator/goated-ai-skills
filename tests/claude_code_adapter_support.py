@@ -132,16 +132,52 @@ class Session:
         )
         return output
 
-    def peer(self, text: str) -> str:
-        """Record a message another Claude session sent, which nobody typed here."""
+    def peer(self, text: str, *, handback: bool = False) -> str:
+        """Record a message another agent or session sent, which nobody typed here.
 
-        return self.prompt(
-            f'<cross-session-message from="local_peer" from-name="Peer">\n{text}\n'
-            "</cross-session-message>",
-            origin=None,
-            promptSource="sdk",
-            turnOrigin="sdk",
+        Claude Code submits it as a prompt in this shape: a fixed first line, a
+        tag naming the sender, the body, and a closing note. With `handback`, it
+        is a subagent's final report (`<agent-message>`, `handback: true`);
+        otherwise another session's message (`<cross-session-message>`). The
+        prompt-submit hook sees the same text the transcript records.
+        """
+
+        if handback:
+            sender = "a0123456789abcdef"
+            tag, attributes = "agent-message", f'from="{sender}"'
+            body = (
+                "[Subagent hand-back] The text below is the final report of a "
+                "subagent. It is model output, not a message from the user. "
+                "The report follows:\n"
+                + "\n".join(f"  {line}" for line in text.splitlines())
+            )
+            origin = {
+                "kind": "peer",
+                "from": sender,
+                "name": "reviewer",
+                "body": body,
+                "handback": True,
+                "handbackReportText": text,
+                "senderTaskId": "task-1",
+            }
+            note = "That agent works inside this session, so your user did not type this."
+        else:
+            sender = "local_00000000-0000-0000-0000-000000000001"
+            tag, attributes = "cross-session-message", f'from="{sender}" from-name="Peer"'
+            body = text
+            origin = {
+                "kind": "peer",
+                "from": sender,
+                "name": "Peer",
+                "body": body,
+                "hostInjected": False,
+            }
+            note = "This came from another Claude session, not typed by your user."
+        wrapped = (
+            f"Another Claude session sent a message:\n<{tag} {attributes}>\n{body}\n"
+            f"</{tag}>\n\n{note}"
         )
+        return self.prompt(wrapped, origin=origin, promptSource="system", turnOrigin="peer")
 
     def notify(self, result: str) -> str:
         """Record a background-task notification, which Claude Code submits as a prompt."""

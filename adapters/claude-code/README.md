@@ -326,10 +326,16 @@ Claude Code also submits prompts nobody typed in this session:
   finished background task, or a desktop-app side-session event. They carry
   agent output, so they never yield overrides, and they do not start a new
   turn: the typed prompt's route line and overrides still cover what follows.
-- **Requests from elsewhere**, such as a message from another Claude session,
-  a brief from the session that started this one, or any prompt whose recorded
-  origin is not a person. They start a new turn, which needs its own route
-  line, and never carry overrides.
+- **Requests from elsewhere**, such as a subagent's final report, a message
+  from another Claude session, a brief from the session that started this
+  one, or any prompt whose recorded origin is not a person. They start a new
+  turn, which needs its own route line, and never carry overrides, even when
+  they quote an override phrase: the adapter neither records nor announces
+  one. The user-prompt hook's input does not say where a prompt came from, so
+  the hook recognizes these by their opening text, such as the line `Another
+  Claude session sent a message:` that opens both a subagent's report and
+  another session's message. The gates check again against the transcript,
+  where Claude Code marks such a prompt with `origin.kind` `peer`.
 
 Claude Code shows a short notice when the adapter records an override. The
 same sentence, `GOATED Claude Code adapter: recorded your override for this
@@ -481,8 +487,11 @@ of the call's prompt, which is normally already there.
   that is out of scope; review what agents change if it matters to you.
 - Prompt classification relies on transcript fields and text wrappers seen in
   Claude Code 2.1.3xx (`origin`, `turnOrigin`, `<task-notification>`,
-  `<cross-session-message>`, and others). A new kind of machine-written prompt
-  with no `origin` and an unknown wrapper would be treated as typed.
+  `Another Claude session sent a message:`, and others). A new kind of
+  machine-written prompt with no `origin` and an unknown wrapper would be
+  treated as typed. A new wrapper alone, on a prompt the transcript marks with
+  a non-person origin, still applies no override, but the user-prompt hook
+  would announce one.
 - Shared-policy detection looks for the policy's title in the instruction
   files Claude Code reads and in their one-level `@` imports. It does not model
   the setting under which a `CLAUDE.md` stops `AGENTS.md` from loading, it
