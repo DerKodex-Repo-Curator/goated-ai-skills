@@ -662,6 +662,169 @@ class CloseoutTests(AdapterTestCase):
         self.assertEqual(stop(s), {})
 
 
+SECURITY_SKIP = "goated-skip: code-security-review: a local env value, no trust boundary"
+
+
+class SetupCloseoutTests(AdapterTestCase):
+    """The closeout's Setup item: a package install or an env or settings file
+    write needs `setup-scribe`, or a skip line naming it."""
+
+    def installed(self, command: str = "uv add httpx") -> Session:
+        s = self.routed()
+        self.assertEqual(decision(s.run(command)), "pass")
+        return s
+
+    def test_a_named_package_install_needs_setup_scribe(self) -> None:
+        for tool, command in (
+            ("Bash", "uv add httpx"),
+            ("Bash", "npm install --save-dev typescript"),
+            ("Bash", "npm i -g pnpm"),
+            ("Bash", "pnpm add zod"),
+            ("Bash", "yarn add react"),
+            ("Bash", "pip install requests==2.32.0"),
+            ("Bash", "python -m pip install --upgrade ruff"),
+            ("Bash", "uv pip install rich"),
+            ("Bash", "uv tool install ruff"),
+            ("Bash", "cargo add serde"),
+            ("Bash", "go get example.com/mod@v1.2.0"),
+            ("Bash", "brew install jq"),
+            ("Bash", "sudo apt-get install -y ripgrep"),
+            ("Bash", "cd web && npm install lodash"),
+            ("PowerShell", "winget install --id Git.Git -e"),
+            ("PowerShell", "choco install nodejs -y"),
+        ):
+            with self.subTest(command=command):
+                s = self.fresh()
+                s.prompt("Add the dependency.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.call(tool, {"command": command})
+                held = stop(s)
+                self.assertEqual(closeout_line(held), "goated-hold: closeout | justified-skip")
+                self.assertIn("- Setup:", held["reason"])
+                self.assertIn("`setup-scribe`", held["reason"])
+
+    def test_writing_an_env_or_settings_file_needs_setup_scribe(self) -> None:
+        for tool, target in (
+            ("Write", ".env.local"),
+            ("Write", ".env"),
+            ("Edit", "web/.env.example"),
+            ("Write", ".claude/settings.local.json"),
+            ("Write", ".vscode/settings.json"),
+            ("Write", "~/.claude/settings.json"),
+            ("Write", "..\\shared\\.claude\\settings.json"),
+            ("Bash", "echo API_URL=http://localhost >> .env.local"),
+        ):
+            with self.subTest(target=target):
+                s = self.fresh()
+                s.prompt("Configure it.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.say(SECURITY_SKIP)
+                if tool == "Bash":
+                    s.run(target)
+                else:
+                    field = {"Write": "content", "Edit": "new_string"}[tool]
+                    s.call(tool, {"file_path": target, field: "X=1", "old_string": "X=0"})
+                held = stop(s)
+                self.assertEqual(closeout_line(held), "goated-hold: closeout | justified-skip")
+                self.assertIn("- Setup:", held["reason"])
+
+    def test_a_settings_file_outside_the_project_counts(self) -> None:
+        outside = self.root.parent / f"{self.root.name}-home" / ".claude" / "settings.json"
+        s = self.routed()
+        s.call("Write", {"file_path": str(outside), "content": "{}"})
+
+        self.assertIn("- Setup:", stop(s)["reason"])
+
+    def test_near_misses_end_freely(self) -> None:
+        for tool, command in (
+            ("Bash", "npm install"),
+            ("Bash", "npm ci"),
+            ("Bash", "pnpm install --frozen-lockfile"),
+            ("Bash", "pip install -r requirements.txt"),
+            ("Bash", "pip install -e ."),
+            ("Bash", "uv sync"),
+            ("Bash", "cargo build"),
+            ("Bash", "npm run build"),
+            ("Bash", "cat .env.local"),
+            ("Bash", "grep -n install README.md"),
+            ("Bash", "echo 'pip install x' > notes.md"),
+            ("PowerShell", "Get-Content .vscode/settings.json"),
+        ):
+            with self.subTest(command=command):
+                s = self.fresh()
+                s.prompt("Check it.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.call(tool, {"command": command})
+                self.assertNotIn("Setup", stop(s).get("reason", ""))
+
+    def test_settings_named_files_elsewhere_and_code_edits_end_without_setup(self) -> None:
+        s = self.routed()
+        s.say("goated-skip: software-design-principles: one mechanical constant change")
+        s.call("Write", write("src/settings.json"))
+        s.call("Write", write("docs/env.md"))
+        s.call("Write", write("src/export.py"))
+        s.run("pytest -q")
+        s.load("doc-sync")
+        s.run("git diff")
+
+        self.assertEqual(stop(s), {})
+
+    def test_a_failed_install_is_not_a_setup_change(self) -> None:
+        s = self.routed()
+        s.run("uv add no-such-package-xyz", success=False)
+
+        self.assertEqual(stop(s), {})
+
+    def test_loading_setup_scribe_clears_it(self) -> None:
+        s = self.installed()
+        s.load("setup-scribe")
+
+        self.assertEqual(stop(s), {})
+
+    def test_setup_scribe_loaded_before_the_install_still_clears_it(self) -> None:
+        s = self.routed()
+        s.load("setup-scribe")
+        s.run("uv add httpx")
+
+        self.assertEqual(stop(s), {})
+
+    def test_a_skip_line_clears_it(self) -> None:
+        s = self.installed()
+
+        self.assertEqual(
+            stop(s, "Added.\n\ngoated-skip: setup-scribe: the lockfile already records it"), {}
+        )
+
+    def test_a_typed_skip_override_clears_it(self) -> None:
+        s = self.session
+        s.prompt("Add httpx, and skip setup-scribe.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        s.run("uv add httpx")
+
+        self.assertEqual(stop(s), {})
+
+    def test_it_sits_beside_the_code_items(self) -> None:
+        s = self.installed()
+        s.say("goated-skip: software-design-principles: one mechanical constant change")
+        s.call("Write", write("src/export.py"))
+
+        held = stop(s)
+        self.assertEqual(closeout_line(held), "goated-hold: closeout | justified-skip")
+        for item in ("- Proof:", "- Docs:", "- Setup:"):
+            self.assertIn(item, held["reason"])
+
+    def test_it_does_not_carry_into_the_next_turn(self) -> None:
+        s = self.installed()
+        self.assertTrue(stop(s))
+
+        s.prompt("Thanks. What else is left?")
+        self.assertEqual(stop(s), {})
+
+
 RED_FLAGS = "/opt/goated/skills/software-design-principles/references/red-flags.md"
 DIFF = "git diff"
 
@@ -794,10 +957,10 @@ class ChangeReadTests(AdapterTestCase):
     def test_a_sensitive_file_that_is_not_code_needs_it_too(self) -> None:
         s = self.routed()
         s.load("code-security-review")
-        s.call("Edit", {"file_path": ".env", "old_string": "A=1", "new_string": "A=2"})
+        s.call("Edit", {"file_path": "config/secrets.yaml", "old_string": "A=1", "new_string": "A=2"})
 
         self.assertIn("- Security:", stop(s)["reason"])
-        s.run("git diff .env")
+        s.run("git diff config/secrets.yaml")
         self.assertEqual(stop(s), {})
 
     def test_a_security_skip_needs_no_change_read(self) -> None:
@@ -934,8 +1097,8 @@ class ChangeReadTests(AdapterTestCase):
     def test_the_security_item_counts_from_the_last_sensitive_change(self) -> None:
         s = self.routed()
         s.load("code-security-review")
-        s.call("Edit", {"file_path": ".env", "old_string": "A=1", "new_string": "A=2"})
-        s.read(".env")
+        s.call("Edit", {"file_path": "config/secrets.yaml", "old_string": "A=1", "new_string": "A=2"})
+        s.read("config/secrets.yaml")
         s.say("goated-skip: software-design-principles: one mechanical constant change")
         s.call("Write", write("src/util.py"))
         s.run("pytest -q")

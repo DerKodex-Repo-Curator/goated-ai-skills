@@ -96,7 +96,7 @@ of hold:
 | `spawn` | strict | Starting an agent or session with a brief | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, all in the turn; and the brief passes the [content check](#content-checks) |
 | `design` | justified-skip | A write adding five or more lines to a code file | `software-design-principles` loads in the turn |
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` loads in the turn |
-| `closeout` | justified-skip | The end of a turn that changed code, or that loaded `code-security-review` and changed a security-sensitive file (a `Stop` hook) | Every item below is met or skipped |
+| `closeout` | justified-skip | The end of a turn that changed code, that loaded `code-security-review` and changed a security-sensitive file, or that changed setup (a `Stop` hook) | Every item below is met or skipped |
 
 The closeout items, each judged against the turn's last code change. A code
 change is a write tool's file, or a file a shell command writes (its redirect
@@ -114,6 +114,21 @@ check after its own last change, that change is already proved.
 | Docs | A code file outside the tests changed | `doc-sync` loads, then a [change read](#change-reads) after the load and the last code change | `doc-sync` |
 | Design red flags | `software-design-principles` loaded in the turn | `software-design-principles/references/red-flags.md` is read after the last change, then a [change read](#change-reads) after that read | `software-design-principles` |
 | Security | `code-security-review` loaded in the turn and a security-sensitive file (the `security` gate's paths, code or not) changed | A [change read](#change-reads) after the load and the last sensitive change | `code-security-review` |
+| Setup | The turn installed or added a dependency or tool by a command that names a package, or wrote an env or settings file (see below) | `setup-scribe` loads in the turn, before or after the change | `setup-scribe` |
+
+The Setup item is not judged against code changes. A **package install** is a
+finished `npm`, `pnpm`, or `bun` `add` or `install`, `yarn add`, `pip install`
+(also `python -m pip`), `uv add`, `uv pip install`, `uv tool install`,
+`poetry add`, `pipx install`, `conda install`, `cargo add` or `install`,
+`go get` or `install`, `gem install`, or `brew`, `apt`, `apt-get`, `winget`,
+`choco`, or `scoop` `install`, that names a package. A bare `npm install`,
+`pip install -r requirements.txt`, or `pip install -e .` restores what a
+manifest records or installs a local path, so it does not count. An **env or
+settings file** is `.env` or `.env.*` (`.env.example` included), or a
+`settings*.json` under `.claude/` or `.vscode/`, written by a write tool or a
+shell command. These count wherever they are, inside the project or not,
+since machine and application settings are setup too. A subagent's installs
+and writes count toward the parent's closeout.
 
 - **Writes** are `Edit`, `Write`, `MultiEdit`, and `NotebookEdit`, and a
   `Bash` or `PowerShell` command that writes files (see

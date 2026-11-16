@@ -140,11 +140,13 @@ class ShellCommand:
     content to the agent: a git diff or show, a patch log, or patches on
     stdout; a listing of names or counts (`--stat`, `--name-only`) does not.
     Only git is read; another version control system's diff is not seen.
+    `installs_package` says it installs or adds a dependency or tool it names
+    (`uv add httpx`), not a bare restore such as `npm install`.
     """
 
     __slots__ = (
         "writes", "write_targets", "unknown_writes", "commit", "commit_message",
-        "opens_pr", "is_check", "prints_changes",
+        "opens_pr", "is_check", "prints_changes", "installs_package",
     )
 
     def __init__(self) -> None:
@@ -156,6 +158,7 @@ class ShellCommand:
         self.opens_pr = False
         self.is_check = False
         self.prints_changes = False
+        self.installs_package = False
 
 
 def analyze(command: str) -> ShellCommand:
@@ -213,6 +216,8 @@ def _add_segment(result: ShellCommand, segment: "_Segment") -> None:
         result.prints_changes = True
     if _is_check(name, original, args):
         result.is_check = True
+    if _installs_package(name, args):
+        result.installs_package = True
     result.write_targets += [t for t in targets if t]
     if targets or unknown:
         result.writes = True
@@ -730,3 +735,39 @@ def _commit_message(args: list[str], heredocs: list[str]) -> str | None:
         else:
             resolved.append(part)
     return "\n\n".join(resolved) if resolved else None
+
+
+# Package installs ---------------------------------------------------------------
+
+# Commands that install or add a dependency or tool when they name a package
+# (spec G3), as (command, subcommand words). A bare `npm install` or
+# `pip install -r requirements.txt` restores what a manifest records and names
+# no package, so it is not one.
+PACKAGE_INSTALLS = frozenset({
+    ("npm", "install"), ("npm", "i"), ("npm", "add"), ("pnpm", "add"), ("pnpm", "install"),
+    ("pnpm", "i"), ("yarn", "add"), ("bun", "add"), ("bun", "install"), ("bun", "i"),
+    ("pip", "install"), ("pip3", "install"), ("uv", "add"), ("uv", "pip", "install"),
+    ("uv", "tool", "install"), ("poetry", "add"), ("pipx", "install"), ("conda", "install"),
+    ("cargo", "add"), ("cargo", "install"), ("go", "get"), ("go", "install"),
+    ("gem", "install"), ("brew", "install"), ("apt", "install"), ("apt-get", "install"),
+    ("winget", "install"), ("choco", "install"), ("scoop", "install"),
+})
+# Options whose value is a file, folder, or index rather than a package.
+INSTALL_VALUE_OPTIONS = frozenset({
+    "-r", "--requirement", "-c", "--constraint", "-e", "--editable", "-i", "--index-url",
+    "--extra-index-url", "-f", "--find-links", "-t", "--target", "--path", "--prefix",
+    "--registry",
+})
+
+
+def _installs_package(name: str, args: list[str]) -> bool:
+    """True when the command installs or adds a package it names; a local path
+    (`.`, `./pkg`, `/opt/pkg`) is not a package."""
+
+    if name in ("python", "python3", "py") and args[:2] == ["-m", "pip"]:
+        name, args = "pip", args[2:]
+    words = [a for a in _drop_values(args, INSTALL_VALUE_OPTIONS) if not a.startswith("-")]
+    for length in (1, 2):
+        if (name, *words[:length]) in PACKAGE_INSTALLS:
+            return any(not w.startswith((".", "/", "\\")) for w in words[length:])
+    return False

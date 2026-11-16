@@ -4,8 +4,9 @@ These enforce skill triggers the skills already state (ADR 0003): commit with
 `commit-message`, open a pull request with `pr-description`, brief a new agent
 with `handoff`'s spawn brief or `subagent-driven-development`, design with
 `software-design-principles`, review sensitive surfaces with
-`code-security-review`, and close a code-changing turn with proof, `doc-sync`,
-`handoff`, and the design red flags.
+`code-security-review`, close a code-changing turn with proof, `doc-sync`,
+`handoff`, and the design red flags, and close a turn that changed setup with
+`setup-scribe`.
 
 Every decision is a pure function of the current turn as the transcript
 records it, plus the user's typed overrides for that turn. So an unchanged
@@ -44,6 +45,7 @@ SECURITY_SKILL = "code-security-review"
 DOC_SYNC_SKILL = "doc-sync"
 HANDOFF_SKILL = "handoff"
 PROOF_SKILL = "verification-before-completion"
+SETUP_SKILL = "setup-scribe"
 RED_FLAGS_REFERENCE = "software-design-principles/references/red-flags.md"
 
 # Tools that start another agent, each with the input field that carries the
@@ -113,6 +115,12 @@ SECURITY_CATEGORIES = (
 )
 # Only dependency manifests among docs-like files (`requirements.txt`) are sensitive.
 ALWAYS_CHECKED_CATEGORIES = frozenset({"dependencies"})
+# Env and settings files whose change is setup (spec G3): `.env` and `.env.*`,
+# and `settings*.json` under `.claude/` or `.vscode/`. They count wherever they
+# are, since machine and application settings are setup too.
+SETUP_FILE_RE = re.compile(
+    r"(?:^|/)\.env(?:\.[^/]*)?$|(?:^|/)\.(?:claude|vscode)/settings[^/]*\.json$", re.IGNORECASE
+)
 
 
 class _Proof:
@@ -371,8 +379,10 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     `software-design-principles` was loaded. A turn that loaded
     `code-security-review` and changed a security-sensitive file, code or
     not, needs a security review. The doc-sync, design, and security items
-    each also need a change read after their load or red-flags read. Each
-    item accepts a skip line; `final_text` is the reply being finished, which
+    each also need a change read after their load or red-flags read. A turn
+    that installed a package it names, or wrote an env or settings file, needs
+    `setup-scribe` loaded at any point in the turn (Setup). Each item accepts
+    a skip line; `final_text` is the reply being finished, which
     may not be in the transcript yet.
 
     `subagents` maps the agent id of each subagent this turn spawned to its
@@ -395,9 +405,19 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
                 f"change itself and review it: {CHANGE_READ}. Or, if it crosses no trust "
                 f"boundary, write `goated-skip: {SECURITY_SKILL}: <reason>`."
             )
+    setup = _setup_changes(turn, subagents or {})
+    if setup and not proof.loaded_or_skipped(SETUP_SKILL):
+        items.append(
+            f"- Setup: this turn {setup}. Load `{SETUP_SKILL}` and record the setup so it "
+            "can be repeated, or, if it leaves nothing to record, write "
+            f"`goated-skip: {SETUP_SKILL}: <reason>`."
+        )
     if not items:
         return None
-    what = "changed code" if changes.code else "changed a security-sensitive file"
+    what = (
+        "changed code" if changes.code
+        else "changed a security-sensitive file" if sensitive else "changed setup"
+    )
     return Hold(
         "closeout", JUSTIFIED_SKIP,
         f"Before finishing this turn, which {what}:\n" + "\n".join(items)
@@ -460,6 +480,36 @@ def _code_items(changes: "_Changes", proof: _Proof) -> list[str]:
                 f"`goated-skip: {DESIGN_SKILL}: <reason>`."
             )
     return items
+
+
+def _setup_changes(turn: Turn, subagents: dict) -> str:
+    """What setup the finished calls of the turn and its subagents changed, as
+    a phrase for the Setup item ('installed a package', 'wrote ".env"'), or ""."""
+
+    calls = list(turn.calls) + [
+        c for sub_turns in subagents.values() for sub_turn in sub_turns for c in sub_turn.calls
+    ]
+    installed, files = False, []
+    for call in calls:
+        if not call.ok:
+            continue
+        if call.name in FILE_WRITE_TOOLS:
+            targets = [str(call.input.get(FILE_WRITE_TOOLS[call.name]) or "")]
+        elif call.name in COMMAND_TOOLS:
+            command = shell.analyze(str(call.input.get("command") or ""))
+            installed = installed or command.installs_package
+            targets = command.write_targets
+        else:
+            continue
+        for target in targets:
+            name = _norm(target).rsplit("/", 1)[-1]
+            if SETUP_FILE_RE.search(_norm(target)) and name not in files:
+                files.append(name)
+    # Names are quoted, not backticked: the skill-usage mod reads a backticked name as a skill.
+    done = (["installed a package"] if installed else []) + (
+        ["wrote " + ", ".join(f'"{name}"' for name in files)] if files else []
+    )
+    return " and ".join(done)
 
 
 class _Change:

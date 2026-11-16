@@ -137,6 +137,11 @@ def _adapter_texts() -> dict[str, str]:
         unfinished.run("pytest -q", success=False)
         texts["closeoutUnfinished"] = _stop_reason(unfinished)
 
+        # The Setup item alone: a package install, with no code change.
+        installed = routed("closeout-setup")
+        installed.run("uv add httpx")
+        texts["closeoutSetup"] = _stop_reason(installed)
+
         contract = routed("commit-contract")
         contract.load("commit-message")
         texts["commitContract"] = reason(contract.call("Bash", {"command": f'git commit -m "{"x" * 80}"'}))
@@ -211,6 +216,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "shellWrite": "security | justified-skip",
             "closeout": "closeout | justified-skip",
             "closeoutUnfinished": "closeout | justified-skip",
+            "closeoutSetup": "closeout | justified-skip",
             "commitContract": "commit | strict",
             "spawnHeadings": "spawn | strict",
             "securityNoExtension": "security | justified-skip",
@@ -220,6 +226,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
                 self.assertTrue(texts[key].startswith(f"goated-hold: {line}\n"), texts[key])
         self.assertIn("- Unfinished:", texts["closeoutUnfinished"])
         self.assertIn("- Design:", texts["closeoutUnfinished"])
+        self.assertIn("- Setup:", texts["closeoutSetup"])
 
     def test_holds_backtick_only_skill_names(self) -> None:
         # The mod reads every bare backticked name in a hold as a skill it asks for (README "Hold messages"),
