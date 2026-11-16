@@ -221,6 +221,25 @@ class SkillUsageModFixtureTests(unittest.TestCase):
         self.assertIn("- Unfinished:", texts["closeoutUnfinished"])
         self.assertIn("- Design:", texts["closeoutUnfinished"])
 
+    def test_holds_a_line_can_clear_give_the_bare_retry_and_the_user_way_out(self) -> None:
+        # A route or skip line written in the held call's own message is recorded only after the
+        # hook returns, and Claude Code may store it as a narration summary that drops it (README
+        # "Known Limits"), so the hint is a bare retry, not a promise, and the user can stand it down.
+        texts = _adapter_texts()
+        ways_out = {
+            "routeLine": "skip routing",
+            "pipeline": "skip routing",
+            "design": "skip software-design-principles",
+            "security": "skip code-security-review",
+            "shellWrite": "skip code-security-review",
+            "securityNoExtension": "skip code-security-review",
+        }
+        for key, way_out in ways_out.items():
+            with self.subTest(key=key):
+                self.assertIn("make the call again without repeating the line", texts[key])
+                self.assertIn("may not be seen", texts[key])
+                self.assertIn(f"`{way_out}`", texts[key])
+
     def test_holds_backtick_only_skill_names(self) -> None:
         # The mod reads every bare backticked name in a hold as a skill it asks for (README "Hold messages"),
         # so a backticked file name, such as a security hold's `credentials`, would read as a phantom skill.

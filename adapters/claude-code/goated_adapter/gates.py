@@ -50,6 +50,25 @@ class Hold:
         return f"goated-hold: {self.gate} | {self.kind}\n{self.instruction}"
 
 
+def unseen_line_advice(line: str, way_out: str) -> str:
+    """Recovery advice for a hold that a route or skip line can clear.
+
+    `line` names the line ("route line", "skip line"); `way_out` is the typed
+    override that stands the hold down. A bare retry is the only in-turn
+    recovery, and it is not guaranteed (README "Known Limits"), so the advice
+    ends with the user's way out.
+    """
+
+    return (
+        f"Claude Code records a message only after this check, so a {line} in the "
+        "same message as this call is not visible yet: if you wrote one there, make "
+        "the call again without repeating the line. A line in a message that makes "
+        "a tool call may not be seen at all, because Claude Code can store that "
+        "message's text as a summary that drops it. If a bare retry is held again, "
+        f"tell the user they can type `{way_out}` in their prompt."
+    )
+
+
 def goated_skill_name(raw: str, namespaces: tuple[str, ...]) -> str | None:
     """Return the GOATED skill a loaded name refers to, or None for another skill.
 
@@ -203,7 +222,8 @@ def check_routing(
         "counts unless another task's route line came after it; route lines with "
         "no write or spawn between them are one task, corrected. A load in an "
         "earlier turn does not count, so load it again. If one does not apply, "
-        "write a corrected route line without it; the last route line wins.",
+        "write a corrected route line without it; the last route line wins. "
+        + unseen_line_advice("route line", "skip routing"),
     )
 
 
@@ -214,9 +234,7 @@ def _route_line_instruction(turn: Turn) -> str:
         "`goated-route: direct`, `goated-route: <intensity> | requires: <skills>`, "
         "or `goated-route: continue` when this prompt continues the current task "
         "or, in a session with no task yet, work begun elsewhere. "
-        "Claude Code records a message only after this check, so a route line in "
-        "the same message as this call is not visible yet: if you wrote one there, "
-        "make the call again."
+        + unseen_line_advice("route line", "skip routing")
     )
     if turn.malformed:
         quoted = "; ".join(f"`{line}`" for line in turn.malformed)

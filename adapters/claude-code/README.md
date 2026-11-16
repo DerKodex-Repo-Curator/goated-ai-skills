@@ -301,6 +301,11 @@ goated-hold: <gate> | <kind>
   `subagent-driven-development`, either of which answers it.
 - A hold asks for a load in the current turn. A skill loaded in an earlier
   turn does not answer it.
+- A hold that a route or skip line can clear (`route-line`, `pipeline`,
+  `design`, `security`) says that a line in the held call's own message is not
+  visible yet, and to make the call again without repeating the line. It says
+  this may still fail (see [Known Limits](#known-limits)), and that the user
+  can then type the matching override.
 - A hold or closeout item that asks for a [change read](#change-reads) once
   its skill has loaded names that skill without backticks, or only in its
   skip line, since no load answers it: the commit and pull-request holds name
@@ -469,8 +474,17 @@ of the call's prompt, which is normally already there.
   judges. In an interactive session Claude Code records that message only
   after the hook returns, so a route line or skip line written in the same
   message, and sibling calls made alongside it (a Skill load included), do not
-  count yet. The agent then makes the call again in a later message, by which
-  time the earlier one is recorded. The route-line hold says so.
+  count yet. The agent then makes the call again in a later message, without
+  repeating the line, by which time the earlier one is recorded.
+- The adapter reads route and skip lines only from reply text. Claude Code
+  can store the text of an assistant message that also makes a tool call as a
+  rewritten summary, in a thinking block, that drops the line, so the adapter
+  never sees it. A bare retry is then held again, and a line written again
+  beside a read-only call can be summarized the same way. The
+  route-line, pipeline, design, and security holds give the bare retry as
+  worth one try, not as a sure fix, and then point the user to the typed
+  override: `skip routing`, or `skip <skill>` for a skip line. Reading the
+  line from somewhere other than reply text is planned as a separate change.
 
 - Shell analysis is lexical, not a shell. These forms are not seen, so a
   write in them meets only `router-first` and a commit or pull request in
