@@ -83,6 +83,10 @@ clears it. In particular:
   whatever the hook says: then what the last block asked counts as not
   loaded, and what only earlier blocks asked counts as followed.
 
+These rules live in `hooks/holds.ts`, the hold settlement: `hooks/classify.ts`
+reads the events and feeds them to it in order, and keeps the rest of a
+session's summary.
+
 ## The Pane
 
 - **Session**: a picture of where skill loads came from, then lines on how
