@@ -264,6 +264,21 @@ class Session:
         self._tool_result(tool_use_id, "ok" if ok else "Exit code 1\nfailed", is_error=not ok)
         return parse(output)
 
+    def spawn(self, agent_id: str, brief: str, tool: str = "Agent") -> dict:
+        """Start a subagent: PreToolUse, then the result naming its agent id."""
+
+        tool_input = {"prompt": brief}
+        tool_use_id = self._tool_use(tool, tool_input)
+        output = parse(self.hook(
+            "PreToolUse", tool_name=tool, tool_input=tool_input, tool_use_id=tool_use_id
+        ))
+        held = reason(output)
+        self._tool_result(
+            tool_use_id, held or "Agent report.", is_error=bool(held),
+            extra=None if held else {"toolUseResult": {"status": "completed", "agentId": agent_id}},
+        )
+        return output
+
     def brief_with_handoff(self) -> None:
         """Load `handoff` and read its spawn-brief template, as the spawn hold asks."""
 

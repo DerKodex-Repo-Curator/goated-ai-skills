@@ -315,7 +315,9 @@ class SpawnTests(AdapterTestCase):
         snippet = json.loads((ADAPTER_DIR / "settings.snippet.json").read_text(encoding="utf-8"))
         matcher = snippet["hooks"]["PreToolUse"][0]["matcher"]
         names = [*gates.GATED_TOOLS, *actions.SPAWN_BRIEF_FIELDS, *actions.FILE_WRITE_TOOLS,
-                 "mcp__github__create_pull_request", "mcp__gitlab__create_merge_request"]
+                 "mcp__github__create_pull_request", "mcp__gitlab__create_merge_request",
+                 "mcp__github__push_files", "mcp__github__create_or_update_file",
+                 "mcp__git__git_commit"]
         for name in names:
             self.assertTrue(re.fullmatch(matcher, name), name)
             self.assertTrue(name in gates.GATED_TOOLS or actions.is_action_tool(name), name)

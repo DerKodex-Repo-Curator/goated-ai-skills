@@ -1,166 +1,470 @@
 """What a `Bash` or `PowerShell` command does, as far as the gates care.
 
-`analyze` reads one command string and answers: does it write files, is it a
-`git commit` (and with what inline message), does it open a pull request, and
-is it a check that proves a change. This module is the only place that knows
-shell syntax; the gates see `ShellCommand` objects.
+`analyze` reads one command string and answers: does it write files, and
+which; is it a `git commit`, and with what inline message; does it open a pull
+request; and does it run a check that proves a change. This module is the
+only place that knows shell syntax; the gates see `ShellCommand` objects.
 
-The analysis is lexical, not a shell parser. Quoted text, heredoc bodies, and
-PowerShell here-strings are blanked before matching, so `echo "a > b"` is not
-a redirect. It recognizes the common forms agents use; a command that hides a
-write inside an interpreter (`python -c "open(...)"`) is not seen. That limit
-is documented in the adapter README.
+The command is split into segments (simple commands joined by `;`, `&&`,
+`||`, `|`, `&`, newlines, parentheses, braces, or `$(`), with quotes, escapes,
+line continuations, comments, heredocs, PowerShell here-strings, `[[ ]]`
+tests, and arithmetic understood well enough that `echo "a > b"`,
+`[[ $a > $b ]]`, and `ls # a > b` write nothing. Each segment's real command
+word is found past wrappers such as `sudo -u x`, `env`, `timeout 60`, `nice`,
+`xargs`, and `cmd /c`. It is still a lexical reading, not a shell: a command
+run through `bash -c`, `eval`, `Invoke-Expression`, backticks, a heredoc fed to
+a shell, or a git alias is not seen. The adapter README lists these limits.
 """
 
 from __future__ import annotations
 
 import re
 
-# Heredoc: `<<EOF`, `<<-EOF`, `<<'EOF'`, `<<"EOF"`, body up to a line holding
-# only the word.
-HEREDOC_RE = re.compile(
-    r"<<-?[ \t]*(['\"]?)([A-Za-z_]\w*)\1([^\n]*)\n(.*?)(?:\n[ \t]*\2[ \t]*(?=\n|$)|\Z)",
-    re.DOTALL,
-)
-HERESTRING_RE = re.compile(r"@(['\"])\r?\n(.*?)\r?\n\1@", re.DOTALL)
-SINGLE_RE = re.compile(r"'[^']*'")
-DOUBLE_RE = re.compile(r'"(?:[^"\\`]|\\.|`.)*"', re.DOTALL)
-
-SEGMENT_SPLIT_RE = re.compile(r"\$\(|&&|\|\||[;&|\n(){}]")
-# A redirect that writes: `>`, `>>`, `>|`, `&>`, `2>`, `*>`, but not `>&1`,
-# `2>&1`, `->`, `=>`, or a redirect into a null device.
-REDIRECT_RE = re.compile(r"(?:^|(?<=[^<>=\-&|0-9*]))(?:[0-9*]|&)?>>?\|?[ \t]*(?!&)([^\s;&|)]+)")
 NULL_TARGETS = frozenset({"/dev/null", "$null", "nul", "/dev/stderr", "/dev/stdout"})
 DOTNET_WRITE_RE = re.compile(
     r"\[(?:system\.)?io\.(?:file|directory)\]::(?:write|append|copy|move|delete|create|replace)",
     re.IGNORECASE,
 )
+# A bash escape outside quotes; elsewhere a backslash is kept, so Windows paths survive.
+ESCAPABLE = frozenset(" \t\"'\\$`;&|<>(){}#*?[]~!")
+SEPARATORS = frozenset(";|&\n(){}")
 
-# Command words whose job is to write, copy, move, or delete files. Bash first,
-# then PowerShell cmdlets and the aliases Windows PowerShell ships.
-WRITE_COMMANDS = frozenset(
+# Write commands, by how their file arguments are read. Bash first, then
+# PowerShell cmdlets and the aliases Windows PowerShell 5.1 ships.
+TARGETS_ARE_ARGS = frozenset(
     {
-        "cp", "mv", "rm", "rmdir", "touch", "tee", "truncate", "ln", "unlink", "shred",
-        "set-content", "add-content", "out-file", "clear-content", "new-item", "copy-item",
-        "move-item", "remove-item", "rename-item", "tee-object",
-        "del", "erase", "copy", "move", "ren", "rename", "rd", "ri", "mi", "cpi", "ni", "rni",
+        "rm", "rmdir", "touch", "truncate", "tee", "unlink", "shred", "ln",
+        "mv", "move", "ren", "rename",
+        "del", "erase", "rd", "ri", "remove-item", "mi", "move-item", "rni", "rename-item",
+        "tee-object", "clear-content", "clc", "new-item", "ni",
     }
 )
-IN_PLACE_COMMANDS = frozenset({"sed", "perl"})
-GIT_WRITE_SUBCOMMANDS = frozenset({"apply", "am", "restore", "mv", "rm", "clean"})
-# Words that only start another command, so the real command word follows.
-PREFIX_WORDS = frozenset({"sudo", "env", "command", "nohup", "time", "exec", "xargs", "&", "."})
+TARGET_IS_LAST_ARG = frozenset({"cp", "copy", "cpi", "copy-item", "install"})
+# PowerShell cmdlets whose first positional argument, or -Path, is the file.
+TARGET_IS_PATH_PARAM = frozenset(
+    {"set-content", "sc", "add-content", "ac", "out-file", "export-csv", "export-clixml"}
+)
+PS_PATH_PARAMS = frozenset({"-path", "-literalpath", "-filepath", "-destination", "-outfile"})
+PS_VALUE_PARAMS = PS_PATH_PARAMS | frozenset(
+    {"-value", "-encoding", "-itemtype", "-name", "-include", "-exclude", "-filter",
+     "-delimiter", "-inputobject", "-newname", "-uri", "-method"}
+)
+# Writes whose files cannot be read from the command line.
+UNKNOWN_TARGET_COMMANDS = frozenset({"patch"})
+DOWNLOADERS = frozenset({"curl", "wget", "invoke-webrequest", "iwr", "invoke-restmethod", "irm"})
+GIT_UNKNOWN_TARGET_SUBCOMMANDS = frozenset({"apply", "am", "clean"})
 GIT_GLOBAL_WITH_VALUE = frozenset({"-c", "-C", "--git-dir", "--work-tree", "--namespace"})
 
-# Reading a file never proves a change, even when its name says "test".
-READ_COMMANDS = frozenset(
+# Wrappers that run the next word as the command, with the options of each
+# that take a value.
+WRAPPERS = {
+    "sudo": {"-u", "-g", "-h", "-p", "-C", "-D", "-r", "-t", "-U"},
+    "doas": {"-u", "-C"},
+    "env": {"-u", "-C", "-S"},
+    "nice": {"-n"},
+    "ionice": {"-c", "-n", "-p"},
+    "timeout": {"-s", "-k"},
+    "nohup": set(),
+    "command": set(),
+    "builtin": set(),
+    "exec": {"-a"},
+    "time": {"-f", "-o"},
+    "stdbuf": {"-i", "-o", "-e"},
+    "xargs": {"-I", "-n", "-P", "-L", "-d", "-E", "-s", "-a"},
+}
+
+# Check commands: tools that are checks by name, and runners whose first
+# argument decides.
+CHECK_TOOLS = frozenset(
     {
-        "cat", "less", "more", "head", "tail", "grep", "rg", "ls", "find", "echo", "printf",
-        "git", "get-content", "type", "gc", "select-string", "wc", "diff", "sed", "awk",
-        "test-path", "get-childitem", "dir", "cd", "set-location", "pwd", "which",
-        "get-command",
+        "pytest", "py.test", "tox", "nox", "jest", "vitest", "mocha", "ava", "eslint", "ruff",
+        "flake8", "pylint", "mypy", "pyright", "tsc", "ctest", "phpunit", "rspec",
+        "shellcheck", "golangci-lint", "invoke-pester", "bats", "pre-commit",
     }
 )
-# Word edges include `_` and `-`, so `validate_skills.py` and `run-tests` count.
-CHECK_RE = re.compile(
-    r"(?<![A-Za-z0-9])(?:test|tests|pytest|unittest|tox|nox|vitest|jest|mocha|lint|eslint|"
-    r"ruff|flake8|mypy|pyright|tsc|typecheck|clippy|check|build|validate|verify)(?![A-Za-z0-9])",
+CHECK_MODULES = frozenset(
+    {"pytest", "unittest", "mypy", "ruff", "tox", "nox", "pyright", "flake8", "pylint", "doctest"}
+)
+SUBCOMMAND_CHECKS = {
+    "cargo": {"test", "check", "clippy", "build", "nextest"},
+    "go": {"test", "vet", "build"},
+    "dotnet": {"test", "build"},
+    "npm": {"test", "t"},
+    "pnpm": {"test", "t"},
+    "yarn": {"test"},
+    "bun": {"test"},
+    "deno": {"test", "check", "lint"},
+}
+SCRIPT_RUNNERS = frozenset({"npm", "pnpm", "yarn", "bun"})
+TARGET_RUNNERS = frozenset({"make", "just", "task", "rake", "mvn", "mvnw", "gradle", "gradlew"})
+COMMAND_RUNNERS = {  # runner -> subcommand that runs the rest as a command ("" for none)
+    "uv": "run", "poetry": "run", "pipenv": "run", "pdm": "run", "hatch": "run",
+    "bundle": "exec", "npx": "", "pnpx": "", "bunx": "",
+}
+INTERPRETERS = frozenset(
+    {"python", "python3", "py", "node", "bash", "sh", "zsh", "pwsh", "powershell", "ruby",
+     "perl", "php"}
+)
+CHECK_WORD_RE = re.compile(
+    r"(?<![a-z0-9])(?:test|tests|check|checks|validate|verify|lint|typecheck|build|ci)(?![a-z0-9])",
     re.IGNORECASE,
 )
-PR_RE = re.compile(r"\b(?:gh[ \t]+pr[ \t]+create|glab[ \t]+mr[ \t]+create)\b", re.IGNORECASE)
 
 
 class ShellCommand:
     """The facts the gates need about one shell command.
 
-    `writes` says it writes, copies, moves, or deletes files. `commit` is True
-    for a `git commit`; `commit_message` is its message when the command
-    carries it inline (`-m`, `--message`, a heredoc on `-F -`, or a PowerShell
-    here-string), else None. `opens_pr` covers `gh pr create` and
-    `glab mr create`. `is_check` says it runs a test, lint, build, or check.
-    `words` are the command's unquoted words, for path checks.
+    `writes` says it writes, copies, moves, or deletes files. `write_targets`
+    are the files it names as written (redirect targets, copy destinations,
+    removed or moved files, in-place edits), and `unknown_writes` says some
+    write's files cannot be read from the command (`git apply`, `patch`, a
+    download without an output name). `commit` is True for a `git commit`
+    that records one (not `--dry-run`); `commit_message` is its message when
+    that commit carries it inline, else None. `opens_pr` covers
+    `gh pr create|new` and `glab mr create|new`. `is_check` says it runs a
+    test, lint, build, or check.
     """
 
-    __slots__ = ("writes", "commit", "commit_message", "opens_pr", "is_check", "words")
+    __slots__ = (
+        "writes", "write_targets", "unknown_writes", "commit", "commit_message",
+        "opens_pr", "is_check",
+    )
 
     def __init__(self) -> None:
         self.writes = False
+        self.write_targets: list[str] = []
+        self.unknown_writes = False
         self.commit = False
         self.commit_message: str | None = None
         self.opens_pr = False
         self.is_check = False
-        self.words: list[str] = []
 
 
 def analyze(command: str) -> ShellCommand:
     """Return what `command` does; never raises on odd input."""
 
     result = ShellCommand()
-    blank = _blank_quoted(command)
-    result.words = [w for w in re.split(r"[\s;&|()<>]+", _blank_quoted(command, keep_text=True)) if w]
-    if any(t.lower() not in NULL_TARGETS for t in REDIRECT_RE.findall(blank)):
-        result.writes = True
-    if DOTNET_WRITE_RE.search(blank):
-        result.writes = True
-    result.opens_pr = bool(PR_RE.search(blank))
-    for segment in SEGMENT_SPLIT_RE.split(blank):
-        words = _command_words(segment)
-        if not words:
-            continue
-        name = words[0]
-        if name in WRITE_COMMANDS:
-            result.writes = True
-        elif name in IN_PLACE_COMMANDS and _edits_in_place(words[1:]):
-            result.writes = True
-        elif name == "git":
-            sub, rest = _git_subcommand(words[1:])
-            if _git_writes(sub, rest):
-                result.writes = True
-            if sub == "commit":
-                result.commit = True
-        if name not in READ_COMMANDS and CHECK_RE.search(segment):
-            result.is_check = True
-    if result.commit:
-        result.commit_message = commit_message(command)
+    for segment in _segments(command):
+        _add_segment(result, segment)
+    if DOTNET_WRITE_RE.search(command):
+        result.writes = result.unknown_writes = True
     return result
 
 
-def _blank_quoted(command: str, keep_text: bool = False) -> str:
-    """Blank heredoc bodies, here-strings, and quoted strings.
+def _add_segment(result: ShellCommand, segment: "_Segment") -> None:
+    targets = [t for t in segment.redirects if t.lower() not in NULL_TARGETS]
+    unknown = False
+    name, original, args = _resolve(segment.words)
+    if name in TARGETS_ARE_ARGS:
+        targets += _ps_paths(args) if name.count("-") else _positional(args)
+    elif name in TARGET_IS_LAST_ARG:
+        positional = _ps_paths(args) if name.count("-") else _positional(args)
+        targets += positional[-1:]
+    elif name in TARGET_IS_PATH_PARAM:
+        targets += _ps_paths(args)[:1]
+    elif name in ("sed", "perl") and _edits_in_place(args):
+        targets += _in_place_files(name, args)
+    elif name in DOWNLOADERS:
+        output, writes = _download_target(name, args)
+        targets += [output] if output else []
+        unknown = writes and not output
+    elif name in UNKNOWN_TARGET_COMMANDS:
+        unknown = True
+    elif name == "git":
+        sub, rest = _git_subcommand(args)
+        git_targets, git_unknown = _git_writes(sub, rest)
+        targets += git_targets
+        unknown = git_unknown
+        if sub == "commit" and "--dry-run" not in rest:
+            result.commit = True
+            message = _commit_message(rest, segment.heredocs)
+            if message is not None:
+                result.commit_message = message
+    elif name in ("gh", "glab"):
+        rest = _skip_options(args, {"-R", "--repo"})
+        noun = "pr" if name == "gh" else "mr"
+        if rest[:1] == [noun] and rest[1:2] in (["create"], ["new"]):
+            result.opens_pr = True
+    if _is_check(name, original, args):
+        result.is_check = True
+    result.write_targets += [t for t in targets if t]
+    if targets or unknown:
+        result.writes = True
+    if unknown:
+        result.unknown_writes = True
 
-    With `keep_text`, quotes are removed but their text kept, so a quoted path
-    still counts as a word.
-    """
 
-    def heredoc(match: re.Match) -> str:
-        return "<<" + match.group(2) + match.group(3) + "\n"
-
-    text = HEREDOC_RE.sub(heredoc, command)
-    text = HERESTRING_RE.sub("''", text)
-    if keep_text:
-        return SINGLE_RE.sub(lambda m: m.group(0)[1:-1], DOUBLE_RE.sub(lambda m: m.group(0)[1:-1], text))
-    return SINGLE_RE.sub("''", DOUBLE_RE.sub('""', text))
+# Tokenizing --------------------------------------------------------------------
 
 
-def _command_words(segment: str) -> list[str]:
-    """Return the segment's words with the real command word first, lowercased.
+class _Segment:
+    """One simple command: its words, the files it redirects output into, and
+    the bodies of heredocs it opened."""
 
-    Prefix words, `VAR=value` assignments, and a prefix's own options (as in
-    `xargs -0 rm`) are dropped, and a path or `.exe` suffix is stripped.
-    """
+    __slots__ = ("words", "redirects", "heredocs")
 
-    words = segment.split()
-    while words and (
-        words[0].lower() in PREFIX_WORDS or re.match(r"^[A-Za-z_]\w*=", words[0])
-        or (words[0].startswith("-") and len(words) > 1)
-    ):
-        words = words[1:]
-    if not words:
-        return []
-    name = words[0].replace("\\", "/").rsplit("/", 1)[-1].lower()
-    if name.endswith(".exe"):
-        name = name[:-4]
-    return [name, *words[1:]]
+    def __init__(self) -> None:
+        self.words: list[str] = []
+        self.redirects: list[str] = []
+        self.heredocs: list[str] = []
+
+
+def _segments(command: str) -> list[_Segment]:
+    text = command
+    segments: list[_Segment] = []
+    current = _Segment()
+    word: list[str] | None = None
+    redirect_next = False  # the next word is a redirect target
+    in_test = False  # inside [[ ]], where < and > compare
+    pending: list[tuple[str, bool, _Segment]] = []  # heredocs waiting for their body
+    i, n = 0, len(text)
+
+    def end_word() -> None:
+        nonlocal word, redirect_next, in_test
+        if word is None:
+            return
+        value = "".join(word)
+        word = None
+        if redirect_next:
+            current.redirects.append(value)
+            redirect_next = False
+            return
+        if value == "[[":
+            in_test = True
+        elif value == "]]":
+            in_test = False
+        current.words.append(value)
+
+    def end_segment() -> None:
+        nonlocal current, in_test
+        end_word()
+        if current.words or current.redirects or current.heredocs:
+            segments.append(current)
+        current = _Segment()
+        in_test = False
+
+    while i < n:
+        c = text[i]
+        continuation = c in "\\`" and re.match(r"[\\`]\r?\n", text[i : i + 3])
+        if continuation:
+            # A bash `\` or PowerShell backtick line continuation, outside quotes.
+            end_word()
+            i += continuation.end()
+        elif c in " \t\r":
+            end_word()
+            i += 1
+        elif c == "\n":
+            end_word()
+            i += 1
+            for delimiter, strip_tabs, owner in pending:
+                body, i = _heredoc_body(text, i, delimiter, strip_tabs)
+                owner.heredocs.append(body)
+            pending = []
+            end_segment()
+        elif c == "#" and word is None:
+            end = text.find("\n", i)
+            i = n if end < 0 else end
+        elif c == "'":
+            end = text.find("'", i + 1)
+            end = n if end < 0 else end
+            word = (word or []) + list(text[i + 1 : end])
+            i = end + 1
+        elif c == '"':
+            value, i = _double_quoted(text, i + 1)
+            word = (word or []) + list(value)
+        elif c == "@" and word is None and text[i + 1 : i + 2] in ("'", '"') and (
+            text[i + 2 : i + 3] in ("\n", "\r")
+        ):
+            quote = text[i + 1]
+            start = text.find("\n", i) + 1
+            end = text.find("\n" + quote + "@", start - 1)
+            end = n if end < 0 else end
+            word = list(text[start:end].rstrip("\r"))
+            i = min(n, end + 3)
+        elif c == "\\" and i + 1 < n and text[i + 1] in ESCAPABLE:
+            word = (word or []) + [text[i + 1]]
+            i += 2
+        elif text.startswith("$((", i) or (text.startswith("((", i) and word is None):
+            i = _skip_arithmetic(text, i + (1 if c == "$" else 0))
+            word = (word or []) + ["0"]
+        elif text.startswith("${", i):
+            end = text.find("}", i)
+            end = n if end < 0 else end
+            word = (word or []) + list(text[i : end + 1])
+            i = end + 1
+        elif text.startswith("<<", i) and not text.startswith("<<<", i) and not in_test:
+            end_word()
+            match = re.match(r"<<(-?)[ \t]*(['\"]?)([A-Za-z_][\w.-]*)\2", text[i:])
+            if match:
+                pending.append((match.group(3), bool(match.group(1)), current))
+                i += match.end()
+            else:
+                i += 2
+        elif c in "<>" and not in_test:
+            fd_prefix = word is not None and all(ch.isdigit() or ch in "&*" for ch in word)
+            if fd_prefix:
+                word = None
+            end_word()
+            i = _redirect(text, i, c)
+            if c == ">" and not text.startswith("&", i):
+                redirect_next = True
+            elif text.startswith("&", i):
+                i = _skip_fd(text, i)
+            else:
+                redirect_next = False
+                word = None
+                # An input redirect's file is read, not written: drop it.
+                while i < n and text[i] in " \t":
+                    i += 1
+                while i < n and text[i] not in " \t\n;|&()<>":
+                    i += 1
+        elif c == "&" and text.startswith(">", i + 1):
+            end_word()
+            i += 1  # `&>file`: the `>` is handled next
+            word = ["&"]
+        elif c == "$" and text.startswith("(", i + 1):
+            end_segment()
+            i += 2
+        elif c in SEPARATORS:
+            end_segment()
+            i += 2 if text.startswith(("&&", "||"), i) else 1
+        else:
+            word = (word or []) + [c]
+            i += 1
+    end_segment()
+    return segments
+
+
+def _double_quoted(text: str, i: int) -> tuple[str, int]:
+    out: list[str] = []
+    n = len(text)
+    while i < n and text[i] != '"':
+        if text[i] in "\\`" and i + 1 < n and text[i + 1] in '"\\$`':
+            out.append(text[i + 1])
+            i += 2
+        else:
+            out.append(text[i])
+            i += 1
+    return "".join(out), i + 1
+
+
+def _heredoc_body(text: str, i: int, delimiter: str, strip_tabs: bool) -> tuple[str, int]:
+    lines = []
+    while i < len(text):
+        end = text.find("\n", i)
+        end = len(text) if end < 0 else end
+        line = text[i:end].rstrip("\r")
+        i = end + 1
+        if (line.lstrip("\t") if strip_tabs else line).strip() == delimiter:
+            return "\n".join(lines), i
+        lines.append(line)
+    return "\n".join(lines), len(text)
+
+
+def _skip_arithmetic(text: str, i: int) -> int:
+    depth = 0
+    while i < len(text):
+        if text[i] == "(":
+            depth += 1
+        elif text[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    return i
+
+
+def _redirect(text: str, i: int, c: str) -> int:
+    i += 1
+    if c == ">" and i < len(text) and text[i] in ">|":
+        i += 1
+    return i
+
+
+def _skip_fd(text: str, i: int) -> int:
+    i += 1  # the `&` of `>&1` or `2>&-`
+    while i < len(text) and (text[i].isdigit() or text[i] == "-"):
+        i += 1
+    return i
+
+
+# Reading a segment ------------------------------------------------------------
+
+
+def _resolve(words: list[str]) -> tuple[str, str, list[str]]:
+    """Return the real command word (bare and lowercased), as written, and its arguments."""
+
+    i = 0
+    while i < len(words):
+        word = words[i]
+        name = _bare(word)
+        if re.match(r"^[A-Za-z_]\w*=", word) or word in ("{", "}", "!"):
+            i += 1
+        elif name in WRAPPERS:
+            i += 1
+            takes_value = WRAPPERS[name]
+            while i < len(words) and (words[i].startswith("-") or "=" in words[i]):
+                i += 2 if words[i] in takes_value else 1
+            if name == "timeout" and i < len(words):
+                i += 1  # the duration
+        elif name == "cmd" and i + 1 < len(words) and words[i + 1].lower() in ("/c", "/k"):
+            i += 2
+            while i < len(words) and words[i].startswith("/") and len(words[i]) == 2:
+                i += 1
+        else:
+            return name, word, words[i + 1 :]
+    return "", "", []
+
+
+def _bare(word: str) -> str:
+    name = word.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    for suffix in (".exe", ".cmd", ".bat"):
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return name
+
+
+def _positional(args: list[str]) -> list[str]:
+    out = []
+    after_dashes = False
+    for arg in args:
+        if arg == "--" and not after_dashes:
+            after_dashes = True
+        elif after_dashes or not arg.startswith("-"):
+            out.append(arg)
+    return out
+
+
+def _ps_paths(args: list[str]) -> list[str]:
+    """PowerShell-style arguments: -Path values first, then positional ones."""
+
+    named, positional = [], []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        low = arg.lower()
+        if low.startswith("-") and len(arg) > 1:
+            param, _, attached = low.partition(":")
+            if param in PS_VALUE_PARAMS:
+                value = args[i][len(param) + 1 :] if attached else (
+                    args[i + 1] if i + 1 < len(args) else ""
+                )
+                if param in PS_PATH_PARAMS and value:
+                    named.append(value)
+                i += 1 if attached else 2
+                continue
+            i += 1
+            continue
+        positional.append(arg)
+        i += 1
+    return named + positional
+
+
+def _skip_options(args: list[str], takes_value: set[str]) -> list[str]:
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        i += 2 if args[i] in takes_value else 1
+    return args[i:]
 
 
 def _edits_in_place(args: list[str]) -> bool:
@@ -172,6 +476,54 @@ def _edits_in_place(args: list[str]) -> bool:
     return False
 
 
+def _in_place_files(name: str, args: list[str]) -> list[str]:
+    script_given = any(a in ("-e", "-f", "--expression", "--file") or (
+        a.startswith("-") and not a.startswith("--") and a[-1:] in "ef") for a in args)
+    files, skip_next = [], False
+    for arg in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg in ("-e", "-f", "--expression", "--file") or (
+            arg.startswith("-") and not arg.startswith("--") and arg[-1:] in "ef"
+        ):
+            skip_next = True
+            continue
+        if not arg.startswith("-"):
+            files.append(arg)
+    return files if script_given or name == "perl" else files[1:]
+
+
+def _download_target(name: str, args: list[str]) -> tuple[str | None, bool]:
+    """Return (output file or None, whether it writes) for a download command.
+
+    curl writes with `-o <file>` (also at the end of a cluster such as
+    `-sSLo <file>`) or `-O`; wget writes by default, to `-O <file>` when given;
+    PowerShell's Invoke-WebRequest, and its `curl` and `wget` aliases, write
+    with `-OutFile <file>`.
+    """
+
+    out_flag = "O" if name == "wget" else "o"
+    for i, arg in enumerate(args):
+        value = args[i + 1] if i + 1 < len(args) else None
+        if arg.lower() == "-outfile":
+            return value, True
+        option, eq, attached = arg.partition("=")
+        if option in ("--output", "--output-document"):
+            value = attached if eq else value
+            return (None, False) if value == "-" else (value, True)
+        if arg.startswith("-") and arg.endswith(out_flag + "-"):
+            return None, False  # `wget -qO-`: to stdout
+        if arg.startswith("-") and not arg.startswith("--") and arg[1:].isalpha():
+            if arg.endswith(out_flag):
+                return (None, False) if value == "-" else (value, True)
+            if name == "curl" and "O" in arg:
+                return None, True
+        if arg in ("--remote-name", "--remote-name-all"):
+            return None, True
+    return None, name == "wget"
+
+
 def _git_subcommand(args: list[str]) -> tuple[str, list[str]]:
     index = 0
     while index < len(args) and args[index].startswith("-"):
@@ -181,62 +533,149 @@ def _git_subcommand(args: list[str]) -> tuple[str, list[str]]:
     return args[index].lower(), args[index + 1 :]
 
 
-def _git_writes(sub: str, rest: list[str]) -> bool:
-    if sub in GIT_WRITE_SUBCOMMANDS:
-        return True
+def _git_writes(sub: str, rest: list[str]) -> tuple[list[str], bool]:
+    """Return (files written, whether others are written that the command does not name)."""
+
+    if sub in GIT_UNKNOWN_TARGET_SUBCOMMANDS:
+        return [], True
+    if sub in ("mv", "rm"):
+        return _positional(rest), False
+    if sub == "restore":
+        return [a for a in _positional(_drop_values(rest, {"-s", "--source"}))], False
     if sub == "checkout":
-        return "--" in rest
+        if "--" in rest:
+            return rest[rest.index("--") + 1 :], False
+        if any(a in ("-b", "-B", "--orphan") for a in rest):
+            return [], False
+        positional = _positional(rest)
+        # `git checkout <rev> <path>...` restores files; `git checkout <branch>` does not.
+        return positional[1:], False
     if sub == "reset":
-        return "--hard" in rest
+        return [], "--hard" in rest
     if sub == "stash":
-        return bool(rest) and rest[0] in {"pop", "apply"}
+        return [], bool(rest) and rest[0] in {"pop", "apply"}
+    return [], False
+
+
+def _drop_values(args: list[str], takes_value: set[str]) -> list[str]:
+    out, skip = [], False
+    for arg in args:
+        if skip:
+            skip = False
+        elif arg in takes_value:
+            skip = True
+        else:
+            out.append(arg)
+    return out
+
+
+# Checks -------------------------------------------------------------------------
+
+
+def _is_check(name: str, original: str, args: list[str]) -> bool:
+    if not name:
+        return False
+    if name in CHECK_TOOLS:
+        return True
+    if name in SUBCOMMAND_CHECKS and args[:1] and args[0].lower() in SUBCOMMAND_CHECKS[name]:
+        return True
+    if name in SCRIPT_RUNNERS:
+        rest = args[1:] if args[:1] and args[0] in ("run", "run-script") else args
+        return bool(rest) and bool(CHECK_WORD_RE.fullmatch(rest[0]) or CHECK_WORD_RE.search(rest[0]))
+    if name in TARGET_RUNNERS:
+        return any(CHECK_WORD_RE.fullmatch(a) for a in args if not a.startswith("-"))
+    if name in COMMAND_RUNNERS:
+        sub = COMMAND_RUNNERS[name]
+        rest = args
+        if sub:
+            if not args or args[0] != sub:
+                return False
+            rest = args[1:]
+        rest = _skip_options(rest, {"--with", "--python", "-p", "--extra", "--group",
+                                     "--package", "--project", "--directory", "-e", "--env"})
+        return bool(rest) and _is_check(_bare(rest[0]), rest[0], rest[1:])
+    if name in INTERPRETERS:
+        if "-m" in args:
+            index = args.index("-m")
+            return index + 1 < len(args) and args[index + 1] in CHECK_MODULES
+        for flag in ("-File", "-file", "-f"):
+            if flag in args and args.index(flag) + 1 < len(args):
+                return _is_check_script(args[args.index(flag) + 1])
+        scripts = [a for a in args if not a.startswith("-")]
+        return bool(scripts) and _is_check_script(scripts[0])
+    if "/" in original.replace("\\", "/") or "." in name:
+        return _is_check_script(original)
     return False
 
 
-# Commit messages ------------------------------------------------------------
+def _is_check_script(path: str) -> bool:
+    stem = path.replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0]
+    return bool(CHECK_WORD_RE.search(stem))
 
-MESSAGE_OPTION_RE = re.compile(r"(?:^|\s)(?:-m|--message)(?:=|[ \t]*)")
-FILE_STDIN_RE = re.compile(r"(?:^|\s)(?:-F|--file)(?:=|[ \t]*)-(?=\s|$)")
+
+# Commit messages ------------------------------------------------------------------
+
+SUBSTITUTED_HEREDOC_RE = re.compile(
+    r"^\$\(\s*cat\s*<<-?\s*(['\"]?)([A-Za-z_][\w.-]*)\1[ \t]*\r?\n(.*?)\r?\n[ \t]*\2[ \t]*\r?\n?\s*\)\s*$",
+    re.DOTALL,
+)
+# Short options of `git commit` that take a value.
+COMMIT_VALUE_FLAGS = "mFcCt"
 
 
-def commit_message(command: str) -> str | None:
-    """Return the message a `git commit` command carries inline, or None.
+def _commit_message(args: list[str], heredocs: list[str]) -> str | None:
+    """Return the message a `git commit` segment carries inline, or None.
 
-    Several `-m` options join as paragraphs, as git joins them. A heredoc fed
-    to `-F -`, or inside `-m "$(cat <<'EOF' ... EOF)"`, gives its body. A
-    message in a file, or one git would ask for in an editor, is not in the
+    Several `-m` options join as paragraphs, as git joins them, and a cluster
+    such as `-am` counts. A heredoc fed to `-F -`, or inside
+    `-m "$(cat <<'EOF' ... EOF)"`, gives its body. A message in a file, reused
+    from another commit (`-c`, `-C`), or written in an editor is not in the
     command, so the answer is None.
     """
 
-    heredoc = HEREDOC_RE.search(command)
-    if heredoc and (FILE_STDIN_RE.search(command) or "$(cat" in command):
-        return heredoc.group(4).strip("\n")
-    parts = []
-    for match in MESSAGE_OPTION_RE.finditer(command):
-        value = _read_value(command, match.end())
-        if value is None:
-            return None
-        parts.append(value)
-    return "\n\n".join(parts) if parts else None
-
-
-def _read_value(text: str, start: int) -> str | None:
-    """Read one shell word starting at `start`: quoted, here-string, or bare."""
-
-    rest = text[start:]
-    here = re.match(r"@(['\"])\r?\n(.*?)\r?\n\1@", rest, re.DOTALL)
-    if here:
-        return here.group(2)
-    if rest.startswith("'"):
-        end = rest.find("'", 1)
-        return rest[1:end] if end > 0 else None
-    if rest.startswith('"'):
-        match = re.match(r'"((?:[^"\\`]|\\.|`.)*)"', rest, re.DOTALL)
-        if not match:
-            return None
-        value = match.group(1)
-        if "$(" in value:
-            return None  # A command substitution other than a heredoc: not knowable.
-        return re.sub(r'\\(["\\$`])', r"\1", value)
-    match = re.match(r"[^\s;&|]+", rest)
-    return match.group(0) if match else None
+    parts: list[str] = []
+    stdin = False
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        nxt = args[i + 1] if i + 1 < len(args) else None
+        if arg == "--":
+            break
+        if arg.startswith("--"):
+            option, eq, value = arg.partition("=")
+            if option in ("--message", "--file", "--reuse-message", "--reedit-message"):
+                if not eq:
+                    value, i = nxt or "", i + 1
+                if option == "--message":
+                    parts.append(value)
+                elif option == "--file" and value == "-":
+                    stdin = True
+                else:
+                    return None
+        elif arg.startswith("-") and len(arg) > 1:
+            for k, flag in enumerate(arg[1:], 1):
+                if flag not in COMMIT_VALUE_FLAGS:
+                    continue
+                value = arg[k + 1 :]
+                if not value:
+                    value, i = nxt or "", i + 1
+                if flag == "m":
+                    parts.append(value)
+                elif flag == "F" and value == "-":
+                    stdin = True
+                elif flag in "FcC":
+                    return None
+                break
+        i += 1
+    if stdin:
+        return heredocs[0].strip("\n") if heredocs else None
+    resolved = []
+    for part in parts:
+        match = SUBSTITUTED_HEREDOC_RE.match(part)
+        if match:
+            resolved.append(match.group(3))
+        elif "$(" in part:
+            return None  # Another command substitution: not knowable.
+        else:
+            resolved.append(part)
+    return "\n\n".join(resolved) if resolved else None

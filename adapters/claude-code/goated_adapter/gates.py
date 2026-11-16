@@ -25,7 +25,7 @@ ROUTER_SKILL = "using-goated-ai-skills"
 WRITE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
 # Spawning hands work to another agent or session, so it is held like a write.
 SPAWN_TOOLS = frozenset(
-    {"Agent", "mcp__ccd_session__start_session", "mcp__ccd_session__hand_off_to_session"}
+    {"Agent", "Task", "mcp__ccd_session__start_session", "mcp__ccd_session__hand_off_to_session"}
 )
 COMMAND_TOOLS = frozenset({"Bash", "PowerShell"})
 HELD_LIKE_WRITES = WRITE_TOOLS | SPAWN_TOOLS

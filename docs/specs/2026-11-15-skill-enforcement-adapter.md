@@ -332,11 +332,16 @@ Claude Code adapter structure, settled in Ticket 030:
   closeout holds accept a skip line. The closeout runs on Claude Code's `Stop`
   hook. Two of its triggers are mechanical stand-ins, documented in the
   adapter README: a non-test code change asks for `doc-sync`, and a failing
-  last check asks for `handoff`.
-- **Shell analysis** lives in `shell.py`: a lexical reading of one command
-  that blanks quoted text, heredocs, and here-strings, then reports whether it
-  writes files, commits (with any inline message), opens a pull request, or
-  runs a check. **Content checks** live in `contracts.py` and test only what
+  last check asks for `handoff`. A code change is a write target inside the
+  project folder, including those of subagents the turn spawned, found
+  through the spawn result's `agentId`.
+- **Shell analysis** lives in `shell.py`: a lexical tokenizer that splits a
+  command into simple commands, understanding quotes, continuations,
+  comments, heredocs, here-strings, `[[ ]]`, and arithmetic, and resolves each
+  command word past wrappers such as `sudo`, `timeout`, and `cmd /c`. Per
+  command it reports the files written, a commit and its own inline message,
+  a pull request, or a check. Commands run through another shell or
+  evaluator are out of reach, as the README's Known Limits say. **Content checks** live in `contracts.py` and test only what
   the `commit-message` and spawn-brief contracts state plainly.
 - **Hold format.** Every hold's first line is
   `goated-hold: <gate> | <strict|justified-skip>`; the adapter README fixes the

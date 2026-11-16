@@ -19,6 +19,7 @@ clear on a `goated-skip: <skill>: <reason>` line in the current turn.
 
 from __future__ import annotations
 
+import os
 import re
 
 from . import contracts, shell
@@ -42,11 +43,18 @@ RED_FLAGS_REFERENCE = "software-design-principles/references/red-flags.md"
 # hands over no text, so it is not held.
 SPAWN_BRIEF_FIELDS = {
     "Agent": "prompt",
+    "Task": "prompt",  # The spawn tool's name in older Claude Code versions.
     "mcp__ccd_session__start_session": "prompt",
     "mcp__ccd_session__hand_off_to_session": "remaining_plan",
 }
 # MCP tools that open a pull or merge request, such as a GitHub server's.
 PR_TOOL_RE = re.compile(r"^mcp__.+__create_(?:pull|merge)_request$")
+# MCP tools that record a commit, such as a GitHub server's file tools or a git
+# server's commit tool; each carries its message in `message`.
+COMMIT_TOOL_RE = re.compile(
+    r"^mcp__.+__(?:push_files|create_or_update_file|delete_file|git_commit|create_commit"
+    r"|commit_changes|commit)$"
+)
 FILE_WRITE_TOOLS = {"Edit": "file_path", "Write": "file_path", "MultiEdit": "file_path",
                     "NotebookEdit": "notebook_path"}
 # An edit adding at least this many lines is a design change, not a tiny fix.
@@ -63,24 +71,28 @@ TEST_PATH_RE = re.compile(
     re.IGNORECASE,
 )
 # Security-sensitive surfaces, by path. The first matching category is named.
+# Paths are lowercased with camelCase humps split by `_` first, and words must
+# stand alone between `/`, `.`, `_`, or `-`, so `tokenizer.py` and `author.py`
+# are not secrets or auth, while `api_token.py` and `userAuth.ts` are.
+_ALONE = r"(?<![a-z0-9])(?:{})(?![a-z0-9])"
 SECURITY_CATEGORIES = (
     ("dependencies", re.compile(
-        r"(?:^|/)(?:package(?:-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|requirements[^/]*\.txt"
-        r"|pyproject\.toml|poetry\.lock|uv\.lock|Pipfile(?:\.lock)?|Cargo\.(?:toml|lock)"
-        r"|go\.(?:mod|sum)|Gemfile(?:\.lock)?|composer\.(?:json|lock)|[^/]+\.csproj)$",
-        re.IGNORECASE)),
+        r"(?:^|/)(?:package(?:-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|requirements[^/]*\.(?:txt|in)"
+        r"|pyproject\.toml|poetry\.lock|uv\.lock|pipfile(?:\.lock)?|cargo\.(?:toml|lock)"
+        r"|go\.(?:mod|sum)|gemfile(?:\.lock)?|composer\.(?:json|lock)|[^/]+\.csproj)$")),
     ("secrets", re.compile(
-        r"(?:^|/)\.env(?:\.[^/]*)?$|secret|credential|\.pem$|\.key$|(?:^|/)[^/]*token[^/]*$",
-        re.IGNORECASE)),
-    ("auth", re.compile(
-        r"auth|login|oauth|jwt|password|permission|rbac|(?:^|/)acl|polic(?:y|ies)"
-        r"|(?:^|/|[_-])sessions?(?:[._-][^/]*)?$", re.IGNORECASE)),
-    ("persistence", re.compile(r"(?:^|/)migrations?/|(?:^|/)schema\.(?:sql|prisma)$|\.sql$",
-                               re.IGNORECASE)),
+        r"(?:^|/)\.env(?:\.[^/]*)?$|\.(?:pem|key|p12|pfx)$|(?:^|/)id_(?:rsa|ed25519|ecdsa)|"
+        + _ALONE.format(r"secrets?|credentials?|tokens?|api_?keys?"))),
+    ("auth", re.compile(_ALONE.format(
+        r"auth|authn|authz|authenticat\w*|authoriz\w*|oauth2?|login|logout|signin|jwt"
+        r"|passwords?|permissions?|rbac|acls?|polic(?:y|ies)|sessions?"))),
+    ("persistence", re.compile(r"(?:^|/)migrations?/|(?:^|/)schema\.(?:sql|prisma)$|\.sql$")),
     ("deploy-and-ci", re.compile(
-        r"(?:^|/)Dockerfile|docker-compose|(?:^|/)\.github/workflows/|\.gitlab-ci|(?:^|/)terraform/"
-        r"|\.tf$|(?:^|/)k8s/|(?:^|/)helm/|serverless\.ya?ml$", re.IGNORECASE)),
+        r"(?:^|/)dockerfile|docker-compose|(?:^|/)\.github/workflows/|\.gitlab-ci|(?:^|/)terraform/"
+        r"|\.tf$|(?:^|/)k8s/|(?:^|/)helm/|serverless\.ya?ml$")),
 )
+# Only dependency manifests among docs-like files (`requirements.txt`) are sensitive.
+ALWAYS_CHECKED_CATEGORIES = frozenset({"dependencies"})
 
 
 class _Proof:
@@ -119,6 +131,7 @@ def is_action_tool(tool_name: str) -> bool:
     return (
         tool_name in COMMAND_TOOLS or tool_name in SPAWN_BRIEF_FIELDS
         or tool_name in FILE_WRITE_TOOLS or bool(PR_TOOL_RE.match(tool_name))
+        or bool(COMMIT_TOOL_RE.match(tool_name))
     )
 
 
@@ -129,15 +142,17 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     proof = _Proof(turn, overrides, namespaces)
     if tool_name in COMMAND_TOOLS:
         command = shell.analyze(str(tool_input.get("command") or ""))
-        if command.commit:
-            hold = _commit_hold(command, proof)
-            if hold:
-                return hold
-        if command.opens_pr:
-            return _pr_hold(proof)
-        return None
+        hold = _commit_hold(command.commit_message, proof) if command.commit else None
+        if hold is None and command.opens_pr:
+            hold = _pr_hold(proof)
+        for target in command.write_targets:
+            hold = hold or _security_hold(_norm(target), proof)
+        return hold
     if PR_TOOL_RE.match(tool_name):
         return _pr_hold(proof)
+    if COMMIT_TOOL_RE.match(tool_name):
+        message = tool_input.get("message")
+        return _commit_hold(message if isinstance(message, str) else None, proof)
     if tool_name in SPAWN_BRIEF_FIELDS:
         brief = str(tool_input.get(SPAWN_BRIEF_FIELDS[tool_name]) or "")
         return _spawn_hold(brief, proof) if brief.strip() else None
@@ -147,10 +162,12 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     return None
 
 
-def _commit_hold(command: shell.ShellCommand, proof: _Proof) -> Hold | None:
+def _commit_hold(message: str | None, proof: _Proof) -> Hold | None:
+    """Hold a commit until `commit-message` loads; `message` is its inline text, if known."""
+
     supplied = proof.overrides.get("commit_message")
-    if supplied and command.commit_message is not None and (
-        _subject(command.commit_message) == _subject(supplied)
+    if supplied and message is not None and (
+        _subject(message) == _subject(supplied)
     ):
         return None  # The user typed this message (spec R8).
     if not proof.loaded(COMMIT_SKILL):
@@ -162,9 +179,9 @@ def _commit_hold(command: shell.ShellCommand, proof: _Proof) -> Hold | None:
             "`goated-skip` line does not clear it. A commit message the user typed in "
             "their prompt stands it down when the commit uses that message.",
         )
-    if command.commit_message is None or COMMIT_SKILL in proof.user_skips:
+    if message is None or COMMIT_SKILL in proof.user_skips:
         return None
-    problems = contracts.commit_message_problems(command.commit_message)
+    problems = contracts.commit_message_problems(message)
     if not problems:
         return None
     return Hold(
@@ -254,7 +271,8 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof) -> Hold | None:
 # Closeout ---------------------------------------------------------------------
 
 def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = (),
-                   final_text: str = "") -> Hold | None:
+                   final_text: str = "", subagents: dict | None = None,
+                   cwd: str | None = None) -> Hold | None:
     """Return the closeout hold for a turn about to end, if any.
 
     A turn that changed code needs, after its last code change, a check
@@ -264,20 +282,23 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     `software-design-principles` was loaded. Each item accepts a skip line;
     `final_text` is the reply being finished, which may not be in the
     transcript yet.
+
+    `subagents` maps the agent id of each subagent this turn spawned to its
+    turns. Their code changes count as made at the spawn; a subagent that ran
+    a check after its own last change has already proved them. Only files
+    inside `cwd`, the project folder, count; a scratch file elsewhere does not.
     """
 
-    changes = list(_code_changes(turn))
+    changes = list(_code_changes(turn, subagents or {}, cwd))
     if not changes:
         return None
-    last = changes[-1][0]
+    last = changes[-1].index
+    unproven = [c.index for c in changes if not c.proven]
     proof = _Proof(turn, overrides, namespaces, final_text)
     items = []
-    checks = [
-        call for call in turn.calls[last + 1 :]
-        if call.name in COMMAND_TOOLS and shell.analyze(str(call.input.get("command") or "")).is_check
-    ]
+    checks = _checks(turn.calls[max(unproven, default=last) + 1 :])
     # Loading a verification skill is not proof; a check run, or a skip, is.
-    if not checks and not proof.skipped(PROOF_SKILL):
+    if unproven and not checks and not proof.skipped(PROOF_SKILL):
         items.append(
             "- Proof: no test, lint, build, or check command ran after the last code "
             "change. Run the relevant check, or, if none can run, write "
@@ -289,7 +310,7 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
             f"`{HANDOFF_SKILL}` and leave a handoff for what remains, or write "
             f"`goated-skip: {HANDOFF_SKILL}: <reason>`."
         )
-    non_test = any(not TEST_PATH_RE.search(path) for _, paths in changes for path in paths)
+    non_test = any(not TEST_PATH_RE.search(path) for change in changes for path in change.paths)
     if non_test and not proof.loaded_or_skipped(DOC_SYNC_SKILL):
         items.append(
             f"- Docs: code changed. Load `{DOC_SYNC_SKILL}` and check whether durable docs "
@@ -313,22 +334,71 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     )
 
 
-def _code_changes(turn: Turn):
-    """Yield (call index, code paths) for each finished call that changed code."""
+class _Change:
+    """A finished call that changed code: where in the turn, which files, and
+    whether a subagent already proved it."""
+
+    __slots__ = ("index", "paths", "proven")
+
+    def __init__(self, index: int, paths: list[str], proven: bool = False) -> None:
+        self.index = index
+        self.paths = paths
+        self.proven = proven
+
+
+# Stands for files a shell write changed without naming them (`git apply`).
+UNNAMED_FILES = "<files the command does not name>"
+
+
+def _code_changes(turn: Turn, subagents: dict, cwd: str | None):
+    """Yield a `_Change` for each finished call that changed code, in order."""
 
     for index, call in enumerate(turn.calls):
-        if not call.ok:
+        if call.ok and call.agent_id in subagents and call.name in SPAWN_BRIEF_FIELDS:
+            calls = [c for sub_turn in subagents[call.agent_id] for c in sub_turn.calls]
+            changed = [_changed_paths(c, cwd) for c in calls]
+            if any(changed):
+                last = max(i for i, paths in enumerate(changed) if paths)
+                proven = bool(_checks(calls[last + 1 :]))
+                yield _Change(index, [p for paths in changed for p in paths], proven)
             continue
-        if call.name in FILE_WRITE_TOOLS:
-            path = _norm(str(call.input.get(FILE_WRITE_TOOLS[call.name]) or ""))
-            if is_code(path):
-                yield index, [path]
-        elif call.name in COMMAND_TOOLS:
-            command = shell.analyze(str(call.input.get("command") or ""))
-            if command.writes:
-                paths = [_norm(w) for w in command.words if is_code(_norm(w))]
-                if paths:
-                    yield index, paths
+        paths = _changed_paths(call, cwd)
+        if paths:
+            yield _Change(index, paths)
+
+
+def _changed_paths(call, cwd: str | None) -> list[str]:
+    """The project code files one finished call changed; only real write targets count."""
+
+    if not call.ok:
+        return []
+    if call.name in FILE_WRITE_TOOLS:
+        targets = [str(call.input.get(FILE_WRITE_TOOLS[call.name]) or "")]
+        unnamed = False
+    elif call.name in COMMAND_TOOLS:
+        command = shell.analyze(str(call.input.get("command") or ""))
+        targets, unnamed = command.write_targets, command.unknown_writes
+    else:
+        return []
+    paths = [_norm(t) for t in targets if is_code(_norm(t)) and _in_project(t, cwd)]
+    return paths + ([UNNAMED_FILES] if unnamed else [])
+
+
+def _in_project(path: str, cwd: str | None) -> bool:
+    """True for a relative path, or one under `cwd`; decided without touching the disk."""
+
+    if not cwd or not (os.path.isabs(path) or path.startswith(("/", "\\"))):
+        return True
+    root = os.path.normcase(os.path.abspath(cwd))
+    full = os.path.normcase(os.path.abspath(path))
+    return full == root or full.startswith(root.rstrip(os.sep) + os.sep)
+
+
+def _checks(calls) -> list:
+    return [
+        call for call in calls
+        if call.name in COMMAND_TOOLS and shell.analyze(str(call.input.get("command") or "")).is_check
+    ]
 
 
 # Paths and edits ----------------------------------------------------------------
@@ -339,10 +409,12 @@ def is_code(path: str) -> bool:
 
 
 def security_category(path: str) -> str | None:
-    if not path or path.lower().endswith(DOC_EXTENSIONS):
+    if not path:
         return None
+    lowered = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", _norm(path)).lower()
+    is_doc = lowered.endswith(DOC_EXTENSIONS)
     for name, pattern in SECURITY_CATEGORIES:
-        if pattern.search(path):
+        if (not is_doc or name in ALWAYS_CHECKED_CATEGORIES) and pattern.search(lowered):
             return name
     return None
 

@@ -91,26 +91,33 @@ of hold:
 | `router-first` | strict | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction | `using-goated-ai-skills` loads |
 | `route-line` | strict | The first write or spawn after each user prompt until the current turn has a valid `goated-route:` line; also `goated-route: continue` when the session has no task to continue | A valid route line appears in the turn |
 | `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded | Each listed skill loads, or a corrected route line drops it |
-| `commit` | strict | A `git commit` command | `commit-message` loads in the turn, and an inline message passes the [content check](#content-checks) |
-| `pull-request` | strict | `gh pr create`, `glab mr create`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` loads in the turn |
+| `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` loads in the turn, and an inline message (or the tool's `message`) passes the [content check](#content-checks) |
+| `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` loads in the turn |
 | `spawn` | strict | Starting an agent or session with a brief | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, all in the turn; and the brief passes the [content check](#content-checks) |
 | `design` | justified-skip | A write adding five or more lines to a code file | `software-design-principles` loads in the turn |
-| `security` | justified-skip | A write to a security-sensitive path: dependency manifests and lockfiles, `.env` and key files, auth, session, and permission code, migrations and schemas, CI, container, and deployment files | `code-security-review` loads in the turn |
+| `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` loads in the turn |
 | `closeout` | justified-skip | The end of a turn that changed code (a `Stop` hook) | Every item below is met or skipped |
 
-The closeout items, each judged against the turn's last code change:
+The closeout items, each judged against the turn's last code change. A code
+change is a write tool's file, or a file a shell command writes (its redirect
+target, copy destination, or removed, moved, or edited file), inside the
+project folder; a scratch or temp file elsewhere does not count. A shell write
+whose files the command does not name (`git apply`, `patch`, a download
+without an output name) counts as a change to non-test code. Code a subagent
+changed counts too, at the point the parent spawned it; if the subagent ran a
+check after its own last change, that change is already proved.
 
 | Item | Needed when | Met by | Skip line names |
 | --- | --- | --- | --- |
-| Proof | Always | A test, lint, build, or check command run after the last code change | `verification-before-completion` |
+| Proof | A change not already proved | A check command run after the last code change: a test runner, linter, type checker, or build tool (`pytest`, `python -m unittest`, `npm test`, `cargo test`, `go vet`, `tsc`, `make check`, and the like, also through `uv run` or `npx`), or a script whose name says test, check, lint, verify, validate, or build (`scripts/validate_skills.py`) | `verification-before-completion` |
 | Unfinished work | The last check after the change failed | `handoff` loads | `handoff` |
 | Docs | A code file outside the tests changed | `doc-sync` loads | `doc-sync` |
 | Design red flags | `software-design-principles` loaded in the turn | `software-design-principles/references/red-flags.md` is read after the last change | `software-design-principles` |
 
 - **Writes** are `Edit`, `Write`, `MultiEdit`, and `NotebookEdit`, and a
   `Bash` or `PowerShell` command that writes files (see
-  [Shell writes](#shell-writes)). **Spawns** are `Agent`,
-  `mcp__ccd_session__start_session`, and
+  [Shell writes](#shell-writes)). **Spawns** are `Agent` (or `Task`, its name
+  in older Claude Code versions), `mcp__ccd_session__start_session`, and
   `mcp__ccd_session__hand_off_to_session`; they hand work on, so they are held
   like writes. A session tool call with no brief, such as an offer card, is not
   a spawn for the `spawn` gate. **Commands** are `Bash` and `PowerShell`.
@@ -152,25 +159,36 @@ The closeout items, each judged against the turn's last code change:
 
 ### Shell writes
 
-A `Bash` or `PowerShell` command meets the `route-line` and `pipeline` gates,
-like an edit, when it:
+The adapter splits a command into its simple commands (joined by `;`, `&&`,
+`||`, `|`, `&`, newlines, parentheses, braces, or `$(`) and reads each one's
+real command word past wrappers (`sudo -u <user>`, `env`, `timeout <n>`,
+`nice`, `nohup`, `xargs`, `cmd /c`), a quoted or full path to the program
+(`"git"`, `& "C:\…\git.exe"`), and line continuations (`\` in bash, a
+backtick in PowerShell). A `Bash` or `PowerShell` command meets the
+`route-line` and `pipeline` gates, like an edit, when one of its commands:
 
 - redirects output into a file (`>`, `>>`, `&>`, `2>`), except into a null
   device (`/dev/null`, `$null`, `NUL`) or another stream (`2>&1`);
 - runs `tee`, `Tee-Object`, `cp`, `mv`, `rm`, `rmdir`, `touch`, `truncate`,
-  `ln`, `unlink`, or `shred`;
+  `ln`, `unlink`, `shred`, or `patch`;
 - edits in place with `sed -i` or `perl -i`;
 - runs `Set-Content`, `Add-Content`, `Out-File`, `Clear-Content`, `New-Item`,
-  `Copy-Item`, `Move-Item`, `Remove-Item`, or `Rename-Item`, or one of their
-  stock aliases (`del`, `erase`, `copy`, `move`, `ren`, `rd`, `ri`, `mi`,
-  `cpi`, `ni`, `rni`), or a .NET `[IO.File]::Write…` style call;
+  `Copy-Item`, `Move-Item`, `Remove-Item`, `Rename-Item`, `Export-Csv`, or
+  `Export-Clixml`, or one of the stock Windows PowerShell 5.1 aliases (`sc`,
+  `ac`, `clc`, `del`, `erase`, `copy`, `move`, `ren`, `rd`, `ri`, `mi`, `cpi`,
+  `ni`, `rni`), or a .NET `[IO.File]::Write…` style call;
+- downloads to a file: `curl -o <file>` (also `-sSLo <file>`) or `curl -O`,
+  `wget` unless it writes to standard output, or `Invoke-WebRequest -OutFile`;
 - runs `git apply`, `git am`, `git restore`, `git mv`, `git rm`, `git clean`,
-  `git checkout … -- <path>`, `git reset --hard`, or `git stash pop|apply`.
+  `git checkout -- <path>`, `git checkout <rev> <path>`, `git reset --hard`, or
+  `git stash pop|apply`.
 
-Text inside quotes, heredoc bodies, and PowerShell here-strings is ignored, so
-`echo "a > b"` writes nothing. Reads, test runs, `git status`, and
-`git checkout <branch>` stay free. A shell write to a code file counts as a
-code change for the closeout.
+Text inside quotes, heredoc bodies, PowerShell here-strings, and comments is
+ignored, as are comparisons inside `[[ ]]` and arithmetic in `$(( ))`, so
+`echo "a > b"`, `[[ $a > $b ]]`, and `ls # a > b` write nothing. Reads, test
+runs, `git status`, and `git checkout <branch>` stay free. Commit and
+pull-request commands are recognized the same way, per command, so
+`echo gh pr create` opens nothing.
 
 ### Content checks
 
@@ -178,11 +196,13 @@ Only text in the tool input is checked, and only for what the skill's
 contract states plainly enough to test without judgement
 ([`goated_adapter/contracts.py`](goated_adapter/contracts.py)):
 
-- **Commit message.** When the command carries the message inline (`-m`,
-  `--message`, a heredoc on `-F -` or in `-m "$(cat <<'EOF' … EOF)"`, or a
-  PowerShell here-string), it needs a non-empty subject of at most 72
+- **Commit message.** When the commit itself carries the message inline (`-m`,
+  `--message`, a short-flag cluster such as `-am`, the heredoc fed to that
+  commit's `-F -`, a heredoc in `-m "$(cat <<'EOF' … EOF)"`, or a PowerShell
+  here-string), or an MCP commit tool carries it in `message`, it needs a non-empty subject of at most 72
   characters, a blank line before any body, and no credential-shaped token. A
-  message in a file (`-F <path>`) or from an editor is not checked.
+  message in a file (`-F <path>`), reused from another commit (`-c`, `-C`), or
+  from an editor is not checked.
 - **Spawn brief.** The brief needs, as Markdown headings, the sections its
   template keeps even for an agent that inherits the conversation:
   `Goal`, `Scope`, and `Done Means` for `handoff`'s spawn brief; `Task`,
@@ -255,11 +275,14 @@ A hook call from inside a subagent carries `agent_id`. There:
   `<session-id>/subagents/agent-<agent_id>.jsonl` beside the main one. A
   subagent must load the skill itself: the parent's loads do not count;
 - no override applies, because nobody types a subagent's prompts;
-- the closeout gate does not apply; the adapter registers no `SubagentStop`
-  hook.
+- the closeout gate does not run when the subagent stops; the adapter
+  registers no `SubagentStop` hook. Instead, code a subagent changed counts
+  toward the closeout of the parent turn that spawned it. The parent finds the
+  subagent through the `agentId` that Claude Code records in the spawn's
+  result.
 
 If the subagent's transcript cannot be found, the call fails open with a
-warning.
+warning; at closeout, its changes are left out, with a warning.
 
 ## Session Start Notices
 
@@ -337,10 +360,22 @@ budget leaves headroom before the hook fails open.
 
 ## Known Limits
 
-- Shell-write detection is lexical. A write hidden inside an interpreter or
-  script (`python -c "open(...)"`, `node build.js`), an archive tool, or a
-  command substitution inside double quotes is not seen, so it meets only
-  `router-first`.
+- Shell analysis is lexical, not a shell. These forms are not seen, so a
+  write in them meets only `router-first` and a commit or pull request in
+  them meets no action gate:
+  - a command run through another shell or evaluator: `bash -c`, `sh -c`,
+    `eval`, `Invoke-Expression`, `Start-Process`, or a heredoc fed to a shell
+    (`bash <<'EOF'`);
+  - command substitution with backticks, or `$(…)` inside double quotes;
+  - a write inside an interpreter or script (`python -c "open(...)"`,
+    `node build.js`), or by an archive tool (`tar -x`, `unzip`);
+  - git aliases (`git ci`), and `gh api` calls that create a pull request
+    (`gh api repos/<owner>/<repo>/pulls`);
+  - MCP tools that commit or open pull requests under names other than those
+    listed in [What It Holds](#what-it-holds).
+
+  An agent working around the holds this way is the case the next item
+  describes.
 - Two closeout triggers are mechanical stand-ins for judgement. "Behavior or
   interfaces changed" is read as "a non-test code file changed", so a pure
   refactor still asks for `doc-sync` or a skip line. "Work left unfinished" is

@@ -30,6 +30,9 @@ STATE_DIR_ENV = "GOATED_ADAPTER_STATE_DIR"
 NAMESPACES_ENV = "GOATED_ADAPTER_SKILL_NAMESPACES"
 STATE_DIR_NAME = "goated-claude-code-adapter"
 AGENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+# A turn key no turn has, so the reader returns every turn back to the start
+# (or to its turn limit).
+ALL_TURNS = "<all turns>"
 NAME = "GOATED Claude Code adapter"
 POLICY_NOTICE = (
     "the GOATED shared policy is not loaded in this session, so the "
@@ -168,8 +171,7 @@ def _subagent_pre_tool_use(
     agent_id = str(payload.get("agent_id"))
     if not AGENT_ID_RE.match(agent_id):
         raise _FailOpen("the hook input has an unexpected agent_id")
-    main = Path(transcript_path)
-    path = main.parent / main.stem / "subagents" / f"agent-{agent_id}.jsonl"
+    path = _subagent_transcript(transcript_path, agent_id)
     try:
         turns = read_recent_turns(
             path,
@@ -182,6 +184,33 @@ def _subagent_pre_tool_use(
         raise _FailOpen(f"in a subagent, {exc}") from exc
     hold = actions.check_action(tool_name, tool_input, turns[-1], {}, config.skill_namespaces)
     return _with_warnings(_deny(hold), [])
+
+
+def _subagent_transcript(transcript_path: str, agent_id: str) -> Path:
+    main = Path(transcript_path)
+    return main.parent / main.stem / "subagents" / f"agent-{agent_id}.jsonl"
+
+
+def _spawned_subagents(turn, transcript_path: str) -> tuple[dict, list[str]]:
+    """Read every turn of each subagent `turn` spawned; return them and the ids not read."""
+
+    found: dict = {}
+    unread: list[str] = []
+    for call in turn.calls:
+        agent_id = call.agent_id
+        if not agent_id or agent_id in found or not AGENT_ID_RE.match(agent_id):
+            continue
+        try:
+            found[agent_id] = read_recent_turns(
+                _subagent_transcript(transcript_path, agent_id),
+                since_key=ALL_TURNS,
+                tool_use_id=None,
+                wait_seconds=0.0,
+                sidechain=True,
+            )
+        except TranscriptUnreadable:
+            unread.append(agent_id)
+    return found, unread
 
 
 def _stop(payload: dict, config: Config) -> str:
@@ -198,13 +227,21 @@ def _stop(payload: dict, config: Config) -> str:
         raise _FailOpen(str(exc)) from exc
     gates.fold_turns(state, turns, config.skill_namespaces)
     current = turns[-1]
+    subagents, unread = _spawned_subagents(current, transcript_path)
     hold = actions.check_closeout(
         current,
         _overrides_for(state, current, payload.get("prompt_id")),
         config.skill_namespaces,
         str(payload.get("last_assistant_message") or ""),
+        subagents,
+        str(payload.get("cwd") or "") or None,
     )
     warnings = [state_warning, _save(store, session_id, state)]
+    if unread:
+        warnings.append(
+            "could not read the transcript of subagent "
+            + ", ".join(unread) + ", so its changes were not checked at closeout"
+        )
     output = {"decision": "block", "reason": hold.message()} if hold else {}
     return _with_warnings(output, warnings)
 

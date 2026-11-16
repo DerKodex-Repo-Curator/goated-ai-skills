@@ -85,15 +85,17 @@ class Call:
     """A tool call that has finished in the turn: its name, input, and outcome.
 
     `ok` is False when the tool result was an error, which includes a call a
-    hook held.
+    hook held. `agent_id` is the subagent a spawn started, from the result's
+    `toolUseResult.agentId`, else None.
     """
 
-    __slots__ = ("name", "input", "ok")
+    __slots__ = ("name", "input", "ok", "agent_id")
 
-    def __init__(self, name: str, tool_input: dict, ok: bool) -> None:
+    def __init__(self, name: str, tool_input: dict, ok: bool, agent_id: str | None = None) -> None:
         self.name = name
         self.input = tool_input
         self.ok = ok
+        self.agent_id = agent_id
 
 
 class Turn:
@@ -344,7 +346,13 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                     continue
                 finished = pending.pop(str(block.get("tool_use_id", "")), None)
                 if finished is not None:
-                    turn.calls.append(Call(*finished, ok=not block.get("is_error")))
+                    result = entry.get("toolUseResult")
+                    agent = result.get("agentId") if isinstance(result, dict) else None
+                    turn.calls.append(Call(
+                        *finished,
+                        ok=not block.get("is_error"),
+                        agent_id=agent if isinstance(agent, str) else None,
+                    ))
                 if (
                     block.get("tool_use_id") in skill_calls
                     and not block.get("is_error")

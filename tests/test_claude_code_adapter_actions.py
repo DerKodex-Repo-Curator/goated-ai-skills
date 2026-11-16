@@ -659,3 +659,253 @@ class HoldFormatTests(AdapterTestCase):
         self.assertEqual(len(set(lines)), 9)
         for line in lines:
             self.assertRegex(line, self.FORMAT)
+
+
+class ReviewRegressionTests(AdapterTestCase):
+    """Regression tests for the independent review of ticket 031."""
+
+    LONG = "A" * 80
+
+    def loaded(self, prompt: str = "Do the task.") -> Session:
+        s = self.routed(prompt=prompt)
+        s.load("commit-message")
+        return s
+
+    def held_line(self, tool: str, command: str, setup=None) -> str:
+        s = self.fresh()
+        s.prompt("Do the task.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        if setup:
+            setup(s)
+        return hold_line(s.call(tool, {"command": command}))
+
+    # Item 1: the message is read from the commit's own segment.
+    def test_a_chained_commit_message_is_checked_and_matched(self) -> None:
+        for command in (
+            f'python -m pytest -q && git commit -m "{self.LONG}"',
+            f'grep -m1 x a; git commit -m "{self.LONG}"',
+        ):
+            with self.subTest(command=command):
+                line = self.held_line("Bash", command, lambda s: s.load("commit-message"))
+                self.assertEqual(line, "goated-hold: commit | strict")
+
+        s = self.session
+        s.prompt('Commit with the message "Fix export rounding".')
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        command = 'python -m pytest -q && git commit -m "Fix export rounding"'
+        self.assertEqual(decision(s.call("Bash", {"command": command})), "pass")
+
+    # Item 2: combined short flags carry the message.
+    def test_combined_short_flags_carry_the_message(self) -> None:
+        for flags in ("-am", "-sm"):
+            with self.subTest(flags=flags):
+                command = f'git commit {flags} "{self.LONG}"'
+                line = self.held_line("Bash", command, lambda s: s.load("commit-message"))
+                self.assertEqual(line, "goated-hold: commit | strict")
+
+        s = self.session
+        s.prompt('Commit with the message "Fix export rounding".')
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        command = 'git commit -am "Fix export rounding"'
+        self.assertEqual(decision(s.call("Bash", {"command": command})), "pass")
+
+    # Item 3: dependency manifests ending in .txt are sensitive, by edit or shell.
+    def test_requirements_files_meet_the_security_hold(self) -> None:
+        s = self.routed()
+        for path in ("requirements.txt", "requirements-dev.txt"):
+            with self.subTest(path=path):
+                edit = {"file_path": path, "old_string": "a", "new_string": "b"}
+                self.assertEqual(hold_line(s.call("Edit", edit)), "goated-hold: security | justified-skip")
+        held = s.call("Bash", {"command": "echo requests >> requirements.txt"})
+        self.assertEqual(hold_line(held), "goated-hold: security | justified-skip")
+
+    # Item 4: only write targets inside the project count as changed code.
+    def test_only_written_project_code_counts_for_closeout(self) -> None:
+        for command in ("python scripts/report.py > report.txt", "cp src/app.py /tmp/app_backup.py"):
+            with self.subTest(command=command):
+                s = self.fresh()
+                s.prompt("Report.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.run(command)
+                self.assertEqual(stop(s), {})
+
+    def test_a_check_that_tees_its_log_is_proof_not_a_change(self) -> None:
+        s = self.changed_app()
+        s.run("python -m pytest tests/test_app.py 2>&1 | tee test.log")
+
+        self.assertEqual(stop(s), {})
+
+    def test_an_edit_outside_the_project_is_not_a_change(self) -> None:
+        s = self.routed()
+        s.say("goated-skip: software-design-principles: throwaway scratch script only")
+        s.call("Write", write("/tmp/scratch/probe.py"))
+
+        self.assertEqual(stop(s), {})
+
+    def changed_app(self) -> Session:
+        s = self.routed()
+        s.call("Edit", {"file_path": str(s.project / "src" / "app.py"),
+                        "old_string": "a", "new_string": "b"})
+        s.load("doc-sync")
+        return s
+
+    # Item 5: proof is a check command, not any command naming "test" or "build".
+    def test_commands_that_only_mention_checks_are_not_proof(self) -> None:
+        for command in ("rm -rf build", "uv sync --extra test", "mkdir tests"):
+            with self.subTest(command=command):
+                s = self.fresh()
+                s.prompt("Bump it.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.call("Edit", {"file_path": "src/app.py", "old_string": "a", "new_string": "b"})
+                s.load("doc-sync")
+                s.run(command)
+                self.assertIn("Proof", stop(s).get("reason", ""))
+
+    # Item 6: common spellings of commit and PR commands are still held.
+    def test_common_command_spellings_meet_the_strict_holds(self) -> None:
+        commits = (
+            ("Bash", 'git \\\n  commit -m "Add export"'),
+            ("PowerShell", 'git `\n  commit -m "Add export"'),
+            ("Bash", '"git" commit -m "Add export"'),
+            ("PowerShell", '& "C:\\Program Files\\Git\\cmd\\git.exe" commit -m "Add export"'),
+            ("Bash", 'timeout 60 git commit -m "Add export"'),
+            ("Bash", 'nice git commit -m "Add export"'),
+            ("PowerShell", 'cmd /c git commit -m "Add export"'),
+            ("Bash", 'sudo -u bob git commit -m "Add export"'),
+        )
+        for tool, command in commits:
+            with self.subTest(command=command):
+                self.assertEqual(self.held_line(tool, command), "goated-hold: commit | strict")
+        for command in ("gh pr new --fill", "gh \\\n  pr create --fill", "gh -R o/r pr create"):
+            with self.subTest(command=command):
+                self.assertEqual(
+                    self.held_line("Bash", command), "goated-hold: pull-request | strict"
+                )
+
+    def test_a_continued_shell_write_meets_the_route_line_hold(self) -> None:
+        s = self.session
+        s.prompt("Apply it.")
+        s.load(ROUTER)
+
+        held = s.call("Bash", {"command": "git \\\n  apply fix.patch"})
+        self.assertEqual(hold_line(held), "goated-hold: route-line | strict")
+
+    # Item 7: more write commands.
+    def test_more_write_commands_meet_the_route_line_hold(self) -> None:
+        for tool, command in (
+            ("PowerShell", "'x' | sc notes.txt"),
+            ("PowerShell", "ac log.txt 'line'"),
+            ("PowerShell", "clc log.txt"),
+            ("PowerShell", "Get-Process | Export-Csv procs.csv"),
+            ("Bash", "curl -o src/vendor.py https://example.invalid/x.py"),
+            ("Bash", "curl -sSLo src/vendor.py https://example.invalid/x.py"),
+            ("Bash", "wget https://example.invalid/x.tar.gz"),
+            ("Bash", "patch -p1 < fix.patch"),
+            ("Bash", "git checkout HEAD~1 src/app.py"),
+        ):
+            with self.subTest(command=command):
+                s = self.fresh()
+                s.prompt("Do it.")
+                s.load(ROUTER)
+                held = s.call(tool, {"command": command})
+                self.assertEqual(hold_line(held), "goated-hold: route-line | strict")
+
+    # Item 8: comparisons, comments, and mentions are not writes or actions.
+    def test_comparisons_comments_and_mentions_stay_free(self) -> None:
+        for command in (
+            '[[ "$a" > "$b" ]] && echo yes',
+            "echo $((2 > 1))",
+            "ls # list > files",
+            "echo gh pr create",
+            "git commit --dry-run",
+            "curl -s https://example.invalid/x | head",
+        ):
+            with self.subTest(command=command):
+                s = self.fresh()
+                s.prompt("Look.")
+                s.load(ROUTER)
+                self.assertEqual(decision(s.call("Bash", {"command": command})), "pass")
+
+    # Item 9: sensitive words must stand alone in the path.
+    def test_security_words_must_stand_alone_in_the_path(self) -> None:
+        s = self.routed()
+        for path, held in (
+            ("src/tokenizer.py", False),
+            ("src/author.py", False),
+            ("src/api_token.py", True),
+            ("src/userAuth.ts", True),
+            ("src/auth/views.py", True),
+        ):
+            with self.subTest(path=path):
+                edit = {"file_path": path, "old_string": "a", "new_string": "b"}
+                self.assertEqual(decision(s.call("Edit", edit)) == "deny", held)
+
+    # Item 10: `-F -` reads the heredoc fed to the commit itself.
+    def test_the_commit_reads_its_own_heredoc(self) -> None:
+        s = self.loaded()
+        command = (
+            "cat <<'EOF' > notes.md\nshort\nEOF\ngit commit -F - <<'EOF'\n"
+            + "B" * 90 + "\nEOF"
+        )
+        self.assertEqual(hold_line(s.call("Bash", {"command": command})), "goated-hold: commit | strict")
+
+    def test_a_commit_body_ending_lines_in_backticks_is_read_whole(self) -> None:
+        s = self.loaded()
+        command = (
+            'git commit -m "$(cat <<\'EOF\'\nUpdate `gates.py`\n\nExplain `x`\nand `y`\nEOF\n)"'
+        )
+        self.assertEqual(decision(s.call("Bash", {"command": command})), "pass")
+
+    # Item 11: code a subagent changed counts toward the parent's closeout.
+    def test_subagent_code_changes_need_the_parents_closeout(self) -> None:
+        s = self.routed()
+        s.brief_with_handoff()
+        agent = s.subagent("b1")
+        agent.prompt("Implement it.", hook=False)
+        agent.call("Edit", {"file_path": "src/app.py", "old_string": "a", "new_string": "b"},
+                   agent_id="b1", agent_type="general-purpose")
+        self.assertEqual(decision(s.spawn("b1", BRIEF)), "pass")
+
+        held = stop(s)
+        self.assertIn("Proof", held["reason"])
+        self.assertIn("doc-sync", held["reason"])
+        s.run("pytest -q")
+        s.load("doc-sync")
+        self.assertEqual(stop(s), {})
+
+    def test_a_subagent_that_ran_its_own_check_proved_its_change(self) -> None:
+        s = self.routed()
+        s.brief_with_handoff()
+        agent = s.subagent("b2")
+        agent.prompt("Implement it.", hook=False)
+        agent.call("Edit", {"file_path": "src/app.py", "old_string": "a", "new_string": "b"},
+                   agent_id="b2", agent_type="general-purpose")
+        agent.run("pytest -q")
+        s.spawn("b2", BRIEF)
+
+        held = stop(s)
+        self.assertNotIn("Proof", held["reason"])
+        self.assertIn("doc-sync", held["reason"])
+
+    # Item 12: the older spawn tool name and MCP commit tools.
+    def test_the_task_spawn_tool_is_held(self) -> None:
+        s = self.routed()
+
+        self.assertEqual(hold_line(s.call("Task", {"prompt": BRIEF})), "goated-hold: spawn | strict")
+        s.brief_with_handoff()
+        self.assertEqual(decision(s.call("Task", {"prompt": BRIEF})), "pass")
+
+    def test_mcp_tools_that_commit_meet_the_commit_hold(self) -> None:
+        s = self.routed()
+        tool = "mcp__github__push_files"
+
+        held = s.call(tool, {"message": "Add export", "files": []})
+        self.assertEqual(hold_line(held), "goated-hold: commit | strict")
+        s.load("commit-message")
+        self.assertEqual(decision(s.call(tool, {"message": self.LONG, "files": []})), "deny")
+        self.assertEqual(decision(s.call(tool, {"message": "Add export", "files": []})), "pass")
