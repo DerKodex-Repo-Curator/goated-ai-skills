@@ -41,6 +41,8 @@ README as a documented stand-in, as the design gate's five lines are.
       held by `pr-review`; one under it is not.
 - [ ] The `pull-request` gate and its strict `pr-description` requirement are
       unchanged.
+- [ ] Like the other review holds (ticket 041), `pr-review` also needs a
+      read of the change after `standards-and-spec-review` loads.
 - [ ] The hold's first line is `goated-hold: pr-review | justified-skip`, and
       its text backticks only `standards-and-spec-review`.
 - [ ] The threshold is grounded in portable text or recorded as a documented
@@ -64,6 +66,8 @@ README as a documented stand-in, as the design gate's five lines are.
 ## Blocked By
 
 - `tickets/033-adapter-real-use-trial.md` (the trial's keep decision)
+- `tickets/041-adapter-review-holds-read-the-change.md` (the change read
+  this gate also requires)
 
 ## Scope Exclusions
 

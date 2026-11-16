@@ -161,6 +161,12 @@ No hold lets an unchanged repeat through.
 - **Content checks**, only where the text is in the tool input: a spawn brief
   carries its template's required sections, and a commit message follows the
   `commit-message` contract.
+- **Change reads** (added 2026-11-16 after real use showed a red-flags read
+  judged against memory instead of the diff): where the step reviews or
+  describes the change, the turn must also show the change's content read
+  after the load or reference read and after the last change it covers. That
+  covers the closeout design, docs, and security reviews, the commit, and the
+  pull request. Ticket 041 builds it.
 
 ### R8: User overrides come only from the user
 
@@ -231,6 +237,9 @@ Today a subagent that loads no skill leaves the Subagents node blank.
         or user override;
       - every hook-required skill loaded in the turn it applied;
       - a route line on every turn that writes.
+- [ ] AC10: A hold whose step reviews or describes the change clears only
+      after a read of the change made after its load or reference read and
+      after the last change, as R7's change reads say.
 
 ## Proof Surface
 

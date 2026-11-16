@@ -12,13 +12,15 @@ Source spec: `docs/specs/2026-11-16-adapter-skill-activation-gates.md`
    - Blocked by: `tickets/033-adapter-real-use-trial.md`
    - Enables: `setup-scribe` when a turn changed setup.
 4. `tickets/038-adapter-large-pull-request-review.md`
-   - Blocked by: `tickets/033-adapter-real-use-trial.md`
+   - Blocked by: `tickets/033-adapter-real-use-trial.md`,
+     `tickets/041-adapter-review-holds-read-the-change.md`
    - Enables: `standards-and-spec-review` before a large pull request.
 
 The four tickets touch the same adapter files (`actions.py`, the README's
 gate tables, the generated hold texts) and the mod's gate names, so they run
-one after another in this order, not in parallel. Ticket 037 adds an item to
-the closeout gate rather than a new gate.
+one after another in this order, not in parallel. Ticket 041, from the
+skill-enforcement order, edits the same files and runs before 035. Ticket
+037 adds an item to the closeout gate rather than a new gate.
 
 ## Ready Frontier
 

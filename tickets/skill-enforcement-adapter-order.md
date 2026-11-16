@@ -45,6 +45,10 @@ Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
      counts, so it landed during the 033 trial.
    - Enables: an All time picture without per-case badges, and Session badges
      whose colours each mean one thing.
+10. `tickets/041-adapter-review-holds-read-the-change.md`
+   - Blocked by: `tickets/033-adapter-real-use-trial.md` (its keep decision)
+   - Enables: review holds that clear only after the agent reads the change,
+     not on a skill load alone; ticket 038 builds on it.
 
 Tickets 028 and 029 ran in parallel and were merged on 2026-11-15. Ticket 032
 was split on 2026-11-16 so it can run alongside 031: 031 works in
@@ -68,3 +72,4 @@ their write scopes do not overlap. Ticket 034 needs both.
   034 (action and closeout holds, live check)
 - AC8 → 030 (adapter), 032 (mod)
 - AC9 → 033
+- AC10 → 041
