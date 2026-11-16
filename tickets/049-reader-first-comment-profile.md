@@ -68,7 +68,7 @@ in `SKILL.md`, the `#comments` section, and the "How many comments" row in
 
 ## Blocked By
 
-- `tickets/048-design-reference-moment-triggers.md` (same `SKILL.md` and
+- `tickets/archive/048-design-reference-moment-triggers.md` (same `SKILL.md` and
   section index)
 
 ## Scope Exclusions

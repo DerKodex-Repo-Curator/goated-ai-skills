@@ -100,3 +100,23 @@ a shape real messages do not have, so they missed this.
 - The override phrase set itself, and how typed overrides apply.
 - The skill-usage mod's override counts already stored from such messages:
   they stay as recorded.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-16.
+
+- Merged as `0c40f66`. The prompt hook recognises the wrapper Claude Code puts
+  on another agent's or session's message and records no override for it.
+- Correction to the Problem above: the gates did not re-check these messages.
+  Claude Code records them `isMeta`, and the transcript reader skipped
+  `isMeta` entries before looking at origin, so a peer message folded into
+  the typed turn before it and could take on its overrides. An independent
+  review found this; `87d3797` makes the reader treat every peer entry as a
+  turn nobody typed, which needs its own route line and carries no overrides.
+- Every check passed on a scratch merge with Ticket 048: the validator, unit
+  tests on Python 3.14 and 3.11, the V1/V2 context comparison, 137 mod tests,
+  and the reviewer's probe.
+- Live check, in the orchestrating session after the merge: a subagent's
+  report quoting skill skips, a routing skip and a commit message brought no
+  "recorded your override" sentence, and the next write was held for its own
+  route line.

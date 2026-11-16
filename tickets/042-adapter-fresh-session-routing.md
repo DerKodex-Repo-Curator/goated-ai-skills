@@ -61,7 +61,7 @@ without any skill being skipped:
 
 ## Blocked By
 
-- `tickets/047-adapter-overrides-from-other-agents.md` (same files)
+- `tickets/archive/047-adapter-overrides-from-other-agents.md` (same files)
 
 ## Scope Exclusions
 

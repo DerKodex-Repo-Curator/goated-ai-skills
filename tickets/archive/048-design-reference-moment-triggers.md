@@ -73,3 +73,19 @@ also cite bare ids.
 - The reader-first comment profile (Ticket 049).
 - Any adapter or mod change (Tickets 050 to 052).
 - Rewriting the references' content beyond their openings.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-16.
+
+- Merged as `632f98d`, with the review fixes in `5a4fe91`: the design-reads
+  line's grammar lives in `stack/fixtures/markers/README.md` with its own
+  fixtures, the line lists every file whose condition holds, review-only work
+  is covered, trigger gaps are filled, and the section-id test rejects
+  path-prefixed citations and checks every reference sits in a moment.
+- Every check passed on a scratch merge with Ticket 047: the validator, unit
+  tests on Python 3.14 and 3.11, and the V1/V2 context comparison.
+  `SKILL.md` is 273 lines and stays above the validator's report-only
+  1,500-word threshold by design.
+- The installed skill and stack copies were synced from main after the
+  merge.

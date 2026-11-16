@@ -50,7 +50,7 @@ signals cannot be tuned from data.
 
 ## Blocked By
 
-- `tickets/047-adapter-overrides-from-other-agents.md` (also edits the mod)
+- `tickets/archive/047-adapter-overrides-from-other-agents.md` (also edits the mod)
 
 ## Scope Exclusions
 

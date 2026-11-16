@@ -52,12 +52,13 @@ Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
    - Blocked by: `tickets/archive/033-adapter-real-use-trial.md` (its keep decision)
    - Enables: review holds that clear only after the agent reads the change,
      not on a skill load alone; ticket 038 builds on it.
-11. `tickets/047-adapter-overrides-from-other-agents.md`
+11. `tickets/archive/047-adapter-overrides-from-other-agents.md`
+   - Status: Completed, merged and archived on 2026-11-16.
    - Blocked by: `tickets/archive/041-adapter-review-holds-read-the-change.md`
    - Enables: overrides recorded and announced only for a prompt a person
      typed, never for a message from another agent or session.
 12. `tickets/042-adapter-fresh-session-routing.md`
-   - Blocked by: `tickets/047-adapter-overrides-from-other-agents.md`
+   - Blocked by: `tickets/archive/047-adapter-overrides-from-other-agents.md`
    - Enables: `continue` in a session with no task, and loads earlier in the
      turn counting for the task it starts.
 13. `tickets/043-adapter-out-of-project-holds.md`
@@ -92,9 +93,9 @@ there edits the mod after 047.
 
 ## Ready Frontier
 
-- `tickets/047-adapter-overrides-from-other-agents.md`
+- `tickets/042-adapter-fresh-session-routing.md`
 
-Then 042 to 046, one after another.
+Then 043 to 046, one after another.
 
 ## Coverage
 

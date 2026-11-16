@@ -2,22 +2,23 @@
 
 Source spec: `docs/specs/2026-11-16-design-reference-reads.md`
 
-1. `tickets/048-design-reference-moment-triggers.md`
+1. `tickets/archive/048-design-reference-moment-triggers.md`
+   - Status: Completed, merged and archived on 2026-11-16.
    - Blocked by: None
    - Enables: references named at their moment in the skill, the portable
      design-reads line and citations, and file-pointing citations in other
      skills.
 2. `tickets/049-reader-first-comment-profile.md`
-   - Blocked by: `tickets/048-design-reference-moment-triggers.md`
+   - Blocked by: `tickets/archive/048-design-reference-moment-triggers.md`
    - Enables: an opt-in denser comment standard the skill names instead of
      contradicting.
 3. `tickets/050-skill-usage-reference-read-timing.md`
-   - Blocked by: `tickets/047-adapter-overrides-from-other-agents.md`
+   - Blocked by: `tickets/archive/047-adapter-overrides-from-other-agents.md`
    - Enables: reference reads measured by moment, and design-reads
      declarations counted.
 4. `tickets/051-adapter-design-reference-reads.md`
    - Blocked by: `tickets/046-adapter-pipeline-after-compaction.md`,
-     `tickets/048-design-reference-moment-triggers.md`,
+     `tickets/archive/048-design-reference-moment-triggers.md`,
      `tickets/050-skill-usage-reference-read-timing.md`
    - Enables: required design references read before and during the edit,
      with a cooldown until compaction.
@@ -33,7 +34,12 @@ so they run after 046 and before Ticket 035 in
 
 ## Ready Frontier
 
-- `tickets/048-design-reference-moment-triggers.md`
+- `tickets/049-reader-first-comment-profile.md` (HITL: the maintainer reviews
+  the profile's wording)
+- `tickets/050-skill-usage-reference-read-timing.md`
+
+049 changes skill files and 050 the skill-usage mod, so they can run in
+parallel.
 
 ## Coverage
 
