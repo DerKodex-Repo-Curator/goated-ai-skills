@@ -56,3 +56,19 @@ signals cannot be tuned from data.
 
 - The `design-reads` hold name (Ticket 051).
 - Any adapter change.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-16.
+
+- Merged as `0969b8b`: `86897b9`, with review fixes in `9e0171e`. Reads made
+  in turns stored before this version count with no moment (prompts carry
+  `isTimed`); a reply's design-reads lines count as the union of their files,
+  as the fixtures define; the events shape stays `events-2`.
+- Every check passed on a scratch merge with Tickets 042 and 049: 149 mod
+  tests, `claude plugin validate`, the TypeScript check with only the 5 known
+  errors in `tests/register.test.tsx`, and the repo checks.
+- Known limits, in the mod's README: the mod does not see shell writes or
+  out-of-project files the way the adapter does, a late-joining mod rebuilds
+  no subagent calls, and a background subagent's change can land in the next
+  turn.

@@ -68,3 +68,23 @@ without any skill being skipped:
 - Seeing a route line written in the same message as the held call: Claude
   Code records it only after the hook returns (Ticket 045 covers the
   guidance).
+
+## Closeout
+
+Completed, merged and archived on 2026-11-16.
+
+- Merged as `4da4931`: `b232bed`, with fixes from two review rounds in
+  `f90c2d2` and `b0c4643`. A same-turn `continue` keeps the turn's task;
+  missing state leaves the task unknown, like unreadable state, until a
+  `startup` SessionStart or a read from the first turn; route lines with no
+  write or spawn that ran between them are one corrected task; a failed shell
+  write or spawn still splits tasks, a held call does not; same-turn loads
+  count only after the previous task's last route line. The README, hold
+  texts and the spec's Task state note say these rules.
+- Every check passed on a scratch merge with Tickets 049 and 050: the
+  validator, 374 unit tests on Python 3.14 and 3.11, the V1/V2 context
+  comparison, and the mod's tests.
+- Known low leftover, not a regression: the back-probe can drop a route line
+  written before a transcript's first prompt. A session that gets the adapter
+  mid-session, with no `startup` SessionStart, holds `continue` until a full
+  route line.

@@ -57,12 +57,13 @@ Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
    - Blocked by: `tickets/archive/041-adapter-review-holds-read-the-change.md`
    - Enables: overrides recorded and announced only for a prompt a person
      typed, never for a message from another agent or session.
-12. `tickets/042-adapter-fresh-session-routing.md`
+12. `tickets/archive/042-adapter-fresh-session-routing.md`
+   - Status: Completed, merged and archived on 2026-11-16.
    - Blocked by: `tickets/archive/047-adapter-overrides-from-other-agents.md`
    - Enables: `continue` in a session with no task, and loads earlier in the
      turn counting for the task it starts.
 13. `tickets/043-adapter-out-of-project-holds.md`
-   - Blocked by: `tickets/042-adapter-fresh-session-routing.md`
+   - Blocked by: `tickets/archive/042-adapter-fresh-session-routing.md`
    - Enables: no design, security, or closeout holds for files outside the
      project.
 14. `tickets/044-adapter-closeout-same-command-check.md`
@@ -93,9 +94,9 @@ there edits the mod after 047.
 
 ## Ready Frontier
 
-- `tickets/042-adapter-fresh-session-routing.md`
+- `tickets/043-adapter-out-of-project-holds.md`
 
-Then 043 to 046, one after another.
+Then 044 to 046, one after another.
 
 ## Coverage
 

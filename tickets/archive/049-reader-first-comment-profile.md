@@ -75,3 +75,16 @@ in `SKILL.md`, the `#comments` section, and the "How many comments" row in
 
 - Changing the default comment guidance for all users.
 - Editing any personal instruction file.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-16.
+
+- Merged as `e82f765` (`5627517`, `364ce2f`). The maintainer reviewed the
+  profile's wording in the ticket session and their changes are applied.
+- `#reader-first-comments` lists the ticket's rules with a fresh, neutral
+  Python example; rule 12, `#comments` and the `differences.md` row name it
+  and when it applies; the default guidance is unchanged.
+- Every check passed on a scratch merge with Tickets 042 and 050. `SKILL.md`
+  is 276 lines, about 2,026 words.
+- The installed skill copy was synced from main after the merge.

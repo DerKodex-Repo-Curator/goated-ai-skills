@@ -53,7 +53,7 @@ held the turn end.
 
 ## Blocked By
 
-- `tickets/042-adapter-fresh-session-routing.md` (same files)
+- `tickets/archive/042-adapter-fresh-session-routing.md` (same files)
 
 ## Scope Exclusions
 
