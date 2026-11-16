@@ -723,13 +723,25 @@ class SharedPolicyNoticeTests(AdapterTestCase):
         outside = self.root / "elsewhere"
         outside.mkdir()
         (outside / "policy.md").write_text(self.POLICY, encoding="utf-8")
+        link = project / "linked"
         try:
-            (project / "linked").symlink_to(outside, target_is_directory=True)
+            link.symlink_to(outside, target_is_directory=True)
         except (OSError, NotImplementedError):
             self.skipTest("this platform does not allow creating symlinks here")
         (project / "CLAUDE.md").write_text("@linked/policy.md\n", encoding="utf-8")
 
-        self.assertFalse(policy.shared_policy_loaded(project, self.root / "home"))
+        try:
+            self.assertFalse(policy.shared_policy_loaded(project, self.root / "home"))
+        finally:
+            # Remove the link itself before the temporary folder is cleaned:
+            # on Windows, Python 3.11's rmtree does not treat a directory link
+            # as a link. `rmdir` removes a Windows directory link without
+            # following it; elsewhere a link is removed with `unlink`.
+            if os.name == "nt":
+                os.rmdir(link)
+            else:
+                os.unlink(link)
+        self.assertTrue((outside / "policy.md").exists())
 
     def test_missing_router_skill_is_warned_about_at_session_start(self) -> None:
         (self.router_skill / "SKILL.md").unlink()
