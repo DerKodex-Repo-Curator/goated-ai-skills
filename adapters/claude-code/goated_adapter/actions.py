@@ -1,8 +1,9 @@
-"""Action gates (commit, pull request, spawn, design, security,
+"""Action gates (commit, pull request and its review, spawn, design, security,
 conflict resolution, repeated failure) and the closeout gate.
 
 These enforce skill triggers the skills already state (ADR 0003): commit with
-`commit-message`, open a pull request with `pr-description`, brief a new agent
+`commit-message`, open a pull request with `pr-description` (and, when it is
+large, `standards-and-spec-review`), brief a new agent
 with `handoff`'s spawn brief or `subagent-driven-development`, design with
 `software-design-principles`, review sensitive surfaces with
 `code-security-review`, resolve a merge conflict with
@@ -16,13 +17,16 @@ records it, plus the user's typed overrides for that turn. So an unchanged
 retry always gets the same answer (spec R6), and a hold stops firing as soon
 as the turn shows compliance. Proof counts only within the current turn
 (spec R7): a skill loaded in an earlier turn does not cover a later action.
+The one input from outside the transcript is a pull request's size, which
+the `pr-review` gate asks git for, and only when its hold would otherwise
+fire.
 
 Strict holds clear only on proof or a user override. Justified-skip holds also
 clear on a `goated-skip: <skill>: <reason>` line in the current turn.
 
 Holds whose step reviews or describes the change (the closeout's design,
-docs, and security items, the commit, and the pull request) also need a
-change read (spec R7): a finished call, after the skill load or reference
+docs, and security items, the commit, the pull request, and its review) also
+need a change read (spec R7): a finished call, after the skill load or reference
 read and after the last code change, that put the change's content in front
 of the agent. That is a command printing the diff, or a Read of a file the
 turn changed. It shows the agent the change; it cannot prove a review.
@@ -34,6 +38,8 @@ import os
 from collections.abc import Callable
 from typing import NamedTuple
 import re
+import subprocess
+import time
 
 from . import contracts, shell
 from .gates import COMMAND_TOOLS, STRICT, Hold, goated_skill_name, unseen_line_advice
@@ -71,6 +77,7 @@ FAILURE_SIGNS_RE = re.compile(
     re.MULTILINE,
 )
 SETUP_SKILL = "setup-scribe"
+REVIEW_SKILL = "standards-and-spec-review"
 RED_FLAGS_REFERENCE = "software-design-principles/references/red-flags.md"
 
 # Tools that start another agent, each with the input field that carries the
@@ -126,6 +133,18 @@ GIT_CONFLICT_RESULT_RE = re.compile(
 )
 # An edit adding at least this many lines is a design change, not a tiny fix.
 DESIGN_MIN_LINES = 5
+# A pull request changing at least this many lines against its base, added
+# plus deleted, is large enough to review before it lands: the adapter's
+# stand-in for the skill's "large" (adapter README, Large pull requests).
+REVIEW_MIN_LINES = 400
+# How long the size check's git calls may take in all before it gives up and
+# holds nothing.
+SIZE_TIMEOUT_SECONDS = 2.0
+# Where a pull request merges into when it names no base, in order of preference.
+DEFAULT_BASE_REFS = (
+    "refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master",
+    "refs/heads/main", "refs/heads/master",
+)
 
 CODE_EXTENSIONS = frozenset(
     ".py .js .jsx .ts .tsx .mjs .cjs .go .rs .java .kt .kts .swift .c .h .cpp .hpp .cc .cs "
@@ -234,7 +253,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
 
     `project` says which files are the project's (see `find_project`): only files
     inside it meet the design and security gates, and only changes to them
-    are the turn's changes a change read must follow. `subagents` returns the turns
+    are the turn's changes a change read must follow; git measures a pull
+    request in its `cwd`. `subagents` returns the turns
     of each subagent this turn spawned, as `check_closeout` takes them; it is
     called only when a commit or pull request needs its change read, since
     reading their transcripts takes time.
@@ -242,13 +262,15 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
 
     proof = _Proof(turn, overrides, namespaces)
     changes = lambda: _Changes(turn, subagents() if subagents else {}, project)
+    cwd = project.cwd if project else None  # Where git measures a pull request's size.
     if tool_name in COMMAND_TOOLS:
         command = shell.analyze(str(tool_input.get("command") or ""))
         hold = _conflict_hold(command.write_targets, tool_input, proof) if command.writes else None
         if hold is None and command.commit:
             hold = _commit_hold(command.commit_message, proof, changes)
         if hold is None and command.opens_pr:
-            hold = _pr_hold(proof, changes)
+            hold = _pr_hold(proof, changes) or _pr_review_hold(
+                lambda: changed_lines(cwd, command.pr_base, command.pr_head), proof, changes)
         for target in command.write_targets:
             if _in_project(target, project, target not in command.unplaced_targets):
                 hold = hold or _security_hold(_norm(target), proof)
@@ -256,7 +278,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
             hold = hold or _repeated_failure_hold(proof)
         return hold
     if PR_TOOL_RE.match(tool_name):
-        return _pr_hold(proof, changes, by_tool=True)
+        return _pr_hold(proof, changes, by_tool=True) or _pr_review_hold(
+            lambda: _tool_changed_lines(tool_input, cwd), proof, changes, by_tool=True)
     if COMMIT_TOOL_RE.match(tool_name):
         message = tool_input.get("message")
         return _commit_hold(message if isinstance(message, str) else None, proof, changes,
@@ -331,10 +354,130 @@ def _pr_hold(proof: _Proof, changes: Callable[[], "_Changes"],
     )
 
 
+def _pr_review_hold(size_of: Callable[[], int | None], proof: _Proof,
+                    changes: Callable[[], "_Changes"], by_tool: bool = False) -> Hold | None:
+    """Hold a pull request that changes `REVIEW_MIN_LINES` or more lines, as
+    `size_of` measures it (None: unknown), until `standards-and-spec-review`
+    loads and the change is read after it, or a skip line names it. Checked
+    after the `pull-request` gate passes; `size_of` runs only when the turn's
+    proof would not already clear it."""
+
+    if proof.skipped(REVIEW_SKILL):
+        return None
+    hold = None
+    if proof.loaded(REVIEW_SKILL):
+        hold = _change_read_hold(
+            "pr-review", REVIEW_SKILL, proof, changes(), by_tool, "opening the pull request",
+            "review it and open the pull request again", skippable=True,
+        )
+        if hold is None:
+            return None
+    size = size_of()
+    if size is None or size < REVIEW_MIN_LINES:
+        return None
+    return hold or Hold(
+        "pr-review", JUSTIFIED_SKIP,
+        f"This pull request changes {size} lines against its base, {REVIEW_MIN_LINES} or "
+        f"more, so it is large enough to review before it lands. Load `{REVIEW_SKILL}` "
+        "with the Skill tool in this turn and review the change with it. If size is not "
+        "what makes it worth reviewing, such as generated or vendored files, write "
+        f"`goated-skip: {REVIEW_SKILL}: <reason>` on its own line instead. Then open the "
+        "pull request again. The whole command was held, so rerun any steps chained "
+        "before it too. " + unseen_line_advice("skip line", f"skip {REVIEW_SKILL}"),
+    )
+
+
+def _tool_changed_lines(tool_input: dict, cwd: str | None) -> int | None:
+    """`changed_lines` for an MCP pull-request tool's input: its `base` or
+    `target_branch`, its `head` or `source_branch`, and, for a GitHub-style
+    tool, the `owner` and `repo` it is aimed at."""
+
+    def text(*keys: str) -> str | None:
+        value = next((tool_input[k] for k in keys if tool_input.get(k)), None)
+        return value if isinstance(value, str) else None
+
+    owner, repo = text("owner"), text("repo")
+    return changed_lines(cwd, text("base", "target_branch"), text("head", "source_branch"),
+                         f"{owner}/{repo}" if owner and repo else None)
+
+
+def changed_lines(cwd: str | None, base: str | None, head: str | None = None,
+                  repository: str | None = None) -> int | None:
+    """Lines added plus deleted on `head` since it left `base`, as git in `cwd`
+    reports them; None when that cannot be measured.
+
+    `base` is the branch the pull request merges into, found as `origin/<base>`
+    or the local branch; without one, the first of `DEFAULT_BASE_REFS` that
+    exists. `head` is the branch it merges from, found as the local branch or
+    `origin/<head>`; without one, the checked-out `HEAD`. A base or head that
+    is in neither place, such as another fork's branch, is unknown.
+    `repository` ("owner/repo") is the repository a tool aims at: unless it is
+    the checkout's `origin`, this checkout says nothing about its size.
+
+    Two git calls, three with `repository`, within `SIZE_TIMEOUT_SECONDS` in
+    all. Every name reaches git inside a full ref name (`refs/...`), so none
+    reads as an option, and external diff and text-conversion programs are
+    switched off, so only git runs.
+    """
+
+    if not cwd:
+        return None
+    deadline = time.monotonic() + SIZE_TIMEOUT_SECONDS
+    if repository is not None:
+        url = _git(["config", "--get", "remote.origin.url"], cwd, deadline)
+        if url is None or not _names_repository(url, repository):
+            return None
+    base_refs = ((f"refs/remotes/origin/{base}", f"refs/heads/{base}") if base
+                 else DEFAULT_BASE_REFS)
+    head_refs = (f"refs/heads/{head}", f"refs/remotes/origin/{head}") if head else ()
+    listed = _git(["for-each-ref", "--format=%(refname)", *base_refs, *head_refs], cwd, deadline)
+    if listed is None:
+        return None
+    found = set(listed.split())  # A pattern also lists refs below it, so match exactly.
+    base_ref = next((ref for ref in base_refs if ref in found), None)
+    head_ref = next((ref for ref in head_refs if ref in found), None) if head else "HEAD"
+    if base_ref is None or head_ref is None:
+        return None
+    stat = _git(["diff", "--shortstat", "--no-ext-diff", "--no-textconv",
+                 f"{base_ref}...{head_ref}", "--"], cwd, deadline)
+    if stat is None:
+        return None
+    return sum(int(n) for n in re.findall(r"(\d+) (?:insertion|deletion)", stat))
+
+
+def _git(args: list[str], cwd: str, deadline: float) -> str | None:
+    """Run git with `args` in `cwd` and return its output; None when it fails,
+    is missing, or runs past `deadline`. The C locale keeps git's words
+    English, and undecodable bytes are replaced, never raised."""
+
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "-c", "core.fsmonitor=false", *args],
+            cwd=cwd, capture_output=True, encoding="utf-8", errors="replace",
+            timeout=remaining,
+            env={**os.environ, "GIT_OPTIONAL_LOCKS": "0", "LC_ALL": "C", "LANG": "C"},
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None  # No git, no such folder, or too slow: the size is unknown.
+    return result.stdout if result.returncode == 0 else None
+
+
+def _names_repository(url: str, repository: str) -> bool:
+    """True when the remote `url` (HTTPS or SSH form) is `repository`, "owner/repo"."""
+
+    path = url.strip().lower().rstrip("/").removesuffix(".git")
+    wanted = repository.lower()
+    return path.endswith("/" + wanted) or path.endswith(":" + wanted)
+
+
 def _change_read_hold(gate: str, skill: str, proof: _Proof, changes: "_Changes", by_tool: bool,
-                      doing: str, then: str) -> Hold | None:
+                      doing: str, then: str, skippable: bool = False) -> Hold | None:
     """Hold a commit or pull request, whose skill has loaded, until a change read
-    follows both that load and the turn's last change to any project file.
+    follows both that load and the turn's last change to any project file;
+    `skippable`: the hold is justified-skip, so a skip line naming `skill` clears it.
 
     An MCP tool (`by_tool`) passes when the turn changed no project file: it
     carries the change in its own input, and outside a git checkout no diff
@@ -348,13 +491,17 @@ def _change_read_hold(gate: str, skill: str, proof: _Proof, changes: "_Changes",
         return None
     how = CHANGE_READ if changes.paths else DIFF_ONLY_READ
     after = " and after your last change" if changes.last_change >= 0 else ""
+    # Not backticked: the skill-usage mod would read a backticked skip line as an ask
+    # that only a skip line answers, and count a read that clears this hold as ignored.
+    tail = (f"Or write a skip line, goated-skip: {skill}: <reason>, on its own line. "
+            + unseen_line_advice("skip line", f"skip {skill}") if skippable
+            else "This hold is strict: a goated-skip line does not clear it.")
     return Hold(
-        gate, STRICT,
+        gate, JUSTIFIED_SKIP if skippable else STRICT,
         f"Read the change before {doing}, after loading the {skill} skill{after}: "
         f"{how}. Then {then}. The whole command was held, so rerun "
         "any steps chained before it too. A read chained in the same command, or made "
-        "in parallel with this call, has not finished, so it does not count. This hold "
-        "is strict: a goated-skip line does not clear it.",
+        f"in parallel with this call, has not finished, so it does not count. {tail}",
     )
 
 

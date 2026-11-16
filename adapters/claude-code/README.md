@@ -94,6 +94,7 @@ of hold:
 | `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded | Each listed skill loads, or a corrected route line drops it |
 | `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` loads in the turn, and an inline message (or the tool's `message`) passes the [content check](#content-checks); then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
 | `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` loads in the turn; then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
+| `pr-review` | justified-skip | A pull-request command or tool the `pull-request` gate holds, once that gate passes, when the pull request is [large](#large-pull-requests): 400 or more changed lines against its base | `standards-and-spec-review` loads in the turn; then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
 | `spawn` | strict | Starting an agent or session with a brief | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, all in the turn; and the brief passes the [content check](#content-checks) |
 | `design` | justified-skip | A write adding five or more lines to a code file inside the project folder | `software-design-principles` loads in the turn |
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` loads in the turn |
@@ -232,6 +233,56 @@ sees only the whole command's result.
   appears. A held call is recorded as an error, so it never counts as a change
   or a check.
 
+### Large pull requests
+
+`standards-and-spec-review` is for a change "large or risky enough to review
+before it lands", and the shared policy loads it "when diff size … warrants
+it". Neither gives a number. The `pr-review` gate's 400 changed lines, added
+plus deleted, is this adapter's mechanical stand-in for "large", as the
+`design` gate's five added lines are for a substantial edit; it is
+`REVIEW_MIN_LINES` in `actions.py`. Risk, unclear acceptance, and uncertain
+conventions, the policy's other reasons, are left to the router.
+
+The transcript does not hold a branch's size, so this gate is the one place
+the adapter runs commands. When a pull-request call would otherwise be held
+by `pr-review` (the `pull-request` gate passed, and no load, change read, or
+skip line has cleared `pr-review`), the adapter asks git, in the hook's
+working folder, which of the candidate refs below exist (`git for-each-ref`),
+then measures the first base and head found:
+
+```text
+git diff --shortstat --no-ext-diff --no-textconv <base>...<head> --
+```
+
+- `<base>` is the branch the pull request merges into: `--base` or `-B` on
+  `gh pr create`, `--target-branch` or `-b` on `glab mr create`, or an MCP
+  tool's `base` or `target_branch` input, found as `origin/<base>` or else the
+  local branch. Without one, it is the first that exists of `origin/HEAD`,
+  `origin/main`, `origin/master`, `main`, and `master`.
+- `<head>` is the branch it merges from: `--head` or `-H` on `gh`,
+  `--source-branch` or `-s` on `glab`, or an MCP tool's `head` or
+  `source_branch` input, found as the local branch or else `origin/<head>`.
+  Without one, it is the checked-out `HEAD`. Only committed work counts,
+  which is what the pull request opens.
+- An MCP tool that names an `owner` and `repo` is measured only when they
+  match the checkout's `origin` URL (one more git call). Aimed at another
+  repository, or from a folder with no `origin`, the tool is not measured:
+  this checkout says nothing about that repository's branches.
+
+Values of the command's other options are never read as options, so
+`--description "-bump deps"` names no base. Every name reaches git inside a
+full ref name (`refs/…`), so none can read as a git option.
+
+When the size cannot be measured, `pr-review` does not hold: no base or head
+is found (a head from another fork, `owner:branch`, or a branch not yet
+fetched), git is missing or fails, the folder is not a git checkout or is
+one the adapter cannot read for certain (so it has no project folders), or
+git's calls take longer than two seconds in all. This gate fails open, like the
+rest of the adapter: holding on an unknown size would hold every pull request
+from a fork or another clone, whatever its size, and a justified-skip hold
+that fires without evidence teaches agents to skip it. The cost is in
+[Latency](#latency).
+
 ### Shell writes
 
 The adapter splits a command into its simple commands (joined by `;`, `&&`,
@@ -307,7 +358,7 @@ a `cd` in the same command is followed, not one in an earlier call.
 
 A hold whose step reviews or describes the change needs the change itself in
 front of the agent, not only the skill: the closeout's Docs, Design, and
-Security items, the commit, and the pull request. A **change read** is a
+Security items, the commit, the pull request, and its review. A **change read** is a
 finished call, made after the item's skill load or red-flags read and after
 the last change the step covers:
 
@@ -316,7 +367,7 @@ the last change the step covers:
 | Docs | The `doc-sync` load and the last code change |
 | Design | The red-flags read, which itself follows the last code change |
 | Security | The `code-security-review` load and the last change to a security-sensitive file |
-| Commit, pull request | The skill load and the last change to any project file, code or not, including changes a subagent spawned in the turn made |
+| Commit, pull request, pull-request review | The skill load and the last change to any project file, code or not, including changes a subagent spawned in the turn made |
 
 A change read is one of:
 
@@ -388,8 +439,8 @@ goated-hold: <gate> | <kind>
 ```
 
 - `<gate>` is one of `router-first`, `route-line`, `pipeline`, `commit`,
-  `pull-request`, `spawn`, `design`, `security`, `conflict-resolution`,
-  `repeated-failure`, or `closeout`.
+  `pull-request`, `pr-review`, `spawn`, `design`, `security`,
+  `conflict-resolution`, `repeated-failure`, or `closeout`.
 - `<kind>` is `strict` or `justified-skip`.
 - The first line matches
   `^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-skip)$`.
@@ -406,14 +457,16 @@ goated-hold: <gate> | <kind>
 - A hold asks for a load in the current turn. A skill loaded in an earlier
   turn does not answer it.
 - A hold that a route or skip line can clear (`route-line`, `pipeline`,
-  `design`, `security`, `conflict-resolution`, `repeated-failure`) says that
-  a line in the held call's own message is not visible yet, and to make the call again without repeating the line. It says
+  `design`, `security`, `conflict-resolution`, `repeated-failure`,
+  `pr-review`) says that a line in the held call's own message is not
+  visible yet, and to make the call again without repeating the line. It says
   this may still fail (see [Known Limits](#known-limits)), and that the user
   can then type the matching override.
 - A hold or closeout item that asks for a [change read](#change-reads) once
   its skill has loaded names that skill without backticks, or only in its
-  skip line, since no load answers it: the commit and pull-request holds name
-  no skill, and the closeout offers the skill only as a skip line.
+  skip line, since no load answers it: the commit, pull-request, and
+  pr-review holds name no skill (pr-review's skip line is not backticked
+  either), and the closeout offers the skill only as a skip line.
 
 Claude Code records a denied call as a `tool_result` with `is_error: true`
 whose content carries this reason, and a blocked `Stop` as the reason shown
@@ -475,9 +528,9 @@ change it and this table together.
 A hook call from inside a subagent carries `agent_id`. There:
 
 - the routing gates do not apply, because the parent's brief carries the route;
-- the action gates (`commit`, `pull-request`, `spawn`, `design`, `security`,
-  `conflict-resolution`, `repeated-failure`) apply, judged from the
-  subagent's own transcript, which Claude Code keeps in
+- the action gates (`commit`, `pull-request`, `pr-review`, `spawn`, `design`,
+  `security`, `conflict-resolution`, `repeated-failure`) apply, judged from
+  the subagent's own transcript, which Claude Code keeps in
   `<session-id>/subagents/agent-<agent_id>.jsonl` beside the main one. A
   subagent must load the skill itself: the parent's loads do not count;
 - no override applies, because nobody types a subagent's prompts;
@@ -567,6 +620,23 @@ transcript of each subagent the turn spawned, as the closeout does, to find
 the changes its change read must follow; other calls never read them. That
 case was not measured.
 
+The `pr-review` gate's size check (see [Large pull requests](#large-pull-requests))
+runs only on a pull-request call that has passed the `pull-request` gate and
+that no load or skip line has cleared of `pr-review`. Measured on 2026-11-16
+on the same machine with git 2.55, in-process through `run_hook`, 30 runs each:
+
+| Case | Median | p90 |
+| --- | --- | --- |
+| No checkout at the hook's folder | 3 ms | 3 ms |
+| `gh pr create --base main`, 450 changed lines (two git calls) | 34 ms | 36 ms |
+| `gh pr create --fill`, 450 changed lines (two git calls) | 35 ms | 39 ms |
+| The same, 20,000 changed lines | 40 ms | 44 ms |
+| An MCP tool naming `owner` and `repo`, 450 changed lines (three git calls) | 62 ms | 75 ms |
+
+So a pull request's hook call costs about 35 ms more, about 60 ms for an MCP
+tool that names its repository, and at most two seconds when git hangs.
+Every other call costs nothing more.
+
 The hook never waits for the call it judges, which it takes from its input:
 in an interactive session (Claude Code 2.1.325) the assistant message holding
 the call is recorded only after `PreToolUse` returns, and in headless runs it
@@ -586,8 +656,8 @@ of the call's prompt, which is normally already there.
   rewritten summary, in a thinking block, that drops the line, so the adapter
   never sees it. A bare retry is then held again, and a line written again
   beside a read-only call can be summarized the same way. The
-  route-line, pipeline, design, security, conflict-resolution, and
-  repeated-failure holds give the bare retry as worth one try, not as a sure fix, and then point the user to the typed
+  route-line, pipeline, design, security, conflict-resolution,
+  repeated-failure, and pr-review holds give the bare retry as worth one try, not as a sure fix, and then point the user to the typed
   override: `skip routing`, or `skip <skill>` for a skip line. Reading the
   line from somewhere other than reply text is planned as a separate change.
 

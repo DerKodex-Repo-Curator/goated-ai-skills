@@ -1519,6 +1519,8 @@ test('a hold that held again reads once with how many times, and one that asks f
         hold(6, 'commit', []),
         hold(7, 'spawn', []),
         hold(8, 'pull-request', []),
+        // The pr-review hold that asks, once its skill loaded, for a read of the change.
+        { kind: 'nudge', t: 9, hook: 'pr-review', named: [], holdKind: 'justified-skip' },
       ],
     },
   }
@@ -1532,6 +1534,7 @@ test('a hold that held again reads once with how many times, and one that asks f
   const rows = (await ui.findAll({ type: 'Text', text: /→ ./ })).map(t => t.text)
   await ui.unmount()
   expect(rows).toEqual([
+    'pr-review hold → asked to read the change',
     'pull-request hold → asked to read the change',
     'spawn hold → asked for the brief template or its headings',
     'commit hold → asked to read the change or fix the commit message',

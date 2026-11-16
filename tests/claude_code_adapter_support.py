@@ -9,6 +9,7 @@ All content is synthetic.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import uuid
 from pathlib import Path
@@ -409,6 +410,49 @@ class Session:
         held = reason(output)
         self._tool_result(tool_use_id, held or "ok", is_error=bool(held))
         return output
+
+
+def git_branch_with_change(
+    project: Path, changed_lines: int, *, base: str = "main", remote_head: bool = False,
+    remote_branches: tuple[str, ...] = (), origin_url: str | None = None,
+    stay_on_base: bool = False,
+) -> None:
+    """Make `project` a git checkout with a branch `feature` whose diff against
+    `base` changes `changed_lines` lines, checked out unless `stay_on_base`.
+
+    `remote_head`: also record `base` as the remote's default branch,
+    `origin/HEAD`, as a clone does. `remote_branches`: remote-tracking
+    branches `origin/<name>` to record at `base`'s commit. `origin_url`: the
+    URL of a remote `origin`, which is never fetched.
+    """
+
+    project.mkdir(parents=True, exist_ok=True)
+
+    def git(*args: str) -> None:
+        subprocess.run(
+            ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+             "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", *args],
+            cwd=project, check=True, capture_output=True,
+        )
+
+    git("init", "-q", "-b", base)
+    (project / "base.txt").write_text("base\n", encoding="utf-8")
+    git("add", "base.txt")
+    git("commit", "-q", "-m", "Base")
+    if origin_url:
+        git("remote", "add", "origin", origin_url)
+    for name in remote_branches + ((base,) if remote_head else ()):
+        git("update-ref", f"refs/remotes/origin/{name}", "HEAD")
+    if remote_head:
+        git("symbolic-ref", "refs/remotes/origin/HEAD", f"refs/remotes/origin/{base}")
+    git("checkout", "-q", "-b", "feature")
+    (project / "change.txt").write_text(
+        "".join(f"line {n}\n" for n in range(changed_lines)), encoding="utf-8"
+    )
+    git("add", "change.txt")
+    git("commit", "-q", "-m", "Change")
+    if stay_on_base:
+        git("checkout", "-q", base)
 
 
 def default_input(tool: str) -> dict:

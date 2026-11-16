@@ -68,6 +68,24 @@ GIT_NO_PATCH_FLAGS = (
 GIT_SILENT_FLAGS_RE = re.compile(r"--quiet|--output(?:=.*)?")
 # `gh pr diff` and `glab mr diff` print a pull or merge request's patch.
 FORGE_DIFFS = {"gh": "pr", "glab": "mr"}
+# The options of `gh pr create` and `glab mr create` that take a value, by the
+# branch each names: "base" (merged into), "head" (merged from), or None. A
+# value is never read as an option, so `--description "-bump deps"` names no
+# base.
+PR_VALUE_OPTIONS = {
+    "gh": {
+        "--base": "base", "-B": "base", "--head": "head", "-H": "head",
+        **dict.fromkeys(("--assignee", "-a", "--body", "-b", "--body-file", "-F", "--label",
+                         "-l", "--milestone", "-m", "--project", "-p", "--recover",
+                         "--reviewer", "-r", "--template", "-T", "--title", "-t")),
+    },
+    "glab": {
+        "--target-branch": "base", "-b": "base", "--source-branch": "head", "-s": "head",
+        **dict.fromkeys(("--assignee", "-a", "--description", "-d", "--related-issue", "-i",
+                         "--label", "-l", "--milestone", "-m", "--reviewer",
+                         "--target-project", "--title", "-t")),
+    },
+}
 
 # Wrappers that run the next word as the command, with the options of each
 # that take a value.
@@ -138,7 +156,10 @@ class ShellCommand:
     download without an output name). `commit` is True for a `git commit`
     that records one (not `--dry-run`); `commit_message` is its message when
     that commit carries it inline, else None. `opens_pr` covers
-    `gh pr create|new` and `glab mr create|new`. `is_check` says it runs a
+    `gh pr create|new` and `glab mr create|new`; `pr_base` and `pr_head` are
+    the branches such a command names to merge into and from (`--base`/`-B`
+    and `--head`/`-H` for gh, `--target-branch`/`-b` and `--source-branch`/`-s`
+    for glab), else None. `is_check` says it runs a
     test, lint, build, or check; `non_check_writes` says some simple command
     in it writes and is not itself a check (`sed -i … && pytest`, but not
     `pytest > out.txt`). `prints_changes` says it prints changes'
@@ -151,8 +172,8 @@ class ShellCommand:
 
     __slots__ = (
         "writes", "write_targets", "unplaced_targets", "unknown_writes", "commit",
-        "commit_message", "opens_pr", "is_check", "non_check_writes", "prints_changes",
-        "installs_package",
+        "commit_message", "opens_pr", "pr_base", "pr_head", "is_check",
+        "non_check_writes", "prints_changes", "installs_package",
     )
 
     def __init__(self) -> None:
@@ -163,6 +184,8 @@ class ShellCommand:
         self.commit = False
         self.commit_message: str | None = None
         self.opens_pr = False
+        self.pr_base: str | None = None
+        self.pr_head: str | None = None
         self.is_check = False
         self.non_check_writes = False
         self.prints_changes = False
@@ -228,6 +251,9 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
         noun = FORGE_DIFFS[name]
         if rest[:1] == [noun] and rest[1:2] in (["create"], ["new"]):
             result.opens_pr = True
+            branches = _pr_branches(rest[2:], PR_VALUE_OPTIONS[name])
+            result.pr_base = branches.get("base") or result.pr_base
+            result.pr_head = branches.get("head") or result.pr_head
         if rest[:2] == [noun, "diff"] and "--name-only" not in rest:
             prints = True
     # Output redirected into a file never reached the agent; a stderr redirect leaves it.
@@ -627,6 +653,32 @@ def _ps_paths(args: list[str]) -> list[str]:
         positional.append(arg)
         i += 1
     return named + positional
+
+
+def _pr_branches(args: list[str], value_options: dict) -> dict[str, str]:
+    """The branches a pull-request command's `args` name, by role ("base",
+    "head"), the last of each winning. An option takes its value as the next
+    word, after `=`, or attached to a short option (`-Bmain`); a value is
+    never read as an option."""
+
+    branches: dict[str, str] = {}
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        i += 1
+        if arg in value_options:
+            name, value = arg, args[i] if i < len(args) else None
+            i += 1
+        elif arg.startswith("--") and "=" in arg:
+            name, value = arg.split("=", 1)
+        elif not arg.startswith("--") and arg[:2] in value_options and len(arg) > 2:
+            name, value = arg[:2], arg[2:]
+        else:
+            continue
+        role = value_options.get(name)
+        if role and value is not None:
+            branches[role] = value
+    return branches
 
 
 def _skip_options(args: list[str], takes_value: set[str]) -> list[str]:

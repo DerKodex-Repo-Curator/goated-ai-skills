@@ -61,10 +61,11 @@ as followed when the agent then loads it (or reads its files), and as not
 loaded when the turn ends without that. A Skill call whose result is an error
 loaded nothing, so it neither counts as a load nor answers a hold. A
 `justified-skip` hold (`design`, `security`, `conflict-resolution`,
-`repeated-failure`, `closeout`) also counts as declined when a skip line
-names the skill in the same turn, before or after the hold; a `strict` hold
-(`router-first`, `route-line`, `pipeline`, `commit`, `pull-request`, `spawn`)
-never does, because only loading the skill clears it. In particular:
+`repeated-failure`, `pr-review`, `closeout`) also counts as declined when a
+skip line names the skill in the same turn, before or after the hold; a
+`strict` hold (`router-first`, `route-line`, `pipeline`, `commit`,
+`pull-request`, `spawn`) never does, because only loading the skill clears
+it. In particular:
 
 - An adapter hold asks for a load in the current turn, so a skill loaded in
   an earlier turn shows as loaded only when the agent loads it again, never
@@ -244,8 +245,8 @@ This has not been tested end to end. Keep a backup of both files.
   kind with no per-skill result, and its row says what it asked for instead:
   the `spawn` holds that ask for a template read or for missing brief
   headings, the `commit` hold for a message that breaks the contract, and
-  the `commit` and `pull-request` holds that ask, once their skill loaded,
-  for a read of the change.
+  the `commit`, `pull-request`, and `pr-review` holds that ask, once their
+  skill loaded, for a read of the change.
 - The nine-block limit is Claude Code's as seen on 2.1.325. If a version
   changes it, a closeout the agent never got past may count as followed.
 - A turn that ends as an answer after a blocked `Stop` counts as passed even

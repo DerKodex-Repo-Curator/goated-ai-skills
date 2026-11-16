@@ -19,6 +19,7 @@ from claude_code_adapter_support import (
     SPAWN_BRIEF_PATH,
     Session,
     decision,
+    git_branch_with_change,
     parse,
     reason,
 )
@@ -328,6 +329,207 @@ class PullRequestHoldTests(AdapterTestCase):
         s = self.routed()
 
         self.assertEqual(decision(s.call("Bash", {"command": "gh pr view 12"})), "pass")
+
+
+REVIEW = "standards-and-spec-review"
+OPEN_PR = {"command": "gh pr create --base main --title 'Add export' --body-file body.md"}
+
+
+class PullRequestReviewTests(AdapterTestCase):
+    """The `pr-review` gate: a large pull request needs `standards-and-spec-review`."""
+
+    def described(self, changed_lines: int, remote_head: bool = False) -> Session:
+        """A routed turn on a branch changing `changed_lines` lines against main,
+        with the `pull-request` gate already passed."""
+
+        s = self.routed()
+        git_branch_with_change(s.project, changed_lines, remote_head=remote_head)
+        s.load("pr-description")
+        s.run("git diff main...HEAD")
+        return s
+
+    def test_a_large_pull_request_is_held_and_a_smaller_one_is_not(self) -> None:
+        held = self.described(400).call("Bash", OPEN_PR)
+        self.assertEqual(hold_line(held), "goated-hold: pr-review | justified-skip")
+        body = reason(held).split("\n", 1)[1]
+        # Beside the skill, only its skip line and the user's typed way out are backticked.
+        self.assertEqual(set(re.findall(r"`([^`]+)`", body))
+                         - {f"goated-skip: {REVIEW}: <reason>", f"skip {REVIEW}"},
+                         {REVIEW})
+        self.assertIn("400", body)
+
+        s = self.fresh()
+        s.prompt("Open the pull request.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        git_branch_with_change(s.project, 399)
+        s.load("pr-description")
+        s.run("git diff main...HEAD")
+        self.assertEqual(decision(s.call("Bash", OPEN_PR)), "pass")
+
+    def test_the_pull_request_gate_comes_first_and_stays_strict(self) -> None:
+        s = self.routed()
+        git_branch_with_change(s.project, 500)
+
+        held = s.call("Bash", OPEN_PR)
+        self.assertEqual(hold_line(held), "goated-hold: pull-request | strict")
+        s.load(REVIEW)
+        s.say(f"goated-skip: pr-description: the body is already drafted well")
+        self.assertEqual(hold_line(s.call("Bash", OPEN_PR)), "goated-hold: pull-request | strict")
+
+    def test_loading_the_review_skill_then_reading_the_change_clears_it(self) -> None:
+        s = self.described(450)
+        s.load(REVIEW)
+
+        held = s.call("Bash", OPEN_PR)
+        self.assertEqual(hold_line(held), "goated-hold: pr-review | justified-skip")
+        self.assertIn("Read the change", reason(held))
+        s.run("git diff main...HEAD --stat")
+        self.assertEqual(decision(s.call("Bash", OPEN_PR)), "deny")
+        s.run("git diff main...HEAD")
+        self.assertEqual(decision(s.call("Bash", OPEN_PR)), "pass")
+
+    def test_a_skip_line_naming_the_review_skill_clears_it(self) -> None:
+        s = self.described(450)
+        s.say(f"goated-skip: {REVIEW}: generated fixtures make up the bulk of it")
+
+        self.assertEqual(decision(s.call("Bash", OPEN_PR)), "pass")
+
+    def test_a_typed_skip_override_clears_it(self) -> None:
+        s = self.session
+        s.prompt(f"Open the pull request; skip {REVIEW}.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        git_branch_with_change(s.project, 450)
+        s.load("pr-description")
+        s.run("git diff main...HEAD")
+
+        self.assertEqual(decision(s.call("Bash", OPEN_PR)), "pass")
+
+    def test_without_a_base_flag_the_remote_default_branch_is_the_base(self) -> None:
+        s = self.described(450, remote_head=True)
+
+        held = s.call("Bash", {"command": "gh pr create --fill"})
+        self.assertEqual(hold_line(held), "goated-hold: pr-review | justified-skip")
+
+    def test_each_base_option_names_the_base(self) -> None:
+        for command in ("gh pr create -B main --fill", "gh pr create --base=main --fill",
+                        "glab mr create --target-branch main --fill", "glab mr create -b main"):
+            with self.subTest(command=command):
+                s = self.fresh()
+                s.prompt("Open the pull request.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                git_branch_with_change(s.project, 450)
+                s.load("pr-description")
+                s.run("git diff main...HEAD")
+                held = s.call("Bash", {"command": command})
+                self.assertEqual(hold_line(held), "goated-hold: pr-review | justified-skip")
+
+    def test_a_pr_tool_is_measured_against_its_base_input(self) -> None:
+        s = self.described(450)
+        tool = "mcp__github__create_pull_request"
+
+        held = s.call(tool, {"title": "x", "base": "main", "head": "feature"})
+        self.assertEqual(hold_line(held), "goated-hold: pr-review | justified-skip")
+
+    def fresh_described(self, **repo) -> Session:
+        """Like `described`, in a session of its own, with `git_branch_with_change` options."""
+
+        s = self.fresh()
+        s.prompt("Open the pull request.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        git_branch_with_change(s.project, repo.pop("changed_lines", 450), **repo)
+        s.load("pr-description")
+        s.run("git diff main...feature")
+        return s
+
+    def test_it_still_holds_once_the_pull_request_gate_passes(self) -> None:
+        s = self.routed()
+        git_branch_with_change(s.project, 500)
+
+        self.assertEqual(hold_line(s.call("Bash", OPEN_PR)), "goated-hold: pull-request | strict")
+        s.load("pr-description")
+        s.run("git diff main...HEAD")
+        self.assertEqual(hold_line(s.call("Bash", OPEN_PR)), "goated-hold: pr-review | justified-skip")
+
+    def test_without_a_base_each_usual_default_branch_is_tried(self) -> None:
+        fill = {"command": "gh pr create --fill"}
+        cases = (
+            ("origin/HEAD", {"remote_head": True}),
+            ("origin/main", {"remote_branches": ("main",)}),
+            ("origin/master", {"base": "master", "remote_branches": ("master",)}),
+            ("local main", {}),
+            ("local master", {"base": "master"}),
+        )
+        for name, repo in cases:
+            with self.subTest(base=name):
+                s = self.fresh_described(**repo)
+                self.assertEqual(hold_line(s.call("Bash", fill)),
+                                 "goated-hold: pr-review | justified-skip")
+
+    def test_a_named_head_is_measured_instead_of_the_checked_out_branch(self) -> None:
+        tool = "mcp__github__create_pull_request"
+        for name, call in (
+            ("pr tool", (tool, {"title": "x", "base": "main", "head": "feature"})),
+            ("gh --head", ("Bash", {"command": "gh pr create --base main --head feature --fill"})),
+            ("gh -H", ("Bash", {"command": "gh pr create -B main -H feature --fill"})),
+            ("glab --source-branch", ("Bash", {"command": "glab mr create -b main --source-branch feature"})),
+            ("remote-only head", ("Bash", {"command": "gh pr create --base main --head pushed --fill"})),
+        ):
+            with self.subTest(case=name):
+                s = self.fresh_described(stay_on_base=True)
+                if name == "remote-only head":
+                    import subprocess
+                    subprocess.run(["git", "update-ref", "refs/remotes/origin/pushed", "feature"],
+                                   cwd=s.project, check=True)
+                self.assertEqual(hold_line(s.call(*call)), "goated-hold: pr-review | justified-skip")
+        # Without a head, the checked-out base is measured against itself: nothing changed.
+        s = self.fresh_described(stay_on_base=True)
+        self.assertEqual(decision(s.call(tool, {"title": "x", "base": "main"})), "pass")
+
+    def test_a_pr_tool_aimed_at_another_repository_is_not_measured(self) -> None:
+        tool = "mcp__github__create_pull_request"
+        pr = {"title": "x", "owner": "acme", "repo": "export", "base": "main", "head": "feature"}
+        for url, held in (
+            ("https://github.com/acme/export.git", True),
+            ("git@github.com:Acme/Export.git", True),
+            ("https://github.com/other/export.git", False),
+            (None, False),
+        ):
+            with self.subTest(origin=url):
+                s = self.fresh_described(origin_url=url)
+                self.assertEqual(decision(s.call(tool, pr)), "deny" if held else "pass")
+
+    def test_option_values_are_not_read_as_options(self) -> None:
+        # glab's -b is the target branch; inside --description's value it is just text.
+        s = self.fresh_described(remote_head=True)
+        command = {"command": 'glab mr create --description "-bump deps" --title x'}
+        self.assertEqual(hold_line(s.call("Bash", command)), "goated-hold: pr-review | justified-skip")
+
+    def test_no_hold_when_the_size_cannot_be_measured(self) -> None:
+        cases = (
+            # No base flag, and none of origin/HEAD, origin/main, origin/master, main, or master.
+            ("no base", {"base": "trunk"}, {"command": "gh pr create --fill"}),
+            # A base git would read as an option is never passed to it.
+            ("option-like base", {}, {"command": "gh pr create --base=--output=x.txt --fill"}),
+            ("unknown base", {}, {"command": "gh pr create --base nowhere --fill"}),
+            # A head that is neither a local branch nor origin/<head> fails open.
+            ("unknown head", {}, {"command": "gh pr create --base main --head someone:fork --fill"}),
+        )
+        for name, repo, command in cases:
+            with self.subTest(case=name):
+                s = self.fresh_described(**repo)
+                self.assertEqual(decision(s.call("Bash", command)), "pass")
+                self.assertFalse((s.project / "x.txt").exists())
+
+    def test_outside_a_git_checkout_the_pull_request_passes(self) -> None:
+        s = self.routed()
+        s.load("pr-description")
+        s.run("git diff main...HEAD")
+
+        self.assertEqual(decision(s.call("Bash", OPEN_PR)), "pass")
 
 
 class SpawnBriefTests(AdapterTestCase):
@@ -2022,8 +2224,8 @@ class HoldFormatTests(AdapterTestCase):
     """Every hold's first line follows the format the skill-usage mod parses."""
 
     FORMAT = re.compile(
-        r"^goated-hold: (router-first|route-line|pipeline|commit|pull-request|spawn"
-        r"|design|security|conflict-resolution|closeout) \| (strict|justified-skip)$"
+        r"^goated-hold: (router-first|route-line|pipeline|commit|pull-request|pr-review|spawn"
+        r"|design|security|conflict-resolution|repeated-failure|closeout) \| (strict|justified-skip)$"
     )
 
     def test_every_hold_message_starts_with_the_documented_line(self) -> None:
