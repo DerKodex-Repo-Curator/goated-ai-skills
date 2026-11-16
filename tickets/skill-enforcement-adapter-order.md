@@ -70,33 +70,39 @@ Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
    - Blocked by: `tickets/043-adapter-out-of-project-holds.md`
    - Enables: a check in the same command as the write proving it.
 15. `tickets/045-route-and-skip-lines-before-the-call.md`
-   - Blocked by: `tickets/044-adapter-closeout-same-command-check.md`
+   - Blocked by: None
    - Enables: route and skip lines the adapter can see on the first try.
 16. `tickets/046-adapter-pipeline-after-compaction.md`
-   - Blocked by: `tickets/045-route-and-skip-lines-before-the-call.md`
-   - Enables: the last route line winning after a compaction.
+   - Blocked by: None
+   - Enables: the last route line winning after a compaction, and the
+     compaction handling Ticket 051 builds on.
 
 Tickets 041–046 are the trial's revise fixes (spec, Trial Result), and 047
-fixes an R8 gap found in real use after the trial. They edit
-the same adapter files and hold texts, so they run one after another, and all
-of them run before Ticket 035 in
-`tickets/adapter-skill-activation-gates-order.md`. The trial's revise decision
-counts as the keep decision those tickets are blocked on.
+fixes an R8 gap found in real use after the trial. 041, 047 and 042 ran one
+after another. On 2026-11-16 the maintainer chose to run the rest in
+parallel where only file overlap linked them: 044 still follows 043, since
+both rework the shell analysis, while 045 and 046 depend on neither and on
+each other only through shared README and hold-text lines, resolved at merge
+time. Tickets 035–038 in `tickets/adapter-skill-activation-gates-order.md`
+also run in parallel now. The trial's revise decision counts as the keep
+decision those tickets are blocked on.
 
 Tickets 028 and 029 ran in parallel and were merged on 2026-11-15. Ticket 032
 was split on 2026-11-16 so it can run alongside 031: 031 works in
 `adapters/claude-code/goated_adapter/` and 032 in the mod's own folder, so
 their write scopes do not overlap. Ticket 034 needs both.
 
-Tickets 051 and 052 from `tickets/design-reference-reads-order.md` edit the
-same adapter files, so they follow 046 and come before Ticket 035. Ticket 050
-there edits the mod after 047.
+Ticket 051 from `tickets/design-reference-reads-order.md` follows 046
+because its cooldown uses 046's compaction handling, and 052 follows 051.
+Ticket 050 there edited the mod after 047.
 
 ## Ready Frontier
 
-- `tickets/043-adapter-out-of-project-holds.md`
+- `tickets/043-adapter-out-of-project-holds.md` (in progress)
+- `tickets/045-route-and-skip-lines-before-the-call.md`
+- `tickets/046-adapter-pipeline-after-compaction.md`
 
-Then 044 to 046, one after another.
+Ticket 044 follows 043.
 
 ## Coverage
 

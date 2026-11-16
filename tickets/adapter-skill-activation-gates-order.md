@@ -17,18 +17,24 @@ Source spec: `docs/specs/2026-11-16-adapter-skill-activation-gates.md`
    - Enables: `standards-and-spec-review` before a large pull request.
 
 The four tickets touch the same adapter files (`actions.py`, the README's
-gate tables, the generated hold texts) and the mod's gate names, so they run
-one after another in this order, not in parallel. Tickets 041–047, from the
-skill-enforcement order, edit the same files and run before 035. Ticket
-037 adds an item to the closeout gate rather than a new gate.
+gate tables, the generated hold texts) and the mod's gate names, but none
+depends on another or on the other adapter tickets: each adds its own gate or
+closeout item. On 2026-11-16 the maintainer chose to run them in parallel and
+resolve the additive overlaps at merge time, instead of queueing them behind
+Ticket 052. Ticket 037 adds an item to the closeout gate rather than a new
+gate. Ticket 033 recorded a revise decision on 2026-11-16, which keeps the
+adapter installed and counts as the keep decision these tickets wait for.
 
 ## Ready Frontier
 
-- None until `tickets/052-adapter-design-citations-at-closeout.md` lands
-  (after `tickets/046-adapter-pipeline-after-compaction.md`; see
-  `tickets/design-reference-reads-order.md`). Ticket
-  033 recorded a revise decision on 2026-11-16, which keeps the adapter
-  installed and counts as the keep decision these tickets wait for.
+- `tickets/035-adapter-merge-conflict-gate.md`
+- `tickets/036-adapter-repeated-failure-gate.md`
+- `tickets/037-adapter-setup-closeout-item.md`
+- `tickets/038-adapter-large-pull-request-review.md` (HITL: the maintainer
+  decides how the adapter learns a change's size)
+
+All four can run in parallel, alongside the adapter fixes in
+`tickets/skill-enforcement-adapter-order.md`.
 
 ## Coverage
 

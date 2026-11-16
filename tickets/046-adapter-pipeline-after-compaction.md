@@ -46,7 +46,10 @@ the route carries over a compaction and the last route line wins, so a
 
 ## Blocked By
 
-- `tickets/045-route-and-skip-lines-before-the-call.md` (same files)
+- None. It shares the README and some adapter files with 043 to 045, but
+  depends on none of them; whichever merges later resolves the overlap. If
+  the cause turns out to be the same-message limit, coordinate the Known
+  Limits wording with Ticket 045.
 
 ## Scope Exclusions
 

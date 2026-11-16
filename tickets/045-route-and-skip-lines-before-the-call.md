@@ -52,7 +52,8 @@ at all.
 
 ## Blocked By
 
-- `tickets/044-adapter-closeout-same-command-check.md` (same hold texts)
+- None. It shares hold texts and the README with 043, 044 and 046, but
+  depends on none of them; whichever merges later resolves the overlap.
 
 ## Scope Exclusions
 
