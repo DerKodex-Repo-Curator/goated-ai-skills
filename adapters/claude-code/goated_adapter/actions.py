@@ -27,6 +27,7 @@ turn changed. It shows the agent the change; it cannot prove a review.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 import re
 
 from . import contracts, shell
@@ -69,6 +70,12 @@ FILE_WRITE_TOOLS = {"Edit": "file_path", "Write": "file_path", "MultiEdit": "fil
 CHANGE_READ = (
     "print its diff with a git diff or git show command, or Read a file you changed; "
     "a listing of names or counts, such as --stat or --name-only, does not count"
+)
+# The same, for a turn that changed no file it names, where a Read cannot count.
+DIFF_ONLY_READ = (
+    "this turn changed no file it can name, so print the diff with a git diff or git "
+    "show command; a listing of names or counts, such as --stat or --name-only, does "
+    "not count"
 )
 # An edit adding at least this many lines is a design change, not a tiny fix.
 DESIGN_MIN_LINES = 5
@@ -168,27 +175,33 @@ def is_action_tool(tool_name: str) -> bool:
 
 
 def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
-                 namespaces: tuple[str, ...] = (), cwd: str | None = None) -> Hold | None:
+                 namespaces: tuple[str, ...] = (), cwd: str | None = None,
+                 subagents: Callable[[], dict] | None = None) -> Hold | None:
     """Return the action hold for this call, if any; the call's own entry is not yet proof.
 
     `cwd` is the project folder: only changes to files inside it are the
-    turn's changes a change read must follow.
+    turn's changes a change read must follow. `subagents` returns the turns
+    of each subagent this turn spawned, as `check_closeout` takes them; it is
+    called only when a commit or pull request needs its change read, since
+    reading their transcripts takes time.
     """
 
     proof = _Proof(turn, overrides, namespaces)
+    changes = lambda: _Changes(turn, subagents() if subagents else {}, cwd)
     if tool_name in COMMAND_TOOLS:
         command = shell.analyze(str(tool_input.get("command") or ""))
-        hold = _commit_hold(command.commit_message, proof, cwd) if command.commit else None
+        hold = _commit_hold(command.commit_message, proof, changes) if command.commit else None
         if hold is None and command.opens_pr:
-            hold = _pr_hold(proof, cwd)
+            hold = _pr_hold(proof, changes)
         for target in command.write_targets:
             hold = hold or _security_hold(_norm(target), proof)
         return hold
     if PR_TOOL_RE.match(tool_name):
-        return _pr_hold(proof, cwd)
+        return _pr_hold(proof, changes, by_tool=True)
     if COMMIT_TOOL_RE.match(tool_name):
         message = tool_input.get("message")
-        return _commit_hold(message if isinstance(message, str) else None, proof, cwd)
+        return _commit_hold(message if isinstance(message, str) else None, proof, changes,
+                            by_tool=True)
     if tool_name in SPAWN_BRIEF_FIELDS:
         brief = str(tool_input.get(SPAWN_BRIEF_FIELDS[tool_name]) or "")
         return _spawn_hold(brief, proof) if brief.strip() else None
@@ -198,9 +211,11 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     return None
 
 
-def _commit_hold(message: str | None, proof: _Proof, cwd: str | None) -> Hold | None:
+def _commit_hold(message: str | None, proof: _Proof, changes: Callable[[], "_Changes"],
+                 by_tool: bool = False) -> Hold | None:
     """Hold a commit until `commit-message` loads, its inline message (`message`,
-    if known) keeps the contract, and the change is read after the load."""
+    if known) keeps the contract, and the change is read after the load;
+    `by_tool`: an MCP tool records it, not a git command."""
 
     supplied = proof.overrides.get("commit_message")
     if supplied and message is not None and (
@@ -226,32 +241,20 @@ def _commit_hold(message: str | None, proof: _Proof, cwd: str | None) -> Hold | 
             f"The commit message breaks the {COMMIT_SKILL} contract: "
             + "; ".join(problems) + ". Fix the message and run the commit again.",
         )
-    if _Changes(proof.turn, {}, cwd).read_after(proof.load_index(COMMIT_SKILL)):
-        return None
-    return Hold(
-        "commit", STRICT,
-        f"Read the change before committing it, after loading the {COMMIT_SKILL} skill "
-        f"and after your last code change: {CHANGE_READ}. Then check that the message "
-        "describes it and run the commit again. The whole command was held, so rerun "
-        "any steps chained before it too; a read chained in the same command has not "
-        "finished, so it does not count. This hold is strict: a goated-skip line does "
-        "not clear it.",
+    return _change_read_hold(
+        "commit", COMMIT_SKILL, proof, changes(), by_tool,
+        "committing it", "check that the message describes it and run the commit again",
     )
 
 
-def _pr_hold(proof: _Proof, cwd: str | None) -> Hold | None:
+def _pr_hold(proof: _Proof, changes: Callable[[], "_Changes"],
+             by_tool: bool = False) -> Hold | None:
     if PR_SKILL in proof.user_skips:
         return None
     if proof.loaded(PR_SKILL):
-        if _Changes(proof.turn, {}, cwd).read_after(proof.load_index(PR_SKILL)):
-            return None
-        return Hold(
-            "pull-request", STRICT,
-            f"Read the change before opening the pull request, after loading the {PR_SKILL} "
-            f"skill and after your last code change: {CHANGE_READ}. Then check that the "
-            "title and body describe it and open the pull request again. The whole "
-            "command was held, so rerun any steps chained before it too. This hold is "
-            "strict: a goated-skip line does not clear it.",
+        return _change_read_hold(
+            "pull-request", PR_SKILL, proof, changes(), by_tool, "opening the pull request",
+            "check that the title and body describe it and open the pull request again",
         )
     return Hold(
         "pull-request", STRICT,
@@ -259,6 +262,33 @@ def _pr_hold(proof: _Proof, cwd: str | None) -> Hold | None:
         "title and body with it, then open the pull request again. The whole command "
         "was held, so rerun any steps chained before it too. This hold is strict: a "
         "goated-skip line does not clear it.",
+    )
+
+
+def _change_read_hold(gate: str, skill: str, proof: _Proof, changes: "_Changes", by_tool: bool,
+                      doing: str, then: str) -> Hold | None:
+    """Hold a commit or pull request, whose skill has loaded, until a change read
+    follows both that load and the turn's last change to any project file.
+
+    An MCP tool (`by_tool`) passes when the turn changed no project file: it
+    carries the change in its own input, and outside a git checkout no diff
+    can run and no changed file exists to Read, so the strict hold would have
+    no way out.
+    """
+
+    if by_tool and changes.last_change < 0:
+        return None
+    if changes.read_after(max(proof.load_index(skill), changes.last_change)):
+        return None
+    how = CHANGE_READ if changes.paths else DIFF_ONLY_READ
+    after = " and after your last change" if changes.last_change >= 0 else ""
+    return Hold(
+        gate, STRICT,
+        f"Read the change before {doing}, after loading the {skill} skill{after}: "
+        f"{how}. Then {then}. The whole command was held, so rerun "
+        "any steps chained before it too. A read chained in the same command, or made "
+        "in parallel with this call, has not finished, so it does not count. This hold "
+        "is strict: a goated-skip line does not clear it.",
     )
 
 
@@ -408,7 +438,7 @@ def _code_items(changes: "_Changes", proof: _Proof) -> list[str]:
                 f"and check whether durable docs now drift: {CHANGE_READ}. Or, if behavior "
                 f"and interfaces did not change, write `goated-skip: {DOC_SYNC_SKILL}: <reason>`."
             )
-        elif not changes.read_after(loaded):
+        elif not changes.read_after(max(loaded, last)):
             # The skill is loaded, so it is named only in the skip line: no load answers this.
             items.append(
                 f"- Docs: after loading the {DOC_SYNC_SKILL} skill and after your last code "
@@ -450,8 +480,10 @@ class _Changes:
     """What one turn changed, and whether a later call read the change.
 
     `code` lists the changes to code, in order; `sensitive` lists each change
-    to a security-sensitive file as (call index, category), in order. Changes
-    a spawned subagent made count as made at its spawn.
+    to a security-sensitive file as (call index, category), in order;
+    `last_change` is the call index of the last change to any project file,
+    or -1; `paths` are the changed files a Read can name. Changes a spawned
+    subagent made count as made at its spawn.
     """
 
     def __init__(self, turn: Turn, subagents: dict, cwd: str | None) -> None:
@@ -462,13 +494,13 @@ class _Changes:
             (c.index, category) for c in changes for path in c.paths
             if (category := security_category(path)) is not None
         ]
+        self.last_change = changes[-1].index if changes else -1
         self.paths = [p for c in changes for p in c.paths if p != UNNAMED_FILES]
 
     def read_after(self, after: int) -> bool:
-        """True when a finished call after call `after` and after the last code
-        change printed the diff or read a file the turn changed."""
+        """True when a finished call after call `after` printed the diff or read
+        a file the turn changed; the caller picks the change it must follow."""
 
-        after = max(after, self.code[-1].index if self.code else -1)
         return any(
             index > after and call.ok and self._shows_change(call)
             for index, call in enumerate(self.turn.calls)

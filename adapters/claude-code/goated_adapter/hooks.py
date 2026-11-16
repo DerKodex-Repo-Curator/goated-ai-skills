@@ -153,6 +153,8 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
         hold = actions.check_action(
             tool_name, tool_input, current, overrides, config.skill_namespaces,
             str(payload.get("cwd") or "") or None,
+            # Unreadable subagent transcripts count as no changes, as at closeout.
+            lambda: _spawned_subagents(current, transcript_path)[0],
         )
     warnings = [state_warning, _save(store, session_id, state)]
     return _with_warnings(_deny(hold), warnings)

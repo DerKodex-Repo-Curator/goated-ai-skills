@@ -714,6 +714,18 @@ class ChangeReadTests(AdapterTestCase):
             ("Bash", "git diff --stat -p", True),
             ("Bash", "git show HEAD", True),
             ("Bash", "git log -p -1", True),
+            ("Bash", "git diff --output=change.patch", False),
+            ("Bash", "git diff --output-indicator-new=+", True),
+            ("Bash", "git log --patch-with-stat -1", True),
+            ("Bash", "git log -U3 -1", True),
+            ("Bash", "git log --unified=5 -1", True),
+            ("Bash", "git whatchanged -p -1", True),
+            ("Bash", "git whatchanged -1", False),
+            ("Bash", "gh pr diff 12", True),
+            ("Bash", "gh pr view 12", False),
+            ("Bash", "glab mr diff", True),
+            ("Bash", "git diff 2>err.txt", True),
+            ("Bash", "git diff 1>out.txt", False),
             ("PowerShell", "git diff HEAD | Select-Object -First 200", True),
             ("Read", "src/export.py", True),
         ):
@@ -855,6 +867,81 @@ class ChangeReadTests(AdapterTestCase):
         s.run("git diff main...HEAD")
         self.assertEqual(decision(s.call("Bash", command)), "pass")
         self.assertEqual(decision(s.call("mcp__github__create_pull_request", {"title": "x"})), "pass")
+
+    def test_the_pull_request_text_says_a_chained_or_parallel_read_does_not_count(self) -> None:
+        s = self.routed()
+        s.load("pr-description")
+
+        text = reason(s.call("Bash", {"command": "gh pr create --title x --body y"}))
+        self.assertIn("chained", text)
+        self.assertIn("parallel", text)
+
+    def test_a_turn_that_changed_nothing_is_told_a_diff_is_the_way(self) -> None:
+        s = self.routed()
+        s.load("commit-message")
+
+        text = reason(s.call("Bash", commit("Add CSV export")))
+        self.assertIn("changed no file", text)
+        self.assertNotIn("Read a file you changed", text)
+
+    def test_mcp_commit_and_pr_tools_pass_when_the_turn_changed_no_project_file(self) -> None:
+        # Outside a git checkout no diff can run and no changed file exists to Read, so a strict hold
+        # with no exit would be a dead end; the change is in the tool's own input.
+        for tool, tool_input, skill in (
+            ("mcp__github__push_files", {"message": "Add export", "files": []}, "commit-message"),
+            ("mcp__github__create_or_update_file", {"message": "Add export", "path": "a.py"},
+             "commit-message"),
+            ("mcp__github__create_pull_request", {"title": "x"}, "pr-description"),
+        ):
+            with self.subTest(tool=tool):
+                s = self.fresh()
+                s.prompt("Push it.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.load(skill)
+                self.assertEqual(decision(s.call(tool, tool_input)), "pass")
+                s.say("goated-skip: software-design-principles: one mechanical constant change")
+                s.call("Write", write("src/export.py"))
+                self.assertEqual(decision(s.call(tool, tool_input)), "deny")
+                s.read("src/export.py")
+                self.assertEqual(decision(s.call(tool, tool_input)), "pass")
+
+    def test_a_read_before_a_later_non_code_change_does_not_clear_a_commit(self) -> None:
+        s = self.routed()
+        s.load("commit-message")
+        s.read("README.md")
+        s.call("Edit", {"file_path": "README.md", "old_string": "a", "new_string": "b"})
+
+        self.assertEqual(decision(s.call("Bash", commit("Update the readme"))), "deny")
+        s.read("README.md")
+        self.assertEqual(decision(s.call("Bash", commit("Update the readme"))), "pass")
+
+    def test_the_security_item_counts_from_the_last_sensitive_change(self) -> None:
+        s = self.routed()
+        s.load("code-security-review")
+        s.call("Edit", {"file_path": ".env", "old_string": "A=1", "new_string": "A=2"})
+        s.read(".env")
+        s.say("goated-skip: software-design-principles: one mechanical constant change")
+        s.call("Write", write("src/util.py"))
+        s.run("pytest -q")
+        s.say("goated-skip: doc-sync: internal constant with no documented behavior")
+
+        self.assertEqual(stop(s), {})
+
+    def test_a_subagents_changes_count_for_the_commit_hold(self) -> None:
+        s = self.routed()
+        s.load("commit-message")
+        s.run(DIFF)
+        s.brief_with_handoff()
+        agent = s.subagent("c1")
+        agent.prompt("Implement it.", hook=False)
+        agent.call("Edit", {"file_path": "src/app.py", "old_string": "a", "new_string": "b"},
+                   agent_id="c1", agent_type="general-purpose")
+        self.assertEqual(decision(s.spawn("c1", BRIEF)), "pass")
+
+        self.assertEqual(decision(s.call("Bash", commit("Add export"))), "deny")
+        s.read("src/app.py")
+        self.assertEqual(decision(s.call("Bash", commit("Add export"))), "pass")
 
 
 class HoldFormatTests(AdapterTestCase):
