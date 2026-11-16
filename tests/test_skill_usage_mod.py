@@ -4,11 +4,14 @@ The mod's tests run inside Claude Code's plugin test kit, which has no file
 system, YAML parser, or Python, so they read two generated TypeScript modules:
 
 - `marker-fixtures.ts`, the marker fixtures in `stack/fixtures/markers/lines.yaml`;
+- `design-reads-fixtures.ts`, the design-reads line fixtures in
+  `stack/fixtures/markers/design-reads.yaml`;
 - `adapter-texts.ts`, the hold reasons and the override context the Claude Code
   adapter actually produces, from driving it with synthetic sessions.
 
-This test fails when either module no longer matches its source. Regenerate
-both with:
+It also checks the one adapter fact the mod copies by hand: which file
+extensions are code. This test fails when a module no longer matches its
+source. Regenerate them with:
 
     uv run python tests/test_skill_usage_mod.py --write
 """
@@ -30,8 +33,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # A whole backticked token shaped like a skill name, as the mod reads one from a hold.
 BARE_BACKTICKED = re.compile(r"`([a-z0-9]+(?:-[a-z0-9]+)*)`")
 MARKER_FIXTURES = REPO_ROOT / "stack" / "fixtures" / "markers" / "lines.yaml"
+DESIGN_READS_FIXTURES = REPO_ROOT / "stack" / "fixtures" / "markers" / "design-reads.yaml"
 MOD_ROOT = REPO_ROOT / "adapters" / "claude-code" / "skill-usage"
 GENERATED_MARKERS = MOD_ROOT / "tests" / "marker-fixtures.ts"
+GENERATED_DESIGN_READS = MOD_ROOT / "tests" / "design-reads-fixtures.ts"
+# The mod's copy of the adapter's code-file extensions, in hooks/classify.ts.
+MOD_CODE_EXTENSIONS = re.compile(r"const CODE_EXTENSIONS = new Set\(\s*'([^']*)'")
 GENERATED_ADAPTER_TEXTS = MOD_ROOT / "tests" / "adapter-texts.ts"
 
 
@@ -48,6 +55,11 @@ def _module(source: str, name: str, value: object) -> str:
 def render_marker_fixtures() -> str:
     fixtures = yaml.safe_load(MARKER_FIXTURES.read_text(encoding="utf-8"))
     return _module("stack/fixtures/markers/lines.yaml", "MARKER_FIXTURES", fixtures)
+
+
+def render_design_reads_fixtures() -> str:
+    fixtures = yaml.safe_load(DESIGN_READS_FIXTURES.read_text(encoding="utf-8"))
+    return _module("stack/fixtures/markers/design-reads.yaml", "DESIGN_READS_FIXTURES", fixtures)
 
 
 def _write(path: str, lines: int = 6) -> dict:
@@ -164,7 +176,11 @@ def render_adapter_texts() -> str:
     )
 
 
-GENERATED = {GENERATED_MARKERS: render_marker_fixtures, GENERATED_ADAPTER_TEXTS: render_adapter_texts}
+GENERATED = {
+    GENERATED_MARKERS: render_marker_fixtures,
+    GENERATED_DESIGN_READS: render_design_reads_fixtures,
+    GENERATED_ADAPTER_TEXTS: render_adapter_texts,
+}
 
 
 class SkillUsageModFixtureTests(unittest.TestCase):
@@ -225,6 +241,14 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             held = reason(s.call("Write", _write("src/credentials")))
         self.assertTrue(held.startswith("goated-hold: security | justified-skip\n"), held)
         self.assertEqual(set(BARE_BACKTICKED.findall(held)), {"code-security-review"})
+
+    def test_mod_counts_the_same_files_as_code_as_the_adapter(self) -> None:
+        # The mod times reference reads against code changes, which it must judge as the adapter does.
+        from goated_adapter.actions import CODE_EXTENSIONS
+
+        found = MOD_CODE_EXTENSIONS.search((MOD_ROOT / "hooks" / "classify.ts").read_text(encoding="utf-8"))
+        self.assertIsNotNone(found, "hooks/classify.ts no longer declares CODE_EXTENSIONS as this test reads it")
+        self.assertEqual(set(found.group(1).split()), set(CODE_EXTENSIONS))
 
     def test_mod_manifest_names_its_type_contract(self) -> None:
         manifest = json.loads((MOD_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))

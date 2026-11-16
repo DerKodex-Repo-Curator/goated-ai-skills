@@ -28,6 +28,8 @@ export type UsageEvent = Stamp &
     | { kind: 'body'; skill: string; isSubagent: true; agent?: string }
     /** A winning `goated-route:` line in a reply, by the main agent or the subagent `agent`. */
     | ({ kind: 'route'; isSubagent?: true; agent?: string } & Route)
+    /** A `goated-design-reads:` line in a reply, by the main agent or the subagent `agent`. */
+    | ({ kind: 'design-reads'; isSubagent?: true; agent?: string } & DesignReads)
     /** The adapter's notice that it recorded overrides you typed, each phrase lowercased. */
     | { kind: 'override'; phrases: string[] }
     /** An Agent tool call starting a subagent, by the main agent or the subagent `agent`. */
@@ -37,6 +39,11 @@ export type UsageEvent = Stamp &
     | { kind: 'subagent-start'; agent?: string }
     /** A main-agent call the adapter holds like a write: an edit, or a spawn that hands work on. */
     | { kind: 'write'; id?: string }
+    /**
+     * A code change, as the adapter counts one where the mod can see it: an edit tool's call on a code file, by the
+     * main agent or a subagent. `id`: the call's tool_use id, so a refused call changed nothing.
+     */
+    | { kind: 'change'; id?: string; isSubagent?: true }
     /** A call whose result was an error, such as one the adapter held: it did not run, so its spawn or write did not happen. */
     | { kind: 'refused'; id: string }
     /**
@@ -59,6 +66,12 @@ export type WritingTurns = { routed: number; late: number; none: number }
 /** A route line as the marker grammar reads it (stack/fixtures/markers/README.md in the GOATED repo). */
 export type Route = { form: 'direct' | 'continue' } | { form: 'route'; intensity: 'lightweight' | 'standard' | 'full'; requires: string[] }
 export type RouteForm = Route['form']
+
+/** A design-reads line as the marker grammar reads it: the reference files it declares, or `none` with a reason. */
+export type DesignReads = { form: 'files'; files: string[] } | { form: 'none'; reason: string }
+
+/** Design-reads lines counted: how often each file was declared, and how many lines declared `none`. */
+export type DesignReadCounts = { files: Record<string, number>; none: number }
 
 /** An adapter hold's kind, from its `goated-hold: <gate> | <kind>` first line. */
 export type HoldKind = 'strict' | 'justified-skip'
@@ -89,6 +102,8 @@ export type SessionSummary = {
   refs?: Refs
   /** Of those reads, how many came before their skill had loaded (since the last compaction); absent in summaries stored before they were counted. */
   refsUnloaded?: number
+  /** The same reads by their moment in the turn; absent in summaries stored before moments were recorded, whose reads have none. */
+  refMoments?: RefMoments
 } & Measures
 
 /**
@@ -104,10 +119,21 @@ export type Measures = {
   /** Overrides you typed, by phrase. */
   overrides?: Record<string, number>
   subagents?: SubagentCounts
+  /** Design-reads lines, by file declared, and `none` declarations. */
+  designReads?: DesignReadCounts
 }
 
 /** How often each supporting file was read, by skill then path within the skill, such as `references/x.md`. */
 export type Refs = Record<string, Record<string, number>>
+
+/**
+ * When in its turn a supporting file was read, against the turn's code changes: before the first, between two, after
+ * the last, or in a turn that changed no code (`no-change`). A turn runs from one typed prompt to the next.
+ */
+export type RefMoment = 'before' | 'between' | 'after' | 'no-change'
+
+/** Reads of supporting files by skill, then path within the skill, then moment. */
+export type RefMoments = Record<string, Record<string, Counts<RefMoment>>>
 
 /**
  * One row of the activity log. A nudge is one row whatever becomes of it:
@@ -124,6 +150,7 @@ export type TimelineEntry = Stamp &
     /** `isLoaded`: the skill had loaded (since the last compaction) when its file was read. */
     | { kind: 'ref'; skill: string; file: string; isLoaded: boolean; isSubagent?: true }
     | ({ kind: 'route'; isSubagent?: true } & Route)
+    | ({ kind: 'design-reads'; isSubagent?: true } & DesignReads)
     | { kind: 'override'; phrases: string[] }
     /** `isHeld`: the call was refused, so no subagent started. */
     | { kind: 'spawn'; agentType: string; description: string; isHeld?: true; isSubagent?: true }
@@ -147,6 +174,7 @@ export type AllTime = {
   lastUsed: Record<string, number>
   refs?: Refs
   refsUnloaded?: number
+  refMoments?: RefMoments
 } & Measures
 
 /**

@@ -10,9 +10,9 @@
 // nudge not followed. Text colours are theme keys, so the rows read on a light
 // theme too.
 
-import type { AllTime, Available, Counts, Measures, Origin, Outcome, Refs, RouteForm, SessionSummary, TimelineEntry, WritingTurns } from '../types'
+import type { AllTime, Available, Counts, Measures, Origin, Outcome, RefMoment, RefMoments, Refs, RouteForm, SessionSummary, TimelineEntry, WritingTurns } from '../types'
 import { NO_SUBAGENTS, NO_WRITING_TURNS, ORIGINS, OUTCOMES, total } from './classify'
-import { BECAUSE, COLOR, followCounts, hookName, OUTCOME_TONE, plural, rateTone, RESULT, ROUTE_FORM, skillName, STATION } from './meaning'
+import { BECAUSE, COLOR, followCounts, hookName, OUTCOME_TONE, plural, rateTone, REF_MOMENT, RESULT, ROUTE_FORM, skillName, STATION, UNTIMED } from './meaning'
 import type { Tone, View } from './meaning'
 import { badgeWords, picture, PREVIEW_MS, previewTimeline } from './picture'
 import type { Badges } from './picture'
@@ -208,6 +208,10 @@ function feedRow(entry: TimelineEntry): { mark: string; kind: string; runs: Run[
       // Amber when its skill had not loaded, as the page's edge is on the picture.
       return { mark: '↳', kind: 'Ref', runs: [{ text: `${entry.skill} › ${entry.file}`, tone: 'read' }, { text: ` · ${note}`, tone: entry.isLoaded ? 'dim' : 'waiting' }], tone: 'read' }
     }
+    case 'design-reads': {
+      const declared = entry.form === 'none' ? `none: ${entry.reason}` : entry.files.join(', ')
+      return { mark: '✎', kind: 'Design', runs: [{ text: `reads ${declared}` }, ...(entry.isSubagent ? [{ text: ' · by a subagent', tone: 'dim' as const }] : [])], tone: 'plain' }
+    }
     case 'load':
       // A subagent's load for another reason, such as a hook asking, still says where it happened.
       const where = entry.isSubagent && entry.origin !== 'subagent' ? ', in a subagent' : ''
@@ -250,9 +254,15 @@ const holdWords = (m: Measures) => countWords(m.holds)
 /** Writing turns by whether a route line came before the first write, only after it, or never. */
 const WRITING: Record<keyof WritingTurns, string> = { routed: 'routed', late: 'routed late', none: 'unrouted' }
 const writingWords = (m: Measures) => countWords(m.writingTurns, k => WRITING[k as keyof WritingTurns] ?? k)
+/** Design-reads lines: each file declared with how often, most declared first, then the `none` declarations. */
+function designReadWords(m: Measures): string {
+  const files = Object.entries(m.designReads?.files ?? {}).sort(([a, x], [b, y]) => y - x || a.localeCompare(b))
+  const none = m.designReads?.none ?? 0
+  return [...files.map(([file, n]) => `${file} ${n}`), ...(none ? [`${none} none`] : [])].join(', ')
+}
 
 /**
- * Route lines, adapter holds, overrides and subagents in one line of words,
+ * Route lines, adapter holds, overrides, subagents and design-reads lines in one line of words,
  * each part only when it has a count; undefined when none has.
  */
 function measuresText(m: Measures): string | undefined {
@@ -269,6 +279,7 @@ function measuresText(m: Measures): string | undefined {
     ['Adapter holds', holdWords(m)],
     ['Overrides', overrides ? String(overrides) : ''],
     ['Subagents', subParts.join(', ')],
+    ['Design reads', designReadWords(m)],
   ].flatMap(([name, text]) => (text ? [`${name}: ${text}`] : []))
   return parts.length > 0 ? parts.join(' · ') : undefined
 }
@@ -334,12 +345,17 @@ export function sessionTab(v: View, s: SessionSummary, timeline: TimelineEntry[]
  * in the titles). A count is a bar to scale beside the table's largest, never a
  * ring, which would read as progress towards a limit the count does not have.
  */
-function usageTables(v: View, counts: { nudges: Record<string, Counts<Outcome>>; loads: Record<string, Counts<Origin>>; refs?: Refs; refsUnloaded?: number }, rows: number, suffix: string) {
+function usageTables(
+  v: View,
+  counts: { nudges: Record<string, Counts<Outcome>>; loads: Record<string, Counts<Origin>>; refs?: Refs; refsUnloaded?: number; refMoments?: RefMoments },
+  rows: number,
+  suffix: string,
+) {
   const { Box } = v.ui
   const hooks = Object.entries(counts.nudges).sort(([, x], [, y]) => total(y) - total(x))
   const skills = Object.entries(counts.loads).sort(([, x], [, y]) => total(y) - total(x))
   const most = Math.max(1, ...skills.map(([, c]) => total(c)))
-  const refs = refRows(counts.refs)
+  const refs = refRows(counts)
   const mostRead = Math.max(1, ...refs.map(r => r.n))
   const nameWidth = Math.min(26, Math.max(12, ...hooks.map(([h]) => hookName(h).length), ...skills.slice(0, rows).map(([s]) => s.length)) + 1)
   // The column a count's bar sits in, as wide as its heading.
@@ -398,17 +414,20 @@ function usageTables(v: View, counts: { nudges: Record<string, Counts<Outcome>>;
         ? line(v, 'No skill reference file has been read yet.', 'dim')
         : [
             row(v, [cell('skill › file', { grow: true }), cell('reads', { width: BAR }), cell('', { width: 4 })], 'dim'),
-            ...refs.slice(0, rows).map(r =>
-              row(
-                v,
-                [
-                  { runs: [{ text: r.skill }, { text: ` › ${r.file}`, tone: 'dim' }], grow: true },
-                  { node: meter(v, [{ n: r.n, tone: 'read' }], BAR, mostRead), width: BAR },
-                  cell(String(r.n), { width: 4, isRight: true }),
-                ],
-                'plain',
-              ),
-            ),
+            ...refs.slice(0, rows).map(r => (
+              <Box key={`ref-${r.skill}/${r.file}`} flexDirection="column">
+                {row(
+                  v,
+                  [
+                    { runs: [{ text: r.skill }, { text: ` › ${r.file}`, tone: 'dim' }], grow: true },
+                    { node: meter(v, [{ n: r.n, tone: 'read' }], BAR, mostRead), width: BAR },
+                    cell(String(r.n), { width: 4, isRight: true }),
+                  ],
+                  'plain',
+                )}
+                <Box paddingLeft={2}>{words(v, [{ text: momentWords(r) }], 'dim', true)}</Box>
+              </Box>
+            )),
           ]}
     </Box>
   )
@@ -417,11 +436,21 @@ function usageTables(v: View, counts: { nudges: Record<string, Counts<Outcome>>;
 /** How many supporting files were read in all, rereads included. */
 const readCount = (refs: Refs | undefined) => Object.values(refs ?? {}).reduce((sum, files) => sum + total(files), 0)
 
-/** Each skill file read and how often, most read first; equal counts A to Z, so the order holds between redraws. */
-function refRows(refs: Refs | undefined): { skill: string; file: string; n: number }[] {
-  return Object.entries(refs ?? {})
-    .flatMap(([skill, files]) => Object.entries(files).map(([file, n]) => ({ skill, file, n })))
+/** One skill file read: how often in all, and how many of those reads at each moment in their turn. */
+type RefRow = { skill: string; file: string; n: number; moments: Counts<RefMoment> }
+
+/** Each skill file read, how often and when, most read first; equal counts A to Z, so the order holds between redraws. */
+function refRows(counts: { refs?: Refs; refMoments?: RefMoments }): RefRow[] {
+  return Object.entries(counts.refs ?? {})
+    .flatMap(([skill, files]) => Object.entries(files).map(([file, n]) => ({ skill, file, n, moments: counts.refMoments?.[skill]?.[file] ?? {} })))
     .sort((a, b) => b.n - a.n || `${a.skill}/${a.file}`.localeCompare(`${b.skill}/${b.file}`))
+}
+
+/** A file's reads by moment, in the turn's order, then those with no moment: reads stored before moments were recorded. */
+function momentWords(r: RefRow): string {
+  const timed = (Object.keys(REF_MOMENT) as RefMoment[]).flatMap(m => (r.moments[m] ? [`${r.moments[m]} ${REF_MOMENT[m]}`] : []))
+  const untimed = r.n - total(r.moments)
+  return [...timed, ...(untimed > 0 ? [`${untimed} ${UNTIMED}`] : [])].join(' · ')
 }
 
 /** Totals across sessions: the still picture, each hook's follow rate as a bar, and what makes each skill load. */
@@ -533,11 +562,12 @@ export function reportText(all: AllTime, avail: Available | null): string {
   out.push(`- Writing turns: ${writes.routed} routed before the first write · ${writes.late} routed only after it · ${writes.none} with no route line`)
   out.push(`- Adapter holds: ${holdWords(all) || 'none'}`)
   out.push(`- Overrides: ${overrides.join(' · ') || 'none'}`)
+  out.push(`- Design reads: ${designReadWords(all) || 'none written'}`)
   out.push(`- Subagents: ${sub.spawns} started${sub.starts ? ` · ${plural(sub.starts, 'start message')}` : ''} · ${sub.bodyReads} skill bodies read`)
-  const refs = refRows(all.refs)
+  const refs = refRows(all)
   out.push('', '## References', '')
   if (refs.length === 0) out.push('(none read yet)')
-  for (const r of refs) out.push(`- ${r.skill} › ${r.file}: ${r.n}`)
+  for (const r of refs) out.push(`- ${r.skill} › ${r.file}: ${r.n} (${momentWords(r)})`)
   const unused = (avail?.own ?? []).filter(s => !all.loads[s])
   out.push('', `## Your skills never loaded (${unused.length})`, '', unused.join(', ') || '(none)')
   if (avail && avail.included < avail.total) out.push('', `Only ${avail.included} of ${avail.total} skills fit the skill listing.`)

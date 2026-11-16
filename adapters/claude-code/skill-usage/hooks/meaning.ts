@@ -4,7 +4,7 @@
 
 import type { ElementTable, RenderSurface } from 'claude-code'
 
-import type { Counts, Origin, Outcome, RouteForm } from '../types'
+import type { Counts, Origin, Outcome, RefMoment, RouteForm } from '../types'
 import { ROUTE_LINE } from './classify'
 
 /** Where a drawing goes: the surface's elements and its name. */
@@ -66,6 +66,10 @@ export const RESULT: Record<Outcome, string> = {
 export const skillName = (skill: string) => (skill === ROUTE_LINE ? 'a route line' : skill)
 /** A route line's form, as the pane counts it. */
 export const ROUTE_FORM: Record<RouteForm, string> = { direct: 'direct', continue: 'continue', route: 'routed' }
+/** When in its turn a reference was read, against the turn's code changes, in the pane's words, in the turn's order. */
+export const REF_MOMENT: Record<RefMoment, string> = { before: 'before code', between: 'between changes', after: 'after code', 'no-change': 'no code change' }
+/** Reads stored before moments were recorded, which have none. */
+export const UNTIMED = 'not timed'
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
 // ---------- meaning ---------------------------------------------------------------
