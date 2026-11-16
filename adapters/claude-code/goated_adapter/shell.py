@@ -251,9 +251,11 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
 # other than `&&` follows a `cd` that was. Relative targets written from an
 # unknown directory are unplaced: the gates count them as inside the project.
 
-CHANGE_DIRECTORY = frozenset(
-    {"cd", "chdir", "pushd", "popd", "set-location", "sl", "push-location", "pop-location"}
-)
+# A plain folder change, and its aliases: the only one followed.
+FOLLOWED_CHANGE = frozenset({"cd", "chdir", "set-location", "sl"})
+# Every folder change. The folder stacks are never followed: `pushd -n` does not
+# move, `pushd +1` rotates, and `popd` returns to a folder the command does not name.
+CHANGE_DIRECTORY = FOLLOWED_CHANGE | {"pushd", "popd", "push-location", "pop-location"}
 # Separators after which the next command runs only if this one succeeded ("":
 # the command's end).
 AND_THEN = ("&&", "")
@@ -266,12 +268,35 @@ def _change_directory(name: str, args: list[str], directory: str | None) -> str 
     """Return the directory after `name args`, a `cd` certain to have run in
     `directory`, or None when that folder cannot be named."""
 
-    if directory is None or name in ("popd", "pop-location") or "-" in args:
-        return None  # Unknown already, or back to a folder the command does not name.
-    paths = _ps_paths(args) if name.count("-") or name == "sl" else _positional(args)
-    if not paths or not _plain(paths[0]):
+    if directory is None or name not in FOLLOWED_CHANGE:
         return None
-    return _from_directory(directory, paths[0])
+    path = _change_target(name, args)
+    if path is None or not _plain(path):
+        return None
+    if not _is_absolute(path) and not _explicitly_relative(path):
+        return None  # Bash may find a bare name such as `sub` through CDPATH instead.
+    return _from_directory(directory, path)
+
+
+def _change_target(name: str, args: list[str]) -> str | None:
+    """The one folder argument of a `cd` or `Set-Location` that has no other
+    argument or option (bar `--`, or `-Path`/`-LiteralPath` naming the folder),
+    else None. A `-` or `+` argument, such as `cd -` or `cd +1`, is not a folder."""
+
+    rest = args
+    if name in ("cd", "chdir") and args[:1] == ["--"]:
+        rest = args[1:]
+    elif name in ("set-location", "sl") and args:
+        option, colon, value = args[0].partition(":")
+        if option.lower() in ("-path", "-literalpath"):
+            rest = [value] + args[1:] if colon else args[1:]
+    if len(rest) != 1 or rest[0][:1] in ("-", "+", ""):
+        return None
+    return rest[0]
+
+
+def _explicitly_relative(path: str) -> bool:
+    return path in (".", "..") or path.startswith(("./", "../", ".\\", "..\\"))
 
 
 def _plain(path: str) -> bool:
@@ -298,8 +323,12 @@ def _is_absolute(path: str) -> bool:
 # Tokenizing --------------------------------------------------------------------
 
 
-# Words that open or continue a compound command, which runs its parts only on a condition.
-SHELL_KEYWORDS = frozenset({"if", "then", "else", "elif", "do", "while", "until", "for", "select"})
+# Words that open or continue a compound command, which runs its parts only on
+# a condition, and `!`, which inverts a command's status: after `! cd x`, an
+# `&&` runs exactly when the `cd` failed.
+SHELL_KEYWORDS = frozenset(
+    {"if", "then", "else", "elif", "do", "while", "until", "for", "select", "!"}
+)
 
 
 class _Segment:

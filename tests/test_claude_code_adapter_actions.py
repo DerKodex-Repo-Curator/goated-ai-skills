@@ -496,14 +496,22 @@ class OutOfProjectTests(AdapterTestCase):
 
     def test_a_sensitive_write_outside_the_project_skips_the_security_gate(self) -> None:
         s = self.routed()
-        # A rooted path with no drive, such as `/tmp/...`, is outside: on
-        # Windows it is taken on the project's drive, where `/tmp` is not the project.
-        for path in (f"{self.outside}/.env", "/tmp/scratch/auth/login.py"):
-            with self.subTest(path=path):
-                edit = {"file_path": path, "old_string": "a", "new_string": "b"}
-                self.assertEqual(decision(s.call("Edit", edit)), "pass")
+        edit = {"file_path": f"{self.outside}/.env", "old_string": "a", "new_string": "b"}
+        self.assertEqual(decision(s.call("Edit", edit)), "pass")
         edit = {"file_path": f"{self.inside}/.env", "old_string": "a", "new_string": "b"}
         self.assertEqual(hold_line(s.call("Edit", edit)), "goated-hold: security | justified-skip")
+
+    def test_a_rooted_path_with_no_drive_is_outside_only_off_windows(self) -> None:
+        """On Windows, `/tmp/x` may be Git Bash's mount of the temp folder, or
+        a folder on any drive, so it is not certainly outside."""
+
+        s = self.routed()
+        edit = {"file_path": "/tmp/scratch/auth/login.py", "old_string": "a", "new_string": "b"}
+        if os.name == "nt":
+            self.assertEqual(hold_line(s.call("Edit", edit)),
+                             "goated-hold: security | justified-skip")
+        else:
+            self.assertEqual(decision(s.call("Edit", edit)), "pass")
 
     def test_a_shell_write_after_a_cd_outside_skips_the_security_gate(self) -> None:
         s = self.routed()
@@ -516,12 +524,13 @@ class OutOfProjectTests(AdapterTestCase):
     def test_a_move_after_a_cd_outside_is_not_a_project_change(self) -> None:
         for tool, command in (
             ("Bash", f'cd "{self.outside}" && mv a.py b.py'),
-            ("Bash", "cd /tmp/scratch && mv a.py b.py"),
+            ("Bash", f'cd -- "{self.outside}" && mv a.py b.py'),
             ("Bash", "cd ~/.claude/hooks && mv a.ps1 b.ps1"),
-            ("Bash", "cd src && cd ../.. && mv a.py b.py"),
-            ("Bash", f'pushd "{self.outside}" && mv a.py b.py && popd'),
+            ("Bash", "cd ./src && cd ../.. && mv a.py b.py"),
+            ("Bash", f'cd "{self.outside}" && cd ../elsewhere && mv a.py b.py'),
             ("PowerShell", f"Set-Location -Path '{self.outside}' && Move-Item a.py b.py"),
-        ):
+            ("PowerShell", f"Set-Location '{self.outside}' && Move-Item a.py b.py"),
+        ) + ((("Bash", "cd /tmp/scratch && mv a.py b.py"),) if os.name != "nt" else ()):
             with self.subTest(command=command):
                 self.assertEqual(self.changed_by(command, tool), {})
 
@@ -533,8 +542,12 @@ class OutOfProjectTests(AdapterTestCase):
         self.assertEqual(decision(s.call("Write", write(scratch.as_posix(), lines=40))), "pass")
 
     def test_a_move_after_a_cd_inside_is_a_project_change(self) -> None:
+        # The ticket's criterion: `cd sub` is not followed (`CDPATH` may move
+        # it elsewhere), so its folder is unknown and the move counts as inside.
         for tool, command in (
             ("Bash", "cd sub && mv a.py b.py"),
+            ("Bash", "cd ./sub && mv a.py b.py"),
+            ("Bash", f'pushd "{self.outside}" && mv a.py b.py && popd'),
             ("Bash", 'cd "{inside}/sub" && mv a.py b.py'),
             ("Bash", f'cd "{self.outside}" && cd "{{inside}}" && mv a.py b.py'),
             ("PowerShell", "Set-Location sub; Move-Item a.py b.py"),
@@ -601,9 +614,94 @@ class OutOfProjectTests(AdapterTestCase):
                 held = s.run(command, tool="PowerShell")
                 self.assertEqual(hold_line(held), "goated-hold: security | justified-skip")
         # Near misses: a leading `&&` chain is followed.
-        self.assert_security_held(s, f'cd "{self.outside}" && cd sub && echo K=1 > .env',
+        self.assert_security_held(s, f'cd "{self.outside}" && cd ./sub && echo K=1 > .env',
                                   held=False)
-        self.assert_security_held(s, f"pushd '{self.outside}' && echo K=1 > .env", held=False)
+
+    def test_only_a_plain_cd_to_a_plain_path_is_followed(self) -> None:
+        s = self.routed()
+        out = self.outside
+        for command in (
+            f'! cd "{out}" && echo K=1 > .env',
+            f'pushd "{out}" && echo K=1 > .env',
+            f'pushd -n "{out}" && echo K=1 > .env',
+            f'cd "{out}" && pushd +1 && echo K=1 > .env',
+            f'cd "{out}" && cd -1 && echo K=1 > .env',
+            f'cd -P "{out}" && echo K=1 > .env',
+            f'cd "{out}" "{out}" && echo K=1 > .env',
+            # A bare relative name may resolve against CDPATH.
+            f'cd "{out}" && cd deep/../.. && echo K=1 > .env',
+            f'cd "{out}" && cd sub && echo K=1 > .env',
+        ):
+            self.assert_security_held(s, command)
+        for command in (
+            f"Push-Location -StackName '{out}' . && Set-Content .env x",
+            f"Push-Location '{out}' && Set-Content .env x",
+            f"Set-Location -StackName '{out}' && Set-Content .env x",
+            f"Set-Location '{out}' -WhatIf && Set-Content .env x",
+            f"Set-Location -Path '{out}' -LiteralPath x && Set-Content .env x",
+        ):
+            with self.subTest(command=command):
+                held = s.run(command, tool="PowerShell")
+                self.assertEqual(hold_line(held), "goated-hold: security | justified-skip")
+
+    def test_a_link_into_the_project_is_inside(self) -> None:
+        self.session.project.mkdir(parents=True)
+        link = self.root / "link-to-project"
+        try:
+            if os.name == "nt":
+                import _winapi
+
+                _winapi.CreateJunction(str(self.session.project), str(link))
+            else:
+                os.symlink(self.session.project, link, target_is_directory=True)
+        except OSError as exc:
+            self.skipTest(f"cannot make a folder link here: {exc}")
+        try:
+            s = self.routed()
+            edit = {"file_path": f"{link}/.env", "old_string": "a", "new_string": "b"}
+
+            self.assertEqual(hold_line(s.call("Edit", edit)),
+                             "goated-hold: security | justified-skip")
+            self.assert_security_held(s, f'echo K=1 > "{link}/.env"')
+            self.assert_security_held(s, f'cd "{link}" && echo K=1 > .env')
+            self.assert_security_held(s, f'cd "{self.outside}" && echo K=1 > .env', held=False)
+        finally:
+            # Remove the link itself, so cleaning up the folder never follows it.
+            os.rmdir(link) if os.name == "nt" else os.unlink(link)
+
+    def test_a_home_path_is_read_with_the_home_variable_too(self) -> None:
+        from unittest import mock
+
+        s = self.routed()
+        edit = {"file_path": "~/.env", "old_string": "a", "new_string": "b"}
+        with mock.patch.dict(os.environ, {"HOME": self.inside}):
+            self.assertEqual(hold_line(s.call("Edit", edit)),
+                             "goated-hold: security | justified-skip")
+        with mock.patch.dict(os.environ, {"HOME": self.outside}):
+            self.assertEqual(decision(s.call("Edit", edit)), "pass")
+
+    @unittest.skipUnless(os.name == "nt", "Windows drops trailing dots and spaces")
+    def test_a_folder_name_ending_in_a_dot_or_space_counts_as_inside(self) -> None:
+        s = self.routed()
+        for path in (f"{self.inside}.../sub/../.env", f"{self.inside}./.env",
+                     f"{self.inside} /.env", f"{self.outside}./x/.env"):
+            with self.subTest(path=path):
+                edit = {"file_path": path, "old_string": "a", "new_string": "b"}
+                self.assertEqual(hold_line(s.call("Edit", edit)),
+                                 "goated-hold: security | justified-skip")
+
+    @unittest.skipUnless(os.name == "nt", "Git Bash mounts exist only on Windows")
+    def test_git_bash_mounts_count_as_inside(self) -> None:
+        s = self.routed()
+        under_temp = os.path.relpath(self.inside, tempfile.gettempdir()).replace("\\", "/")
+
+        self.assert_security_held(s, f"echo K=1 > /tmp/{under_temp}/.env")
+        self.assert_security_held(s, f"cd /tmp && echo K=1 > {under_temp}/.env")
+        self.assert_security_held(s, "echo K=1 > /etc/.env")
+        # A one-letter top folder whose drive does not exist is not certainly a drive.
+        missing = next((d for d in "QJKLMNOX" if not os.path.exists(f"{d}:\\")), None)
+        if missing:
+            self.assert_security_held(s, f"echo K=1 > /{missing.lower()}/.env")
 
     def test_device_network_and_unexpanded_paths_count_as_inside(self) -> None:
         s = self.routed()
@@ -656,10 +754,10 @@ class OutOfProjectTests(AdapterTestCase):
     def test_a_one_letter_top_folder_may_be_a_folder_not_a_drive(self) -> None:
         from goated_adapter.actions import _in_project, find_project
 
-        project = find_project("D:\\w\\proj")
+        project = find_project("C:\\w\\proj")
         self.assertTrue(_in_project("/w/proj/.env", project))
-        self.assertTrue(_in_project("/d/w/proj/.env", project))
-        self.assertFalse(_in_project("/w/other/.env", project))
+        self.assertTrue(_in_project("/c/w/proj/.env", project))
+        self.assertFalse(_in_project("/c/other-043/.env", project))
 
     @unittest.skipUnless(os.name == "nt", "8.3 short names exist only on Windows")
     def test_a_short_and_a_long_name_for_the_project_match(self) -> None:
@@ -1330,9 +1428,11 @@ class ReviewRegressionTests(AdapterTestCase):
 
     # Item 4: only write targets inside the project count as changed code.
     def test_only_written_project_code_counts_for_closeout(self) -> None:
-        for command in ("python scripts/report.py > report.txt", "cp src/app.py /tmp/app_backup.py"):
+        for command in ("python scripts/report.py > report.txt",
+                        'cp src/app.py "{outside}/app_backup.py"'):
             with self.subTest(command=command):
                 s = self.fresh()
+                command = command.replace("{outside}", str(s.root / "backup"))
                 s.prompt("Report.")
                 s.load(ROUTER)
                 s.say("goated-route: direct")
@@ -1348,7 +1448,7 @@ class ReviewRegressionTests(AdapterTestCase):
     def test_an_edit_outside_the_project_is_not_a_change(self) -> None:
         s = self.routed()
         s.say("goated-skip: software-design-principles: throwaway scratch script only")
-        s.call("Write", write("/tmp/scratch/probe.py"))
+        s.call("Write", write(str(s.root / "scratch" / "probe.py")))
 
         self.assertEqual(stop(s), {})
 

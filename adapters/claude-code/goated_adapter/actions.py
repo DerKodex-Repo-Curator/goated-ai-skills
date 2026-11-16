@@ -611,9 +611,10 @@ def _in_project(path: str, project: Project | None, placed: bool = True) -> bool
     With no project, every path is inside, and so is a relative path that is
     not `placed` (a shell wrote it from a folder the command left unknown).
     A relative path is taken from the session's folder. A path is outside
-    only when none of its readings (see `_readings`) is a root or under one;
-    a path with no certain reading is inside. Touches the disk only to expand
-    Windows 8.3 short names.
+    only when none of its readings (see `_readings`) is a root or under one,
+    even with symbolic links and junctions resolved in both; a path with no
+    certain reading is inside. Touches the disk only to expand Windows 8.3
+    short names and, for a path that looks outside, to resolve links.
     """
 
     if project is None or not placed:
@@ -623,12 +624,21 @@ def _in_project(path: str, project: Project | None, placed: bool = True) -> bool
         path = project.cwd.rstrip("/\\") + "/" + path
     drives = {os.path.splitdrive(root)[0] for root in project.roots}
     readings = _readings(path, drives)
-    if readings is None:
+    if readings is None or _under_any(readings, project.roots):
         return True
+    # A link may lead into the project from outside it, or out of a root.
+    return _under_any(_resolved(readings), _resolved(project.roots))
+
+
+def _under_any(paths, roots) -> bool:
     return any(
         full == root or full.startswith(root.rstrip(os.sep) + os.sep)
-        for full in readings for root in project.roots
+        for full in paths for root in roots
     )
+
+
+def _resolved(paths) -> list[str]:
+    return [os.path.normcase(os.path.realpath(path)) for path in paths]
 
 
 DRIVE_RE = re.compile(r"^[A-Za-z]:")
@@ -644,11 +654,16 @@ def _readings(path: str, drives) -> list[str] | None:
 
     None for a path a shell expands (a variable, a glob), one under `~-`,
     `~+`, or another user's `~name`, and the Windows forms this does not
-    normalize: device paths (`\\\\?\\`, `//?/`, `\\\\.\\`), network paths, and
-    a drive-relative `C:x`. A leading `~` is the user's home. On Windows a
-    path rooted with no drive, such as `/tmp/x` or `/w/x`, may be on any of
-    `drives` or the process's own drive, and a one-letter top folder may also
-    be Git Bash's name for a drive (`/c/x` is `C:/x`), so each is a reading.
+    normalize: device paths (`\\\\?\\`, `//?/`, `\\\\.\\`), network paths, a
+    drive-relative `C:x`, and a name ending in a dot or space. A leading `~`
+    is the user's home, read as both the profile folder and `HOME`.
+
+    On Windows, a path rooted with no drive is None unless its top folder is
+    one letter naming a drive that exists, Git Bash's form for it (`/c/x` is
+    `C:/x`). Git Bash mounts other folders, such as `/tmp` as the temp folder
+    and `/` as its install folder, and a user may add mounts, so no other
+    rooted path is certain. Such a path may also be a folder on any of
+    `drives` or the process's own drive, so those are readings too.
     """
 
     if any(ch in EXPANDED_CHARS for ch in path):
@@ -656,7 +671,13 @@ def _readings(path: str, drives) -> list[str] | None:
     if path.startswith("~"):
         if path != "~" and path[1] not in "/\\":
             return None
-        path = os.path.expanduser(path)
+        # `HOME`, which Git Bash sets, may differ from the profile folder Python reads.
+        home = os.environ.get("HOME") or ""
+        if home.startswith("~"):
+            return None
+        homes = {os.path.expanduser("~"), home or os.path.expanduser("~")}
+        each = [_readings(home + path[1:], drives) for home in sorted(homes)]
+        return None if None in each else [r for readings in each for r in readings]
     slashed = path.replace("\\", "/")
     if slashed.startswith("//"):
         return None
@@ -664,12 +685,17 @@ def _readings(path: str, drives) -> list[str] | None:
     if os.name == "nt":
         if DRIVE_RE.match(slashed) and slashed[2:3] != "/":
             return None
+        if any(part.endswith((".", " ")) and part not in (".", "..")
+               for part in slashed.split("/")):
+            return None  # Windows drops a name's trailing dots and spaces, not always alike.
         if slashed.startswith("/"):
-            on_drives = set(drives) | {os.path.splitdrive(os.getcwd())[0]}
-            readings = [drive + slashed for drive in sorted(on_drives)]
             git_bash = GIT_BASH_DRIVE_RE.match(slashed)
-            if git_bash:
-                readings.append(git_bash.group(1).upper() + ":" + (slashed[2:] or "/"))
+            drive = git_bash.group(1).upper() + ":" if git_bash else ""
+            if not drive or not os.path.exists(drive + "/"):
+                return None
+            on_drives = set(drives) | {os.path.splitdrive(os.getcwd())[0]}
+            readings = [d + slashed for d in sorted(on_drives)]
+            readings.append(drive + (slashed[2:] or "/"))
     return [_comparable(reading) for reading in readings]
 
 

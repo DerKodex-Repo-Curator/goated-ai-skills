@@ -111,22 +111,26 @@ when Claude Code sets it, the session's working folder (the hook input's
 `cwd`), and the nearest folder at or above either that holds a `.git` entry,
 so a session that changed folder below its checkout still counts the whole
 checkout. A file is outside only when it is under none of them in any way the
-path can be read:
+path can be read, with symbolic links and junctions resolved too:
 
 - A relative path is taken from the working folder; a shell write target is
   taken from a `cd` before it only as [Shell writes](#shell-writes) says, and
   counts as inside when its folder is unknown.
-- A leading `~` or `~/` is your home folder. On Windows, 8.3 short names such
+- A leading `~` or `~/` is your home folder, read both as your profile folder
+  and as `HOME`. On Windows, 8.3 short names such
   as `PROGRA~1` are expanded where the folders exist.
-- On Windows, a path rooted with no drive, such as `/tmp/x` or `/w/proj`, may
-  be on any drive the project's folders use, and a one-letter top folder may
-  also be Git Bash's name for a drive (`/c/work` is `C:/work`). Each of these
-  readings is checked, and the same applies to a project folder given in Git
-  Bash form.
+- On Windows, a one-letter top folder naming a drive that exists is Git
+  Bash's name for that drive (`/c/work` is `C:/work`); it may also be a folder
+  on any drive the project's folders use, and each reading is checked. The
+  same applies to a project folder given in Git Bash form. Any other path
+  rooted with no drive, such as `/tmp/x`, counts as inside: Git Bash mounts
+  `/tmp` as your temp folder and `/` as its install folder, and you may add
+  mounts of your own.
 - These count as inside, since the adapter does not read them: a path holding
   a variable or glob (`$`, `%`, a backtick, `*`, `?`), `~-`, `~+`, or another
   user's `~name`, device paths (`\\?\`, `//?/`, `\\.\`), network paths
-  (`\\server\share`), and a drive-relative path such as `C:x`.
+  (`\\server\share`), a drive-relative path such as `C:x`, and, on Windows, a
+  folder or file name ending in a dot or space.
 
 A shell write whose files the command does not name (`git apply`, `patch`, a
 download without an output name) counts as a change to non-test code. Code a
@@ -227,21 +231,30 @@ pull-request commands are recognized the same way, per command, so
 `echo gh pr create` opens nothing.
 
 A write target is read from the folder its command runs in, and a `cd` moves
-that folder only when the adapter is certain it ran. **Only a `cd` in the
-command's leading `&&` chain is followed**: the first command, or one joined
-to everything before it by `&&` alone. So `cd /elsewhere && mv a.py b.py`
-moves `/elsewhere/a.py`, outside the project, and `cd sub && mv a.py b.py`
-moves `sub/a.py`, inside it. This covers `cd`, `chdir`, `pushd`,
-`Set-Location`, `sl`, and `Push-Location`. The target must be a plain path:
-an absolute path, a drive path, `~` or a path under it, or a relative path
-from a folder already known.
+that folder only when the adapter is certain it ran and where it went.
+**Only a plain `cd` in the command's leading `&&` chain is followed**: the
+first command, or one joined to everything before it by `&&` alone. Plain
+means `cd`, `chdir`, `Set-Location`, or `sl` with exactly one folder argument
+and no option other than `--` (or `-Path`/`-LiteralPath` naming that folder),
+to an absolute path, a drive path, `~` or a path under it, or a path starting
+`./` or `../` from a folder already known. So `cd /elsewhere && mv a.py b.py`
+moves `/elsewhere/a.py`, outside the project, and `cd ./sub && mv a.py b.py`
+moves `sub/a.py`, inside it.
 
 Anything else makes the folder unknown for the rest of the command, and
 nothing later makes it known again. Relative targets written from an unknown
-folder count as inside the project. That is:
+folder count as inside the project, so `cd sub && mv a.py b.py` still changes
+the project. That is:
 
-- a `cd` to a variable, a glob, a command substitution, `-`, `~-`, or `~+`,
-  and a bare `cd`, `popd`, or `Pop-Location`;
+- a `cd` to a bare relative name such as `sub`, which bash may find through
+  `CDPATH` instead;
+- a `cd` to a variable, a glob, a command substitution, `-`, `~-`, `~+`, or
+  `+N`, with an option such as `-P`, with more than one argument, and a bare
+  `cd`;
+- any `pushd`, `popd`, `Push-Location`, or `Pop-Location`, since the folder
+  stack can leave the folder unmoved (`pushd -n`) or rotate it (`pushd +1`);
+- a command starting with `!`, since a failed `cd` then lets the `&&` after
+  it run;
 - a `cd` after `;`, a newline, `||`, `|`, or `&`, or that is followed by `|`,
   `||`, or `&`, since it may have failed, never run, or run apart;
 - a `cd` inside `( )`, `{ }`, `$( )`, `case`, `if`, a loop, or a PowerShell
@@ -554,6 +567,20 @@ of the call's prompt, which is normally already there.
   `last_assistant_message`; on a Claude Code version without that field, a
   skip line written only in the final reply may not be seen until the
   transcript catches up.
+- Whether a file is inside the project is read from paths, not from a shell
+  or the disk's full layout, so the adapter counts a file as outside only when
+  it is certain, and every limit here fails toward holding:
+  - Git Bash mounts (`/tmp` is your temp folder, `/` is the Git install
+    folder, and any mount you add) are not read, so on Windows a path rooted
+    with no drive letter, other than Git Bash's `/c/` drive form, counts as
+    inside the project. A Git Bash write to `/tmp/...` is held like a project
+    write.
+  - `CDPATH` is not read, so a `cd` to a bare relative name makes the folder
+    unknown, and the writes after it count as inside.
+  - `~` is read both as your profile folder and as `HOME` when that is set
+    (Git Bash may point it elsewhere); a `~/...` path inside the project under
+    either reading counts as inside. A shell's `HOME` that differs from the
+    one Claude Code passes to hooks is not seen.
 - The design gate judges size by lines added in the tool input, not by what
   the change does, and does not see shell writes. The security gate judges by
   path alone.
