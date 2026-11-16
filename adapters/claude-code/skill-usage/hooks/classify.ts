@@ -206,15 +206,19 @@ const BOOKKEEPING_TOOL = /^(ToolSearch$|mcp__ccd_)/
 
 /**
  * The events of one message the person sent: a prompt, plus a skill load when
- * it is a slash command naming a skill. A built-in command such as /compact
- * loads no skill.
+ * it is a slash command naming a skill. Any other slash command, such as
+ * /compact or this mod's own /skill-usage, runs in Claude Code without a
+ * model turn, so it is no prompt, and neither is its output.
  */
 export function promptEvents(text: string, skills: readonly string[], t: number): UsageEvent[] {
+  if (text.trimStart().startsWith('<local-command-')) return []
   const command = /<command-name>\/?([\w:.-]+)<\/command-name>/.exec(text)?.[1]
   if (!command) return [{ kind: 'prompt', t, named: skillsNamed(text, skills) }]
-  const events: UsageEvent[] = [{ kind: 'prompt', t, named: [] }]
-  if (skills.includes(short(command))) events.push({ kind: 'load', t, skill: short(command), via: 'slash', isSubagent: false })
-  return events
+  if (!skills.includes(short(command))) return []
+  return [
+    { kind: 'prompt', t, named: [] },
+    { kind: 'load', t, skill: short(command), via: 'slash', isSubagent: false },
+  ]
 }
 
 // The tools that start a subagent; `Task` is the Agent tool's older name.
@@ -231,7 +235,7 @@ const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', ...SP
  * subagent.
  */
 export function toolUseEvents(
-  uses: readonly { name: string; input: Record<string, unknown> }[],
+  uses: readonly { id?: string; name: string; input: Record<string, unknown> }[],
   isSubagent: boolean,
   hasToolBefore: boolean,
   t: number,
@@ -240,14 +244,15 @@ export function toolUseEvents(
   const events: UsageEvent[] = []
   const ofAgent = isSubagent && agent ? { agent } : {}
   let seenTool = hasToolBefore
-  for (const { name, input } of uses) {
+  for (const { id, name, input } of uses) {
+    const ofCall = id ? { id } : {}
     if (name === 'Skill') {
       events.push({ kind: 'load', t, skill: short(String(input.skill ?? '')), via: 'tool', isSubagent })
       continue
     }
     if (SPAWN_TOOLS.has(name)) {
       const spawn = { agentType: String(input.subagent_type || 'general-purpose'), description: String(input.description ?? '') }
-      events.push({ kind: 'spawn', t, ...spawn, ...(isSubagent ? { isSubagent: true as const } : {}), ...ofAgent })
+      events.push({ kind: 'spawn', t, ...ofCall, ...spawn, ...(isSubagent ? { isSubagent: true as const } : {}), ...ofAgent })
     }
     const target = String((name === 'Read' ? input.file_path : input.command) ?? '')
     const refs: UsageEvent[] = skillFiles(target).map(f => ({ kind: 'ref', t, ...f, ...(isSubagent ? { isSubagent: true as const } : {}) }))
@@ -259,7 +264,7 @@ export function toolUseEvents(
     const reached = skillsInPath(target)
     if (reached.length > 0) events.push({ kind: 'read', t, skills: reached })
     events.push(...refs)
-    if (WRITE_TOOLS.has(name)) events.push({ kind: 'write', t })
+    if (WRITE_TOOLS.has(name)) events.push({ kind: 'write', t, ...ofCall })
     if (!seenTool && !BOOKKEEPING_TOOL.test(name)) {
       events.push({ kind: 'tool', t })
       seenTool = true
@@ -375,7 +380,7 @@ export function historyEvents(messages: readonly HistoryMessage[], skills: reado
   let hasTool = false
   for (const message of messages) {
     if (message.role === 'assistant') {
-      const uses = message.content.filter(b => b.type === 'tool_use').map(b => ({ name: String(b.name), input: (b.input ?? {}) as Record<string, unknown> }))
+      const uses = toolUses(message.content)
       const add = toolUseEvents(uses, false, hasTool, t)
       hasTool ||= add.some(e => e.kind === 'tool')
       events.push(...markerEvents(textOf(message.content.filter(b => b.type === 'text')), t), ...add)
@@ -385,7 +390,7 @@ export function historyEvents(messages: readonly HistoryMessage[], skills: reado
     const after: UsageEvent[] = []
     for (const b of message.content) {
       if (b.type === 'tool_result') {
-        if (b.is_error) after.push(...hookEvents(textOf(b.content), skills, t, { holdsOnly: true }))
+        if (b.is_error) after.push(...refusalEvents(b, skills, t))
         continue
       }
       if (b.type !== 'text') continue
@@ -402,11 +407,27 @@ export function historyEvents(messages: readonly HistoryMessage[], skills: reado
   return events.map(e => ({ ...e, isEarlier: true as const }))
 }
 
+/** The tool calls in a reply's content blocks, each with its tool_use id. */
+function toolUses(blocks: readonly { type: string; [field: string]: unknown }[]) {
+  return blocks
+    .filter(b => b.type === 'tool_use')
+    .map(b => ({ ...(typeof b.id === 'string' ? { id: b.id } : {}), name: String(b.name), input: (b.input ?? {}) as Record<string, unknown> }))
+}
+
+/**
+ * The events of one errored tool result: the holds its text carries, then the
+ * refusal of its call, which did not run. `agent`: the subagent it belongs to.
+ */
+function refusalEvents(block: { [field: string]: unknown }, skills: readonly string[], t: number, agent?: string): UsageEvent[] {
+  const id = block.tool_use_id
+  return [...hookEvents(textOf(block.content), skills, t, { agent, holdsOnly: true }), ...(typeof id === 'string' ? [{ kind: 'refused' as const, t, id }] : [])]
+}
+
 /** One conversation row as `session.append` carries it, as far as the mod reads it. */
 export type Row = {
   door: string
   agentId?: string
-  message: { content: readonly { type: string; [field: string]: unknown }[]; name?: string; isMeta?: boolean }
+  message: { type?: string; content: readonly { type: string; [field: string]: unknown }[]; name?: string; isMeta?: boolean }
 }
 
 // The attachment rows that carry hook output; other hook_* rows repeat it.
@@ -431,9 +452,10 @@ export const isObservedRow = (row: Row) => OBSERVED_DOORS.has(row.door) || isHoo
 export function rowEvents(row: Row, skills: readonly string[], t: number, seen: { hasTool: boolean; lastKind?: UsageEvent['kind'] }): UsageEvent[] {
   const isMain = !row.agentId
   const blocks = row.message.content
-  if (row.door === 'prompt' || row.door === 'command') return isMain && !row.message.isMeta ? promptEvents(textOf(blocks), skills, t) : []
+  // A local command's output comes in as a system row by the command door.
+  if (row.door === 'prompt' || row.door === 'command') return isMain && !row.message.isMeta && row.message.type !== 'system' ? promptEvents(textOf(blocks), skills, t) : []
   if (row.door === 'response') {
-    const uses = blocks.filter(b => b.type === 'tool_use').map(b => ({ name: String(b.name), input: (b.input ?? {}) as Record<string, unknown> }))
+    const uses = toolUses(blocks)
     return [...markerEvents(textOf(blocks.filter(b => b.type === 'text')), t, row.agentId), ...toolUseEvents(uses, !isMain, seen.hasTool, t, row.agentId)]
   }
   if (isHookRow(row)) {
@@ -441,7 +463,7 @@ export function rowEvents(row: Row, skills: readonly string[], t: number, seen: 
     return [...hookEvents(text, skills, t, { agent: row.agentId }), ...(isMain ? overrideEvents(text, t) : [])]
   }
   if (row.door === 'tool-result') {
-    return blocks.flatMap(b => (b.type === 'tool_result' && b.is_error ? hookEvents(textOf(b.content), skills, t, { agent: row.agentId, holdsOnly: true }) : []))
+    return blocks.flatMap(b => (b.type === 'tool_result' && b.is_error ? refusalEvents(b, skills, t, row.agentId) : []))
   }
   // A compaction appends a boundary and a summary: count it once.
   if (row.door === 'compaction' && isMain && seen.lastKind !== 'compact') return [{ kind: 'compact', t }]
@@ -472,11 +494,18 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   // A turn ends only at the next typed prompt, so a background result that wakes the agent stays in the turn, as the adapter treats it.
   let isTurnRouted = false
   let turnWrites: keyof WritingTurns | null = null
+  // Writes whose calls may yet be refused, by tool_use id, each with whether a route line came before it; a refused one never wrote.
+  const pendingWrites = new Map<string, boolean>()
   const tallyWritingTurn = () => {
+    const [firstRouted] = pendingWrites.values()
+    if (turnWrites === null && firstRouted !== undefined) turnWrites = firstRouted ? 'routed' : isTurnRouted ? 'late' : 'none'
     if (turnWrites) measures.writingTurns[turnWrites] += 1
     isTurnRouted = false
     turnWrites = null
+    pendingWrites.clear()
   }
+  // Spawn log rows by tool_use id, so a refusal of the call marks its row held and takes it out of the count.
+  const spawnRows = new Map<string, { isHeld?: true }>()
   const timeline: TimelineEntry[] = []
   let loaded = new Set<string>()
   let turnNamed = new Set<string>()
@@ -624,7 +653,11 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         break
       case 'spawn':
         measures.subagents.spawns += 1
-        timeline.push({ ...stamp(e), kind: 'spawn', agentType: e.agentType, description: e.description, ...(e.isSubagent ? { isSubagent: true as const } : {}) })
+        {
+          const spawnRow: TimelineEntry & { kind: 'spawn' } = { ...stamp(e), kind: 'spawn', agentType: e.agentType, description: e.description, ...(e.isSubagent ? { isSubagent: true as const } : {}) }
+          timeline.push(spawnRow)
+          if (e.id) spawnRows.set(e.id, spawnRow)
+        }
         break
       case 'subagent-start':
         measures.subagents.starts += 1
@@ -639,8 +672,18 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         break
       }
       case 'write':
-        turnWrites ??= isTurnRouted ? 'routed' : 'none'
+        if (e.id) pendingWrites.set(e.id, isTurnRouted)
+        else turnWrites ??= isTurnRouted ? 'routed' : 'none'
         break
+      case 'refused': {
+        pendingWrites.delete(e.id)
+        const spawned = spawnRows.get(e.id)
+        if (spawned && !spawned.isHeld) {
+          spawned.isHeld = true
+          measures.subagents.spawns -= 1
+        }
+        break
+      }
       case 'tool':
         toolSeen = true
         break

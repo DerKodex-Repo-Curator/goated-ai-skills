@@ -418,7 +418,10 @@ test('the override sentence in a main hook-context row is an override; in a suba
 
 test("a held call's errored tool result is a hold; a plain one is not", async () => {
   const result = (text: string, isError: boolean) => row('tool-result', [{ type: 'tool_result', tool_use_id: 'u1', content: text, is_error: isError }])
-  expect(rowEvents(result(PIPELINE, true), SKILLS, 1, SEEN)).toEqual([{ kind: 'nudge', t: 1, hook: 'pipeline', named: ['tdd', 'doc-sync'], holdKind: 'strict' }])
+  expect(rowEvents(result(PIPELINE, true), SKILLS, 1, SEEN)).toEqual([
+    { kind: 'nudge', t: 1, hook: 'pipeline', named: ['tdd', 'doc-sync'], holdKind: 'strict' },
+    { kind: 'refused', t: 1, id: 'u1' },
+  ])
   expect(rowEvents(result(PIPELINE, false), SKILLS, 1, SEEN)).toEqual([])
 })
 
@@ -427,7 +430,61 @@ test('a reply row gives its route line, then its writes; a typed prompt row is a
     { type: 'text', text: 'goated-route: direct' },
     { type: 'tool_use', id: 'u1', name: 'Edit', input: { file_path: 'a.md' } },
   ])
-  expect(rowEvents(reply, SKILLS, 1, SEEN)).toEqual([{ kind: 'route', t: 1, form: 'direct' }, { kind: 'write', t: 1 }])
+  expect(rowEvents(reply, SKILLS, 1, SEEN)).toEqual([{ kind: 'route', t: 1, form: 'direct' }, { kind: 'write', t: 1, id: 'u1' }])
   expect(rowEvents(row('prompt', [{ type: 'text', text: 'Use tdd here.' }]), SKILLS, 1, SEEN)).toEqual([{ kind: 'prompt', t: 1, named: ['tdd'] }])
   expect(isObservedRow(row('attachment', [{ type: 'text', text: 'x' }], { name: 'environment' }))).toBe(false)
+})
+
+// ---------- held calls, and local commands, from the live check ---------------------
+
+test('a spawn or write the adapter held is refused by its errored result: the spawn count and writing turns leave it out', async () => {
+  const agent = (id: string) => ({ id, name: 'Agent', input: { description: 'Scan the repo', subagent_type: 'Explore', prompt: 'x' } })
+  const refusal = (id: string, reason: string) => row('tool-result', [{ type: 'tool_result', tool_use_id: id, content: held('Agent', reason), is_error: true }])
+  const reply = (...uses: { id: string; name: string; input: Record<string, unknown> }[]) => row('response', uses.map(u => ({ type: 'tool_use', ...u })))
+  expect(rowEvents(reply(agent('u1')), SKILLS, 1, SEEN)).toEqual([
+    { kind: 'spawn', t: 1, id: 'u1', agentType: 'Explore', description: 'Scan the repo' },
+    { kind: 'write', t: 1, id: 'u1' },
+  ])
+  expect(rowEvents(refusal('u1', ADAPTER_TEXTS.routerFirst), SKILLS, 2, SEEN).at(-1)).toEqual({ kind: 'refused', t: 2, id: 'u1' })
+
+  // Held at router-first, then at the route line, then run once a route line was written.
+  const s = summarize([
+    { kind: 'prompt', t: 1, named: [] },
+    ...rowEvents(reply(agent('u1')), SKILLS, 2, SEEN),
+    ...rowEvents(refusal('u1', ADAPTER_TEXTS.routerFirst), SKILLS, 3, SEEN),
+    ...rowEvents(reply(agent('u2')), SKILLS, 4, SEEN),
+    ...rowEvents(refusal('u2', ADAPTER_TEXTS.routeLine), SKILLS, 5, SEEN),
+    ...markerEvents('goated-route: direct', 6),
+    ...rowEvents(reply(agent('u3')), SKILLS, 7, SEEN),
+  ])
+  expect(s.subagents).toEqual({ spawns: 1, starts: 0, bodyReads: 0 })
+  expect(s.writingTurns).toEqual({ routed: 1, late: 0, none: 0 })
+  // Each attempt keeps its log row; the held ones say so.
+  expect(s.timeline.filter(e => e.kind === 'spawn').map(e => e.kind === 'spawn' && (e.isHeld ?? false))).toEqual([true, true, false])
+})
+
+test('a turn whose only write was held is not a writing turn', async () => {
+  const s = summarize([
+    { kind: 'prompt', t: 1, named: [] },
+    ...rowEvents(row('response', [{ type: 'tool_use', id: 'e1', name: 'Edit', input: { file_path: 'a.md' } }]), SKILLS, 2, SEEN),
+    ...rowEvents(row('tool-result', [{ type: 'tool_result', tool_use_id: 'e1', content: held('Edit', ADAPTER_TEXTS.routeLine), is_error: true }]), SKILLS, 3, SEEN),
+  ])
+  expect(s.writingTurns).toEqual({ routed: 0, late: 0, none: 0 })
+})
+
+test('a local command such as /skill-usage is no prompt, nor is its output; a typed prompt after it is one', async () => {
+  // The rows Claude Code 2.1.325 hands a mod for a local command, then a typed prompt.
+  const rows = [
+    row('command', [{ type: 'text', text: '<local-command-caveat>The command below was run directly in Claude Code.</local-command-caveat>' }], { type: 'user', isMeta: true }),
+    row('command', [{ type: 'text', text: '<command-name>/skill-usage</command-name>\n            <command-message>skill-usage</command-message>\n            <command-args></command-args>' }], { type: 'user' }),
+    row('command', [{ type: 'text', text: '<local-command-stdout>skill-usage: Skill usage pane opened.</local-command-stdout>' }], { type: 'system' }),
+    row('prompt', [{ type: 'text', text: 'Run git log --oneline -3.' }], { type: 'user' }),
+  ]
+  expect(rows.flatMap(r => rowEvents(r, SKILLS, 1, SEEN))).toEqual([{ kind: 'prompt', t: 1, named: [] }])
+  // A skill invoked by its slash command is still a prompt that loads it.
+  const tdd = row('command', [{ type: 'text', text: '<command-name>/tdd</command-name>' }], { type: 'user' })
+  expect(rowEvents(tdd, SKILLS, 1, SEEN)).toEqual([
+    { kind: 'prompt', t: 1, named: [] },
+    { kind: 'load', t: 1, skill: 'tdd', via: 'slash', isSubagent: false },
+  ])
 })
