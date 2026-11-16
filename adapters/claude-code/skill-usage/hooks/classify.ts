@@ -1,7 +1,7 @@
 // Turns conversation content into neutral events (live rows and the history a
 // late-loading mod reads go through the same rules), then labels why each skill
-// loaded and whether hook nudges were followed. Pure: no engine calls, so tests
-// can feed it events and messages.
+// loaded; whether hook nudges were followed is `holds.ts`'s, which `summarize`
+// feeds. Pure: no engine calls, so tests can feed it events and messages.
 //
 // The hook text read is the GOATED Claude Code adapter's: its holds start
 // `goated-hold: <gate> | <kind>` (adapters/claude-code/README.md in the GOATED
@@ -12,22 +12,20 @@ import type {
   Counts,
   HoldKind,
   Measures,
-  NudgedSkill,
   Origin,
   Outcome,
   Refs,
   Route,
-  RouteForm,
   SessionSummary,
   SubagentCounts,
   TimelineEntry,
   UsageEvent,
   WritingTurns,
 } from '../types'
+import { bump, holdSettlement, ROUTE_LINE, stamp } from './holds'
 
 export const ROUTER = 'using-goated-ai-skills'
-/** The adapter's route-line hold asks for a route line, which no skill load settles. */
-export const ROUTE_LINE = '(route line)'
+export { ROUTE_LINE }
 /** Subagent counts before any subagent did anything. */
 export const NO_SUBAGENTS: Readonly<SubagentCounts> = { spawns: 0, starts: 0, bodyReads: 0 }
 /** Writing-turn counts before any turn wrote. */
@@ -104,17 +102,6 @@ const BACKTICKED_SKILL = /`([a-z0-9]+(?:-[a-z0-9]+)*)`/g
 const OFFERED_SKIP = /`goated-skip: ([a-z0-9]+(?:-[a-z0-9]+)*): /g
 /** The grammar's own words, which adapters before Ticket 034 backticked in hold texts; they are no skills. */
 const MARKER_WORDS = new Set(['goated-hold', 'goated-route', 'goated-skip'])
-/** The adapter's gate for a route's required skills. */
-const PIPELINE_GATE = 'pipeline'
-/** Gates whose named skills are alternatives, one of which answers the hold: the spawn hold's `handoff` or `subagent-driven-development`. */
-const ALTERNATIVE_GATES = new Set(['spawn'])
-/**
- * How many times in a row Claude Code lets a `Stop` hook block before it ends
- * the turn anyway (2.1.325, seen in Ticket 034's runs). A turn that ends after
- * that many blocks did not get past the hold.
- */
-const STOP_BLOCK_LIMIT = 9
-
 /**
  * What an adapter hold asks for: the router, a route line, or every skill its
  * text backticks, alone or as the skill of a skip line it offers, in the order
@@ -475,26 +462,20 @@ export function rowEvents(
   return []
 }
 
-/** An event's time, as a timeline row carries it. */
-const stamp = (e: UsageEvent) => (e.isEarlier ? { t: e.t, isEarlier: true as const } : { t: e.t })
-
-function bump<K extends string>(table: Record<string, Counts<K>>, row: string, key: K) {
-  const counts = (table[row] ??= {})
-  counts[key] = (counts[key] ?? 0) + 1
-}
-
 /**
  * Folds a session's events into what loaded and why, what became of each
  * nudge, and a readable timeline. A nudge still open at the end is `pending`
  * while the session runs; once it has ended (`isFinal`) it was `ignored`.
+ * What became of each hold is the hold settlement's (`hooks/holds.ts`); this
+ * keeps loads, routes, references, writing turns and subagents.
  */
 export function summarize(events: readonly UsageEvent[], isFinal = false): SessionSummary & { timeline: TimelineEntry[] } {
   const loads: SessionSummary['loads'] = {}
-  const nudges: SessionSummary['nudges'] = {}
   const lastUsed: Record<string, number> = {}
   const refs: Refs = {}
   let refsUnloaded = 0
-  const measures: Required<Measures> = { routes: {}, writingTurns: { ...NO_WRITING_TURNS }, holds: {}, overrides: {}, subagents: { ...NO_SUBAGENTS } }
+  const measures: Required<Omit<Measures, 'holds'>> = { routes: {}, writingTurns: { ...NO_WRITING_TURNS }, overrides: {}, subagents: { ...NO_SUBAGENTS } }
+  const holds = holdSettlement()
   // The running typed-prompt turn: whether the main agent wrote a route line yet, and, once it wrote, how that write stood.
   // A turn ends only at the next typed prompt, so a background result that wakes the agent stays in the turn, as the adapter treats it.
   let isTurnRouted = false
@@ -516,250 +497,37 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   const timeline: TimelineEntry[] = []
   let loaded = new Set<string>()
   let turnNamed = new Set<string>()
-  let turnNudged = new Set<string>()
   let turnRouter = false
-  // One open ask per nudge: the skills any one of which answers it (`anyOf`; more than one only for a gate whose skills
-  // are alternatives), and its mark on the nudge's own log row, so settling it updates that row.
-  // `agent`: the subagent it spoke to, absent for the main agent; that loop's turn end settles it.
-  // `isStrict`: an adapter hold that only loading the skill clears; a skip line never declines it.
-  // `row`: the nudge's log row, which a repeat of the same hold in the turn joins. `isStop`: a hold on a `Stop`.
-  // `isSkipOnly`: a skill the hold offers only as a skip line, which no load answers.
-  // `isSkipRejected`: a blocked `Stop` asked for it after a skip line, so that skip line did not clear it.
-  type NudgeRow = TimelineEntry & { kind: 'nudge' }
-  type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; isStop?: true; isSkipOnly?: true; isSkipRejected?: true; mark: NudgedSkill; row: NudgeRow }
-  let open: Open[] = []
-  /** Whether an open ask is answered by loading `skill`. */
-  const answers = (n: Open, skill: string) => !n.isSkipOnly && n.anyOf.includes(skill)
-  // The adapter holds of each loop's running turn, by agent ('' for the main agent) and gate: the row a repeat joins,
-  // and every ask the row made, settled or not.
-  type GateRow = { row: NudgeRow; asks: Open[] }
-  const turnHolds = new Map<string, GateRow>()
-  const gateKey = (hook: string, agent?: string) => `${agent ?? ''}|${hook}`
-  const sameAsk = (n: Open, ask: readonly string[]) => n.anyOf.join(' ') === ask.join(' ')
-  const forgetHolds = (agent?: string) => {
-    for (const key of [...turnHolds.keys()]) if (key.startsWith(`${agent ?? ''}|`)) turnHolds.delete(key)
-  }
-  // The main turn's blocked `Stop`s: how many so far, and the asks the latest one made.
-  let stopBlocks = 0
-  let lastStopAsks: Open[] = []
-  // Skip lines written in each loop's running turn, by agent ('' for the main agent) then skill, with their reasons.
-  const skipped = new Map<string, Map<string, string>>()
-  const skipsOf = (agent?: string) => skipped.get(agent ?? '') ?? new Map<string, string>()
-  const skipReason = (anyOf: readonly string[], agent?: string) => anyOf.map(s => skipsOf(agent).get(s)).find(r => r !== undefined)
-  // The main agent's round trip a held call belongs to: what its reply did before the call. Claude Code records a call
-  // only after its hold returns, so a route line or load beside the held call reaches the adapter one call late.
-  type Reply = { route?: RouteForm; loads: Set<string> }
-  let reply: Reply = { loads: new Set() }
-  let answeredReply: Reply = reply
-  let isInResults = false
-  // Whether the main agent replied since the last blocked `Stop`: a turn that then ends got past that hold.
-  let hasRepliedSinceStop = false
-  // Whether the session has a task a `continue` route line can continue, as the adapter's route-line hold checks.
-  let hasTask = false
-
-  // `by`: the event that settled it, whose time the row keeps so the picture can show the moment; a rebuilt event has no real time.
-  // `chosen`: for an ask with alternatives, the skill that answered it, which its row then names.
-  const settle = (matches: (n: Open) => boolean, outcome: Outcome, by?: UsageEvent, chosen?: string) => {
-    open = open.filter(n => {
-      if (!matches(n)) return true
-      bump(nudges, n.hook, outcome)
-      n.mark.status = outcome
-      if (chosen && n.anyOf.length > 1) n.mark.skill = chosen
-      if (by && !by.isEarlier) n.mark.at = by.t
-      return false
-    })
-  }
-  /** Takes back a settled ask's outcome and opens it again: the adapter asked for it again, so it was not met. */
-  const reopen = (n: Open) => {
-    if (open.includes(n)) return
-    const counts = nudges[n.hook]
-    const was = n.mark.status
-    if (counts?.[was]) counts[was] = (counts[was] ?? 1) - 1
-    if (counts && counts[was] === 0) delete counts[was]
-    if (was === 'declined') n.isSkipRejected = true
-    n.mark.status = 'pending'
-    delete n.mark.at
-    delete n.mark.reason
-    open.push(n)
-  }
-  /**
-   * A loop's turn is over: what it left open can no longer be followed, so each is declined (a skip line said why) or
-   * ignored. A blocked `Stop` is the exception. The adapter judges every `Stop` it is given, so a main turn that ended
-   * as an answer (not interrupted, nor ended by an error) after the agent replied to the last block got past it: what
-   * that block asked was met, by a check run, a fix or a load the hold cannot name. Claude Code ends a turn after
-   * `STOP_BLOCK_LIMIT` blocks whatever the hook says, and then what the last block asked was not met; what an earlier
-   * block asked and the last did not, the adapter judged met. A close at the next prompt (a turn end the mod did not
-   * see, and rebuilt history) cannot tell a pass from an interruption, so it passes nothing.
-   */
-  const closeTurn = (isInLoop: (n: Open) => boolean, by: UsageEvent) => {
-    const isAnswer = by.kind === 'turn-end' && !by.agent && (by.reason === undefined || by.reason === 'answer')
-    const isPassed = isAnswer && hasRepliedSinceStop && stopBlocks < STOP_BLOCK_LIMIT
-    if (isAnswer && stopBlocks >= STOP_BLOCK_LIMIT) for (const n of lastStopAsks) reopen(n)
-    const ending = open.filter(isInLoop)
-    for (const n of ending) {
-      const reason = n.isStrict || n.isSkipRejected ? undefined : skipReason(n.anyOf, n.agent)
-      if (reason !== undefined) n.mark.reason = reason
-      const isMet = n.isStop === true && (isPassed || (isAnswer && !lastStopAsks.includes(n)))
-      settle(m => m === n, reason !== undefined ? 'declined' : isMet ? 'followed' : 'ignored', by)
-    }
-  }
-  /** A new ask on a gate's row, open until something answers it. A blocked `Stop` has judged every skip line before it. */
-  const addAsk = (held: GateRow, e: UsageEvent & { kind: 'nudge' }, ask: string[]): Open => {
-    const mark: NudgedSkill = { skill: ask.join(' or '), status: 'pending' }
-    held.row.skills.push(mark)
-    const n: Open = {
-      hook: e.hook,
-      anyOf: ask,
-      ...(e.agent ? { agent: e.agent } : {}),
-      ...(e.holdKind === 'strict' ? { isStrict: true as const } : {}),
-      ...(e.isStop ? { isStop: true as const, isSkipRejected: true as const } : {}),
-      ...(ask.every(skill => e.skipOnly?.includes(skill)) ? { isSkipOnly: true as const } : {}),
-      mark,
-      row: held.row,
-    }
-    held.asks.push(n)
-    for (const skill of ask) turnNudged.add(skill)
-    open.push(n)
-    return n
-  }
-  /**
-   * An adapter hold of a gate that already held in this turn, asking for nothing its earlier holds did not: it joins
-   * their row as a repeat and counts once. A held call retried while its asks still wait, or held again because the
-   * adapter had not yet seen the load or skip line beside the retry, settles nothing new; what the earlier holds asked
-   * and this one no longer does was met. A blocked `Stop` that blocks again joins the turn's closeout row whatever it
-   * asks: the adapter has seen every reply by then, so an ask it repeats after a load or a skip line was not met, and
-   * opens again. A hold that asks for nothing, or a call's hold that asks for anything new, is a row of its own.
-   */
-  const joinRepeat = (e: UsageEvent & { kind: 'nudge' }, asks: readonly string[][]): boolean => {
-    const held = turnHolds.get(gateKey(e.hook, e.agent))
-    if (!held || asks.length === 0) return false
-    const known = (ask: readonly string[]) => held.asks.find(n => sameAsk(n, ask))
-    if (!e.isStop && !asks.every(known)) return false
-    held.row.repeats = (held.row.repeats ?? 1) + 1
-    const asked = asks.map(ask => {
-      const n = known(ask)
-      if (!n) return addAsk(held, e, [...ask])
-      if (e.isStop) reopen(n)
-      return n
-    })
-    if (e.isStop) lastStopAsks = asked
-    else settle(n => held.asks.includes(n) && !asked.includes(n), 'followed', e)
-    return true
-  }
-  /** What the held call's own reply already did for `ask`, which the adapter could not see yet: the answering skill, or none. */
-  const answeredInReply = (ask: readonly string[], e: UsageEvent & { kind: 'nudge' }) => {
-    if (e.agent) return undefined
-    const own = isInResults ? answeredReply : reply
-    if (ask[0] === ROUTE_LINE) return own.route && (own.route !== 'continue' || hasTask) ? ROUTE_LINE : undefined
-    return ask.find(s => own.loads.has(s))
-  }
 
   for (const e of events) {
+    if (e.kind === 'load' && e.id && failedLoads.has(e.id)) continue
+    const holdRow = holds.observe(e)
+    if (holdRow) timeline.push(holdRow)
     switch (e.kind) {
       case 'prompt':
-        // Anything still open belongs to a turn that is over, a turn end the mod did not see included.
-        closeTurn(() => true, e)
         tallyWritingTurn()
-        skipped.clear()
-        turnHolds.clear()
-        stopBlocks = 0
-        lastStopAsks = []
         turnNamed = new Set(e.named)
-        turnNudged = new Set(open.flatMap(n => n.anyOf))
         turnRouter = false
-        reply = answeredReply = { loads: new Set() }
-        isInResults = false
         timeline.push({ ...stamp(e), kind: 'prompt' })
         break
-      case 'response':
-        reply = { loads: new Set() }
-        isInResults = false
-        hasRepliedSinceStop = true
-        break
-      case 'results':
-        if (!isInResults) answeredReply = reply
-        isInResults = true
-        break
-      case 'nudge': {
-        if (e.holdKind) measures.holds[e.holdKind] = (measures.holds[e.holdKind] ?? 0) + 1
-        if (e.isStop) {
-          hasRepliedSinceStop = false
-          stopBlocks += 1
-        }
-        // A gate whose skills are alternatives asks once; any other nudge asks for each skill it names.
-        const asks = ALTERNATIVE_GATES.has(e.hook) && e.named.length > 1 ? [e.named] : e.named.map(s => [s])
-        if (joinRepeat(e, asks)) break
-        const row: NudgeRow = {
-          ...stamp(e),
-          kind: 'nudge' as const,
-          hook: e.hook,
-          skills: [] as NudgedSkill[],
-          ...(e.holdKind ? { holdKind: e.holdKind } : {}),
-          ...(e.isSubagent ? { isSubagent: true as const } : {}),
-        }
-        timeline.push(row)
-        // A hold's asks are records of the turn, so a repeat of the hold finds them, settled or not.
-        const held: GateRow = { row, asks: [] }
-        if (asks.length > 0) turnHolds.set(gateKey(e.hook, e.agent), held)
-        for (const ask of asks) {
-          const n = addAsk(held, e, ask)
-          const inReply = e.isStop ? undefined : answeredInReply(ask, e)
-          const reason = e.holdKind === 'strict' || e.isStop ? undefined : skipReason(ask, e.agent)
-          if (inReply !== undefined) settle(m => m === n, 'followed', e, inReply)
-          else if (reason !== undefined) {
-            // Declined before it was asked, earlier in the same turn.
-            n.mark.reason = reason
-            settle(m => m === n, 'declined', e)
-          }
-        }
-        if (e.isStop) lastStopAsks = held.asks.slice()
-        break
-      }
-      case 'skip': {
-        const own = skipsOf(e.agent)
-        own.set(e.skill, e.reason)
-        skipped.set(e.agent ?? '', own)
-        for (const n of open.filter(n => n.anyOf.includes(e.skill) && n.agent === e.agent && !n.isStrict)) {
-          n.mark.reason = e.reason
-          settle(m => m === n, 'declined', e)
-        }
-        break
-      }
-      case 'turn-end':
-        closeTurn(n => n.agent === e.agent, e)
-        skipped.delete(e.agent ?? '')
-        forgetHolds(e.agent)
-        if (!e.agent) {
-          stopBlocks = 0
-          lastStopAsks = []
-        }
-        break
       case 'load': {
-        if (e.id && failedLoads.has(e.id)) break
         // A hook asking for the skill outranks who loaded it, for a subagent as for the agent; the log row keeps that a subagent did.
         const origin: Origin =
           e.via === 'slash' ? 'user-slash'
-          : e.isSubagent ? (turnNudged.has(e.skill) ? 'hook-nudged' : 'subagent')
+          : e.isSubagent ? (holds.wasAsked(e.skill) ? 'hook-nudged' : 'subagent')
           : turnNamed.has(e.skill) ? 'user-named'
-          : turnNudged.has(e.skill) ? 'hook-nudged'
+          : holds.wasAsked(e.skill) ? 'hook-nudged'
           : turnRouter && e.skill !== ROUTER ? 'router-routed'
           : 'self-initiated'
         bump(loads, e.skill, origin)
         lastUsed[e.skill] = e.t
         timeline.push({ ...stamp(e), kind: 'load', skill: e.skill, origin, ...(e.isSubagent ? { isSubagent: true as const } : {}) })
         if (e.skill === ROUTER) turnRouter = true
-        if (!e.isSubagent && e.via === 'tool') reply.loads.add(e.skill)
-        settle(n => answers(n, e.skill), 'followed', e, e.skill)
         loaded.add(e.skill)
         break
       }
-      case 'read':
-        settle(n => n.anyOf.some(s => e.skills.includes(s)), 'read files', e, e.skills.find(s => open.some(n => n.anyOf.includes(s))))
-        break
       case 'body':
-        // A subagent reading a skill's body settles only what was asked of that subagent.
         measures.subagents.bodyReads += 1
-        settle(n => n.anyOf.includes(e.skill) && n.agent === e.agent, 'read files', e, e.skill)
         timeline.push({ ...stamp(e), kind: 'body', skill: e.skill, isSubagent: true })
         break
       case 'route': {
@@ -767,16 +535,6 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         if (!e.agent) {
           isTurnRouted = true
           if (turnWrites === 'none') turnWrites = 'late'
-          reply.route = e.form
-        }
-        // A `continue` with no task to continue does not answer a route-line hold: the adapter holds it too.
-        if (e.form !== 'continue' || hasTask || e.agent) settle(n => n.anyOf[0] === ROUTE_LINE && n.agent === e.agent, 'followed', e)
-        if (!e.agent && e.form !== 'continue') hasTask = true
-        // The pipeline hold says to drop a skill that does not apply by writing a corrected route line, the last one
-        // winning: a new route that no longer requires a held skill follows that hold. `continue` keeps the route.
-        if (e.form !== 'continue') {
-          const requires: readonly string[] = e.form === 'route' ? e.requires : []
-          settle(n => n.hook === PIPELINE_GATE && n.agent === e.agent && !n.anyOf.some(s => requires.includes(s)), 'followed', e)
         }
         const route: Route = e.form === 'route' ? { form: e.form, intensity: e.intensity, requires: e.requires } : { form: e.form }
         timeline.push({ ...stamp(e), kind: 'route', ...route, ...(e.isSubagent ? { isSubagent: true as const } : {}) })
@@ -825,10 +583,10 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         break
     }
   }
-  settle(() => true, isFinal ? 'ignored' : 'pending')
+  const { nudges, holds: held } = holds.finish(isFinal)
   tallyWritingTurn()
 
-  return { loads, nudges, lastUsed, refs, refsUnloaded, ...measures, timeline, router: 'off' }
+  return { loads, nudges, lastUsed, refs, refsUnloaded, ...measures, holds: held, timeline, router: 'off' }
 }
 
 function addFlat(into: Record<string, number | undefined>, from: Record<string, number | undefined> | undefined) {
