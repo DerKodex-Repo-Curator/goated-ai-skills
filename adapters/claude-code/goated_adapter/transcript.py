@@ -17,6 +17,7 @@ import os
 import re
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 from .markers import parse_reply
 
@@ -105,24 +106,33 @@ class Call:
         self.agent_id = agent_id
 
 
+class RouteMark(NamedTuple):
+    """A valid route line and where it fell in its turn: how many loads and
+    finished calls the turn held when it was written."""
+
+    route: dict
+    loads_before: int
+    calls_before: int
+
+
 class Turn:
     """What one turn contains that the adapter's gates care about.
 
     `typed` says a person typed the prompt that opened the turn, so it may
     carry overrides; `prompt_id` is that prompt's id. `loads` lists raw names
-    of skills loaded successfully, in order. `task_loads` lists the loads that
-    count for a task the turn starts: skills the prompt itself invoked as
-    `/<skill>`, plus loads made after the last earlier route line in the turn
-    that started a task (not `continue`), or since the turn began when there is
-    none. `route` is the
-    winning route line and `malformed` the route-like lines that failed the
-    grammar. `skips` are the valid `goated-skip` lines, and `calls` the tool
-    calls that finished in this turn, oldest first.
+    of skills loaded successfully, in order, and `invoked_load` is the skill
+    the prompt itself invoked as `/<skill>`, once its body loaded. `route` is
+    the winning route line, `route_marks` every valid route line in order, and
+    `malformed` the route-like lines that failed the grammar. `skips` are the
+    valid `goated-skip` lines, and `calls` the tool calls that finished in this
+    turn, oldest first. `opens_transcript` is set on the oldest turn read when
+    reading reached the start of the transcript, so no earlier turn exists.
     """
 
     __slots__ = (
-        "key", "is_compaction", "typed", "prompt_id", "loads", "task_loads",
-        "route", "malformed", "skips", "calls", "prompt_ids",
+        "key", "is_compaction", "typed", "prompt_id", "loads", "invoked_load",
+        "route", "route_marks", "malformed", "skips", "calls", "prompt_ids",
+        "opens_transcript",
     )
 
     def __init__(self, key: str) -> None:
@@ -131,8 +141,10 @@ class Turn:
         self.typed = False
         self.prompt_id: str | None = None
         self.loads: list[str] = []
-        self.task_loads: list[str] = []
+        self.invoked_load: str | None = None
         self.route: dict | None = None
+        self.route_marks: list[RouteMark] = []
+        self.opens_transcript = False
         self.malformed: list[str] = []
         self.skips: list[dict] = []
         self.calls: list[Call] = []
@@ -153,6 +165,8 @@ def read_recent_turns(
     last turn the caller has already seen, so that anything written after the
     caller last looked is included. Without `since_key`, or when it is not
     found within the read limits, only the turns read so far are returned.
+    Without `since_key`, reading goes on past the current turn only far enough
+    to tell whether an earlier turn exists (see `Turn.opens_transcript`).
     Reading never crosses a compaction boundary. It raises
     `TranscriptUnreadable` only when the current turn itself cannot be read.
 
@@ -186,6 +200,9 @@ def _read_turns_once(path: Path, since_key: str | None, sidechain: bool) -> list
     try:
         turns: list[Turn] = []
         pending: list[dict] = []
+        # Set once the current turn is read without `since_key`: the reader
+        # then only looks for an earlier turn's opener, collecting nothing.
+        probing = False
         for line in _lines_backward(path):
             if line is None:
                 # Read limit reached. Older unseen turns are given up, as if
@@ -203,26 +220,30 @@ def _read_turns_once(path: Path, since_key: str | None, sidechain: bool) -> list
                 continue
             if not isinstance(entry, dict):
                 continue
-            pending.append(entry)
             kind = _opener_kind(entry, sidechain)
-            if kind not in (TYPED, MACHINE, "compaction"):
+            is_opener = kind in (TYPED, MACHINE, "compaction")
+            if probing:
+                if is_opener:
+                    break  # An earlier turn exists.
+                continue
+            pending.append(entry)
+            if not is_opener:
                 continue
             turn = _build_turn(list(reversed(pending)), kind, sidechain)
             turns.append(turn)
             pending = []
-            if (
-                turn.is_compaction
-                or since_key is None
-                or turn.key == since_key
-                or len(turns) >= MAX_TURNS
-            ):
+            if turn.is_compaction or turn.key == since_key or len(turns) >= MAX_TURNS:
                 break
+            if since_key is None:
+                probing = True
         else:
-            # Reached the start of the file: entries before the first prompt
-            # (session-start attachments, or a transcript with no prompt yet)
-            # form a turn of their own.
-            if pending or not turns:
+            # Reached the start of the file. Without `since_key`, entries before
+            # the first prompt are session-start attachments and are dropped;
+            # otherwise they (or a transcript with no prompt yet) form a turn of
+            # their own.
+            if not probing and (pending or not turns):
                 turns.append(_build_turn(list(reversed(pending)), None, sidechain))
+            turns[-1].opens_transcript = True
     except OSError as exc:
         raise TranscriptUnreadable(f"the transcript could not be read ({exc.strerror})")
     return list(reversed(turns))
@@ -333,9 +354,6 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
 
     skill_calls: dict[str, str] = {}
     pending: dict[str, tuple[str, dict]] = {}
-    # Loads since the last route line in this turn that started a task: a task
-    # a later route line starts may use them, the earlier task's loads not.
-    since_task_start: list[str] = []
     for entry in entries[1:] if opener is not None else entries:
         content = (entry.get("message") or {}).get("content")
         if not isinstance(content, list) or bool(entry.get("isSidechain")) != sidechain:
@@ -348,12 +366,9 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                     markers = parse_reply(str(block.get("text", "")))
                     if markers.route is not None:
                         turn.route = markers.route
-                        turn.task_loads = [
-                            *[s for s in turn.loads if s == invoked][:1],
-                            *since_task_start,
-                        ]
-                        if markers.route["form"] != "continue":
-                            since_task_start = []
+                        turn.route_marks.append(
+                            RouteMark(markers.route, len(turn.loads), len(turn.calls))
+                        )
                     turn.malformed.extend(markers.malformed)
                     turn.skips.extend(markers.skips)
                 elif block.get("type") == "tool_use":
@@ -372,8 +387,7 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                 # The prompt invoked a skill as `/<skill>`; Claude Code adds
                 # its body as a meta entry, which proves the load.
                 turn.loads.append(invoked)
-                turn.task_loads.append(invoked)
-                since_task_start.append(invoked)
+                turn.invoked_load = invoked
                 continue
             for block in content:
                 if not isinstance(block, dict) or block.get("type") != "tool_result":
@@ -393,8 +407,6 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                 ):
                     skill = skill_calls.pop(block["tool_use_id"])
                     turn.loads.append(skill)
-                    turn.task_loads.append(skill)
-                    since_task_start.append(skill)
     return turn
 
 

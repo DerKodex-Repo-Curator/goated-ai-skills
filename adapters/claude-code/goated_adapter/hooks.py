@@ -276,6 +276,7 @@ def _session_start(payload: dict, config: Config) -> str:
     After compaction the router and the task's required skills must load
     again, because their text was summarized away; the route itself carries
     over (spec R5). Turns from before the boundary are never folded back in.
+    A new session (`startup`) has no task yet, so `continue` may start one.
     """
 
     session_id = payload.get("session_id")
@@ -283,6 +284,8 @@ def _session_start(payload: dict, config: Config) -> str:
         raise _FailOpen("the hook input has no session_id")
     store = StateStore(config.state_dir)
     state, state_warning = store.load(session_id)
+    if payload.get("source") == "startup" and state.task is None:
+        state.task_unknown = False
     if payload.get("source") in {"compact", "clear"}:
         state.router_loaded = False
         state.last_turn = None

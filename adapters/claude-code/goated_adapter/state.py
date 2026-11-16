@@ -1,10 +1,10 @@
 """Per-session adapter state, one small JSON file per Claude Code session.
 
 State holds only what the transcript's current turn cannot answer on its own:
-the current task and its proof, whether a reset lost the task, whether the
-router loaded since the last compaction, the last turn seen, and the latest
-user overrides. Apart from the
-short override phrases a user typed, it holds no prompt or reply text.
+the current task and its proof, whether missing or reset state lost the task,
+whether the router loaded since the last compaction, the last turn seen, and
+the latest user overrides. Apart from the short override phrases a user typed,
+it holds no prompt or reply text.
 """
 
 from __future__ import annotations
@@ -45,8 +45,9 @@ class SessionState:
         self.router_loaded = False
         self.last_turn: str | None = None
         self.task: Task | None = None
-        # True after unreadable state was reset: the session may have had a
-        # task, so `continue` cannot start one until a full route line does.
+        # True when saved state was missing or unreadable: the session may have
+        # had a task, so `continue` cannot start one until a full route line
+        # does, or the session is shown to have none.
         self.task_unknown = False
         self.overrides: dict = {}
         self.policy_notice_shown = False
@@ -139,21 +140,24 @@ class StateStore:
     def load(self, session_id: str) -> tuple[SessionState, str | None]:
         """Return the session's state and a warning when stored state was unusable.
 
-        A missing file is a new session. An unreadable or corrupt file starts
-        fresh, which can only re-hold, never pass, and says so: the fresh state
-        marks the task unknown, so `continue` cannot start one.
+        A missing file starts fresh quietly; an unreadable or corrupt one
+        starts fresh and says so. Either way the fresh state marks the task
+        unknown, because the session may already have had one, so `continue`
+        cannot start a task until a session start or a read of the whole
+        transcript shows there is none. A fresh start can only re-hold, never
+        pass.
         """
 
         self._ensure_private_directory()
         path = self._path(session_id)
+        fresh = SessionState()
+        fresh.task_unknown = True
         if not path.exists():
-            return SessionState(), None
+            return fresh, None
         try:
             return SessionState.from_json(json.loads(path.read_text(encoding="utf-8"))), None
         except (OSError, ValueError):
-            state = SessionState()
-            state.task_unknown = True
-            return state, "its saved session state was unreadable and was reset"
+            return fresh, "its saved session state was unreadable and was reset"
 
     def save(self, session_id: str, state: SessionState) -> None:
         """Write state atomically so a concurrent hook never reads half a file."""
