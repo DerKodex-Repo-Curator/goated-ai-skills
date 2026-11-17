@@ -88,7 +88,7 @@ class SessionState:
         # one turn followed when the spawn gate let it through, in the same shape.
         self.spawn_templates: dict = {}
         # The friction count (`friction.py`): holds still open, as
-        # `friction.record_hold` keeps them; the gates that held in one turn,
+        # `friction.observe` keeps them; the gates that held in one turn,
         # {"turn": <turn key>, "gates": [<gate>]}; how many holds were declined
         # or left unanswered; and whether the retrospective notice was shown.
         self.open_holds: list[dict] = []
@@ -224,13 +224,14 @@ def _valid_calls(data) -> dict:
 
 
 def _valid_open_hold(data) -> dict:
-    """An open hold as `friction.record_hold` saved it; ValueError on any other shape."""
+    """An open hold as `friction.observe` saved it; ValueError on any other shape."""
 
     hold = _expect(data, dict)
     seen = _expect(hold.get("seen"), dict)
     return {
         "gate": _expect(hold.get("gate"), str),
         "turn": _expect(hold.get("turn"), str),
+        "action": _expect(hold.get("action", ""), str),
         "strict": _expect(hold.get("strict"), bool),
         "skills": _string_list(hold.get("skills")),
         "references": _string_list(hold.get("references")),

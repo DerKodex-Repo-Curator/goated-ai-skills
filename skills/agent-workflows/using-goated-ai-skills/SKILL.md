@@ -91,8 +91,8 @@ skill map, approval, evidence, checkpoint, and route-line rules in this file.
    - Load code refinement only for observed debt or explicit cleanup.
    - Other specialists load on their own triggers: `documentation-writer` to
      write or substantially revise guides, manuals, or runbooks;
-     `documentation-cleanup` to audit or tidy docs; `goated-prompt` to turn
-     rough requests into prompts; `retrospective` after a merged wave of
+     `documentation-cleanup` to audit or tidy docs; `goated-prompt` to write
+     prompts or prompt-writing guidance; `retrospective` after a merged wave of
      delegated tickets, or recurring friction; `prototype` for cheap evidence;
      `setup-scribe` for setup knowledge. When a named skill is not
      installed, apply the gate directly and leave it out of `requires:`.

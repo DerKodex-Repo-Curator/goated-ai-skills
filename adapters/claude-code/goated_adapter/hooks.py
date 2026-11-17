@@ -224,7 +224,7 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
             tool_name, tool_input, current, overrides, config.skill_namespaces, earlier)
         if templates:
             state.record_spawn_templates(current.key, tool_use_id, templates)
-    friction.record_hold(state, hold, current)
+    friction.observe(state, current, friction.action_of(tool_name, tool_input), hold)
     hold = gates.advice_once(hold, lambda: _claim_turn(store, session_id, current.key))
     warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread),
                 *registry_warnings]
@@ -370,7 +370,7 @@ def _stop(payload: dict, config: Config) -> str:
         spawn_templates=state.spawn_templates_of(current.key),
         intensity=_route_intensity(state),
     )
-    friction.record_hold(state, hold, current)
+    friction.observe(state, current, friction.STOP, hold)
     warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread)]
     output = {"decision": "block", "reason": hold.message()} if hold else {}
     return _with_warnings(output, warnings)
@@ -454,6 +454,7 @@ def _session_start(payload: dict, config: Config) -> str:
         state.task_unknown = False
     if payload.get("source") in {"compact", "clear"}:
         state.forget_context()
+        friction.forget_open(state)
         state.last_turn = None
         store.clear_turn_markers(session_id)
 
@@ -467,7 +468,12 @@ def _session_start(payload: dict, config: Config) -> str:
         if not router_skill_installed(cwd, config.home, gates.ROUTER_SKILL):
             notices.append(ROUTER_NOTICE)
     record_warnings: list[str] = []
-    onboarding_notice = _onboarding_notice(store, payload, config, record_warnings)
+    try:
+        onboarding_notice = _onboarding_notice(store, payload, config, record_warnings)
+    except (OSError, StateUnsafe) as exc:
+        # The notice is advice: losing it must not lose this start's reset.
+        onboarding_notice = None
+        record_warnings.append(f"could not check its onboarding notice ({exc})")
     if onboarding_notice:
         notices.append(onboarding_notice)
     if notices:
@@ -540,7 +546,7 @@ def _user_prompt_submit(payload: dict, config: Config) -> str:
     if found["phrases"]:
         typed = ", ".join(f'"{phrase}"' for phrase in found["phrases"])
         notices.append(f"recorded your override for this prompt: {typed}")
-    if friction.claim_retrospective_notice(state):
+    if kind == TYPED and friction.claim_retrospective_notice(state):
         notices.append(RETROSPECTIVE_NOTICE.format(count=state.friction))
 
     notes = [*notices, state_warning, _save(store, session_id, state)]

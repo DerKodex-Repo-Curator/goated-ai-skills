@@ -34,7 +34,9 @@ class NoticeTestCase(unittest.TestCase):
         self._tmp.cleanup()
 
 
-class RetrospectiveNoticeTests(NoticeTestCase):
+class HeldTurnTestCase(NoticeTestCase):
+    """Turns with a hold, and the notice checks, shared by the friction tests."""
+
     def held_turn(self, prompt: str = "Change the login check.") -> dict:
         """One typed turn whose sensitive edit the security gate holds; returns
         the parsed output of the prompt that opened it."""
@@ -54,6 +56,8 @@ class RetrospectiveNoticeTests(NoticeTestCase):
         self.assertNotIn(RETROSPECTIVE, output.get("systemMessage", ""))
         self.assertNotIn(RETROSPECTIVE, context_of(output))
 
+
+class RetrospectiveNoticeTests(HeldTurnTestCase):
     def test_three_unanswered_holds_bring_the_notice_once_at_the_next_prompt(self) -> None:
         for _ in range(3):
             self.assert_no_notice(self.held_turn())
@@ -233,3 +237,176 @@ class OnboardingNoticeTests(NoticeTestCase):
             self.assertEqual(decision(s.call("Edit", SENSITIVE_EDIT)), "deny")
         self.assertNotIn("decision", parse(s.hook("Stop")))
         self.assertEqual(sorted(self.project.rglob("*")), before)
+
+
+REGISTRY = Path(__file__).resolve().parents[1] / "stack" / "goated-stack.yaml"
+MOCKING = "/opt/goated/skills/tdd/references/mocking-and-seams.md"
+WAITING = "/opt/goated/skills/diagnose/references/condition-based-waiting.md"
+
+
+def commit(message: str) -> dict:
+    return {"command": f'git add -A && git commit -m "{message}"'}
+
+
+class HoldSettlementTests(HeldTurnTestCase):
+    """A hold obeyed by doing what it asks, whatever that is, never counts
+    (Ticket 073 review, H1 and M1): the same gate lets the same action through."""
+
+    def turn(self, prompt: str = "Carry on.") -> None:
+        s = self.session
+        s.prompt(prompt)
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+
+    def two_unanswered_then(self, third) -> dict:
+        """Two unanswered security holds, then `third(session)` in its own
+        turn; returns the next prompt's output, where a third count shows the notice."""
+
+        self.held_turn()
+        self.held_turn()
+        third(self.session)
+        return parse(self.session.prompt("Next task."))
+
+    def closeout_turn(self, obey: bool) -> None:
+        s = self.session
+        self.turn("Fix the test.")
+        s.call("Edit", {"file_path": "tests/test_x.py", "old_string": "a", "new_string": "b"})
+        self.assertEqual(parse(s.hook("Stop")).get("decision"), "block")
+        if obey:
+            s.run("python -m pytest tests/test_x.py")
+            self.assertNotEqual(parse(s.hook("Stop", stop_hook_active=True)).get("decision"), "block")
+
+    def test_a_closeout_obeyed_by_running_the_check_does_not_count(self) -> None:
+        for _ in range(3):
+            self.closeout_turn(obey=True)
+        self.assert_no_notice(parse(self.session.prompt("Next task.")))
+
+    def test_a_closeout_left_unanswered_counts(self) -> None:
+        for _ in range(3):
+            self.closeout_turn(obey=False)
+        self.assert_notice(parse(self.session.prompt("Next task.")))
+
+    def commit_turn(self, index: int, obey: bool) -> None:
+        s = self.session
+        self.turn(f"Commit follow-up {index}.")
+        held = s.call("Bash", commit(f"Fix export {index}"))
+        self.assertIn("Read the change", held["hookSpecificOutput"]["permissionDecisionReason"])
+        if obey:
+            s.run("git diff")
+            self.assertEqual(decision(s.call("Bash", commit(f"Fix export {index}"))), "pass")
+
+    def first_commit(self) -> None:
+        s = self.session
+        self.turn("Commit.")
+        s.load("commit-message")
+        s.run("git diff")
+        self.assertEqual(decision(s.call("Bash", commit("Add CSV export"))), "pass")
+
+    def test_a_commit_obeyed_by_reading_the_change_does_not_count(self) -> None:
+        self.first_commit()
+        for index in range(3):
+            self.commit_turn(index, obey=True)
+        self.assert_no_notice(parse(self.session.prompt("Next task.")))
+
+    def test_a_commit_left_unread_counts(self) -> None:
+        self.first_commit()
+        for index in range(3):
+            self.commit_turn(index, obey=False)
+        self.assert_notice(parse(self.session.prompt("Next task.")))
+
+    def spawn_turn(self, s: Session, fix: bool) -> None:
+        self.turn("Hand the audit over.")
+        s.brief_with_handoff()
+        partial = "## Goal\n\nAudit the exporter.\n\n## Scope\n\n- Work in: src/export/\n"
+        self.assertEqual(decision(s.call("Agent", {"prompt": partial})), "deny")
+        if fix:
+            from claude_code_adapter_support import BRIEF
+            self.assertEqual(decision(s.call("Agent", {"prompt": BRIEF})), "pass")
+
+    def test_a_spawn_brief_fixed_and_started_does_not_count(self) -> None:
+        self.assert_no_notice(self.two_unanswered_then(lambda s: self.spawn_turn(s, fix=True)))
+
+    def test_a_spawn_brief_left_unfixed_counts(self) -> None:
+        self.assert_notice(self.two_unanswered_then(lambda s: self.spawn_turn(s, fix=False)))
+
+    def pipeline_turn(self, s: Session, *loads: str) -> None:
+        s.prompt("Fix the flaky export.")
+        s.load(ROUTER)
+        s.say("goated-route: standard | requires: tdd, diagnose")
+        self.assertEqual(decision(s.call("Write", {"file_path": "a.txt", "content": "x"})), "deny")
+        for skill in loads:
+            s.load(skill)
+
+    def test_a_pipeline_hold_with_one_of_two_skills_loaded_counts(self) -> None:
+        self.assert_notice(self.two_unanswered_then(lambda s: self.pipeline_turn(s, "tdd")))
+
+    def test_a_pipeline_hold_with_both_skills_loaded_does_not_count(self) -> None:
+        self.assert_no_notice(
+            self.two_unanswered_then(lambda s: self.pipeline_turn(s, "tdd", "diagnose")))
+
+    def reference_turn(self, s: Session, *reads: str) -> None:
+        s.config.registry_path = REGISTRY
+        s.project.mkdir(parents=True, exist_ok=True)
+        self.turn("Make the export test robust.")
+        s.load("tdd")
+        s.load("diagnose")
+        lines = ["client = MagicMock()", "time.sleep(1)"]
+        body = "\n".join(lines)
+        held = s.call("Edit", {"file_path": "tests/test_export.py", "old_string": "pass",
+                               "new_string": body})
+        self.assertIn("reference-reads", held["hookSpecificOutput"]["permissionDecisionReason"])
+        for path in reads:
+            s.read(path)
+
+    def test_a_reference_hold_with_one_of_two_references_read_counts(self) -> None:
+        self.assert_notice(self.two_unanswered_then(lambda s: self.reference_turn(s, MOCKING)))
+
+    def test_a_reference_hold_with_both_references_read_does_not_count(self) -> None:
+        self.assert_no_notice(
+            self.two_unanswered_then(lambda s: self.reference_turn(s, MOCKING, WAITING)))
+
+
+class NoticeEdgeTests(HeldTurnTestCase):
+    """The review's low findings: where the notices may and may not appear."""
+
+    def declined_third(self) -> None:
+        self.held_turn()
+        self.held_turn()
+        self.held_turn()
+        s = self.session
+        s.say(f"goated-skip: {SECURITY}: only a comment typo in the file")
+        self.assertEqual(decision(s.call("Edit", SENSITIVE_EDIT)), "pass")
+
+    def test_the_notice_waits_for_a_typed_prompt_not_a_machine_one(self) -> None:
+        self.declined_third()
+        s = self.session
+        # Two unanswered (counted at the prompts) and one declined: three, but
+        # another session's message is not the user's next prompt.
+        self.assert_no_notice(parse(s.peer("Status update from the lead.")))
+        self.assert_notice(parse(s.prompt("Next task.")))
+
+    def test_holds_open_at_a_compaction_are_dropped_uncounted(self) -> None:
+        self.held_turn()
+        self.held_turn()
+        self.held_turn()
+        self.session.compact()
+        # The third hold's outcome is unknown after the boundary: two counted, no notice.
+        self.assert_no_notice(parse(self.session.prompt("Next task.")))
+
+    def test_an_unusable_onboarding_record_keeps_the_compaction_reset(self) -> None:
+        s = self.session
+        s.project.mkdir(parents=True)
+        state_dir = s.config.state_dir
+        state_dir.mkdir(parents=True)
+        (state_dir / "onboarding-notices").write_text("not a folder", encoding="utf-8")
+        s.prompt("Change the login check.")
+        s.load(SECURITY)
+        output = parse(s.compact())
+        message = output.get("systemMessage", "")
+        self.assertIn("could not check its onboarding notice", message)
+        self.assertNotIn("allowed without checks", message)
+        # The reset still happened: the security load no longer counts.
+        s.prompt("Change it again.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        self.assertEqual(decision(s.call("Edit", SENSITIVE_EDIT)), "deny")

@@ -16,6 +16,10 @@ aids, tooling, and access to information.
 
 This skill proposes. It makes no project change itself.
 
+An installed enforcement adapter may suggest it once per session, at the
+prompt after three holds were declined by a skip line or left unanswered:
+neither obeyed nor stood down by the user before their next prompt.
+
 ## Inputs
 
 - The session to review: the current conversation by default, or a session, log, or transcript the user names.
