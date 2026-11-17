@@ -86,3 +86,24 @@ agent a place for the line that the adapter always sees.
 
 - Changing Claude Code's transcript format.
 - Accepting overrides from anything but a typed prompt.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-17.
+
+- Merged as `d6bd3e0` (`5ddbdae`, review fixes `8d3dcfb`). The maintainer
+  chose two places for the line: the `description` of a Bash, PowerShell,
+  Agent or Task call, and the `args` of a Skill call. MCP tools and other
+  tools carry no line, since their `description` is often the payload, such
+  as an issue or merge-request body.
+- A line in a call counts from that call on and follows the text-line rules;
+  a call counts once, by id, or by name and input when the hook gives no id.
+  No override is read from a call. The merge with Ticket 051 also counts
+  `goated-design-reads:` lines from the same fields, in the adapter and the
+  mod.
+- Live check with a cheap model in a scratch project: a route line only in
+  the router Skill call's `args` let the next Write pass; without it the
+  Write was held.
+- Every check passed on main after the merge: the validator, the unit tests on Python 3.14 and 3.11, the V1/V2 context comparison, `claude plugin test` (164 pass), and the TypeScript check with only the 5 known errors in `tests/register.test.tsx`.
+- The installed router and shared policy were synced from main after the
+  merge.

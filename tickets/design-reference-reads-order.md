@@ -19,6 +19,8 @@ Source spec: `docs/specs/2026-11-16-design-reference-reads.md`
    - Enables: reference reads measured by moment, and design-reads
      declarations counted.
 4. `tickets/051-adapter-design-reference-reads.md`
+   - Status: Merged on 2026-11-17 (`d2d9f73`); its live check in one real
+     session is still to run before it is archived.
    - Blocked by: `tickets/archive/046-adapter-pipeline-after-compaction.md`,
      `tickets/archive/048-design-reference-moment-triggers.md`,
      `tickets/archive/050-skill-usage-reference-read-timing.md`
@@ -36,9 +38,10 @@ so they run after 046 and before Ticket 035 in
 
 ## Ready Frontier
 
-- `tickets/051-adapter-design-reference-reads.md`
-
-Ticket 052 follows 051.
+- `tickets/051-adapter-design-reference-reads.md`: merged; only its live
+  check in one real session remains.
+- `tickets/052-adapter-design-citations-at-closeout.md`: can start now, since
+  051's code is on main.
 
 ## Coverage
 

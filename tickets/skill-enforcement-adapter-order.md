@@ -67,7 +67,8 @@ Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
    - Blocked by: `tickets/archive/042-adapter-fresh-session-routing.md`
    - Enables: no design, security, or closeout holds for files outside the
      project.
-14. `tickets/044-adapter-closeout-same-command-check.md`
+14. `tickets/archive/044-adapter-closeout-same-command-check.md`
+   - Status: Completed, merged and archived on 2026-11-17.
    - Blocked by: `tickets/archive/043-adapter-out-of-project-holds.md`
    - Enables: a check in the same command as the write proving it.
 15. `tickets/archive/045-route-and-skip-lines-before-the-call.md`
@@ -79,7 +80,8 @@ Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
    - Blocked by: None
    - Enables: the last route line winning after a compaction, and the
      compaction handling Ticket 051 builds on.
-17. `tickets/053-adapter-route-and-skip-lines-from-tool-input.md`
+17. `tickets/archive/053-adapter-route-and-skip-lines-from-tool-input.md`
+   - Status: Completed, merged and archived on 2026-11-17.
    - Blocked by: `tickets/archive/045-route-and-skip-lines-before-the-call.md`,
      `tickets/archive/046-adapter-pipeline-after-compaction.md`
    - Enables: route and skip lines the adapter always sees, from tool input,
@@ -106,12 +108,8 @@ Ticket 050 there edited the mod after 047.
 
 ## Ready Frontier
 
-- `tickets/044-adapter-closeout-same-command-check.md`
-- `tickets/053-adapter-route-and-skip-lines-from-tool-input.md` (HITL: the
-  maintainer chooses where the line goes in a tool call)
-
-Both edit adapter files; they can run in parallel and resolve overlaps at
-merge time.
+- None. Every ticket in this order is completed and archived. Follow-up work
+  from real use is planned separately.
 
 ## Coverage
 
