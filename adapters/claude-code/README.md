@@ -87,10 +87,12 @@ of hold:
   with a reason of three or more words, in the current turn. The reason stays
   in the transcript, where the skill-usage mod reads it.
 
-Route and skip lines are read from the agent's reply text and from two fields
-of a tool call: its `description` (shell commands and spawns have one) and,
-for a Skill call, its `args`, such as
-`Skill(using-goated-ai-skills, args: "goated-route: direct")`. Claude Code can
+Route and skip lines are read from the agent's reply text and from one field
+of some built-in tool calls: the `description` of a `Bash`, `PowerShell`,
+`Agent`, or `Task` call, and the `args` of a `Skill` call, such as
+`Skill(using-goated-ai-skills, args: "goated-route: direct")`. Other tools,
+MCP tools included, carry no line, because their `description` is often the
+payload, such as an issue or merge-request body. Claude Code can
 store reply text as a summary that drops the line (see
 [Known Limits](#known-limits)), but it keeps a call's input as written, and
 the hook sees the input of the call it judges. A line in a call counts from
@@ -474,8 +476,8 @@ goated-hold: <gate> | <kind>
   `design`, `security`, `conflict-resolution`, `repeated-failure`,
   `pr-review`) says that a line in reply text may not be seen (see
   [Known Limits](#known-limits)), and to put the line in the held call's
-  description, or in an earlier call's description or Skill `args` in the
-  turn, and make the call again. It then says the user can type the matching
+  description, or in the description or Skill `args` of a call made in an
+  earlier message of the turn, and make the call again. It then says the user can type the matching
   override. It names those fields without backticks, since the mod would
   read a backticked bare word as a skill.
 - A hold or closeout item that asks for a [change read](#change-reads) once
@@ -666,15 +668,18 @@ of the call's prompt, which is normally already there.
   after the hook returns, so a route line or skip line written in the same
   message, and sibling calls made alongside it (a Skill load included), do not
   count yet. Only the judged call's own input is seen: a line in its
-  `description` counts for it.
+  `description` counts for it, and a line in a sibling call does not. When
+  the hook input has no `tool_use_id`, the judged call is taken to be the
+  newest recorded call without a result if its name and input match, so its
+  line is counted once.
 - Claude Code can store the text of an assistant message that also makes a
   tool call as a rewritten summary, in a thinking block, that drops route and
   skip lines, so the adapter never sees a line written there, and a retry
   cannot bring it back. The holds a line can clear therefore point to the
   call fields the adapter also reads (see [What It Holds](#what-it-holds)).
   Edit and Write calls have no `description`, so a line for one of them goes
-  in an earlier call of the turn, such as the Skill call that loads a required
-  skill. If the line is still not seen, the holds point the user to the typed
+  in a call made in an earlier message of the turn, such as the Skill call
+  that loads a required skill. If the line is still not seen, the holds point the user to the typed
   override: `skip routing`, or `skip <skill>` for a skip line.
 
 - Shell analysis is lexical, not a shell. These forms are not seen, so a

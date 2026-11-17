@@ -273,7 +273,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
         for key, way_out in ways_out.items():
             with self.subTest(key=key):
                 self.assertIn("may not be seen", texts[key])
-                self.assertIn("in a tool call's description field, or in a Skill call's args", texts[key])
+                self.assertIn("description field of a shell or agent call, or in a Skill call's args", texts[key])
                 self.assertIn(f"`{way_out}`", texts[key])
 
     def test_holds_backtick_only_skill_names(self) -> None:

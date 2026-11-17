@@ -15,9 +15,9 @@ without it.
 | Record | Read from |
 | --- | --- |
 | Skill loads and why each loaded: your `/command`, your prompt naming it, a hook, the router's route, the agent, or a subagent | Skill tool calls and slash commands |
-| Route lines, counted by form (`direct`, `continue`, routed) | `goated-route:` lines in replies, and in a call's `description` or a Skill call's `args`, as the adapter reads them |
+| Route lines, counted by form (`direct`, `continue`, routed) | `goated-route:` lines in replies, and in the `description` of a `Bash`, `PowerShell`, `Agent` or `Task` call or the `args` of a `Skill` call, as the adapter reads them |
 | Turns that write, by whether a route line came before the first write, only after it, or not at all | The main agent's edits and spawns, the calls the adapter holds like writes; a call whose result is an error, such as a held one, did not write |
-| Justified skips, with their reasons; a skip declines a justified-skip hold naming that skill in the same turn | `goated-skip:` lines in replies, and in a call's `description` or a Skill call's `args` |
+| Justified skips, with their reasons; a skip declines a justified-skip hold naming that skill in the same turn | `goated-skip:` lines in replies, and in the same call fields as route lines |
 | The adapter's holds by gate and kind, and each held skill's outcome: loaded, files read, declined, not loaded, or waiting | Denied calls whose reason starts `goated-hold: <gate> \| <kind>`, and the blocked `Stop` that carries the closeout hold |
 | Your overrides, by phrase | The adapter's sentence `recorded your override for this prompt` in its hook context |
 | Reads of skills' reference and other supporting files, whether the skill had loaded first, and when in the turn: before its first code change, between two, after the last, or in a turn with no code change | `Read` paths and shell commands; code changes are edit tool calls on a code file, by the main agent or a subagent, that ran |

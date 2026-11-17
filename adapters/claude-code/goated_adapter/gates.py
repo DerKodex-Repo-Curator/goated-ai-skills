@@ -64,11 +64,12 @@ def unseen_line_advice(line: str, way_out: str) -> str:
     return (
         f"A {line} in reply text may not be seen: Claude Code records a message only "
         "after this check, and can store the text of a message that makes a tool call "
-        "as a summary that drops the line. A line in a tool call's description field, "
-        "or in a Skill call's args, is read as written and counts from that call on. "
-        f"Put the {line} on its own line there, in this call's description if it has "
-        "one or else in an earlier call in this turn, and make the call again. If that "
-        f"is held again, tell the user they can type `{way_out}` in their prompt."
+        "as a summary that drops the line. A line in the description field of a shell "
+        "or agent call, or in a Skill call's args, is read as written and counts from "
+        f"that call on. Put the {line} on its own line there, in this call's description "
+        "if it has one or else in a call made in an earlier message of this turn (a call "
+        "in the same message is not seen yet), and make the call again. If that is held "
+        f"again, tell the user they can type `{way_out}` in their prompt."
     )
 
 

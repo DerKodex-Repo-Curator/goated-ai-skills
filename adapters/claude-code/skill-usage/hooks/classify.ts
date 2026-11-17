@@ -224,15 +224,20 @@ function isCodeFile(path: string): boolean {
 }
 
 /**
- * The text of a tool call that may carry route and skip lines: its
- * `description`, and for a Skill call also its `args`. These fields describe
- * the call rather than hold its payload, and Claude Code keeps them as written
- * even when it saves the reply's text as a summary that drops the lines. The
- * adapter reads the same fields (`call_line_text` in goated_adapter/transcript.py).
+ * The one input field of each built-in tool that may carry route and skip
+ * lines: one that describes the call rather than holds its payload, which
+ * Claude Code keeps as written even when it saves the reply's text as a
+ * summary that drops the lines. Other tools, MCP tools included, carry none,
+ * since their `description` is often the payload, such as an issue body. The
+ * adapter keeps the same table (`LINE_FIELDS` in goated_adapter/transcript.py).
  */
+const LINE_FIELDS: Readonly<Record<string, string>> = { Bash: 'description', PowerShell: 'description', Agent: 'description', Task: 'description', Skill: 'args' }
+
+/** The text of a tool call that may carry route and skip lines, or ''. */
 function callLineText(name: string, input: Record<string, unknown>): string {
-  const fields = name === 'Skill' ? [input.description, input.args] : [input.description]
-  return fields.filter((v): v is string => typeof v === 'string').join('\n')
+  const field = Object.hasOwn(LINE_FIELDS, name) ? LINE_FIELDS[name] : undefined
+  const value = field ? input[field] : undefined
+  return typeof value === 'string' ? value : ''
 }
 
 /**

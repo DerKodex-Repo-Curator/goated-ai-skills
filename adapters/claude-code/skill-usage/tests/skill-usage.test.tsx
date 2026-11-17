@@ -1459,6 +1459,9 @@ test("route and skip lines count from a Skill call's args and any call's descrip
   expect(toolUseEvents([{ name: 'Bash', input: { command: 'git status', description: skip } }], false, 5)).toEqual([
     { kind: 'skip', t: 5, skill: 'software-design-principles', reason: 'this is a mechanical rename only' },
   ])
+  for (const name of ['PowerShell', 'Agent', 'Task']) {
+    expect(toolUseEvents([{ name, input: { description: 'goated-route: direct' } }], false, 5).filter(e => e.kind === 'route')).toEqual([{ kind: 'route', t: 5, form: 'direct' }])
+  }
   // A subagent's call lines are its own, as its reply lines are.
   expect(toolUseEvents([{ name: 'Bash', input: { command: 'ls', description: 'goated-route: direct' } }], true, 6, 'a1')).toEqual([
     { kind: 'route', t: 6, form: 'direct', isSubagent: true, agent: 'a1' },
@@ -1473,6 +1476,11 @@ test('no other field of a call carries a route or skip line, and design-reads li
     { name: 'Bash', input: { command: `cat > notes.md <<'EOF'\n${line}\nEOF`, args: line } },
     { name: 'Bash', input: { command: 'ls', description: '```\n' + line + '\n```' } },
     { name: 'Bash', input: { command: 'ls', description: 'goated-design-reads: process.md' } },
+    // A tool whose description is its payload, such as an issue or merge-request body, carries no line.
+    { name: 'mcp__gitlab__create_merge_request', input: { title: 'x', description: line } },
+    { name: 'mcp__linear__create_issue', input: { title: 'x', description: line } },
+    { name: 'TaskCreate', input: { subject: 'x', description: line } },
+    { name: 'Skill', input: { skill: 'tdd', description: line } },
   ]
   expect(toolUseEvents(uses, false, 7).filter(e => e.kind === 'route' || e.kind === 'skip' || e.kind === 'design-reads')).toEqual([])
 })

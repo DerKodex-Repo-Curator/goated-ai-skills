@@ -69,23 +69,31 @@ SKILL_BODY_PREFIX = "Base directory for this skill:"
 # A call this adapter held: Claude Code 2.1.3xx records the deny reason as
 # `PreToolUse:<tool> hook error: <reason>`, and the reason opens with the hold line.
 HOLD_RESULT_RE = re.compile(r"(?:PreToolUse:\S+ hook error: )?goated-hold: ")
+# The one input field of each built-in tool that may carry route and skip
+# lines: a field that describes the call rather than holds its payload. Other
+# tools, MCP tools included, carry none, since their `description` is often
+# the payload, such as an issue or merge-request body. The skill-usage mod
+# keeps the same table (`LINE_FIELDS` in its `hooks/classify.ts`).
+LINE_FIELDS = {
+    "Bash": "description",
+    "PowerShell": "description",
+    "Agent": "description",
+    "Task": "description",
+    "Skill": "args",
+}
 
 
 def call_line_text(tool_name: str, tool_input: dict) -> str:
-    """The text of a tool call that may carry route and skip lines.
+    """The text of a tool call that may carry route and skip lines, or "".
 
-    That is the call's `description`, and for a Skill call also its `args`.
-    These fields describe the call rather than hold its payload, so file text,
-    edit text, and commands never carry a line. Claude Code can save a
-    message's reply text as a summary that drops the lines, but it keeps a
-    call's input as written. The skill-usage mod reads the same fields
-    (`callLineText` in its `hooks/classify.ts`).
+    Claude Code can save a message's reply text as a summary that drops the
+    lines, but it keeps a call's input as written. Only the field
+    `LINE_FIELDS` names for the tool counts, so file text, edit text,
+    commands, and tool payloads never carry a line.
     """
 
-    fields = ["description", "args"] if tool_name == "Skill" else ["description"]
-    return "\n".join(
-        value for value in (tool_input.get(f) for f in fields) if isinstance(value, str)
-    )
+    value = tool_input.get(LINE_FIELDS.get(tool_name, ""))
+    return value if isinstance(value, str) else ""
 
 
 def prompt_text_kind(text: str) -> str:
@@ -155,16 +163,18 @@ class Turn:
     the prompt itself invoked as `/<skill>`, once its body loaded. `route` is
     the winning route line, `route_marks` every valid route line in order, and
     `malformed` the route-like lines that failed the grammar. `skips` are the
-    valid `goated-skip` lines. Lines count from reply text and from the fields
-    `call_line_text` names, once per call id in `call_ids`. `calls` are the
-    tool calls that finished in this turn, oldest first. `opens_transcript` is set on the oldest turn read when
-    reading reached the start of the transcript, so no earlier turn exists.
+    valid `goated-skip` lines. Lines count from reply text and from the field
+    `call_line_text` reads, once per call id in `call_ids`. `calls` are the
+    tool calls that finished in this turn, oldest first, and `unfinished` the
+    `(name, input)` of recorded calls with no result yet, oldest first.
+    `opens_transcript` is set on the oldest turn read when reading reached the
+    start of the transcript, so no earlier turn exists.
     """
 
     __slots__ = (
         "key", "is_compaction", "typed", "prompt_id", "loads", "invoked_load",
         "route", "route_marks", "malformed", "skips", "calls", "prompt_ids",
-        "opens_transcript", "call_ids",
+        "opens_transcript", "call_ids", "unfinished",
     )
 
     def __init__(self, key: str) -> None:
@@ -182,6 +192,7 @@ class Turn:
         self.calls: list[Call] = []
         self.prompt_ids: set[str] = set()
         self.call_ids: set[str] = set()
+        self.unfinished: list[tuple[str, dict]] = []
 
     def add_markers(self, markers: ReplyMarkers) -> None:
         """Count the marker lines of one reply text or one tool call, in order."""
@@ -196,12 +207,16 @@ class Turn:
         """Count the marker lines a tool call carries, once per call id.
 
         A line in a call counts from that call on, so it covers the call itself.
+        A call with no id is taken to be the newest unfinished recorded call
+        when its name and input match that call's, so it is not counted twice.
         """
 
-        if tool_id and tool_id in self.call_ids:
-            return
         if tool_id:
+            if tool_id in self.call_ids:
+                return
             self.call_ids.add(tool_id)
+        elif self.unfinished[-1:] == [(tool_name, tool_input)]:
+            return
         self.add_markers(parse_reply(call_line_text(tool_name, tool_input)))
 
 
@@ -463,6 +478,7 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                 ):
                     skill = skill_calls.pop(block["tool_use_id"])
                     turn.loads.append(skill)
+    turn.unfinished = list(pending.values())
     return turn
 
 

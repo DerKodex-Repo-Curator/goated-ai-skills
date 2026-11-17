@@ -13,7 +13,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from claude_code_adapter_support import ROUTER, Session, decision, reason
+from claude_code_adapter_support import (
+    ROUTER,
+    Session,
+    decision,
+    git_branch_with_change,
+    parse,
+    reason,
+)
 
 SUMMARY = "I loaded the router and picked a route for the rename."
 EDIT = {"file_path": "src/app.py", "old_string": "a", "new_string": "b"}
@@ -148,6 +155,84 @@ class RouteLineFromCallTests(CallLineTestCase):
         command = described("touch notes.md", "goated-route: direct")
         self.assertEqual(decision(s.call("Bash", command)), "pass")
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+
+class DescribedToolTests(CallLineTestCase):
+    """`description` counts only where it describes the call, never as a payload."""
+
+    def test_a_powershell_description_carries_a_route_line(self) -> None:
+        s = self.started()
+        s.call("PowerShell", described("Get-ChildItem", "goated-route: direct"))
+
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_a_description_that_is_a_tool_payload_carries_no_line(self) -> None:
+        for tool in ("mcp__linear__create_issue", "mcp__jira__create_issue", "TaskCreate"):
+            with self.subTest(tool=tool):
+                s = self.fresh_session()
+                s.prompt("Rename the config loader.")
+                s.load(ROUTER)
+                s.call(tool, {"title": "Rename", "description": "Plan\n\ngoated-route: direct"})
+                self.assertEqual(
+                    hold_line(s.call("Edit", EDIT)), "goated-hold: route-line | strict"
+                )
+
+    def test_a_merge_request_body_does_not_clear_its_own_review_hold(self) -> None:
+        s = self.started("Open the merge request.")
+        s.say("goated-route: direct")
+        git_branch_with_change(s.project, 450)
+        s.load("pr-description")
+        s.run("git diff main...HEAD")
+        tool = "mcp__gitlab__create_merge_request"
+        skip = "goated-skip: standards-and-spec-review: generated fixtures make up the bulk"
+        mr = {"title": "Export", "source_branch": "feature", "target_branch": "main",
+              "description": f"Adds the export.\n\n{skip}"}
+
+        self.assertEqual(hold_line(s.call(tool, mr)), "goated-hold: pr-review | justified-skip")
+        s.say(skip)  # The near miss: the same line in reply text clears it.
+        self.assertEqual(decision(s.call(tool, mr)), "pass")
+
+    def fresh_session(self) -> Session:
+        folder = Path(tempfile.mkdtemp(dir=self.root))
+        return Session(folder)
+
+
+class SameMessageCallTests(CallLineTestCase):
+    def test_a_line_in_a_sibling_call_of_the_same_message_is_not_seen_yet(self) -> None:
+        s = self.started()
+
+        outputs = s.parallel([("Bash", described("git status", "goated-route: direct")), ("Edit", EDIT)])
+        self.assertEqual([decision(o) for o in outputs], ["pass", "deny"])
+        self.assertIn("an earlier message", reason(outputs[1]))
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+
+class MissingCallIdTests(CallLineTestCase):
+    """A hook input with no `tool_use_id` still counts a call's lines once."""
+
+    def judge_without_id(self, s: Session, tool: str, tool_input: dict, *, recorded: bool) -> dict:
+        if recorded:
+            s._tool_use(tool, tool_input)
+        output = parse(s.hook("PreToolUse", tool_name=tool, tool_input=tool_input))
+        if not recorded:
+            s._tool_use(tool, tool_input)
+        return output
+
+    def test_a_recorded_call_is_not_counted_again_from_the_hook_input(self) -> None:
+        s = self.started()
+
+        held = self.judge_without_id(
+            s, "Bash", described("touch notes.md", "goated-route: quick"), recorded=True
+        )
+        self.assertEqual(reason(held).count("`goated-route: quick`"), 1)
+
+    def test_an_unrecorded_call_counts_from_the_hook_input(self) -> None:
+        s = self.started()
+
+        output = self.judge_without_id(
+            s, "Bash", described("touch notes.md", "goated-route: direct"), recorded=False
+        )
+        self.assertEqual(decision(output), "pass")
 
 
 class SkipLineFromCallTests(CallLineTestCase):
