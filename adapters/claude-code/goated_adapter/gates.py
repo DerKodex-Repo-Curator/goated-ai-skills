@@ -186,7 +186,7 @@ def writes_like_an_edit(tool_name: str, tool_input: dict) -> bool:
     if tool_name in HELD_LIKE_WRITES:
         return True
     if tool_name in COMMAND_TOOLS:
-        return shell.analyze(str(tool_input.get("command") or "")).writes
+        return shell.analyze(str(tool_input.get("command") or ""), tool_name).writes
     return False
 
 

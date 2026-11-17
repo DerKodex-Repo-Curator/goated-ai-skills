@@ -165,10 +165,12 @@ path can be read, with symbolic links and junctions resolved too:
 - On Windows, a one-letter top folder naming a drive that exists is Git
   Bash's name for that drive (`/c/work` is `C:/work`); it may also be a folder
   on any drive the project's folders use, and each reading is checked. The
-  same applies to a project folder given in Git Bash form. Any other path
-  rooted with no drive, such as `/tmp/x`, counts as inside: Git Bash mounts
-  `/tmp` as your temp folder and `/` as its install folder, and you may add
-  mounts of your own.
+  same applies to a project folder given in Git Bash form. On Windows,
+  `/tmp/x` is also read as `x` in your temp folder, where Git Bash mounts
+  `/tmp`: under `TMP` and under `TEMP`, each that is set, and both must be
+  absolute Windows paths, or `/tmp/x` counts as inside. Any other path rooted
+  with no drive, such as `/etc/x`, counts as inside: Git Bash mounts `/` as
+  its install folder, and you may add mounts of your own.
 - These count as inside, since the adapter does not read them: a path holding
   a variable or glob (`$`, `%`, a backtick, `*`, `?`), `~-`, `~+`, or another
   user's `~name`, device paths (`\\?\`, `//?/`, `\\.\`), network paths
@@ -176,7 +178,8 @@ path can be read, with symbolic links and junctions resolved too:
   folder or file name ending in a dot or space.
 
 A shell write whose files the command does not name (`git apply`, `patch`, a
-download without an output name) counts as a change to non-test code. Code a
+download without an output name, a .NET call) counts as a change to non-test
+code, wherever it runs, since where its files are cannot be said. Code a
 subagent changed counts too, at the point the parent spawned it; if the subagent ran a
 check after its own last change, that change is already proved.
 
@@ -204,9 +207,12 @@ manager's options that take a value (`--filter`, `--workspace`, `--python`,
 `PACKAGE_MANAGERS` in `shell.py`) are skipped with their value, so
 `pnpm install --filter web` names no package. An **env or settings file** is
 `.env` or `.env.*` (`.env.example` included), or a `settings*.json` under
-`.claude/` or `.vscode/`, written by a write tool or a shell command. These
-count wherever they are, inside the project or not, since machine and
-application settings are setup too. A subagent's installs and writes count
+`.claude/` or `.vscode/`, written by a write tool or a shell command. A
+package install counts wherever it runs; an env or settings file counts only
+inside the project, by the same rule as code changes, so a scratch folder's
+`.claude/settings.json` does not, and neither do global settings such as
+`~/.claude/settings.json`, unless the project holds your home folder. A
+subagent's installs and writes count
 toward the parent's closeout; that subagent's own `setup-scribe` load or skip
 line meets them, as the parent's does.
 
@@ -435,7 +441,23 @@ backtick in PowerShell). A `Bash` or `PowerShell` command meets the
   `Copy-Item`, `Move-Item`, `Remove-Item`, `Rename-Item`, `Export-Csv`, or
   `Export-Clixml`, or one of the stock Windows PowerShell 5.1 aliases (`sc`,
   `ac`, `clc`, `del`, `erase`, `copy`, `move`, `ren`, `rd`, `ri`, `mi`, `cpi`,
-  `ni`, `rni`), or a .NET `[IO.File]::Write…` style call;
+  `ni`, `rni`), or a .NET `[IO.File]::Write…` style call. In a `PowerShell`
+  tool command, a .NET call's text counts wherever it appears, since
+  PowerShell can run text in many ways (`& $p`, `Get-Content x | iex`). In a
+  `Bash` command, a .NET call's text
+  handed only to text tools, which cannot start a program (`cat`, `echo`,
+  `printf`, `grep`, `rg`, `head`, `tail`, `sort`, `tee`, `Write-Output`,
+  `Select-Object`, and the like; `NO_POWERSHELL` in `shell.py`), is data,
+  such as a heredoc fed to `cat`. It is still a write when it holds a `$(` or
+  a backtick that may run it, outside a quoted-delimiter heredoc
+  (`<<'EOF'`); when it is piped on into any other program
+  (`… | pwsh -Command -`); when it is written into a PowerShell script file
+  (`.ps1`, `.psm1`, `.psd1`) by a redirect or `tee`, wherever that file is,
+  since a later call may run it; and whenever the command names `pwsh`,
+  `powershell`, `iex`, or `Invoke-Expression` anywhere, or runs a script
+  (`. x.ps1`), which may run text written earlier in it.
+  Interpreters (`python -c`, `node -e`) and `git` (an alias or hook) can start
+  PowerShell, so text handed to them counts too;
 - downloads to a file: `curl -o <file>` (also `-sSLo <file>`) or `curl -O`,
   `wget` unless it writes to standard output, or `Invoke-WebRequest -OutFile`;
 - runs `git apply`, `git am`, `git restore`, `git mv`, `git rm`, `git clean`,
@@ -932,13 +954,27 @@ of the call's prompt, which is normally already there.
 - Whether a file is inside the project is read from paths, not from a shell
   or the disk's full layout, so the adapter counts a file as outside only when
   it is certain, and every limit here fails toward holding:
-  - Git Bash mounts (`/tmp` is your temp folder, `/` is the Git install
-    folder, and any mount you add) are not read, so on Windows a path rooted
-    with no drive letter, other than Git Bash's `/c/` drive form, counts as
-    inside the project. A Git Bash write to `/tmp/...` is held like a project
-    write.
+  - Git Bash mounts other than `/tmp` (`/` is the Git install folder, and
+    any mount you add) are not read, so on Windows a path rooted with no
+    drive letter, other than Git Bash's `/c/` drive form and `/tmp`, counts
+    as inside the project. `/tmp` is read through `TMP` and `TEMP` as the
+    hook sees them, which assumes Git Bash's default `/tmp` mount; a changed
+    `/etc/fstab`, or a shell whose `TMP` differs from the hook's, is not seen.
   - `CDPATH` is not read, so a `cd` to a bare relative name makes the folder
     unknown, and the writes after it count as inside.
+  - A `cd` is read as bash's default logical `cd -L`: each `..` drops the
+    name before it from the text, so `cd /tmp/../c/proj` is in `/c/proj`.
+    (`cd -P`, like any `cd` with an option, leaves the folder unknown.) A file
+    path with `..` outside a `cd`, such as `> /tmp/../x`, is read physically,
+    as the system opens it.
+  - A .NET write in a PowerShell script counts when a shell command writes
+    the script (a redirect or `tee`), not when the `Write` or `Edit` tool
+    does, nor when a script holding it is copied or renamed into place.
+  - .NET write text a `Bash` command writes to a file that is not a script,
+    and a later call runs, is not seen: for example a later
+    `Get-Content x.txt | iex` in the `PowerShell` tool, or Bash
+    `pwsh -Command (Get-Content /tmp/x.txt)`. Only the command that writes
+    the text is read, and it names no PowerShell.
   - `~` is read both as your profile folder and as `HOME` when that is set
     (Git Bash may point it elsewhere); a `~/...` path inside the project under
     either reading counts as inside. A shell's `HOME` that differs from the
