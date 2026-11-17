@@ -598,7 +598,8 @@ blocks, and a phrase negated just before it, such as "don't skip routing",
 Claude Code also submits prompts nobody typed in this session:
 
 - **Background results**, such as the `<task-notification>` that reports a
-  finished background task, or a desktop-app side-session event. They carry
+  finished background task, a desktop-app side-session event, or the
+  host-written `Try again` the app sends after an API error. They carry
   agent output, so they never yield overrides, and they do not start a new
   turn: the typed prompt's route line and overrides still cover what follows.
 - **Requests from elsewhere**, such as a subagent's final report, a message
