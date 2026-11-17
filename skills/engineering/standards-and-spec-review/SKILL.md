@@ -45,6 +45,7 @@ uncertain axis when practical; do not require ceremonial coverage of both.
 Hard: None.
 
 Soft:
+- software-design-principles when the review judges design quality: complexity, interface depth, naming, ownership, or error handling
 - code-refinement when findings call for scoped behavior-preserving cleanup or simplification
 - code-security-review when trust boundaries, user data, auth, persistence, execution, or unsafe config may be affected
 - doc-sync after this review when behavior, standards, specs, public interfaces, or docs may have drifted

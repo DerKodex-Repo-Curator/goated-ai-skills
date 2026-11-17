@@ -40,6 +40,7 @@ Hard: None.
 
 Soft:
 - grill-with-docs when feedback exposes unclear intent, scope, or tradeoffs
+- software-design-principles when classifying feedback about interfaces, naming, knowledge ownership, or error handling
 - writing-plans when accepted feedback is broad, risky, or multi-step
 - tdd when accepted feedback changes behavior, public interfaces, or regression-prone workflows
 - code-refinement when accepted feedback is scoped, behavior-preserving cleanup or refactoring
