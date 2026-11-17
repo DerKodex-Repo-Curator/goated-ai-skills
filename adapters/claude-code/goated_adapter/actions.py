@@ -41,9 +41,9 @@ import re
 import subprocess
 import time
 
-from . import contracts, shell
+from . import contracts, design_reads, shell
 from .gates import COMMAND_TOOLS, STRICT, Hold, goated_skill_name, unseen_line_advice
-from .markers import parse_reply
+from .markers import declared_files, parse_reply
 from .transcript import Turn, skill_name
 
 JUSTIFIED_SKIP = "justified-skip"
@@ -248,7 +248,8 @@ def is_action_tool(tool_name: str) -> bool:
 
 def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
                  namespaces: tuple[str, ...] = (), project: Project | None = None,
-                 subagents: Callable[[], dict] | None = None) -> Hold | None:
+                 subagents: Callable[[], dict] | None = None,
+                 references_read: frozenset[str] = frozenset()) -> Hold | None:
     """Return the action hold for this call, if any; the call's own entry is not yet proof.
 
     `project` says which files are the project's (see `find_project`): only files
@@ -257,7 +258,9 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     request in its `cwd`. `subagents` returns the turns
     of each subagent this turn spawned, as `check_closeout` takes them; it is
     called only when a commit or pull request needs its change read, since
-    reading their transcripts takes time.
+    reading their transcripts takes time. `references_read` names the design
+    references (`errors.md`) read in earlier turns since the last compaction;
+    the turn's own reads count too.
     """
 
     proof = _Proof(turn, overrides, namespaces)
@@ -295,7 +298,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         hold = _conflict_hold([path], tool_input, proof)
         if hold is None and _in_project(path, project):
             # A scratch file elsewhere is not the project's design or security.
-            hold = _security_hold(path, proof) or _design_hold(path, tool_input, proof)
+            hold = _security_hold(path, proof) or _design_hold(
+                path, tool_input, proof, project, references_read)
         return hold or _repeated_failure_hold(proof)
     return None
 
@@ -612,19 +616,95 @@ def _open_conflict(turn: Turn) -> tuple[bool, list[str]]:
     return git_open, marked_files
 
 
-def _design_hold(path: str, tool_input: dict, proof: _Proof) -> Hold | None:
-    if not is_code(path) or added_lines(tool_input) < DESIGN_MIN_LINES:
+def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | None,
+                 references_read: frozenset[str]) -> Hold | None:
+    """Hold a project file write until its design is done (spec R5).
+
+    The `design` gate holds a turn's first substantial code edit until
+    `software-design-principles` loads, a design-reads line is in the turn,
+    and every reference the edit requires is read. The `design-reads` gate
+    holds any later edit the design-reads rules apply to, once the skill is
+    loaded, until the references it requires are read. `design_reads` says
+    which those are. A read counts until the next compaction; a skip line or
+    the user's skip of the skill clears both gates.
+    """
+
+    code, test = is_code(path), bool(TEST_PATH_RE.search(path))
+    if not design_reads.applies(path, is_code=code, is_test=test) or proof.skipped(DESIGN_SKILL):
         return None
-    if proof.loaded_or_skipped(DESIGN_SKILL):
+    substantial = code and added_lines(tool_input) >= DESIGN_MIN_LINES
+    loaded = proof.loaded(DESIGN_SKILL)
+    if not loaded and not substantial:
         return None
+    earlier = _project_code_writes(proof.turn, project)
+    declared = declared_files(proof.turn.design_reads)
+    required = design_reads.required(
+        path, tool_input, is_code=code, is_test=test,
+        written_before=any(p == path for p, _ in earlier),
+        other_code_files=len({p for p, _ in earlier if p != path and not TEST_PATH_RE.search(p)}),
+        declared=declared, cwd=project.cwd if project else None,
+    )
+    read = references_read | set(design_reads.reads_in(proof.turn.calls))
+    unread = {name: why for name, why in required.items() if name not in read}
+    needs_line = substantial and not proof.turn.design_reads
+    if loaded and not needs_line and not unread:
+        return None
+    unknown = design_reads.unknown(declared)
+    misnamed = (
+        " Your design-reads lines name files that are not design references, so they require "
+        "nothing: " + ", ".join(f'"{name}"' for name in unknown) + "."
+    ) if unknown else ""
+    first = substantial and not any(lines >= DESIGN_MIN_LINES for _, lines in earlier)
+    if loaded and not needs_line and not first:
+        return Hold(
+            "design-reads", JUSTIFIED_SKIP,
+            f"This edit of \"{path.rsplit('/', 1)[-1]}\" needs design references not yet read "
+            "since the last compaction. Read each with the Read tool before the edit, and "
+            f"apply it: {_reference_list(unread)}.{misnamed} If the edit has no design in it, "
+            f"write `goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. This edit "
+            "was not applied. " + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
+        )
+    steps = [] if loaded else [
+        f"load `{DESIGN_SKILL}` with the Skill tool and apply its 'Before changing code' rules"
+    ]
+    if needs_line:
+        malformed = "; ".join(f'"{line}"' for line in proof.turn.malformed_design_reads)
+        steps.append(
+            "write the skill's design-reads line on its own line, naming the references whose "
+            "conditions hold, as `goated-design-reads: <file>, <file>`, or "
+            "`goated-design-reads: none: <reason>` when none does"
+            + (f" (these lines in this turn do not match the grammar: {malformed})" if malformed else "")
+        )
+    if unread:
+        steps.append(f"read with the Read tool each reference it requires: {_reference_list(unread)}")
     return Hold(
         "design", JUSTIFIED_SKIP,
-        f"This is a substantial code change. Load `{DESIGN_SKILL}` with the Skill tool in "
-        "this turn and apply its 'Before changing code' rules to it. If the edit is "
-        f"mechanical, with no design in it, write `goated-skip: {DESIGN_SKILL}: <reason>` "
-        "on its own line instead. This edit was not applied. "
-        + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
+        f"This is a substantial code change. Before it, in this turn, {'; '.join(steps)}."
+        f"{misnamed} If the edit is mechanical, with no design in it, write "
+        f"`goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. This edit was not "
+        "applied. " + unseen_line_advice("design-reads or skip line", f"skip {DESIGN_SKILL}"),
     )
+
+
+def _reference_list(references: dict[str, str]) -> str:
+    """The references as the holds name them, in the given order. Each path is
+    backticked like the closeout's red-flags path; the skill-usage mod reads
+    only a bare backticked name as a skill."""
+
+    return ", ".join(f"`{design_reads.SKILL_REFERENCES}{name}` ({why})" for name, why in references.items())
+
+
+def _project_code_writes(turn: Turn, project: Project | None) -> list[tuple[str, int]]:
+    """Each finished edit tool call on a project code file in the turn: its path
+    and how many lines it added."""
+
+    writes = []
+    for call in turn.calls:
+        if call.ok and call.name in FILE_WRITE_TOOLS:
+            path = _norm(str(call.input.get(FILE_WRITE_TOOLS[call.name]) or ""))
+            if is_code(path) and _in_project(path, project):
+                writes.append((path, added_lines(call.input)))
+    return writes
 
 
 def _repeated_failure_hold(proof: _Proof) -> Hold | None:

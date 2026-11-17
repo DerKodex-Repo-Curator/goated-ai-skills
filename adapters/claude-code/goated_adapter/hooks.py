@@ -167,6 +167,7 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
             _project(payload, config),
             # Unreadable subagent transcripts count as no changes, as at closeout.
             lambda: _spawned_subagents(current, transcript_path)[0],
+            references_read=frozenset(state.reference_reads),
         )
     warnings = [state_warning, _save(store, session_id, state)]
     return _with_warnings(_deny(hold), warnings)
@@ -286,7 +287,8 @@ def _session_start(payload: dict, config: Config) -> str:
     """Reset skill proof after compaction; note a missing policy or router once.
 
     After compaction the router and the task's required skills must load
-    again, because their text was summarized away; the route itself carries
+    again, and the design references be read again, because their text was
+    summarized away; the route itself carries
     over (spec R5). Turns from before the boundary are never folded back in.
     A new session (`startup`) has no task yet, so `continue` may start one.
     """
@@ -300,6 +302,7 @@ def _session_start(payload: dict, config: Config) -> str:
         state.task_unknown = False
     if payload.get("source") in {"compact", "clear"}:
         state.router_loaded = False
+        state.reference_reads = []
         state.last_turn = None
         if state.task is not None:
             state.task.loads = []

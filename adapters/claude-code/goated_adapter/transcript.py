@@ -138,7 +138,9 @@ class Turn:
     the prompt itself invoked as `/<skill>`, once its body loaded. `route` is
     the winning route line, `route_marks` every valid route line in order, and
     `malformed` the route-like lines that failed the grammar. `skips` are the
-    valid `goated-skip` lines, and `calls` the tool calls that finished in this
+    valid `goated-skip` lines, `design_reads` the valid `goated-design-reads`
+    lines and `malformed_design_reads` those that failed the grammar, and
+    `calls` the tool calls that finished in this
     turn, oldest first. `opens_transcript` is set on the oldest turn read when
     reading reached the start of the transcript, so no earlier turn exists.
     """
@@ -146,7 +148,7 @@ class Turn:
     __slots__ = (
         "key", "is_compaction", "typed", "prompt_id", "loads", "invoked_load",
         "route", "route_marks", "malformed", "skips", "calls", "prompt_ids",
-        "opens_transcript",
+        "opens_transcript", "design_reads", "malformed_design_reads",
     )
 
     def __init__(self, key: str) -> None:
@@ -161,6 +163,8 @@ class Turn:
         self.opens_transcript = False
         self.malformed: list[str] = []
         self.skips: list[dict] = []
+        self.design_reads: list[dict] = []
+        self.malformed_design_reads: list[str] = []
         self.calls: list[Call] = []
         self.prompt_ids: set[str] = set()
 
@@ -385,6 +389,8 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                         )
                     turn.malformed.extend(markers.malformed)
                     turn.skips.extend(markers.skips)
+                    turn.design_reads.extend(markers.design_reads)
+                    turn.malformed_design_reads.extend(markers.malformed_design_reads)
                 elif block.get("type") == "tool_use":
                     tool_id = str(block.get("id", ""))
                     tool_input = block.get("input")

@@ -696,10 +696,15 @@ test('reading a reference is recorded for the main agent and for subagents alike
   const path = '/h/.claude/skills/diagnose/references/root-cause-tracing.md'
   expect(toolUseEvents(read(path), false, 5)).toEqual([
     { kind: 'read', t: 5, skills: ['diagnose'] },
+    { kind: 'ref', t: 5, skill: 'diagnose', file: 'references/root-cause-tracing.md', isReadTool: true },
+  ])
+  // A shell command printing the file is a read too, but not by the Read tool.
+  expect(toolUseEvents([{ name: 'Bash', input: { command: `cat ${path}` } }], false, 5)).toEqual([
+    { kind: 'read', t: 5, skills: ['diagnose'] },
     { kind: 'ref', t: 5, skill: 'diagnose', file: 'references/root-cause-tracing.md' },
   ])
   // A subagent's read settles no nudge of the main agent's, but its reference still counts.
-  expect(toolUseEvents(read(path), true, 6)).toEqual([{ kind: 'ref', t: 6, skill: 'diagnose', file: 'references/root-cause-tracing.md', isSubagent: true }])
+  expect(toolUseEvents(read(path), true, 6)).toEqual([{ kind: 'ref', t: 6, skill: 'diagnose', file: 'references/root-cause-tracing.md', isReadTool: true, isSubagent: true }])
 })
 
 test('each reference read is counted per skill and file, and the log says whether its skill had loaded', async () => {

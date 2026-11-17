@@ -96,7 +96,8 @@ of hold:
 | `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` loads in the turn; then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
 | `pr-review` | justified-skip | A pull-request command or tool the `pull-request` gate holds, once that gate passes, when the pull request is [large](#large-pull-requests): 400 or more changed lines against its base | `standards-and-spec-review` loads in the turn; then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
 | `spawn` | strict | Starting an agent or session with a brief | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, all in the turn; and the brief passes the [content check](#content-checks) |
-| `design` | justified-skip | A write adding five or more lines to a code file inside the project folder | `software-design-principles` loads in the turn |
+| `design` | justified-skip | The turn's first write adding five or more lines to a code file inside the project folder (or any such write while the skill has not loaded) | `software-design-principles` loads in the turn, a valid [design-reads line](#design-references) is in the turn, and every [reference the edit requires](#design-references) has been read since the last compaction |
+| `design-reads` | justified-skip | Any later write to a code or configuration file inside the project folder, once `software-design-principles` has loaded in the turn, whose [signals or the turn's design-reads lines](#design-references) require a reference not read since the last compaction. The hold names each file and what selected it | Each required reference is read with the Read tool |
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` loads in the turn |
 | `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an `Edit` or `MultiEdit` whose old text has a `<<<<<<<` or `>>>>>>>` marker at a line start; a write, by a write tool or a shell command such as `git checkout --theirs`, to a file a Read in the turn showed with such a marker; or any write after a git merge, rebase, cherry-pick, revert, or pull whose result in the turn reported a conflict. A finished abort, quit, continue, or skip of that operation, or a finished commit, ends the conflict and drops the Reads before it. Only the turn is read, not the repository, so a conflict opened in an earlier turn is caught only by markers the turn shows: an edit whose old text spans only `=======` and one side, in a file not read this turn, is not held, because `=======` alone is also a heading underline. A conflicting stash pop or apply is not held | `resolving-merge-conflicts` loads in the turn |
 | `repeated-failure` | justified-skip | A write, by a write tool or a shell command, once one check command (as the closeout's Proof item recognises checks) has failed twice in a row in the turn. A shell command is held when any of its simple commands writes and is not itself a check, so `sed -i … && pytest` and `pytest \| tee out.txt` are held, while `pytest > out.txt` is a rerun. "The same check" is the same command text, whitespace aside, without a trailing pipe into output filters (`tail`, `head`, `grep`, `findstr`, `more`, `less`, `tee`, `Select-Object`, `Select-String`, `Out-Host`, `Out-String`) or a `2>&1` before it; so `pytest -q \| tail -20` and `pytest -q \| tail -40` are one check, and a narrowed rerun such as one test file of a failing suite is another. A piped run fails by what it prints (`N failed`, `N errors`, `FAILED (`, `FAIL`, `npm ERR!`, `error TS…`, `test result: FAILED`, and the like), since the exit code is the filter's; any other run fails by its exit code. A pass of the check resets its count; other commands between runs do not. A call that never ran does not count: one the adapter or another hook held, one refused at a permission prompt, or one interrupted | `diagnose` loads in the turn |
@@ -105,8 +106,8 @@ of hold:
 The closeout items, each judged against the turn's last code change. A code
 change is a write tool's file, or a file a shell command writes (its redirect
 target, copy destination, or removed, moved, or edited file), inside the
-project folder; a scratch or temp file elsewhere does not count. The `design`
-and `security` gates use the same rule, so a scratch script outside the
+project folder; a scratch or temp file elsewhere does not count. The `design`,
+`design-reads`, and `security` gates use the same rule, so a scratch script outside the
 project is not held. The `conflict-resolution` and `repeated-failure` gates
 hold a write wherever its file is, since a worktree with a conflict, or the
 code a failing check runs, may sit outside the project folder.
@@ -283,6 +284,65 @@ from a fork or another clone, whatever its size, and a justified-skip hold
 that fires without evidence teaches agents to skip it. The cost is in
 [Latency](#latency).
 
+### Design references
+
+`software-design-principles` keeps its reasoning in reference files and names,
+for each moment of a change, which to read; it asks the agent to write a
+design-reads line, `goated-design-reads: <file>, <file>` or
+`goated-design-reads: none: <reason>`, whose grammar
+`stack/fixtures/markers/README.md` owns. The `design` and `design-reads` gates
+enforce those reads where the skill is loaded.
+
+The rules live in one place,
+[`goated_adapter/design_reads.py`](goated_adapter/design_reads.py); only what
+counts as code and as a test file (the closeout's test-path rule) stays with
+the other action gates, which pass in their answers. They apply to an edit of
+a code file, or of a configuration file (`.yaml`, `.yml`, `.toml`, `.json`,
+`.env`, `.env.*`, `settings.*`) that is neither a lock file (`*-lock.json`,
+`pnpm-lock.yaml`, `npm-shrinkwrap.json`) nor under a test path.
+
+An edit requires the references the turn's valid design-reads lines name
+(their union) plus those its signals select. `red-flags.md`, which the
+closeout requires, adds nothing; any other name that is not a reference
+(`proces.md`) requires nothing, and a hold quotes it as not a design
+reference.
+
+Signals are judged on what the edit adds: the lines of its new text, or of a
+`Write`'s text, that the text it replaces did not hold, indentation aside. A
+`Write` over a file on disk is compared with that file. A definition whose
+name the old text already defined, as in a signature change, is not new.
+Comments and docstrings are left out of the code the error and concurrency
+signals read, so `# try the cache, then raise` selects neither.
+
+| Reference | Selected when the edit |
+| --- | --- |
+| `process.md` | creates a code file (a `Write` to a code file no earlier write in the turn made and that is not on disk), or adds a public top-level definition: an unindented line starting with `def`, `async def`, `class`, `function`, `export`, `func`, `fn`, `pub fn`, `public`, `interface`, `struct`, `enum`, `trait`, `impl`, or `defmodule`, whose name does not start with `_`; a shell `export NAME=` is not one |
+| `complexity-and-modules.md` | the same as `process.md` |
+| `decoupling.md` | edits a configuration file, or is to the third or later distinct non-test code file the turn edits |
+| `readability.md` | the same as `process.md`, or adds a comment or docstring: a line opening with `#`, `//`, `/*`, `*`, `"""`, `'''`, `-- `, or `<!--`, a line inside a docstring or block comment, or a trailing `#` or `//` comment after two spaces |
+| `errors.md` | adds code holding `try`, `except`, `catch`, `raise`, `throw`, `finally`, `defer` as words, or `with open` |
+| `coding.md` | edits a test file; a test file selects nothing else |
+| `concurrency.md` | adds code holding `threading`, `Lock`, `RLock`, `Mutex`, `asyncio`, `synchronized`, `Promise.all`, a word starting `Atomic`, or `go func` |
+| `differences.md` | never selected; only a design-reads line requires it |
+
+A typical change, one new public function with a docstring and error
+handling, its caller, and its test, requires five: `process.md`,
+`complexity-and-modules.md`, `readability.md`, `errors.md`, and `coding.md`.
+Tune the signals from the skill-usage mod's counts.
+
+A reference counts as read after a finished `Read` of a path ending in
+`software-design-principles/references/<file>`, in this turn or an earlier
+one, until the next compaction: the [state](#state) keeps the names read, a
+resumed session keeps them, and a compaction's or `/clear`'s `SessionStart`
+clears them, so each reference is required at most once per context window.
+A shell command printing one does not count. A skip line or a typed `skip
+software-design-principles` clears both gates for the turn.
+
+The first substantial code edit of a turn meets `design`, which asks for what
+is missing: the load, the line, and the reads. A later edit meets
+`design-reads`, which asks only for reads. A small edit before the skill
+loads is not held, as before.
+
 ### Shell writes
 
 The adapter splits a command into its simple commands (joined by `;`, `&&`,
@@ -439,7 +499,7 @@ goated-hold: <gate> | <kind>
 ```
 
 - `<gate>` is one of `router-first`, `route-line`, `pipeline`, `commit`,
-  `pull-request`, `pr-review`, `spawn`, `design`, `security`,
+  `pull-request`, `pr-review`, `spawn`, `design`, `design-reads`, `security`,
   `conflict-resolution`, `repeated-failure`, or `closeout`.
 - `<kind>` is `strict` or `justified-skip`.
 - The first line matches
@@ -457,7 +517,7 @@ goated-hold: <gate> | <kind>
 - A hold asks for a load in the current turn. A skill loaded in an earlier
   turn does not answer it.
 - A hold that a route or skip line can clear (`route-line`, `pipeline`,
-  `design`, `security`, `conflict-resolution`, `repeated-failure`,
+  `design`, `design-reads`, `security`, `conflict-resolution`, `repeated-failure`,
   `pr-review`) says that a line in the held call's own message is not
   visible yet, and to make the call again without repeating the line. It says
   this may still fail (see [Known Limits](#known-limits)), and that the user
@@ -466,7 +526,13 @@ goated-hold: <gate> | <kind>
   its skill has loaded names that skill without backticks, or only in its
   skip line, since no load answers it: the commit, pull-request, and
   pr-review holds name no skill (pr-review's skip line is not backticked
-  either), and the closeout offers the skill only as a skip line.
+  either), and the closeout offers the skill only as a skip line. Once
+  `software-design-principles` has loaded, the `design` hold (asking for the
+  design-reads line or reads) and the `design-reads` hold name it only in
+  their skip line, and backtick each reference by its path,
+  `software-design-principles/references/<file>`, which is no bare name. A
+  `design` hold that asks for the line backticks its form,
+  `goated-design-reads: <file>, <file>`; the skill-usage mod reads both.
 
 Claude Code records a denied call as a `tool_result` with `is_error: true`
 whose content carries this reason, and a blocked `Stop` as the reason shown
@@ -529,10 +595,11 @@ A hook call from inside a subagent carries `agent_id`. There:
 
 - the routing gates do not apply, because the parent's brief carries the route;
 - the action gates (`commit`, `pull-request`, `pr-review`, `spawn`, `design`,
-  `security`, `conflict-resolution`, `repeated-failure`) apply, judged from
+  `design-reads`, `security`, `conflict-resolution`, `repeated-failure`) apply, judged from
   the subagent's own transcript, which Claude Code keeps in
   `<session-id>/subagents/agent-<agent_id>.jsonl` beside the main one. A
-  subagent must load the skill itself: the parent's loads do not count;
+  subagent must load the skill itself: the parent's loads do not count, and
+  only its own current turn's design references count as read;
 - no override applies, because nobody types a subagent's prompts;
 - the closeout gate does not run when the subagent stops; the adapter
   registers no `SubagentStop` hook. Instead, code a subagent changed counts
@@ -592,10 +659,12 @@ One small JSON file per session in a `goated-claude-code-adapter/` folder:
 - anywhere you choose with `GOATED_ADAPTER_STATE_DIR`.
 
 It holds the current task's route and loads, whether missing or reset state
-lost the task, whether the router loaded, the last turn seen, and the latest
-typed overrides. It holds no prompt or reply
+lost the task, whether the router loaded, which design references were read
+since the last compaction, the last turn seen, and the latest typed overrides. It holds no prompt or reply
 text beyond the short override phrases and a commit message the user typed.
-The action and closeout gates keep no state: they read the current turn. Files are not pruned automatically;
+The action and closeout gates keep no state of their own: they read the
+current turn, and the design gates also the design references read since the
+last compaction. Files are not pruned automatically;
 deleting the folder between sessions is safe.
 
 ## Latency
@@ -656,7 +725,7 @@ of the call's prompt, which is normally already there.
   rewritten summary, in a thinking block, that drops the line, so the adapter
   never sees it. A bare retry is then held again, and a line written again
   beside a read-only call can be summarized the same way. The
-  route-line, pipeline, design, security, conflict-resolution,
+  route-line, pipeline, design, design-reads, security, conflict-resolution,
   repeated-failure, and pr-review holds give the bare retry as worth one try, not as a sure fix, and then point the user to the typed
   override: `skip routing`, or `skip <skill>` for a skip line. Reading the
   line from somewhere other than reply text is planned as a separate change.
@@ -711,7 +780,20 @@ of the call's prompt, which is normally already there.
     either reading counts as inside. A shell's `HOME` that differs from the
     one Claude Code passes to hooks is not seen.
 - The design gate judges size by lines added in the tool input, not by what
-  the change does, and does not see shell writes. The security gate judges by
+  the change does, and the design gates do not see shell writes. A design-reads
+  line in the held call's own message is not visible yet, like a skip line.
+  The design-reads signals are word and shape matches on lines, so a `try` in
+  a string selects `errors.md`, and a `NotebookEdit` cell counts all its text
+  as added. A `Write`'s file on disk, read to tell what it adds, is the one
+  design input outside the transcript. A design-reads line names files, never
+  a reason per file, so the adapter cannot tell a reference read and applied
+  from one read alone.
+- The design-reads gate holds only in a turn that loaded
+  `software-design-principles`: a turn whose edits are all small, with no
+  load, is held for no reference at all. Inside a subagent, only the
+  subagent's current turn counts: a reference it read in an earlier turn of
+  a continued subagent is required again, and the parent's reads never count
+  for it, nor its reads for the parent. The security gate judges by
   path alone. The conflict-resolution gate reads git's English messages
   (`Automatic merge failed`, `could not apply`, `could not revert`), so a git
   set to another language is not seen.

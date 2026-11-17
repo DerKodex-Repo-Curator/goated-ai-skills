@@ -16,7 +16,7 @@ gates. The rules enforce contracts defined elsewhere, never new ones
 
 from __future__ import annotations
 
-from . import shell
+from . import design_reads, shell
 from .state import SessionState, Task
 from .transcript import Turn
 
@@ -116,6 +116,9 @@ def fold_turns(
             )
         elif state.task is not None:
             state.task.loads = _unique([*state.task.loads, *loads])
+        state.reference_reads = _unique(
+            [*state.reference_reads, *design_reads.reads_in(turn.calls)]
+        )
         state.last_turn = turn.key
 
 
