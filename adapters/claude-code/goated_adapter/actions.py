@@ -788,7 +788,7 @@ def _edit_required(path: str, tool_input: dict, proof: _Proof, project: Project 
 
     return design_reads.required(
         path, tool_input, is_code=is_code(path), is_test=is_test(path, project),
-        written_before=any(p == path for p, _ in earlier),
+        small=_small_edit(tool_input), written_before=any(p == path for p, _ in earlier),
         other_code_files=len({p for p, _ in earlier if p != path and not is_test(p, project)}),
         declared=declared_files(proof.turn.design_reads), cwd=project.cwd if project else None,
     )
@@ -1503,6 +1503,20 @@ def added_lines(tool_input: dict) -> int:
     if isinstance(edits, list):
         texts += [e.get("new_string") for e in edits if isinstance(e, dict)]
     return sum(len(t.split("\n")) for t in texts if isinstance(t, str) and t)
+
+
+def _small_edit(tool_input: dict) -> bool:
+    """Whether an edit adds fewer than `DESIGN_MIN_LINES` lines, as
+    `added_lines` counts them. An edit whose added lines cannot be counted, an
+    `edits` entry that is not an edit or an input with no text it writes, is
+    not small."""
+
+    edits = tool_input.get("edits")
+    if isinstance(edits, list):
+        countable = all(isinstance(e, dict) and isinstance(e.get("new_string"), str) for e in edits)
+    else:
+        countable = any(isinstance(tool_input.get(key), str) for key in ("content", "new_string", "new_source"))
+    return countable and added_lines(tool_input) < DESIGN_MIN_LINES
 
 
 def _subject(message: str) -> str:
