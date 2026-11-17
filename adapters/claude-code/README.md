@@ -365,20 +365,27 @@ At closeout, the Design citations item asks for a citation of each reference
 the turn required, whether read in this turn or an earlier one: the turn's
 reply text cites at least one section id of each, with how it shaped the
 change or why it did not apply, as the skill's citation convention asks.
-The turn's required set is replayed from its finished edits of project files,
-by the rules above, plus its design-reads lines. The file on disk now holds
-the turn's own writes, so a `Write` is compared with the turn's earlier
-`Write` of that file instead; with none, a `Write` whose result does not
-report the file updated is a new file, and any other counts all its lines as
-added. A citation is `<file>#<id>`, bare,
-backticked, or after a path (`references/errors.md#crash-early`), anywhere in
-the turn's reply text. Its id must be one the skill's Section Index, in the
-installed `software-design-principles/SKILL.md`, lists for that file, so an id
-of another reference, a whole-file heading id, or a bare `#crash-early` does
-not count. The ids come from that index, not from a copy in the adapter: a
-user skill is looked for first, then project and plugin skills, as Claude Code
-finds them. The item names each uncited reference with its ids. Whether a
-citation says anything useful is not judged.
+The turn's required set is what the `design` and `design-reads` gates
+required of its edits: when the skill is loaded and a gate lets an edit of a
+project file through, the adapter records that edit's required references in
+its [state](#state), by the call's `tool_use_id`, and the closeout unions
+those of the turn's edits that finished. An edit made before the skill
+loaded, an edit a hold or the user stopped, and an edit whose hook input
+names no `tool_use_id` add nothing.
+
+A citation is `<file>#<id>`, bare, backticked, or after a path
+(`references/errors.md#crash-early`), anywhere in the turn's reply text,
+inside a quote or a code block too. Its id must be a section id that file
+declares in an `<!-- id: #name -->` comment in the installed skill's
+`references/`, so an id of another reference, or a bare `#crash-early`, does
+not count. An id whose `##` heading groups `###` sections, such as
+`#errors`, names a part of the file, not a section, so it does not count
+either; the remaining ids are the ones the skill's Section Index lists, which
+a test checks. The ids come from those files, not from a copy in the adapter:
+a user skill is looked for first, then project skills, then plugin skills,
+the newest cached version first. The item names each uncited reference and
+points to the Section Index for its ids. Whether a citation says anything
+useful is not judged.
 
 ### Shell writes
 
@@ -699,11 +706,14 @@ One small JSON file per session in a `goated-claude-code-adapter/` folder:
 
 It holds the current task's route and loads, whether missing or reset state
 lost the task, whether the router loaded, which design references were read
-since the last compaction, the last turn seen, and the latest typed overrides. It holds no prompt or reply
+since the last compaction, which references each edit of the latest turn
+required when the design gates judged it, the last turn seen, and the latest
+typed overrides. It holds no prompt or reply
 text beyond the short override phrases and a commit message the user typed.
 The action and closeout gates keep no state of their own: they read the
-current turn, and the design gates also the design references read since the
-last compaction. Files are not pruned automatically;
+current turn, the design gates also the design references read since the
+last compaction, and the closeout's citation item the references recorded
+for the turn's edits. Files are not pruned automatically;
 deleting the folder between sessions is safe.
 
 ## Latency
@@ -840,14 +850,12 @@ of the call's prompt, which is normally already there.
   (`Automatic merge failed`, `could not apply`, `could not revert`), so a git
   set to another language is not seen.
 - The Design citations item fails open: with no installed
-  `software-design-principles` found, or its `SKILL.md` unreadable, it asks
-  for nothing, and a reference with no row in the skill's Section Index needs
-  no citation. Only the turn's own edits count; a subagent's edits are left to
-  its own closeout. A `Write` over a file that existed before the turn, and
-  that the turn had not written, counts all its lines as added, so it can
-  require a reference the `design` gate did not. A citation in a call's
-  description does not count, and one in a reply that also makes a tool call
-  can be lost the way a route line is.
+  `software-design-principles` found, it asks for nothing, and a reference
+  whose file cannot be read, or that declares no section, needs no citation.
+  There is no closeout inside a subagent, and the parent does not record a
+  subagent's edits, so a subagent's design edits need no citation. A citation
+  in a call's description does not count, and one in a reply that also makes
+  a tool call can be lost the way a route line is.
 - The adapter guards against agents skipping skills, not against an agent
   working to defeat it. An agent with shell access could edit the transcript,
   the state file, or the settings that install the hooks. Defending against

@@ -3031,6 +3031,15 @@ DESIGN_SKILL_SOURCE = (
     Path(__file__).resolve().parents[1] / "skills" / "engineering" / "software-design-principles"
 )
 DOC_SKIP = "goated-skip: doc-sync: internal constant with no documented behavior"
+# Claude Code's result text for a Write that replaced a file on disk.
+WRITE_UPDATED = "The file {path} has been updated successfully."
+
+
+def uncited(held: dict) -> list[str]:
+    """The references the closeout's citation item names, or [] with no such item."""
+
+    match = re.search(r"Not yet cited: (.+?)\. Or write", held.get("reason", ""))
+    return match.group(1).split(", ") if match else []
 
 
 class DesignCitationTests(AdapterTestCase):
@@ -3043,6 +3052,24 @@ class DesignCitationTests(AdapterTestCase):
         shutil.copytree(DESIGN_SKILL_SOURCE, folder)
         return folder
 
+    def finish(self, s: Session) -> Session:
+        """Meet every closeout item but the citations."""
+
+        s.run("pytest -q")
+        s.say(DOC_SKIP)
+        s.read(RED_FLAGS)
+        s.run(DIFF)
+        return s
+
+    def designing(self, line: str = NONE_LINE) -> Session:
+        """A turn with the skill installed and loaded and a design-reads line."""
+
+        s = self.routed()
+        self.install_skill(s)
+        s.load("software-design-principles")
+        s.say(line)
+        return s
+
     def closed(self, line: str = "goated-design-reads: errors.md", install: bool = True) -> Session:
         """A turn that met every closeout item but the citations: errors.md is required."""
 
@@ -3053,11 +3080,14 @@ class DesignCitationTests(AdapterTestCase):
         s.say(line)
         s.read(REFERENCES + "errors.md")
         self.assertEqual(decision(s.call("Edit", edit("src/export.py", PLAIN))), "pass")
-        s.run("pytest -q")
-        s.say(DOC_SKIP)
-        s.read(RED_FLAGS)
-        s.run(DIFF)
-        return s
+        return self.finish(s)
+
+    def on_disk(self, s: Session, text: str) -> str:
+        """Put `src/old.py` with `text` on disk in the project; return its path."""
+
+        (s.project / "src").mkdir(parents=True, exist_ok=True)
+        (s.project / "src" / "old.py").write_text(text, encoding="utf-8")
+        return f"{s.project}/src/old.py"
 
     def test_an_uncited_required_reference_holds_naming_it_and_a_citation_clears_it(self) -> None:
         s = self.closed()
@@ -3066,7 +3096,8 @@ class DesignCitationTests(AdapterTestCase):
         self.assertEqual(closeout_line(held), "goated-hold: closeout | justified-skip")
         item = next(line for line in held["reason"].split("\n") if "file#id" in line)
         self.assertTrue(item.startswith("- Design:"), item)
-        self.assertIn("errors.md (#error-decision", item)
+        self.assertIn("the Section Index in the skill's SKILL.md lists each file's ids", item)
+        self.assertEqual(uncited(held), ["errors.md"])
         self.assertIn("goated-skip: software-design-principles: <reason>", item)
         s.say("`errors.md#crash-early`: the parser now raises on a bad header.")
         self.assertEqual(stop(s), {})
@@ -3077,56 +3108,85 @@ class DesignCitationTests(AdapterTestCase):
         self.assertTrue(stop(s))
         self.assertEqual(stop(s, final="Done. errors.md#crash-early did not apply: no failures."), {})
 
-    def test_an_id_of_another_reference_does_not_count(self) -> None:
+    def test_a_citation_in_a_quote_or_code_block_counts(self) -> None:
+        s = self.closed()
+        self.assertEqual(stop(s, final="> errors.md#crash-early: no failure paths."), {})
+
+        s = self.fresh()
+        self.session = s
+        s = self.closed()
+        self.assertEqual(stop(s, final="```text\nerrors.md#contracts: no new contract\n```"), {})
+
+    def test_an_id_of_another_reference_or_a_part_id_does_not_count(self) -> None:
         s = self.closed()
         s.say("`process.md#design-twice`: one interface was enough.")
         s.say("`errors.md#design-twice` and a bare `#crash-early` name no errors.md section.")
+        # `#errors` names the file's part, which groups sections, not a section.
+        s.say("errors.md#errors applied throughout.")
 
-        held = stop(s)
-        self.assertIn("errors.md (#error-decision", held["reason"])
+        self.assertEqual(uncited(stop(s)), ["errors.md"])
 
     def test_each_detected_reference_needs_its_own_citation(self) -> None:
-        s = self.routed()
-        self.install_skill(s)
-        s.load("software-design-principles")
-        s.say(NONE_LINE)
+        s = self.designing()
         for name in ("process.md", "complexity-and-modules.md", "readability.md"):
             s.read(REFERENCES + name)
         self.assertEqual(decision(s.call("Write", write("src/new.py"))), "pass")
-        s.run("pytest -q")
-        s.say(DOC_SKIP)
-        s.read(RED_FLAGS)
-        s.run(DIFF)
+        self.finish(s)
         s.say("process.md#design-twice and complexity-and-modules.md#deep-modules shaped it.")
 
-        held = stop(s)
-        item = next(line for line in held["reason"].split("\n") if "file#id" in line)
-        self.assertIn("readability.md (#obvious", item)
-        self.assertNotIn("process.md (", item)
-        self.assertNotIn("complexity-and-modules.md (", item)
+        self.assertEqual(uncited(stop(s)), ["readability.md"])
         s.say("readability.md#naming: the new names follow the module's.")
         self.assertEqual(stop(s), {})
 
-    def test_a_later_write_of_the_same_file_counts_what_it_adds(self) -> None:
+    def test_a_write_over_a_file_on_disk_needs_only_what_the_gate_required(self) -> None:
+        s = self.designing()
+        old = "def run():\n    try:\n        save()\n    except OSError:\n        raise\n"
+        path = self.on_disk(s, old)
+        self.assertEqual(decision(s.call(
+            "Write", {"file_path": path, "content": old + "_x = 1\n"},
+            result=WRITE_UPDATED.format(path=path))), "pass")
+        self.finish(s)
+
+        self.assertEqual(stop(s), {})
+
+    def test_a_write_over_a_file_on_disk_needs_what_it_adds(self) -> None:
+        s = self.designing()
+        old = "def run():\n    save()\n"
+        path = self.on_disk(s, old)
+        s.read(REFERENCES + "errors.md")
+        self.assertEqual(decision(s.call(
+            "Write", {"file_path": path, "content": old + "raise ValueError('bad')\n"},
+            result=WRITE_UPDATED.format(path=path))), "pass")
+        self.finish(s)
+
+        self.assertEqual(uncited(stop(s)), ["errors.md"])
+
+    def test_an_edit_before_the_skill_loads_is_not_counted(self) -> None:
+        small = "try:\n    save()\nexcept OSError:\n    raise"
         s = self.routed()
         self.install_skill(s)
+        self.assertEqual(decision(s.call("Edit", edit("src/export.py", small))), "pass")
         s.load("software-design-principles")
         s.say(NONE_LINE)
-        for name in ("process.md", "complexity-and-modules.md", "readability.md", "errors.md"):
-            s.read(REFERENCES + name)
-        first = write("src/new.py")
-        s.call("Write", first)
-        s.call("Write", {"file_path": "src/new.py",
-                         "content": first["content"] + "\nraise ValueError('bad header')"})
-        s.run("pytest -q")
-        s.say(DOC_SKIP)
-        s.read(RED_FLAGS)
-        s.run(DIFF)
-        s.say("process.md#design-twice, complexity-and-modules.md#deep-modules, readability.md#naming.")
+        self.finish(s)
+        self.assertEqual(uncited(stop(s)), [])
 
-        held = stop(s)
-        self.assertIn("errors.md (#error-decision", held["reason"])
-        s.say("errors.md#crash-early: a bad header raises.")
+        # The near miss: the same edit after the load needs its citation.
+        s = self.fresh()
+        self.session = s
+        s = self.designing()
+        s.read(REFERENCES + "errors.md")
+        self.assertEqual(decision(s.call("Edit", edit("src/export.py", small))), "pass")
+        self.finish(s)
+        self.assertEqual(uncited(stop(s)), ["errors.md"])
+
+    def test_a_held_edit_is_not_counted(self) -> None:
+        s = self.designing()
+        held = s.call("Edit", edit("src/export.py", "raise ValueError('bad')\n" + PLAIN))
+        self.assertEqual(decision(held), "deny")
+        self.assertEqual(decision(s.call("Edit", edit("src/export.py", PLAIN))), "pass")
+        self.finish(s)
+
         self.assertEqual(stop(s), {})
 
     def test_unreadable_skill_files_leave_the_item_open(self) -> None:
@@ -3135,12 +3195,25 @@ class DesignCitationTests(AdapterTestCase):
 
         s = self.fresh()
         self.session = s
-        skill = self.install_skill(s) / "SKILL.md"
-        text = skill.read_text(encoding="utf-8")
-        skill.write_text(re.sub(r"(?m)^\| \[[^\]]*\]\(references/errors\.md\).*\n", "", text),
-                         encoding="utf-8")
+        (self.install_skill(s) / "references" / "errors.md").unlink()
         s = self.closed(install=False)
         self.assertEqual(stop(s), {})
+
+    def test_the_section_ids_are_the_ones_the_section_index_lists(self) -> None:
+        from goated_adapter import design_reads
+
+        skill = (DESIGN_SKILL_SOURCE / "SKILL.md").read_text(encoding="utf-8")
+        index = {
+            name: set(re.findall(r"`#([a-z-]+)`", cell)) for name, cell in re.findall(
+                r"(?m)^\| \[[^\]]*\]\(references/([a-z-]+\.md)\) \|.*\|(.*)\|$", skill)
+        }
+        ids = design_reads.section_ids(DESIGN_SKILL_SOURCE)
+
+        self.assertEqual(set(ids), set(design_reads.REFERENCES))
+        for name, found in ids.items():
+            with self.subTest(reference=name):
+                self.assertLessEqual(set(found), index[name])
+                self.assertEqual(set(found), index[name])
 
     def test_a_skip_line_stands_the_item_down(self) -> None:
         s = self.closed()
@@ -3149,10 +3222,7 @@ class DesignCitationTests(AdapterTestCase):
         self.assertEqual(stop(s), {})
 
     def test_the_red_flags_and_change_read_items_are_unchanged(self) -> None:
-        s = self.routed()
-        self.install_skill(s)
-        s.load("software-design-principles")
-        s.say("goated-design-reads: errors.md")
+        s = self.designing("goated-design-reads: errors.md")
         s.read(REFERENCES + "errors.md")
         s.call("Edit", edit("src/export.py", PLAIN))
         s.run("pytest -q")

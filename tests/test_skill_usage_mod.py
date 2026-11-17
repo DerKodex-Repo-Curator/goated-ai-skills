@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import sys
 import tempfile
 import unittest
@@ -41,6 +42,7 @@ GENERATED_DESIGN_READS = MOD_ROOT / "tests" / "design-reads-fixtures.ts"
 MOD_CODE_EXTENSIONS = re.compile(r"const CODE_EXTENSIONS = new Set\(\s*'([^']*)'")
 MOD_FILE_EDIT_TOOLS = re.compile(r"const FILE_EDIT_TOOLS: Record<string, string> = \{([^}]*)\}")
 GENERATED_ADAPTER_TEXTS = MOD_ROOT / "tests" / "adapter-texts.ts"
+DESIGN_SKILL_DIR = REPO_ROOT / "skills" / "engineering" / "software-design-principles"
 
 
 def _module(source: str, name: str, value: object) -> str:
@@ -199,6 +201,18 @@ def _adapter_texts() -> dict[str, str]:
         reviewed.run("pytest -q")
         reviewed.read("/skills/software-design-principles/references/red-flags.md")
         texts["closeoutChangeRead"] = _stop_reason(reviewed)
+        # The design citations item alone: a required reference with no cited section.
+        cited = routed("closeout-citation")
+        shutil.copytree(DESIGN_SKILL_DIR, cited.config.home / ".claude" / "skills" / DESIGN_SKILL_DIR.name)
+        cited.load("software-design-principles")
+        cited.say("goated-design-reads: errors.md")
+        cited.read("/skills/software-design-principles/references/errors.md")
+        cited.call("Edit", _edit("src/export.py", PLAIN))
+        cited.run("pytest -q")
+        cited.say("goated-skip: doc-sync: internal constant with no documented behavior")
+        cited.read("/skills/software-design-principles/references/red-flags.md")
+        cited.run("git diff")
+        texts["closeoutCitation"] = _stop_reason(cited)
 
         headings = routed("spawn-headings")
         headings.brief_with_handoff()
@@ -266,6 +280,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "closeout": "closeout | justified-skip",
             "closeoutUnfinished": "closeout | justified-skip",
             "closeoutSetup": "closeout | justified-skip",
+            "closeoutCitation": "closeout | justified-skip",
             "commitContract": "commit | strict",
             "spawnHeadings": "spawn | strict",
             "securityNoExtension": "security | justified-skip",
@@ -277,6 +292,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
         self.assertIn("- Unfinished:", texts["closeoutUnfinished"])
         self.assertIn("- Design:", texts["closeoutUnfinished"])
         self.assertIn("- Setup:", texts["closeoutSetup"])
+        self.assertIn("Not yet cited: errors.md.", texts["closeoutCitation"])
 
     def test_holds_a_line_can_clear_name_the_call_fields_and_the_user_way_out(self) -> None:
         # A route or skip line in reply text is recorded only after the hook returns, and Claude

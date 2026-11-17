@@ -123,10 +123,11 @@ class Call:
     `ok` is False when the tool result was an error, which includes a call a
     hook held; `held` is True only when this adapter held it, so it never ran.
     `agent_id` is the subagent a spawn started, from the result's
-    `toolUseResult.agentId`, else None. `output` is the result's text.
+    `toolUseResult.agentId`, else None. `output` is the result's text, and
+    `tool_id` the call's `tool_use_id`, "" when the transcript gives none.
     """
 
-    __slots__ = ("name", "input", "ok", "held", "agent_id", "output")
+    __slots__ = ("name", "input", "ok", "held", "agent_id", "output", "tool_id")
 
     def __init__(
         self,
@@ -136,6 +137,7 @@ class Call:
         agent_id: str | None = None,
         held: bool = False,
         output: str = "",
+        tool_id: str = "",
     ) -> None:
         self.name = name
         self.input = tool_input
@@ -143,6 +145,7 @@ class Call:
         self.held = held
         self.agent_id = agent_id
         self.output = output
+        self.tool_id = tool_id
 
 
 class RouteMark(NamedTuple):
@@ -470,7 +473,8 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
             for block in content:
                 if not isinstance(block, dict) or block.get("type") != "tool_result":
                     continue
-                finished = pending.pop(str(block.get("tool_use_id", "")), None)
+                finished_id = str(block.get("tool_use_id", ""))
+                finished = pending.pop(finished_id, None)
                 if finished is not None:
                     result = entry.get("toolUseResult")
                     agent = result.get("agentId") if isinstance(result, dict) else None
@@ -481,6 +485,7 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                         agent_id=agent if isinstance(agent, str) else None,
                         held=bool(block.get("is_error")) and bool(HOLD_RESULT_RE.match(text)),
                         output=text,
+                        tool_id=finished_id,
                     ))
                 if (
                     block.get("tool_use_id") in skill_calls
