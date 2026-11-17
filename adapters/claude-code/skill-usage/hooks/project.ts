@@ -18,5 +18,5 @@ export async function projectKey(folder: string): Promise<string> {
   let path = folder.replace(/\\/g, '/').replace(/\/+$/, '')
   if (/^[A-Za-z]:/.test(path)) path = path.toLowerCase()
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(path))
-  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, KEY_DIGITS)
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('').slice(0, KEY_DIGITS)
 }

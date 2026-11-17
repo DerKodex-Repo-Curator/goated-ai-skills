@@ -44,7 +44,7 @@ export const DATA_VERSION = 4
  * under earlier versions, since their gates may carry names the adapter has since retired, such as `design-hold`.
  */
 const CURRENT_HOLDS_SINCE = 4
-const isEarlierVersion = (s: SessionSummary) => (s.version ?? 0) < CURRENT_HOLDS_SINCE
+const isEarlierVersion = (summary: SessionSummary) => (summary.version ?? 0) < CURRENT_HOLDS_SINCE
 /** Subagent counts before any subagent did anything. */
 export const NO_SUBAGENTS: Readonly<SubagentCounts> = { spawns: 0, starts: 0, bodyReads: 0 }
 /** Writing-turn counts before any turn wrote. */
@@ -846,20 +846,20 @@ export function forProject(all: AllTime, key: string | null): AllTime {
 }
 
 /** Adds one session's summary into `out`, in place, and returns it. */
-function addInto(out: AllTime, s: SessionSummary): AllTime {
+function addInto(out: AllTime, summary: SessionSummary): AllTime {
   out.sessions += 1
-  addCounts(out.loads, s.loads)
-  out.router[s.router] = (out.router[s.router] ?? 0) + 1
-  addLastUsed(out.lastUsed, s.lastUsed)
-  addReads(out, s)
-  if (!isEarlierVersion(s)) {
-    addCounts(out.nudges, s.nudges)
-    addMeasures(out, s)
+  addCounts(out.loads, summary.loads)
+  out.router[summary.router] = (out.router[summary.router] ?? 0) + 1
+  addLastUsed(out.lastUsed, summary.lastUsed)
+  addReads(out, summary)
+  if (!isEarlierVersion(summary)) {
+    addCounts(out.nudges, summary.nudges)
+    addMeasures(out, summary)
     return out
   }
-  const { holds, ...rest } = s
-  addEarlier(out, { sessions: 1, nudges: s.nudges, ...(holds ? { holds } : {}) })
-  addMeasures(out, rest)
+  const { holds, ...withoutHolds } = summary
+  addEarlier(out, { sessions: 1, nudges: summary.nudges, ...(holds ? { holds } : {}) })
+  addMeasures(out, withoutHolds)
   return out
 }
 

@@ -23,28 +23,28 @@ const PANE = {
 /** The pane's text with the mod's state as `stored` gives it. */
 async function paneText(...[$, on, stored]: [...Parameters<TestBody>, Record<string, unknown>]): Promise<string> {
   on('clock.now', () => ({ value: 100_000 }))
-  on('state.get', (_, e) => {
-    const key = (e as { key: string }).key
+  on('state.get', (_, request) => {
+    const key = (request as { key: string }).key
     return { value: key in stored ? { value: stored[key], version: 1 } : { value: undefined, version: 0 } }
   })
   on('state.set', () => ({ value: { isSet: true, version: 2 } }))
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  const text = (await ui.findAll({ type: 'Text' })).map(t => t.text).join('\n')
+  const text = (await ui.findAll({ type: 'Text' })).map(node => node.text).join('\n')
   await ui.unmount()
   return text
 }
 
 /** A stored summary of one session that loaded `skill`, in `project` when given. */
 const sessionIn = (skill: string, project?: string): SessionSummary => {
-  const { timeline: _, ...s } = summarize([prompt(), { kind: 'load', t: 2, skill, via: 'tool', isSubagent: false }])
-  return { ...s, ...(project ? { project } : {}) }
+  const { timeline: _, ...summary } = summarize([prompt(), { kind: 'load', t: 2, skill, via: 'tool', isSubagent: false }])
+  return { ...summary, ...(project ? { project } : {}) }
 }
 
 // ---------- routes ----------------------------------------------------------------
 
 test('a route line requiring tdd and doc-sync adds one to each, with the route intensity', async () => {
-  const s = summarize([prompt(), ...markerEvents('goated-route: standard | requires: tdd, doc-sync', 2)])
-  expect(s.routeSkills).toEqual({ tdd: { standard: 1 }, 'doc-sync': { standard: 1 } })
+  const summary = summarize([prompt(), ...markerEvents('goated-route: standard | requires: tdd, doc-sync', 2)])
+  expect(summary.routeSkills).toEqual({ tdd: { standard: 1 }, 'doc-sync': { standard: 1 } })
   // A second route line in another reply adds again, under its own intensity.
   const twice = summarize([prompt(), ...markerEvents('goated-route: standard | requires: tdd, doc-sync', 2), ...markerEvents('goated-route: full | requires: tdd', 3)])
   expect(twice.routeSkills).toEqual({ tdd: { standard: 1, full: 1 }, 'doc-sync': { standard: 1 } })
@@ -70,7 +70,7 @@ const call = (id: string, name: string, input: Record<string, unknown>) => toolU
 const errored = (id: string): UsageEvent => ({ kind: 'refused', t: 3, id })
 
 test('a proposal card and a started side session are counted apart, by tool', async () => {
-  const s = summarize([
+  const summary = summarize([
     prompt(),
     ...call('a', START, { title: 'Fix the parser', initiation: 'offer' }),
     ...call('b', START, { title: 'Docs pass', initiation: 'own_initiative', prompt: 'brief' }),
@@ -78,7 +78,7 @@ test('a proposal card and a started side session are counted apart, by tool', as
     ...call('d', START, { proposal_id: 'p1', initiation: 'own_initiative' }),
     ...call('e', HAND_OFF, { title: 'Carry on', remaining_plan: 'steps' }),
   ])
-  expect(s.sideSessions).toEqual({ [START]: { card: 2, start: 2 }, [HAND_OFF]: { start: 1 } })
+  expect(summary.sideSessions).toEqual({ [START]: { card: 2, start: 2 }, [HAND_OFF]: { start: 1 } })
   // Near miss: a subagent spawn is no side session.
   expect(summarize([prompt(), ...call('f', 'Agent', { description: 'scan', prompt: 'p' })]).sideSessions).toEqual({})
 })
@@ -106,13 +106,13 @@ test('a subagent calling the session tools adds no side session; the report and 
 // ---------- projects --------------------------------------------------------------
 
 test('a project key is the same for one folder however it is spelled, differs between folders, and holds no part of the path', async () => {
-  const a = await projectKey('C:\\Users\\someone\\code\\alpha-app')
-  const b = await projectKey('C:\\Users\\someone\\code\\beta-site')
-  expect(a).toMatch(/^[0-9a-f]{10}$/)
-  expect(a).not.toBe(b)
-  expect(await projectKey('c:/Users/someone/code/alpha-app/')).toBe(a)
+  const alphaKey = await projectKey('C:\\Users\\someone\\code\\alpha-app')
+  const betaKey = await projectKey('C:\\Users\\someone\\code\\beta-site')
+  expect(alphaKey).toMatch(/^[0-9a-f]{10}$/)
+  expect(alphaKey).not.toBe(betaKey)
+  expect(await projectKey('c:/Users/someone/code/alpha-app/')).toBe(alphaKey)
   for (const word of ['users', 'someone', 'code', 'alpha', 'beta']) {
-    expect(a.includes(word) || b.includes(word)).toBe(false)
+    expect(alphaKey.includes(word) || betaKey.includes(word)).toBe(false)
   }
   // Near miss: on a path with no drive, case is part of the name.
   expect(await projectKey('/home/someone/Alpha')).not.toBe(await projectKey('/home/someone/alpha'))
@@ -145,7 +145,7 @@ test('sessions from two project folders can be filtered apart in All time', asyn
 test('the stored summary carries the key of the repository root, not the path, so a worktree counts with its repository', async ($, on) => {
   const store = new Map<string, unknown>()
   const state: Record<string, unknown> = {}
-  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.start', (_, request) => ({ cwd: request.cwd }))
   on('turn.complete', () => ({ text: '' }))
   on('clock.now', () => ({ value: 1_000_000 }))
   on('session.id', () => ({ value: 'running' }))
@@ -156,19 +156,19 @@ test('the stored summary carries the key of the repository root, not the path, s
   on('command.register', () => ({ value: { command: 'skill-usage' } }))
   on('ui.open', () => ({ value: { isPlaced: false, reason: 'no pane in this test' } }))
   on('ui.status', () => ({ value: undefined }))
-  on('state.get', (_, e) => {
-    const key = (e as { key: string }).key
+  on('state.get', (_, request) => {
+    const key = (request as { key: string }).key
     return { value: key in state ? { value: state[key], version: 1 } : { value: undefined, version: 0 } }
   })
-  on('state.set', (_, e) => {
-    const { key, value } = e as { key: string; value: unknown }
+  on('state.set', (_, request) => {
+    const { key, value } = request as { key: string; value: unknown }
     state[key] = value
     return { value: { isSet: true, version: 2 } }
   })
   on('store.keys', () => ({ value: [...store.keys()] }))
-  on('store.get', (_, e) => ({ value: store.get((e as { key: string }).key) }))
-  on('store.set', (_, e) => {
-    const { key, value } = e as { key: string; value: unknown }
+  on('store.get', (_, request) => ({ value: store.get((request as { key: string }).key) }))
+  on('store.set', (_, request) => {
+    const { key, value } = request as { key: string; value: unknown }
     store.set(key, value)
     return { value: undefined }
   })
@@ -228,8 +228,8 @@ test('the report lists each project by its key and session count', async () => {
 
 /** A summary as versions before 076 stored it: no version, holds under a retired gate name. */
 const earlierSummary = (): SessionSummary => {
-  const { version: _, ...s } = sessionIn('tdd')
-  return { ...s, nudges: { 'design-hold': { followed: 2, ignored: 1 }, design: { followed: 1 } }, holds: { 'justified-skip': 4 } }
+  const { version: _, ...summary } = sessionIn('tdd')
+  return { ...summary, nudges: { 'design-hold': { followed: 2, ignored: 1 }, design: { followed: 1 } }, holds: { 'justified-skip': 4 } }
 }
 
 test('a summary stored by an earlier version shows under the earlier-versions heading and changes no current count', async () => {
@@ -270,7 +270,7 @@ async function startWith($: Parameters<TestBody>[0], on: Parameters<TestBody>[1]
     { role: 'assistant' as const, content: [{ type: 'tool_use' as const, id: 'a', name: START, input: { initiation: 'offer' } }] },
     { role: 'user' as const, content: [{ type: 'tool_result' as const, tool_use_id: 'a', content: 'card shown' }] },
   ]
-  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.start', (_, request) => ({ cwd: request.cwd }))
   on('clock.now', () => ({ value: 1_000_000 }))
   on('session.id', () => ({ value: 'running' }))
   on('session.usage', () => ({ value: { context: { breakdown: { skills: { skillFrontmatter: [], totalSkills: 0, includedSkills: 0, tokens: 0 } } } } as never }))
@@ -284,12 +284,12 @@ async function startWith($: Parameters<TestBody>[0], on: Parameters<TestBody>[1]
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   on('store.delete', () => ({ value: undefined }))
-  on('state.get', (_, e) => {
-    const key = (e as { key: string }).key
+  on('state.get', (_, request) => {
+    const key = (request as { key: string }).key
     return { value: key in state ? { value: state[key], version: 1 } : { value: undefined, version: 0 } }
   })
-  on('state.set', (_, e) => {
-    const { key, value } = e as { key: string; value: unknown }
+  on('state.set', (_, request) => {
+    const { key, value } = request as { key: string; value: unknown }
     state[key] = value
     return { value: { isSet: true, version: 2 } }
   })

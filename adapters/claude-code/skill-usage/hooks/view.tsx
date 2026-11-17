@@ -275,32 +275,36 @@ function designReadWords(m: Measures): string {
 }
 
 /** Rows of counts, most counted first, equal ones A to Z, so the order holds between redraws. */
-const byMostThenName = ([a, x]: [string, Counts<string>], [b, y]: [string, Counts<string>]) => total(y) - total(x) || a.localeCompare(b)
+const byMostThenName = ([leftName, leftCounts]: [string, Counts<string>], [rightName, rightCounts]: [string, Counts<string>]) =>
+  total(rightCounts) - total(leftCounts) || leftName.localeCompare(rightName)
 
 /** Each skill a routed line required, most required first, as `<skill> <n>`; with `detail`, each followed by its intensities. */
-function routedSkillWords(m: Measures, detail = false): string {
-  return Object.entries(m.routeSkills ?? {})
+function routedSkillWords(measures: Measures, detail = false): string {
+  return Object.entries(measures.routeSkills ?? {})
     .sort(byMostThenName)
-    .map(([skill, c]) => {
-      const intensities = Object.entries(c).flatMap(([intensity, n]) => (n ? [`${intensity} ${n}`] : []))
-      return `${skill} ${total(c)}${detail ? ` (${intensities.join(', ')})` : ''}`
+    .map(([skill, byIntensity]) => {
+      const intensities = Object.entries(byIntensity).flatMap(([intensity, count]) => (count ? [`${intensity} ${count}`] : []))
+      return `${skill} ${total(byIntensity)}${detail ? ` (${intensities.join(', ')})` : ''}`
     })
     .join(detail ? ' · ' : ', ')
 }
 
 /** What a session tool's call did, in words for a count of them. */
-const sideSessionCount = (n: number, kind: SideSessionKind) => (kind === 'card' ? plural(n, 'card') : `${n} started`)
+const sideSessionCount = (count: number, kind: SideSessionKind) => (kind === 'card' ? plural(count, 'card') : `${count} started`)
 const SESSION_TOOL_PREFIX = 'mcp__ccd_session__'
 /** Side sessions across tools, cards then starts, as `1 card, 2 started`. */
-function sideSessionWords(m: Measures): string {
-  const sum = (kind: SideSessionKind) => Object.values(m.sideSessions ?? {}).reduce((n, c) => n + (c[kind] ?? 0), 0)
+function sideSessionWords(measures: Measures): string {
+  const sum = (kind: SideSessionKind) => Object.values(measures.sideSessions ?? {}).reduce((sumSoFar, byKind) => sumSoFar + (byKind[kind] ?? 0), 0)
   return (['card', 'start'] as const).flatMap(kind => (sum(kind) ? [sideSessionCount(sum(kind), kind)] : [])).join(', ')
 }
 /** Side sessions by tool, most used first, each tool by its short name, as `start_session 1 card, 1 started`. */
-function sideSessionToolWords(m: Measures): string {
-  return Object.entries(m.sideSessions ?? {})
+function sideSessionToolWords(measures: Measures): string {
+  return Object.entries(measures.sideSessions ?? {})
     .sort(byMostThenName)
-    .map(([tool, c]) => `${tool.replace(SESSION_TOOL_PREFIX, '')} ${(['card', 'start'] as const).flatMap(kind => (c[kind] ? [sideSessionCount(c[kind] ?? 0, kind)] : [])).join(', ')}`)
+    .map(([tool, byKind]) => {
+      const kinds = (['card', 'start'] as const).flatMap(kind => (byKind[kind] ? [sideSessionCount(byKind[kind] ?? 0, kind)] : []))
+      return `${tool.replace(SESSION_TOOL_PREFIX, '')} ${kinds.join(', ')}`
+    })
     .join(' · ')
 }
 
@@ -519,16 +523,16 @@ function skipReasonRows(reasons: SkipReasons | undefined): { skill: string; gate
 }
 
 const EARLIER_TITLE = 'Hooks from earlier versions of the mod'
-const EARLIER_NOTE = (e: EarlierHolds) => `${plural(e.sessions, 'session')} stored before summaries carried a version`
+const EARLIER_NOTE = (earlier: EarlierHolds) => `${plural(earlier.sessions, 'session')} stored before summaries carried a version`
 /** How the sessions stored with no project key, by versions before keys were recorded, are named. */
 const NOT_RECORDED = 'not recorded'
 
 /** Each project with its sessions, most first, equal ones A to Z, then the sessions stored with no project key (`key` absent). */
 function projectRows(all: AllTime): { key?: string; sessions: number }[] {
   const keyed = Object.entries(all.byProject ?? {})
-    .map(([key, p]) => ({ key, sessions: p.sessions }))
-    .sort((a, b) => b.sessions - a.sessions || a.key.localeCompare(b.key))
-  const unkeyed = all.sessions - keyed.reduce((n, p) => n + p.sessions, 0)
+    .map(([key, project]) => ({ key, sessions: project.sessions }))
+    .sort((left, right) => right.sessions - left.sessions || left.key.localeCompare(right.key))
+  const unkeyed = all.sessions - keyed.reduce((sumSoFar, project) => sumSoFar + project.sessions, 0)
   return [...keyed, ...(unkeyed > 0 ? [{ sessions: unkeyed }] : [])]
 }
 
@@ -539,21 +543,21 @@ function projectRows(all: AllTime): { key?: string; sessions: number }[] {
 export type ProjectFilter = { shown: string | null; own?: string; choose: (key: string | null) => unknown }
 
 /** The projects All time can be filtered to, each with a button that shows it alone, and one that shows them all. */
-function projectChooser(v: View, all: AllTime, filter: ProjectFilter) {
-  const { Box, Button } = v.ui
+function projectChooser(view: View, all: AllTime, filter: ProjectFilter) {
+  const { Box, Button } = view.ui
   const choice = (id: string, key: string | null, text: string) => (
     <Box key={`project-${id}`} flexDirection="row" gap={1}>
       <Button label={filter.shown === key ? 'Shown' : 'Show'} variant={filter.shown === key ? 'primary' : 'secondary'} onPress={() => filter.choose(key)} />
-      {line(v, text, filter.shown === key ? 'plain' : 'dim')}
+      {line(view, text, filter.shown === key ? 'plain' : 'dim')}
     </Box>
   )
   return [
-    title(v, 'Projects', 'show one project alone; each key stands for a folder, which is not stored'),
+    title(view, 'Projects', 'show one project alone; each key stands for a folder, which is not stored'),
     choice('all', null, `every project · ${plural(all.sessions, 'session')}`),
-    ...projectRows(all).map(p =>
-      p.key === undefined
-        ? line(v, `${NOT_RECORDED} · ${plural(p.sessions, 'session')}, stored before projects were`, 'dim')
-        : choice(p.key, p.key, `${p.key}${p.key === filter.own ? ' · this project' : ''} · ${plural(p.sessions, 'session')}`),
+    ...projectRows(all).map(project =>
+      project.key === undefined
+        ? line(view, `${NOT_RECORDED} · ${plural(project.sessions, 'session')}, stored before projects were`, 'dim')
+        : choice(project.key, project.key, `${project.key}${project.key === filter.own ? ' · this project' : ''} · ${plural(project.sessions, 'session')}`),
     ),
   ]
 }
@@ -587,7 +591,7 @@ export function allTimeTab(v: View, everything: AllTime, rows: number, filter?: 
         title(v, EARLIER_TITLE, `${EARLIER_NOTE(all.earlier)}; their holds add to no count above`),
         ...Object.entries(all.earlier.nudges)
           .sort(byMostThenName)
-          .map(([hook, c]) => line(v, `${hookName(hook)}: ${outcomeWords(c)}`, 'dim')),
+          .map(([hook, outcomes]) => line(v, `${hookName(hook)}: ${outcomeWords(outcomes)}`, 'dim')),
       ]}
       {title(v, 'Skip reasons', 'why a skip line declined a hold, by skill and hold')}
       {skipReasonRows(all.skipReasons).length === 0
@@ -686,12 +690,12 @@ export function reportText(all: AllTime, avail: Available | null): string {
   for (const [label, c] of items) out.push(`- ${label}: ${outcomeWords(c)}`)
   if (all.earlier) {
     out.push('', `## ${EARLIER_TITLE}`, '', `${EARLIER_NOTE(all.earlier)}.`, '')
-    for (const [hook, c] of Object.entries(all.earlier.nudges).sort(byMostThenName)) out.push(`- ${hookName(hook)}: ${outcomeWords(c)}`)
+    for (const [hook, outcomes] of Object.entries(all.earlier.nudges).sort(byMostThenName)) out.push(`- ${hookName(hook)}: ${outcomeWords(outcomes)}`)
   }
   const projects = projectRows(all)
   if (projects.length > 0) {
     out.push('', '## Projects', '')
-    for (const p of projects) out.push(`- ${p.key ?? NOT_RECORDED}: ${plural(p.sessions, 'session')}`)
+    for (const project of projects) out.push(`- ${project.key ?? NOT_RECORDED}: ${plural(project.sessions, 'session')}`)
   }
   const ruled = (all.router.first ?? 0) + (all.router.late ?? 0) + (all.router.never ?? 0)
   if (ruled > 0) out.push('', `GOATED router rule: router loaded first in ${all.router.first ?? 0} of ${plural(ruled, 'session')}.`)
