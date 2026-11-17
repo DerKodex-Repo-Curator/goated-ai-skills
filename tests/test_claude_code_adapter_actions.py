@@ -681,6 +681,9 @@ class DesignReferenceReadTests(AdapterTestCase):
         self.assertNotIn("references/process.md", reason(held))
         self.assertIn("references/complexity-and-modules.md", reason(held))
         s.read(REFERENCES + "complexity-and-modules.md")
+        held = s.call("Write", write("src/export.py"))
+        self.assertIn("references/readability.md` (a new code file)", reason(held))
+        s.read(REFERENCES + "readability.md")
         self.assertEqual(decision(s.call("Write", write("src/export.py"))), "pass")
 
     def test_the_line_declares_references_that_are_required_too(self) -> None:
@@ -691,7 +694,8 @@ class DesignReferenceReadTests(AdapterTestCase):
         self.assertIn("references/differences.md` (named in your design-reads line)", reason(held))
         # red-flags.md stays with the closeout, and an unknown name requires nothing.
         self.assertNotIn("red-flags.md", reason(held))
-        self.assertNotIn("unknown-file.md", reason(held))
+        self.assertNotIn("references/unknown-file.md", reason(held))
+        self.assertIn('not design references, so they require nothing: "unknown-file.md"', reason(held))
         s.read(REFERENCES + "differences.md")
         self.assertEqual(decision(s.call("Edit", edit("src/export.py", PLAIN))), "pass")
 
@@ -708,8 +712,23 @@ class DesignReferenceReadTests(AdapterTestCase):
              {"process.md", "complexity-and-modules.md", "readability.md"},
              "Edit", edit("src/a.ts", "const exported = 1")),
             ("new code file", "Write", {"file_path": "src/fresh.py", "content": "x = 1"},
-             {"process.md", "complexity-and-modules.md"},
-             "Write", {"file_path": "{project}/src/existing.py", "content": "x = 1"}),
+             {"process.md", "complexity-and-modules.md", "readability.md"},
+             "Write", {"file_path": "{project}/src/existing.py", "content": "x = 2"}),
+            ("public definition", "Edit", edit("src/a.py", "class Exporter:\n    pass"),
+             {"process.md", "complexity-and-modules.md", "readability.md"},
+             "Edit", edit("src/a.py", "def _helper():\n    return 1")),
+            ("exported, not a shell export", "Edit", edit("src/a.js", "export function load() {}"),
+             {"process.md", "complexity-and-modules.md", "readability.md"},
+             "Edit", edit("src/env.sh", "export RATE=1")),
+            ("test file selects only coding", "Edit",
+             edit("tests/test_a.py", "def test_load():\n    try:\n        load()  # the cache\n    finally:"),
+             {"coding.md"}, "Edit", edit("tests/fixtures/rows.json", '{"rate": 1}')),
+            ("comment words are not code", "Edit",
+             edit("src/a.py", "# try the cache first, then raise\n# Lock the row\nrows = load()  # Lock it"),
+             {"readability.md"}, "Edit", edit("src/a.py", "rows = load()")),
+            ("docstring words are not code", "Edit",
+             edit("src/a.py", '    """Raise when a Lock is held,\n    then try again."""'),
+             {"readability.md"}, "Edit", edit("src/a.py", "    rows = []")),
             ("comment", "Edit", edit("src/a.py", "rate = 1  # per second"),
              {"readability.md"}, "Edit", edit("src/a.py", "rate = a // b")),
             ("docstring", "Edit", edit("src/a.py", '    """Return the rate."""'),
@@ -808,6 +827,99 @@ class DesignReferenceReadTests(AdapterTestCase):
         self.assertEqual(decision(s.call("Write", write(f"{outside}/probe.py", lines=40))), "pass")
         self.assertEqual(decision(s.call("Edit", edit(f"{outside}/probe.py", "try:\n    x = 1"))), "pass")
         held = s.call("Edit", edit(f"{s.project}/src/probe.py", "try:\n    x = 1"))
+        self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
+
+    def test_a_typical_change_requires_five_references(self) -> None:
+        # One new public function with a docstring and error handling, its caller, and a test.
+        s = self.designing()
+        held = s.call("Edit", edit(
+            "src/rows.py", 'def load(path):\n    """Load the rows."""\n    try:\n        return read(path)'))
+        named = set(re.findall(r"references/([a-z-]+\.md)`", reason(held)))
+        self.assertEqual(named, {"process.md", "complexity-and-modules.md", "readability.md", "errors.md"})
+        for name in named:
+            s.read(REFERENCES + name)
+        self.assertEqual(decision(s.call("Edit", edit("src/cli.py", "rows = load(path)"))), "pass")
+        held = s.call("Edit", edit("tests/test_rows.py", "def test_load():\n    assert load(PATH)"))
+        self.assertEqual(set(re.findall(r"references/([a-z-]+\.md)`", reason(held))), {"coding.md"})
+
+    def test_the_third_code_file_leaves_out_test_files(self) -> None:
+        s = self.designing()
+        for path in ("src/a.py", "tests/test_a.py", "tests/test_b.py", "src/b.py"):
+            s.read(REFERENCES + "coding.md")
+            self.assertEqual(decision(s.call("Edit", edit(path, "x = 1"))), "pass", path)
+        held = s.call("Edit", edit("src/c.py", "x = 1"))
+        self.assertIn("references/decoupling.md` (the third code file", reason(held))
+
+    def test_lock_and_test_data_files_are_not_configuration(self) -> None:
+        s = self.designing()
+        s.say("goated-skip: code-security-review: lockfile regenerated with no version change")
+        for path in ("package-lock.json", "pnpm-lock.yaml", "tests/fixtures/rows.json"):
+            self.assertEqual(decision(s.call("Edit", edit(path, '"rate": 1'))), "pass", path)
+        self.assertEqual(hold_line(s.call("Edit", edit("config/app.json", '"rate": 1'))),
+                         "goated-hold: design-reads | justified-skip")
+
+    def test_a_write_over_an_existing_file_counts_only_what_it_adds(self) -> None:
+        s = self.designing()
+        old = (
+            'def export(rows):\n    """Write the rows."""\n    try:\n        save(rows)\n'
+            "    except OSError:\n        raise\n"
+        )
+        (s.project / "src").mkdir(parents=True, exist_ok=True)
+        (s.project / "src" / "export.py").write_text(old, encoding="utf-8")
+        path = f"{s.project}/src/export.py"
+        # A signature change, a re-indent, and the same try, except, and docstring add nothing.
+        rewritten = (
+            'def export(rows, sep=","):\n  """Write the rows."""\n  try:\n      save(rows)\n'
+            "  except OSError:\n      raise\n"
+        )
+        self.assertEqual(decision(s.call("Write", {"file_path": path, "content": rewritten})), "pass")
+        held = s.call("Write", {"file_path": path, "content": old + "\ndef publish():\n    pass\n"})
+        self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
+        self.assertIn('references/process.md` (adds a public top-level definition ("publish"))', reason(held))
+
+    def test_an_unknown_name_in_the_line_is_quoted_in_the_hold(self) -> None:
+        s = self.designing("goated-design-reads: proces.md")
+        held = s.call("Edit", edit("src/a.py", "try:\n    x = 1"))
+        self.assertIn('"proces.md"', reason(held))
+        self.assertIn("not design references", reason(held))
+        s2 = self.designing(s=self.fresh_routed())
+        self.assertNotIn("not design references", reason(s2.call("Edit", edit("src/a.py", "try:\n    x = 1"))))
+
+    def test_a_resume_keeps_reads_and_a_clear_drops_them(self) -> None:
+        s = self.designing()
+        s.read(REFERENCES + "errors.md")
+        self.assertEqual(decision(s.call("Edit", edit("src/a.py", "try:\n    x = 1"))), "pass")
+        s.hook("SessionStart", source="resume")
+        s.prompt("Carry on.")
+        s.say("goated-route: continue")
+        self.designing(s=s)
+        self.assertEqual(decision(s.call("Edit", edit("src/a.py", "try:\n    x = 1"))), "pass")
+
+        s.hook("SessionStart", source="clear")
+        s.prompt("Next task.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        self.designing(s=s)
+        held = s.call("Edit", edit("src/a.py", "try:\n    x = 1"))
+        self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
+
+    def test_a_shell_read_of_a_reference_does_not_count(self) -> None:
+        s = self.designing()
+        s.run("cat " + REFERENCES + "errors.md")
+        held = s.call("Edit", edit("src/a.py", "try:\n    x = 1"))
+        self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
+
+    def test_a_subagents_reads_stay_in_its_own_turn(self) -> None:
+        s = self.designing()
+        agent = s.subagent("a9")
+        agent.prompt("Add the retry.", hook=False)
+        agent.load("software-design-principles")
+        agent.say(NONE_LINE)
+        agent.read(REFERENCES + "errors.md")
+        sub = agent.call("Edit", edit("src/a.py", "try:\n    x = 1"), agent_id="a9",
+                         agent_type="general-purpose")
+        self.assertEqual(decision(sub), "pass")
+        held = s.call("Edit", edit("src/b.py", "try:\n    x = 1"))
         self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
 
     def fresh_routed(self) -> Session:

@@ -17,7 +17,8 @@ export type UsageEvent = Stamp &
     /** `isSubagent`: the hook spoke to a subagent, not the main agent; `agent`: which subagent, so its own turn end settles it. */
     /** `holdKind`: an adapter hold (`goated-hold:`), whose `hook` is its gate; `isStop`: it held a `Stop`, not a call. */
     /** `skipOnly`: the named skills the hold offers only as a skip line, which no load answers. */
-    | { kind: 'nudge'; hook: string; named: string[]; holdKind?: HoldKind; isStop?: true; skipOnly?: string[]; isSubagent?: true; agent?: string }
+    /** `refs`: the design references (`errors.md`) a design hold asks to Read; `needsLine`: it asks for a design-reads line. */
+    | { kind: 'nudge'; hook: string; named: string[]; holdKind?: HoldKind; isStop?: true; skipOnly?: string[]; refs?: string[]; needsLine?: true; isSubagent?: true; agent?: string }
     /** A `goated-skip: <skill>: <reason>` line in a reply: the agent (or the subagent `agent`) declined a skill for this turn. */
     | { kind: 'skip'; skill: string; reason: string; isSubagent?: true; agent?: string }
     /**
@@ -26,8 +27,8 @@ export type UsageEvent = Stamp &
      */
     | { kind: 'turn-end'; agent?: string; reason?: 'answer' | 'aborted' | 'refusal' | 'error' }
     | { kind: 'read'; skills: string[] }
-    /** A supporting file of a skill read, such as `references/x.md`, by the main agent or a subagent. */
-    | { kind: 'ref'; skill: string; file: string; isSubagent?: true }
+    /** A supporting file of a skill read, such as `references/x.md`, by the main agent or a subagent; `isReadTool`: by the Read tool, not a shell command. */
+    | { kind: 'ref'; skill: string; file: string; isReadTool?: true; isSubagent?: true }
     /** A subagent reading a skill's SKILL.md, the skill's body, without the Skill tool. */
     | { kind: 'body'; skill: string; isSubagent: true; agent?: string }
     /** A winning `goated-route:` line in a reply, by the main agent or the subagent `agent`. */

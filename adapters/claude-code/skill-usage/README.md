@@ -83,9 +83,14 @@ it. In particular:
 - Once `software-design-principles` has loaded, the adapter's `design` hold
   asks for its design-reads line and the references the edit requires, and
   the `design-reads` hold for a later edit's references; both name the skill
-  only in their skip line. A read of one of the skill's files counts either as
-  files read, and a design-reads line in the turn follows that `design` hold.
-  Loading the skill again answers neither.
+  only in their skip line, backtick each reference by its path, and the
+  `design` hold backticks the line's form when it asks for one. Such a hold
+  is met, as the adapter judges it, once the agent has used the Read tool on
+  each reference it names (a shell command printing one, another of the
+  skill's files, or its `SKILL.md` does not count) and written a
+  design-reads line if it asked for one. It counts as files read when a read
+  came last, and as followed when the line did. Loading the skill again
+  answers neither.
 - A `spawn` hold names two ways to write the brief, `handoff` or
   `subagent-driven-development`. It counts once: its row shows "handoff or
   subagent-driven-development" until the agent loads one, then names that one.

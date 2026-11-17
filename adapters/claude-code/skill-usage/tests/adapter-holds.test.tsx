@@ -436,31 +436,47 @@ test('a repeat that no longer asks for what an earlier hold of its gate asked sh
 
 // ---------- the design references: the design hold's line and reads, and the design-reads hold ----------------------
 
-test('the design-reads hold reads under its own name and names the design skill only as its skip line', async () => {
+const DESIGN_REFERENCES = '/skills/software-design-principles/references/'
+const readTool = (path: string, t: number) => toolUseEvents([{ name: 'Read', input: { file_path: path } }], false, t)
+const shellRead = (path: string, t: number) => toolUseEvents([{ name: 'Bash', input: { command: `cat ${path}` } }], false, t)
+
+test('the design holds name the design skill only as a skip line, with the references and line they ask for', async () => {
   expect(hookName('design-reads')).toBe('design-reads hold')
-  expect(preHold('Edit', ADAPTER_TEXTS.designReads, 1)).toEqual([{ kind: 'nudge', t: 1, hook: 'design-reads', named: ['software-design-principles'], holdKind: 'justified-skip', skipOnly: ['software-design-principles'] }])
-  // Once the skill loaded, the design hold asks for its design-reads line and reads, not a load.
-  expect(preHold('Write', ADAPTER_TEXTS.designLine, 1)).toEqual([{ kind: 'nudge', t: 1, hook: 'design', named: ['software-design-principles'], holdKind: 'justified-skip', skipOnly: ['software-design-principles'] }])
+  const skill = 'software-design-principles'
+  expect(preHold('Edit', ADAPTER_TEXTS.designReads, 1)).toEqual([{ kind: 'nudge', t: 1, hook: 'design-reads', named: [skill], holdKind: 'justified-skip', skipOnly: [skill], refs: ['errors.md'] }])
+  expect(preHold('Edit', ADAPTER_TEXTS.designLine, 1)).toEqual([{ kind: 'nudge', t: 1, hook: 'design', named: [skill], holdKind: 'justified-skip', skipOnly: [skill], needsLine: true }])
+  expect(preHold('Write', ADAPTER_TEXTS.designLineReads, 1)).toEqual([{ kind: 'nudge', t: 1, hook: 'design', named: [skill], holdKind: 'justified-skip', skipOnly: [skill], refs: ['process.md', 'complexity-and-modules.md', 'readability.md'], needsLine: true }])
 })
 
-test('the design-reads hold is followed by reading the reference, declined by a skip line, and otherwise not followed', async () => {
+test('the design-reads hold is followed only by a Read of each reference it names', async () => {
   const held = preHold('Edit', ADAPTER_TEXTS.designReads, 2)
-  const read: UsageEvent = { kind: 'read', t: 3, skills: ['software-design-principles'] }
-  expect(summarize([prompt(), ...held, read, turnEnd(4)]).nudges).toEqual({ 'design-reads': { 'read files': 1 } })
+  expect(summarize([prompt(), ...held, ...readTool(`${DESIGN_REFERENCES}errors.md`, 3), turnEnd(4)]).nudges).toEqual({ 'design-reads': { 'read files': 1 } })
+  // A shell read, another reference, the red flags, or the skill's body is not the read it asks for.
+  for (const other of [
+    shellRead(`${DESIGN_REFERENCES}errors.md`, 3),
+    readTool(`${DESIGN_REFERENCES}process.md`, 3),
+    readTool(`${DESIGN_REFERENCES}red-flags.md`, 3),
+    readTool('/skills/software-design-principles/SKILL.md', 3),
+  ]) {
+    expect(summarize([prompt(), ...held, ...other, turnEnd(4)]).nudges).toEqual({ 'design-reads': { ignored: 1 } })
+  }
   const reason = 'the edit only renames one local name'
   const declined = summarize([prompt(), ...held, ...markerEvents(`goated-skip: software-design-principles: ${reason}`, 3), turnEnd(4)])
   expect(declined.nudges).toEqual({ 'design-reads': { declined: 1 } })
   // Loading the skill again is not the read it asks for.
   expect(summarize([prompt(), ...held, load('software-design-principles', 3), turnEnd(4)]).nudges).toEqual({ 'design-reads': { ignored: 1 } })
-  expect(summarize([prompt(), ...held, turnEnd(3)]).nudges).toEqual({ 'design-reads': { ignored: 1 } })
 })
 
-test('a design hold that asks for the design-reads line is followed by the line, or by reading a reference', async () => {
-  const held = preHold('Write', ADAPTER_TEXTS.designLine, 2)
+test('a design hold that asks for the line, and reads, is followed only when the line and every read are in', async () => {
   const line = markerEvents('goated-design-reads: none: only renames local names', 3)
-  expect(summarize([prompt(), ...held, ...line, turnEnd(4)]).nudges).toEqual({ design: { followed: 1 } })
-  const read: UsageEvent = { kind: 'read', t: 3, skills: ['software-design-principles'] }
-  expect(summarize([prompt(), ...held, read, turnEnd(4)]).nudges).toEqual({ design: { 'read files': 1 } })
+  expect(summarize([prompt(), ...preHold('Edit', ADAPTER_TEXTS.designLine, 2), ...line, turnEnd(4)]).nudges).toEqual({ design: { followed: 1 } })
+  const both = preHold('Write', ADAPTER_TEXTS.designLineReads, 2)
+  const reads = (files: string[]) => files.flatMap((f, i) => readTool(`${DESIGN_REFERENCES}${f}`, 4 + i))
+  const all = ['process.md', 'complexity-and-modules.md', 'readability.md']
+  expect(summarize([prompt(), ...both, ...line, turnEnd(9)]).nudges).toEqual({ design: { ignored: 1 } })
+  expect(summarize([prompt(), ...both, ...line, ...reads(all.slice(1)), turnEnd(9)]).nudges).toEqual({ design: { ignored: 1 } })
+  expect(summarize([prompt(), ...both, ...reads(all), turnEnd(9)]).nudges).toEqual({ design: { ignored: 1 } })
+  expect(summarize([prompt(), ...both, ...line, ...reads(all), turnEnd(9)]).nudges).toEqual({ design: { 'read files': 1 } })
   // A design-reads line does not answer the design hold that asks for the load.
   expect(summarize([prompt(), ...preHold('Write', ADAPTER_TEXTS.design, 2), ...line, turnEnd(4)]).nudges).toEqual({ design: { ignored: 1 } })
 })

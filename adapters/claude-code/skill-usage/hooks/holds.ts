@@ -10,8 +10,6 @@ export const ROUTE_LINE = '(route line)'
 
 /** The adapter's gate for a route's required skills. */
 const PIPELINE_GATE = 'pipeline'
-/** The adapter's design gate, which, once its skill loaded, asks for a design-reads line and the reads it requires. */
-const DESIGN_GATE = 'design'
 /** Gates whose named skills are alternatives, one of which answers the hold: the spawn hold's `handoff` or `subagent-driven-development`. */
 const ALTERNATIVE_GATES = new Set(['spawn'])
 /**
@@ -69,7 +67,15 @@ export function holdSettlement(): HoldSettlement {
   // `row`: the nudge's log row, which a repeat of the same hold in the turn joins. `isStop`: a hold on a `Stop`.
   // `isSkipOnly`: a skill the hold offers only as a skip line, which no load answers.
   // `isSkipRejected`: a blocked `Stop` asked for it after a skip line, so that skip line did not clear it.
-  type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; isStop?: true; isSkipOnly?: true; isSkipRejected?: true; mark: NudgedSkill; row: NudgeRow }
+  // `refs`, `needsLine`: what a design hold that offers its skill only as a skip line asks instead: a Read of each
+  // design reference still unread, and a design-reads line. It is followed once both are in, as the adapter judges.
+  type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; isStop?: true; isSkipOnly?: true; isSkipRejected?: true; refs?: Set<string>; needsLine?: boolean; mark: NudgedSkill; row: NudgeRow }
+  /** Whether an ask is a design hold's, answered by its reads and line rather than by any read of the skill's files. */
+  const asksDesign = (n: Open) => n.refs !== undefined || n.needsLine !== undefined
+  /** Settles a design hold's ask once nothing it asked is missing; `outcome` names what came last. */
+  const settleDesign = (n: Open, outcome: Outcome, by: UsageEvent) => {
+    if (!n.refs?.size && !n.needsLine) settle(m => m === n, outcome, by)
+  }
   let open: Open[] = []
   /** Whether an open ask is answered by loading `skill`. */
   const answers = (n: Open, skill: string) => !n.isSkipOnly && n.anyOf.includes(skill)
@@ -150,13 +156,16 @@ export function holdSettlement(): HoldSettlement {
   const addAsk = (held: GateRow, e: UsageEvent & { kind: 'nudge' }, ask: string[]): Open => {
     const mark: NudgedSkill = { skill: ask.join(' or '), status: 'pending' }
     held.row.skills.push(mark)
+    const isSkipOnly = ask.every(skill => e.skipOnly?.includes(skill))
     const n: Open = {
       hook: e.hook,
       anyOf: ask,
       ...(e.agent ? { agent: e.agent } : {}),
       ...(e.holdKind === 'strict' ? { isStrict: true as const } : {}),
       ...(e.isStop ? { isStop: true as const, isSkipRejected: true as const } : {}),
-      ...(ask.every(skill => e.skipOnly?.includes(skill)) ? { isSkipOnly: true as const } : {}),
+      ...(isSkipOnly ? { isSkipOnly: true as const } : {}),
+      ...(isSkipOnly && e.refs?.length ? { refs: new Set(e.refs) } : {}),
+      ...(isSkipOnly && e.needsLine ? { needsLine: true } : {}),
       mark,
       row: held.row,
     }
@@ -280,11 +289,20 @@ export function holdSettlement(): HoldSettlement {
         settle(n => answers(n, e.skill), 'followed', e, e.skill)
         break
       case 'read':
-        settle(n => n.anyOf.some(s => e.skills.includes(s)), 'read files', e, e.skills.find(s => open.some(n => n.anyOf.includes(s))))
+        settle(n => !asksDesign(n) && n.anyOf.some(s => e.skills.includes(s)), 'read files', e, e.skills.find(s => open.some(n => n.anyOf.includes(s))))
+        break
+      case 'ref':
+        // Only the Read tool counts as a design hold's read, as the adapter counts it; a subagent's reads are its own.
+        if (!e.isReadTool || e.isSubagent) break
+        for (const n of open.filter(n => !n.agent && n.refs !== undefined)) {
+          if (n.refs?.delete(e.file.split('/').pop() ?? '')) settleDesign(n, 'read files', e)
+        }
         break
       case 'design-reads':
-        // A design hold that names its skill only as a skip line asks, the skill being loaded, for this line (and reads).
-        settle(n => n.hook === DESIGN_GATE && n.isSkipOnly === true && n.agent === e.agent, 'followed', e)
+        for (const n of open.filter(n => n.needsLine && n.agent === e.agent)) {
+          n.needsLine = false
+          settleDesign(n, 'followed', e)
+        }
         break
       case 'body':
         // A subagent reading a skill's body settles only what was asked of that subagent.

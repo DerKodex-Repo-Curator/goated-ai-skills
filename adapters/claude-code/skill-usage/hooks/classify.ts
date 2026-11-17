@@ -104,6 +104,9 @@ const ADAPTER_HOLD = /^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-sk
 const CALL_HELD = /^\S+ hook error: /
 const STOP_BLOCKED = /^Stop hook blocking error from command: ".*": (goated-hold: .*)$/
 const BACKTICKED_SKILL = /`([a-z0-9]+(?:-[a-z0-9]+)*)`/g
+// The design references a design hold asks to read, each backticked by its path, and the design-reads line it asks for.
+const DESIGN_REFERENCE = /`software-design-principles\/references\/([a-z0-9]+(?:-[a-z0-9]+)*\.md)`/g
+const ASKS_DESIGN_LINE = /`goated-design-reads: /
 // The skip line a justified-skip hold offers, backticked whole: its skill is asked for too, as for the closeout's proof item.
 const OFFERED_SKIP = /`goated-skip: ([a-z0-9]+(?:-[a-z0-9]+)*): /g
 /** The grammar's own words, which adapters before Ticket 034 backticked in hold texts; they are no skills. */
@@ -115,15 +118,18 @@ const MARKER_WORDS = new Set(['goated-hold', 'goated-route', 'goated-skip'])
  * so the names are taken as they stand, whether or not the session's skill
  * listing has loaded.
  */
-function adapterHoldNamed(gate: string, body: string): { named: string[]; skipOnly: string[] } {
+function adapterHoldNamed(gate: string, body: string): { named: string[]; skipOnly: string[]; refs?: string[]; needsLine?: true } {
   if (gate === 'router-first') return { named: [ROUTER], skipOnly: [] }
   if (gate === 'route-line') return { named: [ROUTE_LINE], skipOnly: [] }
+  // Only the design gates ask for reference reads; the closeout's red-flags path is another kind of ask.
+  const refs = gate !== 'design' && gate !== 'design-reads' ? [] : [...body.matchAll(DESIGN_REFERENCE)].flatMap(m => (m[1] ? [m[1]] : []))
+  const design = { ...(refs.length > 0 ? { refs } : {}), ...(ASKS_DESIGN_LINE.test(body) ? { needsLine: true as const } : {}) }
   const names = (re: RegExp) => [...body.matchAll(re)].flatMap(m => (m[1] && !MARKER_WORDS.has(m[1]) ? [{ skill: m[1], at: m.index ?? 0 }] : []))
   const loads = names(BACKTICKED_SKILL)
   const named = [...new Set([...loads, ...names(OFFERED_SKIP)].sort((a, b) => a.at - b.at).map(n => n.skill))]
   // A skill offered only as a skip line asks for something no load gives: a check run for the closeout's proof item,
   // a read of the red-flags file for its design item.
-  return { named, skipOnly: named.filter(skill => !loads.some(n => n.skill === skill)) }
+  return { named, skipOnly: named.filter(skill => !loads.some(n => n.skill === skill)), ...design }
 }
 
 /**
@@ -148,14 +154,15 @@ function adapterHold(text: string, isErrorResult: boolean): { gate: string; kind
  * The adapter hold in one piece of hook output, as a nudge with the skills it
  * names; none when the output carries no hold. Its `hook` is its gate;
  * `isStop`: it held a `Stop`, not a call; `skipOnly`: the named skills it
- * offers only as a skip line, which no load answers. `holdsOnly`: the text is
- * an errored tool result.
+ * offers only as a skip line, which no load answers; `refs` and `needsLine`:
+ * the design references and design-reads line a design hold asks for.
+ * `holdsOnly`: the text is an errored tool result.
  */
-export function hookNudges(text: string, holdsOnly = false): { hook: string; named: string[]; holdKind: HoldKind; isStop?: true; skipOnly?: string[] }[] {
+export function hookNudges(text: string, holdsOnly = false): { hook: string; named: string[]; holdKind: HoldKind; isStop?: true; skipOnly?: string[]; refs?: string[]; needsLine?: true }[] {
   const hold = adapterHold(text, holdsOnly)
   if (!hold) return []
-  const { named, skipOnly } = adapterHoldNamed(hold.gate, hold.body)
-  return [{ hook: hold.gate, named, holdKind: hold.kind, ...(hold.isStop ? { isStop: true as const } : {}), ...(skipOnly.length > 0 ? { skipOnly } : {}) }]
+  const { named, skipOnly, ...design } = adapterHoldNamed(hold.gate, hold.body)
+  return [{ hook: hold.gate, named, holdKind: hold.kind, ...(hold.isStop ? { isStop: true as const } : {}), ...(skipOnly.length > 0 ? { skipOnly } : {}), ...design }]
 }
 
 /**
@@ -251,7 +258,7 @@ export function toolUseEvents(
     const edited = FILE_EDIT_TOOLS[name]
     if (edited && isCodeFile(String(input[edited] ?? ''))) events.push({ kind: 'change', t, ...ofCall, ...(isSubagent ? { isSubagent: true as const } : {}) })
     const target = String((name === 'Read' ? input.file_path : input.command) ?? '')
-    const refs: UsageEvent[] = skillFiles(target).map(f => ({ kind: 'ref', t, ...f, ...(isSubagent ? { isSubagent: true as const } : {}) }))
+    const refs: UsageEvent[] = skillFiles(target).map(f => ({ kind: 'ref', t, ...f, ...(name === 'Read' ? { isReadTool: true as const } : {}), ...(isSubagent ? { isSubagent: true as const } : {}) }))
     if (isSubagent) {
       for (const skill of skillBodies(target)) events.push({ kind: 'body', t, skill, isSubagent: true, ...ofAgent })
       events.push(...refs)

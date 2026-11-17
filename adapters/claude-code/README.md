@@ -293,31 +293,49 @@ design-reads line, `goated-design-reads: <file>, <file>` or
 `stack/fixtures/markers/README.md` owns. The `design` and `design-reads` gates
 enforce those reads where the skill is loaded.
 
+The rules live in one place,
+[`goated_adapter/design_reads.py`](goated_adapter/design_reads.py); only what
+counts as code and as a test file (the closeout's test-path rule) stays with
+the other action gates, which pass in their answers. They apply to an edit of
+a code file, or of a configuration file (`.yaml`, `.yml`, `.toml`, `.json`,
+`.env`, `.env.*`, `settings.*`) that is neither a lock file (`*-lock.json`,
+`pnpm-lock.yaml`, `npm-shrinkwrap.json`) nor under a test path.
+
 An edit requires the references the turn's valid design-reads lines name
-(their union; `red-flags.md`, which the closeout requires, and names that are
-not references add nothing) plus those its signals select. The signals live in
-one place, [`goated_adapter/design_reads.py`](goated_adapter/design_reads.py),
-and are judged on the lines the edit adds: a written file's whole text, or the
-lines of an edit's new text its old text did not already hold, so a definition
-kept as context does not count.
+(their union) plus those its signals select. `red-flags.md`, which the
+closeout requires, adds nothing; any other name that is not a reference
+(`proces.md`) requires nothing, and a hold quotes it as not a design
+reference.
+
+Signals are judged on what the edit adds: the lines of its new text, or of a
+`Write`'s text, that the text it replaces did not hold, indentation aside. A
+`Write` over a file on disk is compared with that file. A definition whose
+name the old text already defined, as in a signature change, is not new.
+Comments and docstrings are left out of the code the error and concurrency
+signals read, so `# try the cache, then raise` selects neither.
 
 | Reference | Selected when the edit |
 | --- | --- |
-| `process.md` | creates a code file (a `Write` to a code file no earlier write in the turn made and that is not on disk), or adds a top-level definition: a line starting, unindented, with `def`, `async def`, `class`, `function`, `export`, `func`, `fn`, `pub fn`, `public`, `interface`, `struct`, `enum`, `trait`, `impl`, or `defmodule` |
+| `process.md` | creates a code file (a `Write` to a code file no earlier write in the turn made and that is not on disk), or adds a public top-level definition: an unindented line starting with `def`, `async def`, `class`, `function`, `export`, `func`, `fn`, `pub fn`, `public`, `interface`, `struct`, `enum`, `trait`, `impl`, or `defmodule`, whose name does not start with `_`; a shell `export NAME=` is not one |
 | `complexity-and-modules.md` | the same as `process.md` |
-| `decoupling.md` | edits a configuration file (`.yaml`, `.yml`, `.toml`, `.json`, `.env`, `.env.*`, `settings.*`), or is to the third or later distinct code file the turn edits |
-| `readability.md` | adds a top-level definition, or a comment or docstring: a line opening with `#` and a space, `//`, `/*`, `*`, `"""`, `'''`, `-- `, or `<!--`, or a trailing `#` or `//` comment after two spaces |
-| `errors.md` | adds `try`, `except`, `catch`, `raise`, `throw`, `finally`, `defer` as words, or `with open` |
-| `coding.md` | edits a test file (the closeout's test-path rule) |
-| `concurrency.md` | adds `threading`, `Lock`, `RLock`, `Mutex`, `asyncio`, `synchronized`, `Promise.all`, a word starting `Atomic`, or `go func` |
+| `decoupling.md` | edits a configuration file, or is to the third or later distinct non-test code file the turn edits |
+| `readability.md` | the same as `process.md`, or adds a comment or docstring: a line opening with `#`, `//`, `/*`, `*`, `"""`, `'''`, `-- `, or `<!--`, a line inside a docstring or block comment, or a trailing `#` or `//` comment after two spaces |
+| `errors.md` | adds code holding `try`, `except`, `catch`, `raise`, `throw`, `finally`, `defer` as words, or `with open` |
+| `coding.md` | edits a test file; a test file selects nothing else |
+| `concurrency.md` | adds code holding `threading`, `Lock`, `RLock`, `Mutex`, `asyncio`, `synchronized`, `Promise.all`, a word starting `Atomic`, or `go func` |
 | `differences.md` | never selected; only a design-reads line requires it |
 
-The signals over-select on purpose; tune them from the skill-usage mod's
-counts. A reference counts as read after a finished `Read` of a path ending in
+A typical change, one new public function with a docstring and error
+handling, its caller, and its test, requires five: `process.md`,
+`complexity-and-modules.md`, `readability.md`, `errors.md`, and `coding.md`.
+Tune the signals from the skill-usage mod's counts.
+
+A reference counts as read after a finished `Read` of a path ending in
 `software-design-principles/references/<file>`, in this turn or an earlier
-one, until the next compaction: the [state](#state) keeps the names read, and
-the compaction's `SessionStart` clears them, so each reference is required at
-most once per context window. A skip line or a typed `skip
+one, until the next compaction: the [state](#state) keeps the names read, a
+resumed session keeps them, and a compaction's or `/clear`'s `SessionStart`
+clears them, so each reference is required at most once per context window.
+A shell command printing one does not count. A skip line or a typed `skip
 software-design-principles` clears both gates for the turn.
 
 The first substantial code edit of a turn meets `design`, which asks for what
@@ -512,7 +530,9 @@ goated-hold: <gate> | <kind>
   `software-design-principles` has loaded, the `design` hold (asking for the
   design-reads line or reads) and the `design-reads` hold name it only in
   their skip line, and backtick each reference by its path,
-  `software-design-principles/references/<file>`, which is no bare name.
+  `software-design-principles/references/<file>`, which is no bare name. A
+  `design` hold that asks for the line backticks its form,
+  `goated-design-reads: <file>, <file>`; the skill-usage mod reads both.
 
 Claude Code records a denied call as a `tool_result` with `is_error: true`
 whose content carries this reason, and a blocked `Stop` as the reason shown
@@ -755,11 +775,18 @@ of the call's prompt, which is normally already there.
 - The design gate judges size by lines added in the tool input, not by what
   the change does, and the design gates do not see shell writes. A design-reads
   line in the held call's own message is not visible yet, like a skip line.
-  The design-reads signals are word and shape matches, so a `try` in a comment
-  selects `errors.md`; a `Write` over an existing file counts its whole text
-  as added. Whether a `Write` creates a file is the one design signal read
-  from the disk. A design-reads line names files, never a reason per file, so
-  the adapter cannot tell a reference read and applied from one read alone. The security gate judges by
+  The design-reads signals are word and shape matches on lines, so a `try` in
+  a string selects `errors.md`, and a `NotebookEdit` cell counts all its text
+  as added. A `Write`'s file on disk, read to tell what it adds, is the one
+  design input outside the transcript. A design-reads line names files, never
+  a reason per file, so the adapter cannot tell a reference read and applied
+  from one read alone.
+- The design-reads gate holds only in a turn that loaded
+  `software-design-principles`: a turn whose edits are all small, with no
+  load, is held for no reference at all. Inside a subagent, only the
+  subagent's current turn counts: a reference it read in an earlier turn of
+  a continued subagent is required again, and the parent's reads never count
+  for it, nor its reads for the parent. The security gate judges by
   path alone. The conflict-resolution gate reads git's English messages
   (`Automatic merge failed`, `could not apply`, `could not revert`), so a git
   set to another language is not seen.

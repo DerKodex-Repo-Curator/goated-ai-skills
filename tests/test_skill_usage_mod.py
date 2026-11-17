@@ -134,7 +134,8 @@ def _adapter_texts() -> dict[str, str]:
         # references the edit requires, then the design-reads hold for a later edit's references.
         designed = routed("design-reads")
         designed.load("software-design-principles")
-        texts["designLine"] = reason(designed.call("Write", _write("src/export.py")))
+        texts["designLine"] = reason(designed.call("Edit", _edit("src/export.py", PLAIN)))
+        texts["designLineReads"] = reason(designed.call("Write", _write("src/export.py")))
         designed.say(NONE_LINE)
         designed.call("Edit", _edit("src/export.py", PLAIN))
         texts["designReads"] = reason(designed.call("Edit", _edit("src/export.py", "try:\n    rate = 1")))
@@ -257,6 +258,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "spawnRead": "spawn | strict",
             "design": "design | justified-skip",
             "designLine": "design | justified-skip",
+            "designLineReads": "design | justified-skip",
             "designReads": "design-reads | justified-skip",
             "security": "security | justified-skip",
             "shellWrite": "security | justified-skip",
@@ -286,6 +288,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "pipeline": "skip routing",
             "design": "skip software-design-principles",
             "designLine": "skip software-design-principles",
+            "designLineReads": "skip software-design-principles",
             "designReads": "skip software-design-principles",
             "security": "skip code-security-review",
             "shellWrite": "skip code-security-review",

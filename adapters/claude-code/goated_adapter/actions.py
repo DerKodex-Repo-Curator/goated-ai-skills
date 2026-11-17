@@ -623,36 +623,46 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
     The `design` gate holds a turn's first substantial code edit until
     `software-design-principles` loads, a design-reads line is in the turn,
     and every reference the edit requires is read. The `design-reads` gate
-    holds any later code or configuration edit, once the skill is loaded,
-    until the references it requires are read. An edit requires the
-    references the turn's design-reads lines declare plus those its signals
-    select (`design_reads.detect`). A read counts until the next compaction;
-    a skip line or the user's skip of the skill clears both gates.
+    holds any later edit the design-reads rules apply to, once the skill is
+    loaded, until the references it requires are read. `design_reads` says
+    which those are. A read counts until the next compaction; a skip line or
+    the user's skip of the skill clears both gates.
     """
 
-    code, config = is_code(path), design_reads.is_config(path)
-    if not (code or config) or proof.skipped(DESIGN_SKILL):
+    code, test = is_code(path), bool(TEST_PATH_RE.search(path))
+    if not design_reads.applies(path, is_code=code, is_test=test) or proof.skipped(DESIGN_SKILL):
         return None
     substantial = code and added_lines(tool_input) >= DESIGN_MIN_LINES
     loaded = proof.loaded(DESIGN_SKILL)
     if not loaded and not substantial:
         return None
     earlier = _project_code_writes(proof.turn, project)
-    first = substantial and not any(lines >= DESIGN_MIN_LINES for _, lines in earlier)
-    required = _required_references(path, tool_input, proof.turn, project, earlier)
+    declared = declared_files(proof.turn.design_reads)
+    required = design_reads.required(
+        path, tool_input, is_code=code, is_test=test,
+        written_before=any(p == path for p, _ in earlier),
+        other_code_files=len({p for p, _ in earlier if p != path and not TEST_PATH_RE.search(p)}),
+        declared=declared, cwd=project.cwd if project else None,
+    )
     read = references_read | set(design_reads.reads_in(proof.turn.calls))
     unread = {name: why for name, why in required.items() if name not in read}
     needs_line = substantial and not proof.turn.design_reads
     if loaded and not needs_line and not unread:
         return None
+    unknown = design_reads.unknown(declared)
+    misnamed = (
+        " Your design-reads lines name files that are not design references, so they require "
+        "nothing: " + ", ".join(f'"{name}"' for name in unknown) + "."
+    ) if unknown else ""
+    first = substantial and not any(lines >= DESIGN_MIN_LINES for _, lines in earlier)
     if loaded and not needs_line and not first:
         return Hold(
             "design-reads", JUSTIFIED_SKIP,
             f"This edit of \"{path.rsplit('/', 1)[-1]}\" needs design references not yet read "
             "since the last compaction. Read each with the Read tool before the edit, and "
-            f"apply it: {_reference_list(unread)}. If the edit has no design in it, write "
-            f"`goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. This edit was "
-            "not applied. " + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
+            f"apply it: {_reference_list(unread)}.{misnamed} If the edit has no design in it, "
+            f"write `goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. This edit "
+            "was not applied. " + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
         )
     steps = [] if loaded else [
         f"load `{DESIGN_SKILL}` with the Skill tool and apply its 'Before changing code' rules"
@@ -661,49 +671,27 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
         malformed = "; ".join(f'"{line}"' for line in proof.turn.malformed_design_reads)
         steps.append(
             "write the skill's design-reads line on its own line, naming the references whose "
-            "conditions hold, as goated-design-reads: <file>, <file>, or "
-            "goated-design-reads: none: <reason> when none does"
+            "conditions hold, as `goated-design-reads: <file>, <file>`, or "
+            "`goated-design-reads: none: <reason>` when none does"
             + (f" (these lines in this turn do not match the grammar: {malformed})" if malformed else "")
         )
     if unread:
         steps.append(f"read with the Read tool each reference it requires: {_reference_list(unread)}")
     return Hold(
         "design", JUSTIFIED_SKIP,
-        f"This is a substantial code change. Before it, in this turn, {'; '.join(steps)}. "
-        "If the edit is mechanical, with no design in it, write "
+        f"This is a substantial code change. Before it, in this turn, {'; '.join(steps)}."
+        f"{misnamed} If the edit is mechanical, with no design in it, write "
         f"`goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. This edit was not "
         "applied. " + unseen_line_advice("design-reads or skip line", f"skip {DESIGN_SKILL}"),
     )
 
 
-def _required_references(path: str, tool_input: dict, turn: Turn, project: Project | None,
-                         earlier: list[tuple[str, int]]) -> dict[str, str]:
-    """The references an edit requires, each with why: those its signals
-    select, and those the turn's design-reads lines declare."""
-
-    code_files = len({p for p, _ in earlier} | {path}) if is_code(path) else 0
-    detected = design_reads.detect(
-        path, _added_text(tool_input),
-        new_file=_creates_file(path, tool_input, earlier, project),
-        test_file=bool(TEST_PATH_RE.search(path)), code_files=code_files,
-    )
-    declared = {
-        name: "named in your design-reads line"
-        for name in declared_files(turn.design_reads) if name in design_reads.REFERENCES
-    }
-    return {**detected, **declared}
-
-
 def _reference_list(references: dict[str, str]) -> str:
-    """The references as the holds name them, in the skill's order. Each path is
+    """The references as the holds name them, in the given order. Each path is
     backticked like the closeout's red-flags path; the skill-usage mod reads
     only a bare backticked name as a skill."""
 
-    order = design_reads.REFERENCES.index
-    return ", ".join(
-        f"`{design_reads.SKILL_REFERENCES}{name}` ({why})"
-        for name, why in sorted(references.items(), key=lambda item: order(item[0]))
-    )
+    return ", ".join(f"`{design_reads.SKILL_REFERENCES}{name}` ({why})" for name, why in references.items())
 
 
 def _project_code_writes(turn: Turn, project: Project | None) -> list[tuple[str, int]]:
@@ -717,17 +705,6 @@ def _project_code_writes(turn: Turn, project: Project | None) -> list[tuple[str,
             if is_code(path) and _in_project(path, project):
                 writes.append((path, added_lines(call.input)))
     return writes
-
-
-def _creates_file(path: str, tool_input: dict, earlier: list[tuple[str, int]],
-                  project: Project | None) -> bool:
-    """True when a Write creates a code file: no earlier write in the turn made
-    it, and it is not on disk (a relative path is taken from the project's cwd)."""
-
-    if "content" not in tool_input or not is_code(path) or any(p == path for p, _ in earlier):
-        return False
-    full = path if os.path.isabs(path) or project is None else os.path.join(project.cwd, path)
-    return not os.path.exists(full)
 
 
 def _repeated_failure_hold(proof: _Proof) -> Hold | None:
@@ -1244,23 +1221,6 @@ def added_lines(tool_input: dict) -> int:
     if isinstance(edits, list):
         texts += [e.get("new_string") for e in edits if isinstance(e, dict)]
     return sum(len(t.split("\n")) for t in texts if isinstance(t, str) and t)
-
-
-def _added_text(tool_input: dict) -> list[str]:
-    """The lines an edit adds: a written file's or cell's whole text, or the
-    lines of an edit's new text that its old text did not already hold."""
-
-    texts = [tool_input.get("content"), tool_input.get("new_source")]
-    pairs = [(tool_input.get("old_string"), tool_input.get("new_string"))]
-    edits = tool_input.get("edits")
-    if isinstance(edits, list):
-        pairs += [(e.get("old_string"), e.get("new_string")) for e in edits if isinstance(e, dict)]
-    lines = [line for text in texts if isinstance(text, str) for line in text.split("\n")]
-    for old, new in pairs:
-        if isinstance(new, str):
-            kept = set(old.split("\n")) if isinstance(old, str) else set()
-            lines += [line for line in new.split("\n") if line not in kept]
-    return lines
 
 
 def _subject(message: str) -> str:
