@@ -2815,17 +2815,6 @@ class SetupCloseoutTests(AdapterTestCase):
                 else:
                     self.assertNotIn("Setup", reason_text)
 
-    def test_a_package_install_outside_the_project_still_counts(self) -> None:
-        outside = self.root / "scratch"
-        for command in (f"cd '{outside}' && npm install lodash", "npm install lodash"):
-            with self.subTest(command=command):
-                s = self.fresh()
-                s.prompt("Add the dependency.")
-                s.load(ROUTER)
-                s.say("goated-route: direct")
-                s.run(command)
-                self.assertIn("- Setup:", stop(s).get("reason", ""))
-
     def test_near_misses_end_freely(self) -> None:
         for tool, command in (
             ("Bash", "npm install"),
@@ -2860,6 +2849,64 @@ class SetupCloseoutTests(AdapterTestCase):
                 s.say("goated-route: direct")
                 s.call(tool, {"command": command})
                 self.assertNotIn("Setup", stop(s).get("reason", ""))
+
+    def setup_raised(self, tool: str, command: str) -> bool:
+        s = self.fresh()
+        s.prompt("Try the tool.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        s.call(tool, {"command": command.replace("{project}", str(s.project))})
+        return "- Setup:" in stop(s).get("reason", "")
+
+    def test_a_local_install_in_a_folder_outside_the_project_does_not_count(self) -> None:
+        # Spec R14. The scratch folder sits beside every session's project folder.
+        outside = str(self.root / "scratch")
+        for tool, command in (
+            ("Bash", f'cd "{outside}" && pip install requests'),
+            ("Bash", f'cd "{outside}" && npm install lodash'),
+            ("Bash", f'cd "{outside}" && uv add httpx'),
+            ("Bash", f'cd "{outside}" && cargo add serde'),
+            ("Bash", f'cd "{outside}" && go get example.com/mod@v1.2.0'),
+            ("PowerShell", f"Set-Location '{outside}' && pip install requests"),
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(self.setup_raised(tool, command))
+
+    def test_a_global_install_counts_wherever_it_runs(self) -> None:
+        outside = str(self.root / "scratch")
+        for tool, command in (
+            ("Bash", "uv tool install ruff"),
+            ("Bash", "npm install -g pnpm"),
+            ("Bash", "npm i --global pnpm"),
+            ("Bash", "pnpm add -g zx"),
+            ("Bash", "yarn global add pnpm"),
+            ("Bash", "pipx install black"),
+            ("Bash", "cargo install ripgrep"),
+            ("Bash", "go install example.com/cmd/tool@latest"),
+            ("Bash", "gem install bundler"),
+            ("Bash", "brew install jq"),
+            ("Bash", "apt install jq"),
+            ("Bash", "sudo apt-get install -y ripgrep"),
+            ("PowerShell", "winget install --id Git.Git -e"),
+            ("PowerShell", "choco install nodejs -y"),
+            ("PowerShell", "scoop install git"),
+        ):
+            with self.subTest(command=command):
+                change = "Set-Location" if tool == "PowerShell" else "cd"
+                self.assertTrue(self.setup_raised(tool, f'{change} "{outside}" && {command}'))
+
+    def test_an_install_in_the_project_or_an_unknown_folder_counts(self) -> None:
+        outside = str(self.root / "scratch")
+        for command in (
+            "pip install requests",
+            "npm install lodash",
+            "cd src && pip install requests",  # A bare name may go through CDPATH: unknown.
+            'cd "$TMPDIR" && pip install requests',
+            f'cd "{outside}"; pip install requests',
+            f'cd "{outside}" && cd "{{project}}" && pip install requests',
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(self.setup_raised("Bash", command))
 
     def test_settings_named_files_elsewhere_and_code_edits_end_without_setup(self) -> None:
         s = self.routed()

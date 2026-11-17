@@ -137,6 +137,9 @@ any `<system-reminder>` blocks, with `turnOrigin` `host_synthetic` and no
 `origin`. A route line in a typed prompt, a later prompt, or another
 session's message never counts, and a brief never carries an override. The
 `handoff` skill's spawn-brief template says where the parent puts the line.
+Such a brief also marks the session as briefed, for good: typed prompts and
+compactions do not end that, and a briefed session meets no closeout Review
+item (see the closeout table below).
 
 | Gate | Kind | Holds | Clears when |
 | --- | --- | --- | --- |
@@ -208,10 +211,10 @@ check after its own last change, that change is already proved.
 | Docs | A code file outside the tests changed | `doc-sync` counts as loaded, and a [change read](#change-reads) follows the last code change, before or after the load | `doc-sync` |
 | Design red flags | `software-design-principles` loaded in the turn, or counts as loaded and the turn made an edit the `design` gate triggers on (five or more lines added to a non-test code file), so a later turn of small edits meets no Design item | `software-design-principles/references/red-flags.md` is read after the last code change that is not [comment-only](#comment-only-edits), then a [change read](#change-reads) after that read. The item repeats the question `red-flags.md` ends with (name one input that would break this change, and say what happens); no answer is checked | `software-design-principles` |
 | Design citations | The Design red flags item applies, and the turn's edits required a [design reference](#design-references) | The turn cites a section of each required reference as `file#id`, such as `errors.md#crash-early`, in its reply text, the reply being finished included, or in a call field that carries route and skip lines: a shell or agent call's `description` or a Skill call's `args`, the commit call being judged included (see [Design references](#design-references)) | `software-design-principles` |
-| Review | The turn changed code, and the branch's work is [large](#large-branches): 400 or more changed lines against its base, counting committed, staged, unstaged, and untracked files that git does not ignore | A [reviewer subagent](#reviewer-subagents) that finished after the last code change; or `standards-and-spec-review` counts as loaded and a [change read](#change-reads) follows the load and the last code change | `standards-and-spec-review` |
+| Review | The turn changed code, the session was not started from a brief, and the branch's work is [large](#large-branches): 400 or more changed lines against its base in code files outside test paths, counting committed, staged, unstaged, and untracked files that git does not ignore. A session whose first prompt was a brief from the session that started it meets no Review item for the whole session, typed prompts and compactions included: the starting session reviews the work when it inspects the report and the changed paths (`handoff`'s spawn-brief template). Missing state counts as not briefed | A [reviewer subagent](#reviewer-subagents) that finished after the last code change; or `standards-and-spec-review` counts as loaded and a [change read](#change-reads) follows the load and the last code change | `standards-and-spec-review` |
 | Verification | The turn changed code or a security-sensitive file, and one of these holds: the task's route is `full`; a subagent the turn spawned changed code; a security-sensitive file changed; or the branch's work is [large](#large-branches) | `verification-before-completion` counts as loaded | `verification-before-completion`, the Proof item's skip line, so one line answers both |
 | Security | `code-security-review` counts as loaded and a security-sensitive file (the `security` gate's paths, code or not) changed | A [change read](#change-reads) after the load and the last sensitive change | `code-security-review` |
-| Setup | The turn installed or added a dependency or tool by a command that names a package, or wrote an env or settings file (see below) | `setup-scribe` counts as loaded, the load before or after the change | `setup-scribe` |
+| Setup | The turn installed or added a dependency or tool by a command that names a package, in the project or globally, or wrote an env or settings file (see below) | `setup-scribe` counts as loaded, the load before or after the change | `setup-scribe` |
 
 The Setup item is not judged against code changes. A **package install** is a
 finished `npm`, `pnpm`, or `bun` `add` or `install`, `yarn add`, `pip install`
@@ -228,7 +231,16 @@ manager's options that take a value (`--filter`, `--workspace`, `--python`,
 `pnpm install --filter web` names no package. An **env or settings file** is
 `.env` or `.env.*` (`.env.example` included), or a `settings*.json` under
 `.claude/` or `.vscode/`, written by a write tool or a shell command. A
-package install counts wherever it runs; an env or settings file counts only
+**global or machine install** (`npm` or `pnpm` with `-g` or `--global`,
+`yarn global add`, `uv tool install`, `pipx install`, `cargo install`,
+`go install`, `gem install`, and every `brew`, `apt`, `apt-get`, `winget`,
+`choco`, or `scoop` install; `GLOBAL_INSTALLS` in `shell.py`) counts
+wherever it runs. Any other package install counts unless it runs in a folder
+certainly outside the project: one a `cd` in the same command moved to, as a
+write's folder is followed (see [Writes](#what-it-holds)), so
+`cd /tmp/x && pip install requests` does not count, and one after a `cd` the
+adapter cannot follow (`cd "$TMPDIR" && …`, `cd sub && …`) does. An env or
+settings file counts only
 inside the project, by the same rule as code changes, so a scratch folder's
 `.claude/settings.json` does not, and neither do global settings such as
 `~/.claude/settings.json`, unless the project holds your home folder. A
@@ -322,7 +334,12 @@ sees only the whole command's result.
 
 `standards-and-spec-review` is for a change "large or risky enough to review
 before it lands", and its Activation section gives the number: a branch whose
-work against its base is 400 or more changed lines, added plus deleted. The
+work against its base is 400 or more changed lines, added plus deleted, in
+code files outside test paths. A file counts when its extension is a code
+extension (`CODE_EXTENSIONS` in `actions.py`) and its path from the top of
+the checkout is not a test path (`is_test_path` in `design_reads.py`, the
+rule the Docs item uses); docs, fixtures, configuration, and tests add
+nothing. The
 `pr-review` gate and the closeout's [Review item](#large-branches) enforce
 that threshold, `REVIEW_MIN_LINES` in `actions.py`. Risk, unclear acceptance,
 and uncertain conventions, the policy's other reasons, are left to the
@@ -337,7 +354,7 @@ working folder, which of the candidate refs below exist (`git for-each-ref`),
 then measures the first base and head found:
 
 ```text
-git diff --shortstat --no-ext-diff --no-textconv <base>...<head> --
+git diff --numstat -z --no-relative --no-ext-diff --no-textconv <base>...<head> --
 ```
 
 - `<base>` is the branch the pull request merges into: `--base` or `-B` on
@@ -377,7 +394,8 @@ same base the `pr-review` gate finds without a `--base` (the first that
 exists of `origin/HEAD`, `origin/main`, `origin/master`, `main`, and
 `master`). That counts the branch's commits since it left the base, staged
 and unstaged changes, and every line of each untracked file git does not
-ignore; a binary file counts no lines and a symbolic link one, as in
+ignore, in code files outside test paths only, as for
+[Large pull requests](#large-pull-requests); a binary file counts no lines and a symbolic link one, as in
 `git diff`, and a link's target is never read. Where the base branch exists
 both locally and on `origin`, the branch is measured from the fork point
 closer to it, so work merged into a local `main` and not yet pushed does not
@@ -385,10 +403,10 @@ count toward the next branch: local merges prefer the local base. The
 `pr-review` gate keeps measuring from `origin/<base>` first.
 
 ```text
-git rev-parse --symbolic-full-name HEAD
+git rev-parse --show-toplevel --symbolic-full-name HEAD
 git merge-base HEAD <base> [<the same branch's other ref>]
-git diff --shortstat --no-ext-diff --no-textconv <merge-base> --
-git ls-files --others --exclude-standard -z -- :/
+git diff --numstat -z --no-relative --no-ext-diff --no-textconv <merge-base> --
+git ls-files --others --exclude-standard --full-name -z -- :/
 ```
 
 The size is asked for only in a turn that changed code (or a sensitive file,
@@ -1183,7 +1201,7 @@ One small JSON file per session in a `goated-claude-code-adapter/` folder:
 - anywhere you choose with `GOATED_ADAPTER_STATE_DIR`.
 
 It holds the current task's route, whether missing or reset state lost the
-task, whether the router loaded, which GOATED skills loaded and which design
+task, whether the session's first prompt was a brief, whether the router loaded, which GOATED skills loaded and which design
 references, skill references, and spawn-brief templates were read since the
 last compaction
 (see [Loads](#loads)), which references each edit of the latest turn
@@ -1460,9 +1478,17 @@ of the call's prompt, which is normally already there.
   paths, so any change to one, such as an edit of a lockfile or a `.env`
   value, asks for `verification-before-completion` too; its skip line
   answers it.
-- The [large-branch](#large-branches) measure counts every untracked file
-  git does not ignore, so an unignored build or dependency folder makes a
-  small branch large; its skip line, or a `.gitignore` entry, answers that.
+- The [large-branch](#large-branches) measure counts every untracked code
+  file outside test paths that git does not ignore, so an unignored folder of
+  generated or vendored code makes a small branch large; its skip line, or a
+  `.gitignore` entry, answers that. A branch large only in tests, fixtures,
+  docs, or configuration meets no Review item. Test paths are judged from the
+  top of the checkout, so in a project below that top a top-level `spec/`
+  folder of the project is not a test path.
+- A session started from a brief meets no Review item, trusting the
+  starting session to review: a brief sent with no review planned leaves a
+  large branch unreviewed. Only a brief the adapter recognizes, with a route
+  line (see [What It Holds](#what-it-holds)), marks the session.
 - The Proof and Verification items name the same skill, so the skill-usage
   mod counts a `verification-before-completion` load as answering both items
   of a hold that lists both, though only Verification asks for the load.

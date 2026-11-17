@@ -178,6 +178,7 @@ def fold_turns(
             # subagent's parent does; its required skills must still load here.
             # A prompt a person types is new work, so the exemption ends there.
             state.brief_routed = True
+            state.briefed = True
         elif turn.typed:
             state.brief_routed = False
         route = _task_route_in(turn)

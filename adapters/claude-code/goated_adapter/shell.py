@@ -210,8 +210,13 @@ class ShellCommand:
     content to the agent: a git diff or show, a patch log, or patches on
     stdout; a listing of names or counts (`--stat`, `--name-only`) does not.
     Only git is read; another version control system's diff is not seen.
-    `installs_package` says it installs or adds a dependency or tool it names
-    (`uv add httpx`), not a bare restore such as `npm install`.
+    A package install is one that installs or adds a dependency or tool it
+    names (`uv add httpx`), not a bare restore such as `npm install`.
+    `installs_globally` says it runs a global or machine install
+    (`GLOBAL_INSTALLS`), which counts for the Setup item wherever it runs;
+    `install_folders` holds the folder each other install runs in: "" for
+    the command's starting folder, a path after a followed `cd`, or None
+    when a `cd` left it unknown (spec R14).
     `read_only` says every simple command in it is a plain read (see
     `READ_ONLY_COMMANDS`), joined only by pipes or list separators, with no
     wrapper, redirect into a file, heredoc, group, substitution, or
@@ -223,7 +228,7 @@ class ShellCommand:
         "writes", "write_targets", "unplaced_targets", "unknown_writes", "commit",
         "commit_message", "opens_pr", "pr_base", "pr_head", "is_check",
         "non_check_writes", "unchecked_targets", "unchecked_unknown_writes", "prints_changes",
-        "installs_package", "read_only",
+        "installs_globally", "install_folders", "read_only",
     )
 
     def __init__(self) -> None:
@@ -241,7 +246,8 @@ class ShellCommand:
         self.unchecked_targets: list[str] = []
         self.unchecked_unknown_writes = False
         self.prints_changes = False
-        self.installs_package = False
+        self.installs_globally = False
+        self.install_folders: list[str | None] = []
         self.read_only = False
 
 
@@ -409,8 +415,11 @@ def _add_segment(result: ShellCommand, segment: "_Segment",
     is_check = _is_check(name, original, args)
     if is_check:
         result.is_check = True
-    if _installs_package(name, args):
-        result.installs_package = True
+    install = _package_install(name, args)
+    if install == GLOBAL_INSTALL:
+        result.installs_globally = True
+    elif install == LOCAL_INSTALL:
+        result.install_folders.append(directory)
     for target in filter(None, targets):
         if directory is None and not _is_absolute(target):
             result.unplaced_targets.append(target)
@@ -1377,18 +1386,38 @@ PACKAGE_MANAGERS: dict[str, tuple[tuple[tuple[str, ...], ...], frozenset[str]]] 
 LOCAL_PATH_RE = re.compile(r"^(?:[.~/\\]|[A-Za-z]:[\\/])")
 
 
-def _installs_package(name: str, args: list[str]) -> bool:
-    """True when the command installs or adds a package it names, so a bare
-    restore (`npm install`, `pip install -r requirements.txt`) is not one. A
-    local path (`.`, `../lib`, `C:/pkg`) is not a package; a URL is."""
+# Installs that put a tool on the machine, not in a project, so they count
+# for the Setup item wherever they run (spec R14), by command word: the
+# subcommands that do, or None for every install the command makes.
+GLOBAL_INSTALLS: dict[str, tuple[tuple[str, ...], ...] | None] = {
+    "uv": (("tool", "install"),), "yarn": (("global", "add"),), "cargo": (("install",),),
+    "go": (("install",),), "pipx": None, "gem": None, "brew": None, "apt": None,
+    "apt-get": None, "winget": None, "choco": None, "scoop": None,
+}
+# The options that make an npm or pnpm install global.
+GLOBAL_OPTIONS = {"npm": frozenset({"-g", "--global"}), "pnpm": frozenset({"-g", "--global"})}
+GLOBAL_INSTALL = "global"
+LOCAL_INSTALL = "local"
+
+
+def _package_install(name: str, args: list[str]) -> str | None:
+    """`GLOBAL_INSTALL` or `LOCAL_INSTALL` when the command installs or adds a
+    package it names, else None, so a bare restore (`npm install`,
+    `pip install -r requirements.txt`) is not one. A local path (`.`,
+    `../lib`, `C:/pkg`) is not a package; a URL is."""
 
     if name in ("python", "python3", "py") and args[:2] == ["-m", "pip"]:
         name, args = "pip", args[2:]
     if name not in PACKAGE_MANAGERS:
-        return False
+        return None
     subcommands, value_options = PACKAGE_MANAGERS[name]
     words = [a for a in _drop_values(args, value_options) if not a.startswith("-")]
     for sub in subcommands:
         if tuple(words[: len(sub)]) == sub:
-            return any("://" in w or not LOCAL_PATH_RE.match(w) for w in words[len(sub):])
-    return False
+            if not any("://" in w or not LOCAL_PATH_RE.match(w) for w in words[len(sub):]):
+                return None
+            machine = GLOBAL_INSTALLS.get(name, ())
+            if machine is None or sub in machine or GLOBAL_OPTIONS.get(name, frozenset()) & set(args):
+                return GLOBAL_INSTALL
+            return LOCAL_INSTALL
+    return None

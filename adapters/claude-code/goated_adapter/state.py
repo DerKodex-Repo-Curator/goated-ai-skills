@@ -53,7 +53,7 @@ class SessionState:
 
     __slots__ = (
         "router_loaded", "last_turn", "task", "task_unknown", "overrides", "policy_notice_shown",
-        "reference_reads", "design_edits", "brief_routed", "loads", "template_reads",
+        "reference_reads", "design_edits", "brief_routed", "briefed", "loads", "template_reads",
         "skill_reference_reads", "spawn_templates", "open_holds", "held_gates", "friction",
         "retrospective_notice_shown",
     )
@@ -63,6 +63,10 @@ class SessionState:
         # True while the route came from the brief that opened the session and
         # no prompt a person typed has opened a turn since: router-first is met.
         self.brief_routed = False
+        # True once the session's first prompt is known to be a brief from the
+        # session that started it, which reviews the work (spec R10). A fact
+        # about the session: no typed prompt or compaction ends it.
+        self.briefed = False
         self.last_turn: str | None = None
         self.task: Task | None = None
         # True when saved state was missing or unreadable: the session may have
@@ -135,6 +139,7 @@ class SessionState:
         return {
             "router_loaded": self.router_loaded,
             "brief_routed": self.brief_routed,
+            "briefed": self.briefed,
             "last_turn": self.last_turn,
             "task": self.task.to_json() if self.task else None,
             "task_unknown": self.task_unknown,
@@ -161,6 +166,7 @@ class SessionState:
         state = cls()
         state.router_loaded = _expect(data.get("router_loaded", False), bool)
         state.brief_routed = _expect(data.get("brief_routed", False), bool)
+        state.briefed = _expect(data.get("briefed", False), bool)
         state.policy_notice_shown = _expect(data.get("policy_notice_shown", False), bool)
         state.last_turn = _expect(data.get("last_turn"), (str, type(None)))
         state.task_unknown = _expect(data.get("task_unknown", False), bool)
