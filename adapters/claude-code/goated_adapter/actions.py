@@ -132,6 +132,13 @@ MISSING_MODULE_EXCEPTIONS = frozenset({"ImportError", "ModuleNotFoundError"})
 SETUP_SKILL = "setup-scribe"
 REVIEW_SKILL = "standards-and-spec-review"
 RED_FLAGS_REFERENCE = "software-design-principles/references/red-flags.md"
+# The question `red-flags.md` ends with, which the closeout's red-flags item
+# repeats. No hold checks an answer.
+RED_FLAGS_QUESTION = "Name one input that would break this change, and say what happens."
+# Where a design citation counts besides reply text: the call fields that carry
+# route and skip lines (`transcript.LINE_FIELDS`). Named without backticks, so
+# the skill-usage mod reads no skill from them.
+CITATION_FIELDS = "a shell or agent call's description or a Skill call's args"
 
 # Tools that start another agent, each with the input field that carries the
 # brief. A call without a brief (an offer card, or starting a saved proposal)
@@ -949,7 +956,10 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
 
     changes = _Changes(turn, subagents or {}, project)
     proof = _Proof(turn, overrides, namespaces, final_text)
-    items = _code_items(changes, proof, edit_references or {}, design_ids) if changes.code else []
+    items = (
+        _code_items(changes, proof, edit_references or {}, design_ids, at_commit)
+        if changes.code else []
+    )
     sensitive = changes.sensitive
     if sensitive and SECURITY_SKILL in proof.loads and not proof.skipped(SECURITY_SKILL):
         last_sensitive = sensitive[-1][0]
@@ -983,10 +993,11 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
 
 
 def _code_items(changes: "_Changes", proof: _Proof, edit_references: dict[str, list[str]],
-                design_ids: Callable[[], dict[str, tuple[str, ...]]] | None) -> list[str]:
+                design_ids: Callable[[], dict[str, tuple[str, ...]]] | None,
+                at_commit: bool) -> list[str]:
     """The closeout items a code change needs: proof, a handoff for a failed
     check, doc-sync, the design red flags, and the design citations, each with
-    what is missing."""
+    what is missing; `at_commit` says where a citation can still be written."""
 
     code = changes.code
     last = code[-1].index
@@ -1033,21 +1044,29 @@ def _code_items(changes: "_Changes", proof: _Proof, edit_references: dict[str, l
             items.append(
                 f"- Design: read `{RED_FLAGS_REFERENCE}` with the Read tool after your last "
                 f"code change (an edit of comments only aside), then read the change itself "
-                f"and scan it against them: {CHANGE_READ}. "
+                f"and scan it against them: {CHANGE_READ}. Then answer their closing "
+                f"question: {RED_FLAGS_QUESTION} "
                 f"Or write `goated-skip: {DESIGN_SKILL}: <reason>`."
             )
         elif not changes.read_after(flags):
             items.append(
                 "- Design: after reading the red flags, read the change itself and scan it "
-                f"against them, not your memory of it: {CHANGE_READ}. Or write "
+                f"against them, not your memory of it: {CHANGE_READ}. Then answer their "
+                f"closing question: {RED_FLAGS_QUESTION} Or write "
                 f"`goated-skip: {DESIGN_SKILL}: <reason>`."
             )
         uncited = _uncited_references(proof, edit_references, design_ids)
         if uncited:
+            where = (
+                "Put the citations in this commit call's description and make the call "
+                f"again; reply text, or {CITATION_FIELDS} in an earlier message of the "
+                "turn, counts too." if at_commit
+                else f"Put the citations in your reply, or in {CITATION_FIELDS}."
+            )
             items.append(
-                "- Design: in your report, cite a section of each design reference this turn "
-                "required, as file#id, with how it shaped the change or why it did not apply; "
-                "the Section Index in the skill's SKILL.md lists each file's ids. Not yet "
+                "- Design: cite a section of each design reference this turn required, as "
+                "file#id, with how it shaped the change or why it did not apply; the Section "
+                f"Index in the skill's SKILL.md lists each file's ids. {where} Not yet "
                 f"cited: {', '.join(uncited)}. Or write `goated-skip: {DESIGN_SKILL}: <reason>`."
             )
     return items
@@ -1055,9 +1074,10 @@ def _code_items(changes: "_Changes", proof: _Proof, edit_references: dict[str, l
 
 def _uncited_references(proof: _Proof, edit_references: dict[str, list[str]],
                         design_ids: Callable[[], dict[str, tuple[str, ...]]] | None) -> list[str]:
-    """The references the turn's finished design edits required that its
-    text, the reply being finished included, cites no section of, in the
-    skill's order."""
+    """The references the turn's finished design edits required that it
+    cites no section of, in the skill's order. A citation counts in reply
+    text, the reply being finished included, and in the call fields that
+    carry route and skip lines, held calls and the call being judged included."""
 
     required = {
         name for call in proof.turn.calls if call.ok
@@ -1066,7 +1086,7 @@ def _uncited_references(proof: _Proof, edit_references: dict[str, list[str]],
     if not required or design_ids is None:
         return []
     ids = design_ids()
-    cited = design_reads.citations([*proof.turn.texts, proof.extra_text])
+    cited = design_reads.citations([*proof.turn.texts, *proof.turn.call_texts, proof.extra_text])
     return [
         name for name in design_reads.REFERENCES
         if name in required and name in ids

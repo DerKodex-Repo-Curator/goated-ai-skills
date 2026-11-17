@@ -104,8 +104,9 @@ it. In particular:
   `verification-before-completion` for the closeout's proof item, is answered
   by a skip line or by the adapter letting the turn end, never by loading it:
   the adapter counts a check run, a read of the red-flags file, a citation of
-  each design reference the turn required, or a read of the change (its diff,
-  or a changed file), not a load. A closeout item whose
+  each design reference the turn required (in reply text, or in a shell or
+  agent call's description or a Skill call's args), or a read of the change
+  (its diff, or a changed file), not a load. A closeout item whose
   skill already loaded asks for that read of the change, so it names the
   skill only as a skip line.
 - A blocked `Stop` does not end the turn, so the closeout hold waits for the

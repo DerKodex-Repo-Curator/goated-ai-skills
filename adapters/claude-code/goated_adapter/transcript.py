@@ -190,8 +190,9 @@ class Turn:
     `malformed` the route-like lines that failed the grammar. `skips` are the
     valid `goated-skip` lines, `design_reads` the valid `goated-design-reads`
     lines and `malformed_design_reads` those that failed the grammar, and
-    `texts` the turn's reply texts, in order. Lines count from reply text and
-    from the field `call_line_text` reads, once per call id in `call_ids`. `calls` are the tool calls that finished in this
+    `texts` the turn's reply texts, in order, and `call_texts` the text of
+    the field `call_line_text` reads of each call, held calls included, in
+    order. Lines count from both, once per call id in `call_ids`. `calls` are the tool calls that finished in this
     turn, oldest first, and `unfinished` the `(name, input)` of recorded calls
     with no result yet, oldest first. `opens_transcript` is set on the oldest
     turn read when reading reached the start of the transcript, so no earlier
@@ -204,7 +205,7 @@ class Turn:
         "key", "is_compaction", "typed", "prompt_id", "loads", "invoked_load",
         "route", "route_marks", "malformed", "skips", "calls", "prompt_ids",
         "opens_transcript", "design_reads", "malformed_design_reads", "call_ids",
-        "unfinished", "texts", "brief_route", "_brief_candidate",
+        "unfinished", "texts", "call_texts", "brief_route", "_brief_candidate",
     )
 
     def __init__(self, key: str) -> None:
@@ -226,6 +227,7 @@ class Turn:
         self.call_ids: set[str] = set()
         self.unfinished: list[tuple[str, dict]] = []
         self.texts: list[str] = []
+        self.call_texts: list[str] = []
         self.brief_route: dict | None = None
         # The opener's brief route, until reading shows this turn is the first.
         self._brief_candidate: dict | None = None
@@ -269,7 +271,10 @@ class Turn:
             self.call_ids.add(tool_id)
         elif self.unfinished[-1:] == [(tool_name, tool_input)]:
             return
-        self.add_markers(parse_reply(call_line_text(tool_name, tool_input)))
+        text = call_line_text(tool_name, tool_input)
+        if text:
+            self.call_texts.append(text)
+            self.add_markers(parse_reply(text))
 
 
 def read_recent_turns(

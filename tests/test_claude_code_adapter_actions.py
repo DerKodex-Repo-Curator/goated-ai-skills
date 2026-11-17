@@ -3681,6 +3681,136 @@ class DesignCitationTests(AdapterTestCase):
         self.assertEqual(stop(s), {})
 
 
+    # Ticket 061: a citation counts in the call fields that carry route and skip lines.
+    def committing(self) -> Session:
+        """A turn ready to commit but for the citation of errors.md."""
+
+        s = self.closed()
+        s.load("commit-message")
+        s.run(DIFF)
+        return s
+
+    def test_a_commit_retried_with_a_citation_in_its_description_passes(self) -> None:
+        s = self.committing()
+        held = s.call("Bash", commit("Add CSV export"))
+        self.assertEqual(uncited({"reason": reason(held)}), ["errors.md"])
+
+        # The near miss: a description with no citation of errors.md is held again.
+        retry = {**commit("Add CSV export"), "description": "Commit the CSV export"}
+        self.assertEqual(uncited({"reason": reason(s.call("Bash", retry))}), ["errors.md"])
+        cited = {**commit("Add CSV export"),
+                 "description": "Commit; errors.md#crash-early: a bad header now raises"}
+        self.assertEqual(decision(s.call("Bash", cited)), "pass")
+
+    def test_a_citation_in_an_earlier_call_description_or_skill_args_counts(self) -> None:
+        s = self.closed()
+        s.call("Bash", {"command": "ls src",
+                        "description": "errors.md#crash-early: a bad header now raises"})
+        self.assertEqual(stop(s), {})
+
+        s = self.fresh()
+        self.session = s
+        s = self.closed()
+        s.load("commit-message", args="errors.md#crash-early shaped the parser change")
+        self.assertEqual(stop(s), {})
+
+    def test_a_held_call_description_counts_as_its_lines_do(self) -> None:
+        s = self.closed()
+        # Held by the commit gate: commit-message has not loaded.
+        held = s.call("Bash", {**commit("Add CSV export"),
+                               "description": "errors.md#crash-early: a bad header now raises"})
+        self.assertEqual(hold_line(held), "goated-hold: commit | strict")
+        self.assertEqual(stop(s), {})
+
+    def test_a_citation_in_a_command_edit_text_or_mcp_description_does_not_count(self) -> None:
+        s = self.closed()
+        s.run("echo errors.md#crash-early")
+        s.call("Edit", {"file_path": "notes.txt", "old_string": "a",
+                        "new_string": "errors.md#crash-early"})
+        s.call("mcp__tracker__create_issue",
+               {"title": "Parser", "description": "errors.md#crash-early applies"})
+        s.run(DIFF)
+
+        self.assertEqual(uncited(stop(s)), ["errors.md"])
+        # The near miss: the same citation in a shell call's description counts.
+        s.call("Bash", {"command": "ls", "description": "errors.md#crash-early applies"})
+        self.assertEqual(stop(s), {})
+
+    def test_the_item_names_the_call_fields_and_not_the_report_at_commit(self) -> None:
+        s = self.committing()
+        at_commit = next(line for line in reason(s.call("Bash", commit("Add CSV export")))
+                         .split("\n") if "file#id" in line)
+        at_stop = next(line for line in stop(s)["reason"].split("\n") if "file#id" in line)
+
+        for item in (at_commit, at_stop):
+            with self.subTest(item=item):
+                self.assertIn("a shell or agent call's description or a Skill call's args", item)
+                self.assertNotIn("`description`", item)
+                self.assertNotIn("`args`", item)
+        self.assertNotIn("in your report", at_commit)
+        self.assertIn("this commit call's description", at_commit)
+        # The near miss: at Stop the reply is the place to cite, so the item names it.
+        self.assertIn("your reply", at_stop)
+        self.assertNotIn("this commit call's description", at_stop)
+
+    def test_the_red_flags_item_asks_the_question_and_no_hold_needs_an_answer(self) -> None:
+        question = "Name one input that would break this change, and say what happens."
+        red_flags = (DESIGN_SKILL_SOURCE / "references" / "red-flags.md").read_text(encoding="utf-8")
+        self.assertTrue(red_flags.rstrip().endswith(question), red_flags[-300:])
+
+        s = self.designing("goated-design-reads: errors.md")
+        s.read(REFERENCES + "errors.md")
+        s.call("Edit", edit("src/export.py", PLAIN))
+        s.run("pytest -q")
+        s.say(DOC_SKIP)
+        s.say("errors.md#crash-early: no failure paths were added.")
+        item = next(line for line in stop(s)["reason"].split("\n") if "red-flags.md" in line)
+        self.assertIn(question, item)
+        s.read(RED_FLAGS)
+        item = next(line for line in stop(s)["reason"].split("\n") if "red flags" in line)
+        self.assertIn(question, item)
+        # No answer is checked: the change read alone meets the item, while the
+        # near miss above, the red flags read with no change read, did not.
+        s.run(DIFF)
+        self.assertEqual(stop(s), {})
+
+    def test_red_flags_declares_only_ids_the_section_index_lists(self) -> None:
+        skill = (DESIGN_SKILL_SOURCE / "SKILL.md").read_text(encoding="utf-8")
+        row = next(line for line in skill.splitlines()
+                   if line.startswith("| [") and "(references/red-flags.md)" in line)
+        red_flags = (DESIGN_SKILL_SOURCE / "references" / "red-flags.md").read_text(encoding="utf-8")
+        declared = set(re.findall(r"<!-- id: #([a-z-]+) -->", red_flags))
+
+        self.assertEqual(declared, set(re.findall(r"`#([a-z-]+)`", row.split("|")[-2])))
+        self.assertEqual(declared, {"red-flags"})
+
+
+class RestoreLimitTests(AdapterTestCase):
+    """A restore command counts as a change whatever it restores (Ticket 061)."""
+
+    def test_a_restore_after_the_check_asks_for_proof_and_a_rerun_answers_it(self) -> None:
+        s = self.routed()
+        s.call("Edit", edit("src/export.py", PLAIN))
+        s.run("pytest -q")
+        s.say(DOC_SKIP)
+        self.assertEqual(stop(s), {})
+
+        s.run("git checkout -- src/export.py")
+        self.assertIn("- Proof:", stop(s)["reason"])
+        s.run("pytest -q")
+        self.assertEqual(stop(s), {})
+
+    def test_known_limits_names_the_restore_case(self) -> None:
+        readme = (Path(__file__).resolve().parents[1] / "adapters" / "claude-code"
+                  / "README.md").read_text(encoding="utf-8")
+        limits = readme.split("\n## Known Limits\n", 1)[1].split("\n## ", 1)[0]
+        other = readme.replace(limits, "")
+
+        self.assertRegex(limits, r"restore[^.]*counts as a change whatever it restores")
+        # The near miss: the note lives in Known Limits, not elsewhere.
+        self.assertNotRegex(other, r"counts as a change whatever it restores")
+
+
 CLOSEOUT_HOLD = "goated-hold: closeout | justified-skip"
 PROOF_SKIP = "goated-skip: verification-before-completion: no test suite covers this file"
 DESIGN_SKIP = "goated-skip: software-design-principles: one mechanical constant change"
