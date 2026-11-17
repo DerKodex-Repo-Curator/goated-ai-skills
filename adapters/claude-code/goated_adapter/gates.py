@@ -54,18 +54,21 @@ def unseen_line_advice(line: str, way_out: str) -> str:
     """Recovery advice for a hold that a route or skip line can clear.
 
     `line` names the line ("route line", "skip line"); `way_out` is the typed
-    override that stands the hold down. A bare retry is the only in-turn
-    recovery, and it is not guaranteed (README "Known Limits"), so the advice
-    ends with the user's way out.
+    override that stands the hold down. A line in reply text may never be seen
+    (README "Known Limits"), so the advice points to the fields of a tool call
+    the adapter reads (`transcript.call_line_text`), then to the user's way
+    out. It names those fields without backticks, since the skill-usage mod
+    reads every backticked bare word in a hold as a skill.
     """
 
     return (
-        f"Claude Code records a message only after this check, so a {line} in the "
-        "same message as this call is not visible yet: if you wrote one there, make "
-        "the call again without repeating the line. A line in a message that makes "
-        "a tool call may not be seen at all, because Claude Code can store that "
-        "message's text as a summary that drops it. If a bare retry is held again, "
-        f"tell the user they can type `{way_out}` in their prompt."
+        f"A {line} in reply text may not be seen: Claude Code records a message only "
+        "after this check, and can store the text of a message that makes a tool call "
+        "as a summary that drops the line. A line in a tool call's description field, "
+        "or in a Skill call's args, is read as written and counts from that call on. "
+        f"Put the {line} on its own line there, in this call's description if it has "
+        "one or else in an earlier call in this turn, and make the call again. If that "
+        f"is held again, tell the user they can type `{way_out}` in their prompt."
     )
 
 

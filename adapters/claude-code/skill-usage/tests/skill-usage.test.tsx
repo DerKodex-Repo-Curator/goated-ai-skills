@@ -1449,6 +1449,45 @@ test('skip lines count only as whole lines outside code, in the grammar, with a 
   ])
 })
 
+test("route and skip lines count from a Skill call's args and any call's description, before the call", async () => {
+  const route = 'goated-route: standard | requires: tdd'
+  expect(toolUseEvents([{ id: 'u1', name: 'Skill', input: { skill: 'tdd', args: route } }], false, 4)).toEqual([
+    { kind: 'route', t: 4, form: 'route', intensity: 'standard', requires: ['tdd'] },
+    { kind: 'load', t: 4, id: 'u1', skill: 'tdd', via: 'tool', isSubagent: false },
+  ])
+  const skip = 'Check status\ngoated-skip: software-design-principles: this is a mechanical rename only'
+  expect(toolUseEvents([{ name: 'Bash', input: { command: 'git status', description: skip } }], false, 5)).toEqual([
+    { kind: 'skip', t: 5, skill: 'software-design-principles', reason: 'this is a mechanical rename only' },
+  ])
+  // A subagent's call lines are its own, as its reply lines are.
+  expect(toolUseEvents([{ name: 'Bash', input: { command: 'ls', description: 'goated-route: direct' } }], true, 6, 'a1')).toEqual([
+    { kind: 'route', t: 6, form: 'direct', isSubagent: true, agent: 'a1' },
+  ])
+})
+
+test('no other field of a call carries a route or skip line, and design-reads lines are read from replies only', async () => {
+  const line = 'goated-route: direct'
+  const uses = [
+    { name: 'Edit', input: { file_path: 'notes.md', old_string: 'x', new_string: line } },
+    { name: 'Write', input: { file_path: 'notes.md', content: line } },
+    { name: 'Bash', input: { command: `cat > notes.md <<'EOF'\n${line}\nEOF`, args: line } },
+    { name: 'Bash', input: { command: 'ls', description: '```\n' + line + '\n```' } },
+    { name: 'Bash', input: { command: 'ls', description: 'goated-design-reads: process.md' } },
+  ]
+  expect(toolUseEvents(uses, false, 7).filter(e => e.kind === 'route' || e.kind === 'skip' || e.kind === 'design-reads')).toEqual([])
+})
+
+test('history reads a route line from a call when the reply text was saved as a summary', async () => {
+  const history: HistoryMessage[] = [
+    { role: 'user', content: [{ type: 'text', text: 'rename the loader' }] },
+    { role: 'assistant', content: [
+      { type: 'thinking', thinking: 'I will route this as direct work.' },
+      { type: 'tool_use', id: 'u1', name: 'Skill', input: { skill: 'using-goated-ai-skills', args: 'goated-route: direct' } },
+    ] },
+  ]
+  expect(historyEvents(history, SKILLS, 50)).toContainEqual({ kind: 'route', t: 50, form: 'direct', isEarlier: true })
+})
+
 test('history rebuilds skip lines from replies, so a late-loading mod sees declines', async () => {
   const history: HistoryMessage[] = [
     { role: 'user', content: [{ type: 'text', text: 'tidy the docs' }] },

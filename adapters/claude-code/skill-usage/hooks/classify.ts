@@ -224,11 +224,24 @@ function isCodeFile(path: string): boolean {
 }
 
 /**
- * The events of one assistant message's tool calls: skill loads, subagent
+ * The text of a tool call that may carry route and skip lines: its
+ * `description`, and for a Skill call also its `args`. These fields describe
+ * the call rather than hold its payload, and Claude Code keeps them as written
+ * even when it saves the reply's text as a summary that drops the lines. The
+ * adapter reads the same fields (`call_line_text` in goated_adapter/transcript.py).
+ */
+function callLineText(name: string, input: Record<string, unknown>): string {
+  const fields = name === 'Skill' ? [input.description, input.args] : [input.description]
+  return fields.filter((v): v is string => typeof v === 'string').join('\n')
+}
+
+/**
+ * The events of one assistant message's tool calls: the route and skip lines
+ * each call carries, before that call's own events; skill loads, subagent
  * spawns, writes, code changes, reads into a skill's folder, reads of a
- * skill's supporting files. A subagent's calls count only as skill loads,
- * spawns, code changes, supporting-file reads and reads of a SKILL.md
- * (`body`); `agent` names that subagent.
+ * skill's supporting files. A subagent's calls count only as its own lines,
+ * skill loads, spawns, code changes, supporting-file reads and reads of a
+ * SKILL.md (`body`); `agent` names that subagent.
  */
 export function toolUseEvents(
   uses: readonly { id?: string; name: string; input: Record<string, unknown> }[],
@@ -240,6 +253,7 @@ export function toolUseEvents(
   const ofAgent = isSubagent && agent ? { agent } : {}
   for (const { id, name, input } of uses) {
     const ofCall = id ? { id } : {}
+    events.push(...markerEvents(callLineText(name, input), t, isSubagent ? agent : undefined).filter(e => e.kind !== 'design-reads'))
     if (name === 'Skill') {
       events.push({ kind: 'load', t, ...ofCall, skill: skillArgument(input.skill), via: 'tool', isSubagent })
       continue

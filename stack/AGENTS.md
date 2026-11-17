@@ -109,8 +109,8 @@ Use the registry for cross-skill metadata and the installed
 `goated-route:` line. Select only justified required and conditional gates.
 
 When a framework hold names an inapplicable skill, write
-`goated-skip: <skill>: <reason>` on its own line, before the gated call's
-message, with an action-specific reason. To drop a route's skill,
+`goated-skip: <skill>: <reason>` where the router's output contract places
+the route line, with an action-specific reason. To drop a route's skill,
 re-route. Omit ceremonial skip reports.
 
 Re-evaluate the route at controlled checkpoints:

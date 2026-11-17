@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
-from .markers import parse_reply
+from .markers import ReplyMarkers, parse_reply
 
 BLOCK_SIZE = 256 * 1024
 MAX_BYTES = 64 * 1024 * 1024
@@ -69,6 +69,23 @@ SKILL_BODY_PREFIX = "Base directory for this skill:"
 # A call this adapter held: Claude Code 2.1.3xx records the deny reason as
 # `PreToolUse:<tool> hook error: <reason>`, and the reason opens with the hold line.
 HOLD_RESULT_RE = re.compile(r"(?:PreToolUse:\S+ hook error: )?goated-hold: ")
+
+
+def call_line_text(tool_name: str, tool_input: dict) -> str:
+    """The text of a tool call that may carry route and skip lines.
+
+    That is the call's `description`, and for a Skill call also its `args`.
+    These fields describe the call rather than hold its payload, so file text,
+    edit text, and commands never carry a line. Claude Code can save a
+    message's reply text as a summary that drops the lines, but it keeps a
+    call's input as written. The skill-usage mod reads the same fields
+    (`callLineText` in its `hooks/classify.ts`).
+    """
+
+    fields = ["description", "args"] if tool_name == "Skill" else ["description"]
+    return "\n".join(
+        value for value in (tool_input.get(f) for f in fields) if isinstance(value, str)
+    )
 
 
 def prompt_text_kind(text: str) -> str:
@@ -138,15 +155,16 @@ class Turn:
     the prompt itself invoked as `/<skill>`, once its body loaded. `route` is
     the winning route line, `route_marks` every valid route line in order, and
     `malformed` the route-like lines that failed the grammar. `skips` are the
-    valid `goated-skip` lines, and `calls` the tool calls that finished in this
-    turn, oldest first. `opens_transcript` is set on the oldest turn read when
+    valid `goated-skip` lines. Lines count from reply text and from the fields
+    `call_line_text` names, once per call id in `call_ids`. `calls` are the
+    tool calls that finished in this turn, oldest first. `opens_transcript` is set on the oldest turn read when
     reading reached the start of the transcript, so no earlier turn exists.
     """
 
     __slots__ = (
         "key", "is_compaction", "typed", "prompt_id", "loads", "invoked_load",
         "route", "route_marks", "malformed", "skips", "calls", "prompt_ids",
-        "opens_transcript",
+        "opens_transcript", "call_ids",
     )
 
     def __init__(self, key: str) -> None:
@@ -163,6 +181,28 @@ class Turn:
         self.skips: list[dict] = []
         self.calls: list[Call] = []
         self.prompt_ids: set[str] = set()
+        self.call_ids: set[str] = set()
+
+    def add_markers(self, markers: ReplyMarkers) -> None:
+        """Count the marker lines of one reply text or one tool call, in order."""
+
+        if markers.route is not None:
+            self.route = markers.route
+            self.route_marks.append(RouteMark(markers.route, len(self.loads), len(self.calls)))
+        self.malformed.extend(markers.malformed)
+        self.skips.extend(markers.skips)
+
+    def add_call(self, tool_id: str, tool_name: str, tool_input: dict) -> None:
+        """Count the marker lines a tool call carries, once per call id.
+
+        A line in a call counts from that call on, so it covers the call itself.
+        """
+
+        if tool_id and tool_id in self.call_ids:
+            return
+        if tool_id:
+            self.call_ids.add(tool_id)
+        self.add_markers(parse_reply(call_line_text(tool_name, tool_input)))
 
 
 def read_recent_turns(
@@ -172,6 +212,7 @@ def read_recent_turns(
     prompt_id: str | None = None,
     wait_seconds: float = 0.0,
     sidechain: bool = False,
+    current_call: tuple[str, str, dict] | None = None,
 ) -> list[Turn]:
     """Return recent turns, oldest first, ending with the current turn.
 
@@ -190,7 +231,9 @@ def read_recent_turns(
     call being judged. In an interactive session Claude Code records the
     assistant message holding that call, with any text and sibling calls in
     it, only after PreToolUse returns, so callers take the call from the hook
-    input instead.
+    input instead. `current_call` is that call, as `(tool_use_id, tool_name,
+    tool_input)`: the route and skip lines it carries count in the current
+    turn, once even if the transcript already shows it.
 
     `sidechain` reads a subagent's own transcript, where every entry is a
     sidechain entry and every prompt was written by the parent agent, so none
@@ -202,6 +245,8 @@ def read_recent_turns(
         turns = _read_turns_once(Path(path), since_key, sidechain)
         current = turns[-1]
         if prompt_id is None or current.is_compaction or prompt_id in current.prompt_ids:
+            if current_call is not None:
+                current.add_call(*current_call)
             return turns
         if time.monotonic() >= deadline:
             raise TranscriptUnreadable(
@@ -377,14 +422,7 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                 if not isinstance(block, dict):
                     continue
                 if block.get("type") == "text":
-                    markers = parse_reply(str(block.get("text", "")))
-                    if markers.route is not None:
-                        turn.route = markers.route
-                        turn.route_marks.append(
-                            RouteMark(markers.route, len(turn.loads), len(turn.calls))
-                        )
-                    turn.malformed.extend(markers.malformed)
-                    turn.skips.extend(markers.skips)
+                    turn.add_markers(parse_reply(str(block.get("text", ""))))
                 elif block.get("type") == "tool_use":
                     tool_id = str(block.get("id", ""))
                     tool_input = block.get("input")
@@ -392,6 +430,7 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                         str(block.get("name", "")),
                         tool_input if isinstance(tool_input, dict) else {},
                     )
+                    turn.add_call(tool_id, *pending[tool_id])
                     if block.get("name") == "Skill":
                         skill = skill_name((block.get("input") or {}).get("skill"))
                         if skill:

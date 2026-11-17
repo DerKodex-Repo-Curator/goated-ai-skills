@@ -253,10 +253,10 @@ class SkillUsageModFixtureTests(unittest.TestCase):
         self.assertIn("- Design:", texts["closeoutUnfinished"])
         self.assertIn("- Setup:", texts["closeoutSetup"])
 
-    def test_holds_a_line_can_clear_give_the_bare_retry_and_the_user_way_out(self) -> None:
-        # A route or skip line written in the held call's own message is recorded only after the
-        # hook returns, and Claude Code may store it as a narration summary that drops it (README
-        # "Known Limits"), so the hint is a bare retry, not a promise, and the user can stand it down.
+    def test_holds_a_line_can_clear_name_the_call_fields_and_the_user_way_out(self) -> None:
+        # A route or skip line in reply text is recorded only after the hook returns, and Claude
+        # Code may store it as a narration summary that drops it (README "Known Limits"), so the
+        # hint points to a tool call's description or a Skill call's args, then to the user's way out.
         texts = _adapter_texts()
         ways_out = {
             "routeLine": "skip routing",
@@ -272,8 +272,8 @@ class SkillUsageModFixtureTests(unittest.TestCase):
         }
         for key, way_out in ways_out.items():
             with self.subTest(key=key):
-                self.assertIn("make the call again without repeating the line", texts[key])
                 self.assertIn("may not be seen", texts[key])
+                self.assertIn("in a tool call's description field, or in a Skill call's args", texts[key])
                 self.assertIn(f"`{way_out}`", texts[key])
 
     def test_holds_backtick_only_skill_names(self) -> None:

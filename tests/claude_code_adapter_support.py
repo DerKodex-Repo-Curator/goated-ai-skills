@@ -233,6 +233,20 @@ class Session:
             }
         )
 
+    def summarize(self, summary: str) -> None:
+        """Record reply text the way Claude Code sometimes saves it beside a tool
+        call: as a `thinking` block holding a rewritten summary, with no text."""
+
+        self._append(
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "thinking", "thinking": summary, "signature": "sig"}],
+                },
+            }
+        )
+
     def _new_id(self) -> str:
         self._counter += 1
         return f"toolu_{self._counter:04d}"
@@ -307,10 +321,14 @@ class Session:
             entry.update(extra)
         self._append(entry)
 
-    def load(self, skill: str, *, success: bool = True) -> None:
-        """Record a Skill tool call and its result, as Claude Code does."""
+    def load(self, skill: str, *, success: bool = True, args: str | None = None) -> None:
+        """Record a Skill tool call and its result, as Claude Code does.
 
-        tool_use_id = self._tool_use("Skill", {"skill": skill})
+        `args` is the call's `args` field, which Claude Code passes to the skill.
+        """
+
+        tool_input = {"skill": skill} if args is None else {"skill": skill, "args": args}
+        tool_use_id = self._tool_use("Skill", tool_input)
         if success:
             self._tool_result(
                 tool_use_id,

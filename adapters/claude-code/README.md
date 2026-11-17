@@ -87,6 +87,20 @@ of hold:
   with a reason of three or more words, in the current turn. The reason stays
   in the transcript, where the skill-usage mod reads it.
 
+Route and skip lines are read from the agent's reply text and from two fields
+of a tool call: its `description` (shell commands and spawns have one) and,
+for a Skill call, its `args`, such as
+`Skill(using-goated-ai-skills, args: "goated-route: direct")`. Claude Code can
+store reply text as a summary that drops the line (see
+[Known Limits](#known-limits)), but it keeps a call's input as written, and
+the hook sees the input of the call it judges. A line in a call counts from
+that call on, so it covers the call itself, and otherwise follows the same
+rules as a line in reply text: the same grammar, outside fenced blocks, the
+last route line wins, route lines with no write or spawn between them are one
+task, and a line counts only in its own turn and agent. No other field counts,
+so file text, edit text, and commands never carry a line, and no typed
+[override](#user-overrides) is ever read from a call.
+
 | Gate | Kind | Holds | Clears when |
 | --- | --- | --- | --- |
 | `router-first` | strict | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction | `using-goated-ai-skills` loads |
@@ -458,10 +472,12 @@ goated-hold: <gate> | <kind>
   turn does not answer it.
 - A hold that a route or skip line can clear (`route-line`, `pipeline`,
   `design`, `security`, `conflict-resolution`, `repeated-failure`,
-  `pr-review`) says that a line in the held call's own message is not
-  visible yet, and to make the call again without repeating the line. It says
-  this may still fail (see [Known Limits](#known-limits)), and that the user
-  can then type the matching override.
+  `pr-review`) says that a line in reply text may not be seen (see
+  [Known Limits](#known-limits)), and to put the line in the held call's
+  description, or in an earlier call's description or Skill `args` in the
+  turn, and make the call again. It then says the user can type the matching
+  override. It names those fields without backticks, since the mod would
+  read a backticked bare word as a skill.
 - A hold or closeout item that asks for a [change read](#change-reads) once
   its skill has loaded names that skill without backticks, or only in its
   skip line, since no load answers it: the commit, pull-request, and
@@ -649,17 +665,17 @@ of the call's prompt, which is normally already there.
   judges. In an interactive session Claude Code records that message only
   after the hook returns, so a route line or skip line written in the same
   message, and sibling calls made alongside it (a Skill load included), do not
-  count yet. The agent then makes the call again in a later message, without
-  repeating the line, by which time the earlier one is recorded.
-- The adapter reads route and skip lines only from reply text. Claude Code
-  can store the text of an assistant message that also makes a tool call as a
-  rewritten summary, in a thinking block, that drops the line, so the adapter
-  never sees it. A bare retry is then held again, and a line written again
-  beside a read-only call can be summarized the same way. The
-  route-line, pipeline, design, security, conflict-resolution,
-  repeated-failure, and pr-review holds give the bare retry as worth one try, not as a sure fix, and then point the user to the typed
-  override: `skip routing`, or `skip <skill>` for a skip line. Reading the
-  line from somewhere other than reply text is planned as a separate change.
+  count yet. Only the judged call's own input is seen: a line in its
+  `description` counts for it.
+- Claude Code can store the text of an assistant message that also makes a
+  tool call as a rewritten summary, in a thinking block, that drops route and
+  skip lines, so the adapter never sees a line written there, and a retry
+  cannot bring it back. The holds a line can clear therefore point to the
+  call fields the adapter also reads (see [What It Holds](#what-it-holds)).
+  Edit and Write calls have no `description`, so a line for one of them goes
+  in an earlier call of the turn, such as the Skill call that loads a required
+  skill. If the line is still not seen, the holds point the user to the typed
+  override: `skip routing`, or `skip <skill>` for a skip line.
 
 - Shell analysis is lexical, not a shell. These forms are not seen, so a
   write in them meets only `router-first` and a commit or pull request in
