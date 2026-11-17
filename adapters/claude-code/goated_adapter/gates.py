@@ -217,12 +217,16 @@ def shows_a_card(tool_name: str, tool_input: dict) -> bool:
     """True for a `start_session` call that only shows a card (`CARD_INITIATIONS`).
 
     An `own_initiative` card's brief still meets the `spawn` gate in
-    actions.py, since it runs when the user starts the card.
+    actions.py, since it runs when the user starts the card. Only a string
+    `initiation` can name a card: any other value is held as a spawn, since
+    an unhashable one would raise and fail the hook open.
     """
 
+    initiation = tool_input.get("initiation")
     return (
         tool_name == START_SESSION
-        and tool_input.get("initiation") in CARD_INITIATIONS
+        and isinstance(initiation, str)
+        and initiation in CARD_INITIATIONS
         and tool_input.get("proposal_id") is None
     )
 

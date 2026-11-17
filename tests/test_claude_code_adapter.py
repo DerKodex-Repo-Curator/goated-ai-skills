@@ -683,6 +683,9 @@ class SessionCardTests(AdapterTestCase):
             "unknown initiation": {**self.CARD, "initiation": "later"},
             "saved proposal": {"proposal_id": "p-1", "initiation": "own_initiative"},
             "saved proposal, empty id": {**self.CARD, "proposal_id": ""},
+            # Not a string, so not a card: it meets the gates rather than failing open.
+            "list initiation": {**self.CARD, "initiation": ["offer"]},
+            "dict initiation": {**self.CARD, "initiation": {"kind": "offer"}},
         }
         for name, tool_input in cases.items():
             with self.subTest(case=name):
