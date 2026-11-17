@@ -136,6 +136,25 @@ class HoldTests(ReviewIntakeTestCase):
         self.assertEqual(decision(self.edit(s, dict(CODE_EDIT, file_path=outside))), "pass")
 
 
+class ScopeTests(ReviewIntakeTestCase):
+    def test_near_miss_a_reviewer_from_an_earlier_turn_holds_nothing_in_the_next(self) -> None:
+        # Known limit: the review reports, the turn ends to ask the user, and the fixes
+        # come in the next turn, which the gate does not see.
+        s = self.session()
+        self.reviewer(s)
+        self.turn(s)
+        self.assertEqual(decision(self.edit(s)), "pass")
+
+    def test_near_miss_a_subagents_own_edit_after_the_parents_review_is_not_held(self) -> None:
+        s = self.session()
+        self.reviewer(s)
+        agent = s.subagent("i2")
+        agent.prompt("Apply the accepted findings.", hook=False)
+        edit = agent.call("Edit", dict(CODE_EDIT), agent_id="i2", agent_type="general-purpose")
+        self.assertEqual(decision(edit), "pass")
+        self.assertEqual(gate_line(self.edit(s)), HOLD)
+
+
 class TriggerTests(ReviewIntakeTestCase):
     def test_an_implementer_subagents_return_holds_nothing(self) -> None:
         s = self.session()

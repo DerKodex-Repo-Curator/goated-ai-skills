@@ -355,6 +355,19 @@ class ReviewItemMetTests(ReviewTestCase):
             "prompt": '<agent-message from="bg2">\n[Subagent hand-back] The report follows:\n  No findings.'}})
         self.assertEqual(decision(commit_call(s)), "pass")
 
+    def test_a_side_session_started_with_a_reviewer_brief_does_not(self) -> None:
+        # Its result arrives at once, but the review has only started (maintainer decision).
+        for tool, field in (("mcp__ccd_session__start_session", "prompt"),
+                            ("mcp__ccd_session__hand_off_to_session", "remaining_plan")):
+            with self.subTest(tool=tool):
+                s = self.large()
+                s.load("subagent-driven-development")
+                s.read(REVIEWER_PROMPT)
+                started = s.call(tool, {field: REVIEWER_BRIEF, "title": "Review export"},
+                                 result="Session started.")
+                self.assertEqual(decision(started), "pass")
+                self.assertIn("- Review:", reason(commit_call(s)))
+
     def test_a_subagent_briefed_from_the_handoff_template_does_not(self) -> None:
         s = self.large()
         s.brief_with_handoff()

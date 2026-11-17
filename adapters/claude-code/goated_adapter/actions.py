@@ -384,7 +384,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     reading their transcripts takes time. `earlier` is what counts from
     earlier turns until the next compaction. With `closeout`, a commit whose
     own hold is met is held while the turn has unmet closeout items (Ticket 059);
-    without it, as for a subagent, which has no closeout, it is not.
+    without it, as for a subagent, which has no closeout, it is not. Without
+    `closeout`, as in a subagent, the `review-intake` gate holds nothing.
     `references` returns the registry's declared references
     (`reference_reads.load`), called only for an edit of a project file;
     without it, as for a subagent, the `reference-reads` gate holds nothing.
@@ -842,8 +843,7 @@ def _review_intake_hold(path: str, proof: _Proof, closeout: Closeout | None) -> 
     if not closeout or not is_code(path) or proof.loaded_or_skipped(INTAKE_SKILL):
         return None
     templates = closeout.spawn_templates or {}
-    if not any(call.name in SUBAGENT_TOOLS and _reviewer_returned(call, proof, templates)
-               for call in proof.turn.calls):
+    if not any(_reviewer_returned(call, proof, templates) for call in proof.turn.calls):
         return None
     return Hold(
         "review-intake", JUSTIFIED_SKIP,
@@ -857,13 +857,14 @@ def _review_intake_hold(path: str, proof: _Proof, closeout: Closeout | None) -> 
 
 
 def _reviewer_returned(call, proof: _Proof, spawn_templates: dict[str, list[str]]) -> bool:
-    """True for a finished spawn whose brief followed the reviewer prompt
-    (`spawn_templates`, by tool_use_id) and whose report has arrived: at once,
-    or for one started in the background, once its completion arrived in the
-    turn. A held or failed spawn reported nothing."""
+    """True for a finished subagent spawn whose brief followed the reviewer
+    prompt (`spawn_templates`, by tool_use_id) and whose report has arrived: at
+    once, or for one started in the background, once its completion arrived in
+    the turn. A held or failed spawn reported nothing. A side session's result
+    arrives at once, but only says its review started, so it never counts."""
 
     return (
-        call.ok and call.name in SPAWN_BRIEF_FIELDS
+        call.ok and call.name in SUBAGENT_TOOLS
         and contracts.REVIEWER_TEMPLATE.reference in spawn_templates.get(call.tool_id, ())
         and (not call.launched_async or call.agent_id in proof.turn.finished_agents)
     )
