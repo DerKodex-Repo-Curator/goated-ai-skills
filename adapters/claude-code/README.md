@@ -27,7 +27,10 @@ Skills work the same without it. Install it only if you want enforcement.
 1. Copy this `claude-code/` folder to a stable place, for example next to your
    installed GOATED distribution as `<goated-root>/adapters/claude-code/`.
    Copy the whole folder: `goated_hook.py` imports the `goated_adapter/`
-   package beside it.
+   package beside it. The [`reference-reads`](#registry-references) gate
+   reads the installed registry two folders up,
+   `<goated-root>/stack/goated-stack.yaml`; if the adapter lives elsewhere,
+   set `GOATED_ADAPTER_REGISTRY` to the registry's path.
 2. Open [`settings.snippet.json`](settings.snippet.json) and replace every
    `<adapter-dir>` with the folder's absolute path. Forward slashes work on
    Windows too.
@@ -134,6 +137,7 @@ session's message never counts, and a brief never carries an override. The
 | `spawn` | strict | Starting an agent or session with a brief, except a [read-only subagent](#plain-reads) | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, each in this turn or an earlier one since the last compaction (see [Loads](#loads)); and the brief, on every spawn, passes the [content check](#content-checks) |
 | `design` | justified-skip | The turn's first write adding five or more lines to a non-test code file inside the project folder (or any such write while the skill does not count as loaded). A test file never triggers it and is not counted when finding the turn's first such write: in TDD the test comes first and the design happens in the code after it | `software-design-principles` [counts as loaded](#loads), a valid [design-reads line](#design-references) is in the turn, and every [reference the edit requires](#design-references) has been read since the last compaction |
 | `design-reads` | justified-skip | Any later write to a code or configuration file inside the project folder, once `software-design-principles` [counts as loaded](#loads), whose [signals or the turn's design-reads lines](#design-references) require a reference not read since the last compaction. The hold names each file and what selected it | Each required reference is read with the Read tool |
+| `reference-reads` | justified-skip | An edit by a write tool of a code file inside the project folder that fires a signal the installed registry declares for a reference of a skill that [counts as loaded](#loads) (see [Registry references](#registry-references)). The hold names each file by its path under the skill, `<skill>/references/<file>`, and what selected it | Each reference it names is read with the Read tool, in this turn or an earlier one since the last compaction; or a skip line naming its skill, for the turn |
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` [counts as loaded](#loads) |
 | `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an `Edit` or `MultiEdit` whose old text has a `<<<<<<<` or `>>>>>>>` marker at a line start; a write, by a write tool or a shell command such as `git checkout --theirs`, to a file a Read in the turn showed with such a marker; or any write after a git merge, rebase, cherry-pick, revert, or pull whose result in the turn reported a conflict. A finished abort, quit, continue, or skip of that operation, or a finished commit, ends the conflict and drops the Reads before it. Only the turn is read, not the repository, so a conflict opened in an earlier turn is caught only by markers the turn shows: an edit whose old text spans only `=======` and one side, in a file not read this turn, is not held, because `=======` alone is also a heading underline. A conflicting stash pop or apply is not held | `resolving-merge-conflicts` [counts as loaded](#loads) |
 | `repeated-failure` | justified-skip | A write, by a write tool or a shell command, once one check command (as the closeout's Proof item recognises checks) has failed twice in a row in the turn. A shell command is held when any of its simple commands writes and is not itself a check, so `sed -i … && pytest` and `pytest \| tee out.txt` are held, while `pytest > out.txt` is a rerun. "The same check" is the same command text, whitespace aside, without a trailing pipe into output filters (`tail`, `head`, `grep`, `findstr`, `more`, `less`, `tee`, `Select-Object`, `Select-String`, `Out-Host`, `Out-String`) or a `2>&1` before it; so `pytest -q \| tail -20` and `pytest -q \| tail -40` are one check, and a narrowed rerun such as one test file of a failing suite is another. A piped run fails by what it prints (`N failed`, `N errors`, `FAILED (`, `FAIL`, `npm ERR!`, `error TS…`, `test result: FAILED`, and the like), since the exit code is the filter's; any other run fails by its exit code. A run whose only failures are test modules that could not load a missing module or name neither adds to the count nor resets it, whether or not it looks failed, since in TDD the first red run often fails because the module under test does not exist yet. Only each runner's own report counts: pytest's `ERROR collecting` section showing `ImportError while importing test module` or ending in an `ImportError` or `ModuleNotFoundError`; unittest's `_FailedTest` error ending in one of those; jest's `Test suite failed to run` with `Cannot find module`. A run counts as usual when it also shows a failure in a test that ran (`1 failed, 1 error`), when a module that is there fails to load (a `SyntaxError` or `NameError`: the edit-and-crash loop the gate exists for), or when a test only prints such text. These miss, toward holding: output cut before the runner names the cause (`pytest -q \| tail -3`), ts-jest's `TS2307`, and vitest's `Failed to load url`. The table is `LOAD_ERROR_SIGNS` in `actions.py`. A pass of the check resets its count; other commands between runs do not. A call that never ran does not count: one the adapter or another hook held, one refused at a permission prompt, or one interrupted | `diagnose` [counts as loaded](#loads) |
@@ -467,6 +471,58 @@ message. An MCP commit tool carries no citation in any field, so it is asked
 for one in such an earlier call. At `Stop` the item asks for it in the reply. Whether a citation says anything
 useful is not judged.
 
+### Registry references
+
+Every skill's entry in the GOATED registry, `stack/goated-stack.yaml`,
+lists each file under its `references/` folder with a signal that makes its
+read required, or `advisory` with the reason no signal fits; the registry
+schema and `stack/fixtures/reference-reads/README.md` own the shape. The
+`reference-reads` gate enforces those signals for the skills that [count as
+loaded](#loads), so a skill whose references are never read in practice,
+such as `tdd`, is asked for them at the edit that needs them.
+
+The rules live in
+[`goated_adapter/reference_reads.py`](goated_adapter/reference_reads.py).
+The adapter reads the installed registry (see [Install](#install)) on each
+edit of a project file, with its own reader for the registry's plain YAML,
+since it uses only the standard library. It judges the signal kinds decided
+by one edit, by a write tool (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`)
+of a code file inside the project folder:
+
+| Kind | Fires when the edit |
+| --- | --- |
+| `edit-adds-pattern` | adds code matching the named pattern, in a file of `file_kind` when the signal gives one. Comments and docstrings are left out, as for the [design signals](#design-references), and a `Write` over a file on disk is compared with it |
+| `edit-of-file-kind` | is of a file of `file_kind` and writes at least `min_added_lines` lines, as the `design` gate counts them (`added_lines` in `actions.py`) |
+
+A `test` file is a code file at a test path, as the design gates judge it.
+The named patterns are the registry's `reference_patterns`, as the adapter
+matches them; so `dispatch` holds no patch, and `retrieve` no retry:
+
+| Pattern | Matches |
+| --- | --- |
+| `mock-or-patch` | a word starting `mock`, `patch`, `stub`, `spy`, or `fake` (either case), `monkeypatch`, `sinon`, a word ending `Mock` (`MagicMock`), `jest.fn`, or `vi.fn` |
+| `sleep-retry-or-timeout` | in any case: a word holding `sleep`, `timeout`, `retry`, `retries`, `retried`, or `retrying` (`asyncio.sleep`, `setTimeout`, `MAX_RETRIES`); a word ending `poll`, `polls`, `polled`, `polling`, or `poller`; `wait_for`, `waitFor`, or `setInterval` |
+
+So the first enforced set is: `tdd`'s `mocking-and-seams.md` when a test
+edit adds a mock or patch, its `test-design.md` at a test edit writing five
+or more lines, and `diagnose`'s `condition-based-waiting.md` when an edit
+adds a sleep, retry, or timeout. A reference of these kinds added to the
+registry later is enforced with no adapter change, as long as it names a
+pattern and file kind listed here. References declared `existing-rule` keep
+their own gates (`design-reads`, `spawn`, and the closeout), and the kinds
+judged on the turn (`write-under-path`, `gate-fires`,
+`sensitive-category-count`, `spawn-with-brief`) ask for nothing yet.
+
+A reference counts as read after a finished `Read` of a path ending in
+`<skill>/references/<file>`, in this turn or an earlier one, until the next
+compaction, as design references do: the [state](#state) keeps the paths
+read. A shell command printing one does not count, nor does a file of the
+same name under another skill. A skip line naming the skill, or a typed
+`skip <skill>`, clears that skill's references for the turn. A skill that
+does not count as loaded is not asked for its references: routing and the
+other gates decide whether it loads. When one edit fires references of two
+skills, the hold names them all and offers a skip line for each skill.
+
 ### Shell writes
 
 The adapter splits a command into its simple commands (joined by `;`, `&&`,
@@ -770,8 +826,9 @@ goated-hold: <gate> | <kind>
 ```
 
 - `<gate>` is one of `router-first`, `route-line`, `pipeline`, `commit`,
-  `pull-request`, `pr-review`, `spawn`, `design`, `design-reads`, `security`,
-  `conflict-resolution`, `repeated-failure`, or `closeout`.
+  `pull-request`, `pr-review`, `spawn`, `design`, `design-reads`,
+  `reference-reads`, `security`, `conflict-resolution`, `repeated-failure`,
+  or `closeout`.
 - `<kind>` is `strict` or `justified-skip`.
 - The first line matches
   `^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-skip)$`.
@@ -800,8 +857,8 @@ goated-hold: <gate> | <kind>
   [subagent](#subagents), where only its current turn counts, the hold asks
   for the load or read in this turn.
 - A hold that a route or skip line can clear (`route-line`, `pipeline`,
-  `design`, `design-reads`, `security`, `conflict-resolution`,
-  `repeated-failure`, `pr-review`) says that a line in reply text may not be
+  `design`, `design-reads`, `reference-reads`, `security`,
+  `conflict-resolution`, `repeated-failure`, `pr-review`) says that a line in reply text may not be
   seen (see [Known Limits](#known-limits)), and to put the line in the held
   call's description, or in the description or Skill `args` of a call made
   in an earlier message of the turn, and make the call again. It then says
@@ -829,6 +886,11 @@ goated-hold: <gate> | <kind>
   `software-design-principles/references/<file>`, which is no bare name. A
   `design` hold that asks for the line backticks its form,
   `goated-design-reads: <file>, <file>`; the skill-usage mod reads both.
+- The `reference-reads` hold names each skill it asks about only in its
+  skip line, `goated-skip: <skill>: <reason>`, since the skill is already
+  loaded, and backticks each reference by its path under the skill,
+  `<skill>/references/<file>`; the skill-usage mod counts each skill's ask
+  as read files once each of its references is read.
 - The closeout's Design citations item names where a citation counts, the
   call fields without backticks, like the unseen-line advice. Its
   commit-time text asks for the citation in a shell commit's own description
@@ -909,7 +971,8 @@ A hook call from inside a subagent carries `agent_id`. There:
 
 - the routing gates do not apply, because the parent's brief carries the route;
 - the action gates (`commit`, `pull-request`, `pr-review`, `spawn`, `design`,
-  `design-reads`, `security`, `conflict-resolution`, `repeated-failure`) apply, judged from
+  `design-reads`, `security`, `conflict-resolution`, `repeated-failure`) apply,
+  `reference-reads` aside, judged from
   the subagent's own transcript, which Claude Code keeps in
   `<session-id>/subagents/agent-<agent_id>.jsonl` beside the main one. A
   subagent must load the skill itself: the parent's loads do not count, and
@@ -975,7 +1038,8 @@ One small JSON file per session in a `goated-claude-code-adapter/` folder:
 
 It holds the current task's route, whether missing or reset state lost the
 task, whether the router loaded, which GOATED skills loaded and which design
-references and spawn-brief templates were read since the last compaction
+references, skill references, and spawn-brief templates were read since the
+last compaction
 (see [Loads](#loads)), which references each edit of the latest turn
 required when the design gates judged it, the last turn seen, and the latest
 typed overrides. It holds no prompt or reply
@@ -986,8 +1050,8 @@ session, and one per subagent of it, named for the turn whose hold gave the
 and a `SessionStart` after compaction or `/clear` deletes the session's and
 its subagents'.
 The action and closeout gates keep no state of their own: they read the
-current turn, the loads, design references, and templates read since the
-last compaction, and, for the closeout's citation item, the references
+current turn, the loads, design and skill references, and templates read
+since the last compaction, and, for the closeout's citation item, the references
 recorded for the turn's edits. Files are not pruned automatically;
 deleting the folder between sessions is safe.
 
@@ -1174,6 +1238,17 @@ of the call's prompt, which is normally already there.
   subagent's edits, so a subagent's design edits need no citation. A citation
   in a reply that also makes a tool call can be lost the way a route line
   is, so the item points to the call fields too.
+- The `reference-reads` gate fails open: with no registry at its path (see
+  [Install](#install)), or one it cannot read or parse, it asks for nothing.
+  Its reader takes the registry's plain block YAML only; a value written as a
+  block scalar (`|`), an anchor, or a flow mapping makes the whole registry
+  unreadable to it, though the validator accepts it. A signal naming a
+  pattern or file kind the adapter does not list asks for nothing. It judges
+  only edits by a write tool, not shell writes, and does not run inside a
+  [subagent](#subagents). Its patterns match words by their letters, so a word
+  that only starts like one, such as `patches` or `spyglass`, or one in a
+  string, still selects the reference; the read counts until the next
+  compaction, which bounds the cost.
 - A restore command, such as `git checkout -- <file>` or `git restore`,
   counts as a change whatever it restores, even content identical to what
   the last check ran on, since the adapter reads commands, not file content.

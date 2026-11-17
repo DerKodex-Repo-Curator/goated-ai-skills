@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 from typing import Callable
 
-from . import contracts, design_reads, shell
+from . import contracts, design_reads, reference_reads, shell
 from .state import SessionState, Task
 from .transcript import Turn
 
@@ -189,6 +189,9 @@ def fold_turns(
         state.loads = _unique([*state.loads, *loads])
         state.reference_reads = _unique(
             [*state.reference_reads, *design_reads.reads_in(turn.calls)]
+        )
+        state.skill_reference_reads = _unique(
+            [*state.skill_reference_reads, *reference_reads.reads_in(turn.calls)]
         )
         state.template_reads = _unique(
             [*state.template_reads, *contracts.templates_read(turn.calls)]

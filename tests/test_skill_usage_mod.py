@@ -141,6 +141,14 @@ def _adapter_texts() -> dict[str, str]:
         designed.say(NONE_LINE)
         designed.call("Edit", _edit("src/export.py", PLAIN))
         texts["designReads"] = reason(designed.call("Edit", _edit("src/export.py", "try:\n    rate = 1")))
+        # The references the registry declares for a loaded skill's edit signals (Ticket 067):
+        # one edit that fires a reference of each of two skills.
+        referenced = routed("reference-reads")
+        referenced.config.registry_path = REPO_ROOT / "stack" / "goated-stack.yaml"
+        referenced.load("tdd")
+        referenced.load("diagnose")
+        texts["referenceReads"] = reason(referenced.call(
+            "Edit", _edit("tests/test_export.py", "client = MagicMock()\ntime.sleep(1)")))
         texts["security"] = reason(routed("security").call("Write", _write("src/auth.py")))
         # A shell write is held like a write tool's: here, to a dependency manifest.
         texts["shellWrite"] = reason(
@@ -281,6 +289,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "designLine": "design | justified-skip",
             "designLineReads": "design | justified-skip",
             "designReads": "design-reads | justified-skip",
+            "referenceReads": "reference-reads | justified-skip",
             "security": "security | justified-skip",
             "shellWrite": "security | justified-skip",
             "repeatedFailure": "repeated-failure | justified-skip",
@@ -319,6 +328,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "designLine": "skip software-design-principles",
             "designLineReads": "skip software-design-principles",
             "designReads": "skip software-design-principles",
+            "referenceReads": "skip diagnose",
             "security": "skip code-security-review",
             "shellWrite": "skip code-security-review",
             "securityNoExtension": "skip code-security-review",

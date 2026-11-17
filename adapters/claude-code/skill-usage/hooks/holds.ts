@@ -108,6 +108,19 @@ export type HoldSettlement = {
 }
 
 /**
+ * The file names an ask's skill is asked to read, from a hold's `refs`: a design hold's are file names of its one
+ * skill; a reference-reads hold's are paths under each skill, `tdd/references/mocking-and-seams.md`, of which only
+ * the asked skill's count.
+ */
+function refsOf(refs: readonly string[], ask: readonly string[]): string[] {
+  return refs.flatMap(ref => {
+    const [skill, folder, file] = ref.split('/')
+    if (file === undefined) return [ref]
+    return folder === 'references' && skill !== undefined && ask.includes(skill) ? [file] : []
+  })
+}
+
+/**
  * A new hold settlement. Each hold asks for one or more skills, or a route
  * line; an ask stays open until a load, a read of the skill's files, a skip
  * line or a route line answers it, or its loop's turn ends. A blocked `Stop`
@@ -127,8 +140,9 @@ export function holdSettlement(): HoldSettlement {
   // `isCloseout`: a closeout item, on a `Stop` or a commit, which the `Stop` that ends the turn judges again.
   // `isSkipOnly`: a skill the hold offers only as a skip line, which no load answers.
   // `isSkipRejected`: a closeout hold asked for it after a skip line, so that skip line did not clear it.
-  // `refs`, `needsLine`: what a design hold that offers its skill only as a skip line asks instead: a Read of each
-  // design reference still unread, and a design-reads line. It is followed once both are in, as the adapter judges.
+  // `refs`, `needsLine`: what a design or reference-reads hold that offers its skill only as a skip line asks instead:
+  // a Read of each of the skill's references still unread, by file name, and for a design hold a design-reads line.
+  // It is followed once both are in, as the adapter judges.
   // `items`: the labels of the closeout items that asked for it, whose counts follow its outcome.
   // `skip`: the skip line that declined it, kept so a reopen takes its reason back.
   type Skip = { skill: string; reason: string }
@@ -264,7 +278,7 @@ export function holdSettlement(): HoldSettlement {
       ...(e.holdKind === 'strict' ? { isStrict: true as const } : {}),
       ...(isCloseoutHold(e) ? { isCloseout: true as const, isSkipRejected: true as const } : {}),
       ...(isSkipOnly ? { isSkipOnly: true as const } : {}),
-      ...(isSkipOnly && e.refs?.length ? { refs: new Set(e.refs) } : {}),
+      ...(isSkipOnly && e.refs?.length ? { refs: new Set(refsOf(e.refs, ask)) } : {}),
       ...(isSkipOnly && e.needsLine ? { needsLine: true } : {}),
       items: itemsAsking(e, ask),
       mark,
@@ -397,9 +411,9 @@ export function holdSettlement(): HoldSettlement {
         settle(n => !asksDesign(n) && n.anyOf.some(s => e.skills.includes(s)), 'read files', e, e.skills.find(s => open.some(n => n.anyOf.includes(s))))
         break
       case 'ref':
-        // Only the Read tool counts as a design hold's read, as the adapter counts it; a subagent's reads are its own.
+        // Only the Read tool counts as a reference read, as the adapter counts it; a subagent's reads are its own.
         if (!e.isReadTool || e.isSubagent) break
-        for (const n of open.filter(n => !n.agent && n.refs !== undefined)) {
+        for (const n of open.filter(n => !n.agent && n.refs !== undefined && n.anyOf.includes(e.skill))) {
           if (n.refs?.delete(e.file.split('/').pop() ?? '')) settleDesign(n, 'read files', e)
         }
         break
