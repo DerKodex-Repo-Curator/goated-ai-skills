@@ -129,6 +129,23 @@ class RegistryReaderTests(unittest.TestCase):
                 entry = self.ENTRY + f"          new_file: {value}\n"
                 self.assertEqual(len(self.messages("skills:\n" + entry)), 1)
 
+    def test_a_second_test_file_kind_signal_is_an_error(self) -> None:
+        # The design gate judges coding.md by the one test file-kind signal, so
+        # a second, in any skill, would decide it silently by registry order.
+        second = ("  - name: prototype\n    path: skills/engineering/prototype/SKILL.md\n"
+                  "    references:\n      - file: spike-tests.md\n        signal:\n"
+                  "          kind: edit-of-file-kind\n          file_kind: test\n")
+        messages = self.messages("skills:\n" + self.ENTRY + second)
+        self.assertEqual(len(messages), 1)
+        self.assertIn("edit-of-file-kind", messages[0])
+
+    def test_a_second_test_signal_of_another_kind_passes(self) -> None:
+        other = ("  - name: prototype\n    path: skills/engineering/prototype/SKILL.md\n"
+                 "    references:\n      - file: spike-tests.md\n        signal:\n"
+                 "          kind: edit-adds-pattern\n          pattern: mock-or-patch\n"
+                 "          file_kind: test\n")
+        self.assertEqual(self.messages("skills:\n" + self.ENTRY + other), [])
+
     def gate_entry(self, gate: str) -> str:
         return ("skills:\n  - name: diagnose\n    path: skills/engineering/diagnose/SKILL.md\n"
                 "    references:\n      - file: root-cause-tracing.md\n        signal:\n"

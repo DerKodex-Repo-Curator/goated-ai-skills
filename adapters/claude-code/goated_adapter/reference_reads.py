@@ -171,7 +171,8 @@ def file_kind_signal(references, file_kind: str) -> dict | None:
     """The first `edit-of-file-kind` signal among `references` for files of
     `file_kind`, such as `tdd`'s for `test-design.md`, or None. Another gate
     judges its own edits of that kind by it (`fires`), whether or not the
-    declaring skill is loaded."""
+    declaring skill is loaded; `validate_skills.py` refuses a source registry
+    declaring two for test files, so "first" never picks between rules."""
 
     return next((r.signal for r in references if r.signal.get("kind") == "edit-of-file-kind"
                  and r.signal.get("file_kind") == file_kind), None)

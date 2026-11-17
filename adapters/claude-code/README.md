@@ -531,7 +531,7 @@ not small.
 
 | Reference | Selected when the edit |
 | --- | --- |
-| `process.md` | creates a code file (a `Write` to a code file no earlier write in the turn made and that is not on disk), or adds a public top-level definition: an unindented line starting with `def`, `async def`, `class`, `function`, `export`, `func`, `fn`, `pub fn`, `public`, `interface`, `struct`, `enum`, `trait`, `impl`, or `defmodule`, whose name does not start with `_`; a shell `export NAME=` is not one |
+| `process.md` | creates a code file (a `Write`, or an `Edit` with no old text, to a code file no earlier write in the turn made and that is not on disk), or adds a public top-level definition: an unindented line starting with `def`, `async def`, `class`, `function`, `export`, `func`, `fn`, `pub fn`, `public`, `interface`, `struct`, `enum`, `trait`, `impl`, or `defmodule`, whose name does not start with `_`; a shell `export NAME=` is not one |
 | `complexity-and-modules.md` | the same as `process.md` |
 | `decoupling.md` | is not small, and edits a configuration file or is to the third or later distinct non-test code file the turn edits |
 | `readability.md` | the same as `process.md`, or is not small and adds a comment or docstring: a line opening with `#`, `//`, `/*`, `*`, `"""`, `'''`, `-- `, or `<!--`, a line inside a docstring or block comment, or a trailing `#` or `//` comment after two spaces |
@@ -595,7 +595,7 @@ for a code file written by a write tool:
 | Kind | Fires when the write |
 | --- | --- |
 | `edit-adds-pattern` | adds code matching the named pattern, in a file of `file_kind` when the signal gives one. Comments and docstrings are left out, as for the [design signals](#design-references) |
-| `edit-of-file-kind` | is of a file of `file_kind` and adds at least `min_added_lines` lines, or, with `new_file: true`, creates the file: a `Write` to a file no earlier write in the turn made and that is not on disk. The `design-reads` gate judges a test edit for `coding.md` by the registry's first such signal for `test` files, so one rule decides both (see [Design references](#design-references)) |
+| `edit-of-file-kind` | is of a file of `file_kind` and adds at least `min_added_lines` lines, or, with `new_file: true`, creates the file: a `Write`, or an `Edit` with no old text, to a file no earlier write in the turn made and that is not on disk. The `design-reads` gate judges a test edit for `coding.md` by the registry's one such signal for `test` files (`validate_skills.py` refuses a second), so one rule decides both (see [Design references](#design-references)) |
 | `write-under-path` | is of a file under the `path` folder of the project, case aside: the file's path below a project root, as the adapter places files (see [What It Holds](#what-it-holds)), starts with it. So with `docs/specs/`, `docs/specs.md` does not fire it, and a `tickets/` folder outside the project never does. Each project root counts: from a session working in the checkout's root, `src/docs/specs/x.md` does not fire it, but from a session working in `src/`, that folder is a root too, so it does |
 | `gate-fires` | comes while the named gate's condition holds, whether or not that gate holds the write: its own skill may be loaded. The adapter observes `repeated-failure` only (`OBSERVED_GATES` in `reference_reads.py`), whose condition is one check failed twice in a row with no pass since, its runs counted as that gate counts them. The schema allows any gate name, so `validate_skills.py` fails on an entry naming another; an installed registry that names one anyway asks for nothing by it |
 | `sensitive-category-count` | is to a [security-sensitive](#what-it-holds) file inside the project while the turn's changes to such files, its subagents' included and this write counted, span at least `min_categories` of the `security` gate's categories |
@@ -1559,17 +1559,25 @@ of the call's prompt, which is normally already there.
   takes the registry's plain block YAML only. A block scalar (`|`), an
   anchor, a flow mapping, a plain value wrapped onto more lines, a sequence
   not indented under its key, or a key with no value makes the whole
-  registry unreadable to it. It reads `true`, `null`, `~`, and `-1` as
-  strings, and a quoted value without its escapes. `validate_skills.py`
+  registry unreadable to it. It takes only `true` and `false` as booleans,
+  and reads `True`, `yes`, `on`, `null`, `~`, and `-1` as strings, and a
+  quoted value without its escapes. `validate_skills.py`
   fails when this reader and a full YAML parser read the source registry's
-  references differently, so a registry edit cannot switch the gate off
-  unnoticed; an installed registry edited by hand is not checked. A
+  references differently, so such a mismatch is refused and a registry edit
+  cannot switch the gate off unnoticed; it also fails when more than one
+  reference has an `edit-of-file-kind` signal for `test` files, since the
+  design gate reads only one. An installed registry edited by hand is not
+  checked. A
   signal value of the wrong type, such as a list for `pattern`, makes the
   registry unreadable too. A signal naming a
   pattern or file kind the adapter does not list asks for nothing. A shell
   write meets only the signals that need no added text (`write-under-path`,
   `gate-fires`, `sensitive-category-count`): the edit kinds read the code a
-  write adds, which only a write tool's input shows. It does not run inside a
+  write adds, which only a write tool's input shows. A file is created only
+  by a write tool's `Write`, or `Edit` with no old text, to a path not on
+  disk, so a test file a shell command made earlier in the turn, such as
+  `touch tests/test_x.py`, is on disk, and a short `Write` over it asks
+  neither gate for `coding.md` or `test-design.md`. It does not run inside a
   [subagent](#subagents). Its patterns match words by their letters, so a word
   that only starts like one, such as `patches` or `spyglass`, or one in a
   string, still selects the reference; the read counts until the next

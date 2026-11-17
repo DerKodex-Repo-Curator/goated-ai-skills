@@ -116,11 +116,14 @@ def required(path: str, tool_input: dict, *, is_code: bool, is_test: bool, small
 
 
 def creates_file(path: str, tool_input: dict, *, written_before: bool, cwd: str | None) -> bool:
-    """Whether an edit creates `path`: a Write to a file no earlier write in
-    the turn made (`written_before`) and that is not on disk, a relative
-    path taken from `cwd`."""
+    """Whether an edit creates `path`: a Write, or an Edit with no old text
+    (which Claude Code lets make a file), to a file no earlier write in the
+    turn made (`written_before`) and that is not on disk, a relative path
+    taken from `cwd`. A file a shell command made is on disk, so it is not."""
 
-    return "content" in tool_input and not written_before and _disk_text(path, cwd) is None
+    writes_whole = "content" in tool_input or (
+        tool_input.get("old_string") == "" and "edits" not in tool_input)
+    return writes_whole and not written_before and _disk_text(path, cwd) is None
 
 
 def added_code(path: str, tool_input: dict, cwd: str | None) -> list[str]:

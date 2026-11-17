@@ -223,6 +223,21 @@ class TestEditThresholds(ReferenceReadsTestCase):
         self.assertEqual(self.required("Write", {"file_path": TEST_FILE, "content": content},
                                        on_disk=old), set())
 
+    def test_an_edit_with_no_old_text_creating_the_file_requires_both(self) -> None:
+        created = {"file_path": TEST_FILE, "old_string": "",
+                   "new_string": "\n".join(plain_lines(3)) + "\n"}
+        self.assertEqual(self.required("Edit", created), {CODING, TEST_DESIGN_PATH})
+        # The near miss: the same Edit of a file already on disk creates nothing.
+        self.assertEqual(self.required("Edit", created, on_disk="\n".join(plain_lines(8)) + "\n"),
+                         set())
+
+    def test_a_file_already_on_disk_is_not_created_even_when_empty(self) -> None:
+        # A known limit: a file a shell command made (`touch`) is on disk, so a
+        # later Write over it is no creation, whatever made it.
+        content = "\n".join(plain_lines(3)) + "\n"
+        self.assertEqual(self.required("Write", {"file_path": TEST_FILE, "content": content},
+                                       on_disk=""), set())
+
     def test_twenty_added_lines_require_both_and_nineteen_neither(self) -> None:
         self.assertEqual(self.required("Edit", edit(TEST_FILE, *plain_lines(20))),
                          {CODING, TEST_DESIGN_PATH})
