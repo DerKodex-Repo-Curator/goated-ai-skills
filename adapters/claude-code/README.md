@@ -392,8 +392,11 @@ backtick in PowerShell). A `Bash` or `PowerShell` command meets the
   such as a heredoc fed to `cat`. It is still a write when it holds a `$(` or
   a backtick that may run it, outside a quoted-delimiter heredoc
   (`<<'EOF'`); when it is piped on into any other program
-  (`… | pwsh -Command -`); and whenever the command names `pwsh` or
-  `powershell` anywhere, which may run a script written earlier in it.
+  (`… | pwsh -Command -`); when it is written into a PowerShell script file
+  (`.ps1`, `.psm1`, `.psd1`) by a redirect or `tee`, wherever that file is,
+  since a later call may run it; and whenever the command names `pwsh` or
+  `powershell` anywhere or runs a script (`& x.ps1`, `. x.ps1`), which may
+  run a script written earlier in it.
   Interpreters (`python -c`, `node -e`) and `git` (an alias or hook) can start
   PowerShell, so text handed to them counts too;
 - downloads to a file: `curl -o <file>` (also `-sSLo <file>`) or `curl -O`,
@@ -819,9 +822,9 @@ of the call's prompt, which is normally already there.
     (`cd -P`, like any `cd` with an option, leaves the folder unknown.) A file
     path with `..` outside a `cd`, such as `> /tmp/../x`, is read physically,
     as the system opens it.
-  - A .NET write in a `.ps1` script written in one call and run in a later
-    one is not seen, as with any script; only a command that both writes the
-    text and names PowerShell counts it.
+  - A .NET write in a PowerShell script counts when a shell command writes
+    the script (a redirect or `tee`), not when the `Write` or `Edit` tool
+    does, nor when a script holding it is copied or renamed into place.
   - `~` is read both as your profile folder and as `HOME` when that is set
     (Git Bash may point it elsewhere); a `~/...` path inside the project under
     either reading counts as inside. A shell's `HOME` that differs from the

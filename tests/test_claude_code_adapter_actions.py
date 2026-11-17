@@ -2045,6 +2045,7 @@ class CloseoutTests(AdapterTestCase):
         data; text an interpreter or `git` is given still counts, since those can
         start PowerShell, and so does any text in a command that runs PowerShell."""
 
+        native = str(self.root / "scratch")
         scratch = (self.root / "scratch").as_posix()
         if os.name == "nt":
             scratch = git_bash(scratch)
@@ -2091,8 +2092,21 @@ class CloseoutTests(AdapterTestCase):
                      f"\\\"{dotnet}\\\"])\"", True),
             ("Bash", "git -c alias.w='!pwsh -c \"[System.IO.File]::Delete(1)\"' w", True),
             ("Bash", f"uv run node -e \"x = '{dotnet}'\"", True),
-            # Near miss: a `.ps1` script a text tool writes and nothing runs.
-            ("Bash", f"cat > {scratch}/w.ps1 <<'EOF'\n{dotnet}\nEOF", False),
+            # A PowerShell script file the text is written into, wherever it is,
+            # counts: a later call may run it (ticket 058 review, N2).
+            ("Bash", f"cat > {scratch}/w2.ps1 <<'EOF'\n{dotnet}\nEOF", True),
+            ("Bash", f"echo \"{dotnet}\" | tee {scratch}/w.psm1", True),
+            ("PowerShell", f"Write-Output \"{dotnet}\" > {native}\\w5.ps1", True),
+            ("PowerShell", f"Write-Output \"{dotnet}\" >> {native}\\W5.PSD1", True),
+            # The PowerShell tool runs a script with `&` or `.` (N1).
+            ("PowerShell", f"Write-Output \"{dotnet}\" > {native}\\w3.ps1; & {native}\\w3.ps1",
+             True),
+            ("PowerShell", f"Write-Output \"{dotnet}\"; . {native}\\run.ps1", True),
+            ("PowerShell", f"Write-Output \"{dotnet}\"; & '{native}\\run.ps1'", True),
+            # Near misses: the text written to a file that is not a script.
+            ("Bash", f"cat > {scratch}/w.ps1.txt <<'EOF'\n{dotnet}\nEOF", False),
+            ("PowerShell", f"Write-Output \"{dotnet}\" > {native}\\notes.txt", False),
+            ("Bash", f"echo \"{dotnet}\" | tee {scratch}/log.txt", False),
         ):
             with self.subTest(command=command):
                 s = self.fresh()

@@ -266,6 +266,7 @@ def analyze(command: str) -> ShellCommand:
     result.unchecked_unknown_writes |= awaiting_unknown
     if DOTNET_WRITE_RE.search(command) and (
         RUNS_POWERSHELL_RE.search(command)
+        or any(map(_runs_script, segments))
         or any(_runs_dotnet_write(segments, index) for index in range(len(segments)))
     ):
         # Where in the command it runs is not read, so no check proves it.
@@ -285,6 +286,19 @@ NO_POWERSHELL = frozenset(
 # written earlier in it, such as a `.ps1` script, so that text all counts.
 RUNS_POWERSHELL_RE = re.compile(r"(?<![\w.-])(?:pwsh|powershell)(?:\.exe)?(?![\w-])",
                                 re.IGNORECASE)
+# PowerShell script files: text written into one may run in this call or a later one.
+POWERSHELL_SCRIPTS = (".ps1", ".psm1", ".psd1")
+
+
+def _runs_script(segment: "_Segment") -> bool:
+    """True when `segment` runs a PowerShell script, as the PowerShell tool
+    does without naming PowerShell: `& x.ps1` (the `&` ends the segment
+    before), `. x.ps1`, or a bare `x.ps1`."""
+
+    name, _, args = _resolve(segment.words)
+    if name in (".", "source"):
+        name = _bare(args[0]) if args else ""
+    return name.endswith(POWERSHELL_SCRIPTS)
 
 
 def _runs_dotnet_write(segments: list["_Segment"], index: int) -> bool:
@@ -293,8 +307,9 @@ def _runs_dotnet_write(segments: list["_Segment"], index: int) -> bool:
 
     Text a program in `NO_POWERSHELL` is given is data, such as a
     `python -c` string or a heredoc fed to `cat`, unless it can still run
-    code here (`$(`, a backtick, outside a quoted-delimiter heredoc) or the
-    segment pipes into a program outside `NO_POWERSHELL`. Text anywhere else
+    code here (`$(`, a backtick, outside a quoted-delimiter heredoc), the
+    segment pipes into a program outside `NO_POWERSHELL`, or it or a program
+    it pipes into writes a PowerShell script file. Text anywhere else
     counts: PowerShell may run it, or a shell may pass it on.
     """
 
@@ -312,6 +327,10 @@ def _runs_dotnet_write(segments: list["_Segment"], index: int) -> bool:
         if name in COMMAND_RUNNERS:
             name = _runner_command(name, args)[0]
         if name not in NO_POWERSHELL:
+            return True
+        # Into a script file, wherever it is, the text may run in a later call.
+        written = later.redirects + (_positional(args) if name in ("tee", "tee-object") else [])
+        if any(_bare(target).endswith(POWERSHELL_SCRIPTS) for target in written):
             return True
         if later.after != "|":
             return False
