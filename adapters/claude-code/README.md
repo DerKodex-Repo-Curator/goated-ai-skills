@@ -385,7 +385,10 @@ backtick in PowerShell). A `Bash` or `PowerShell` command meets the
   `Copy-Item`, `Move-Item`, `Remove-Item`, `Rename-Item`, `Export-Csv`, or
   `Export-Clixml`, or one of the stock Windows PowerShell 5.1 aliases (`sc`,
   `ac`, `clc`, `del`, `erase`, `copy`, `move`, `ren`, `rd`, `ri`, `mi`, `cpi`,
-  `ni`, `rni`), or a .NET `[IO.File]::Write…` style call. A .NET call's text
+  `ni`, `rni`), or a .NET `[IO.File]::Write…` style call. In a `PowerShell`
+  tool command, a .NET call's text counts wherever it appears, since
+  PowerShell can run text in many ways (`& $p`, `Get-Content x | iex`). In a
+  `Bash` command, a .NET call's text
   handed only to text tools, which cannot start a program (`cat`, `echo`,
   `printf`, `grep`, `rg`, `head`, `tail`, `sort`, `tee`, `Write-Output`,
   `Select-Object`, and the like; `NO_POWERSHELL` in `shell.py`), is data,
@@ -394,9 +397,9 @@ backtick in PowerShell). A `Bash` or `PowerShell` command meets the
   (`<<'EOF'`); when it is piped on into any other program
   (`… | pwsh -Command -`); when it is written into a PowerShell script file
   (`.ps1`, `.psm1`, `.psd1`) by a redirect or `tee`, wherever that file is,
-  since a later call may run it; and whenever the command names `pwsh` or
-  `powershell` anywhere or runs a script (`& x.ps1`, `. x.ps1`), which may
-  run a script written earlier in it.
+  since a later call may run it; and whenever the command names `pwsh`,
+  `powershell`, `iex`, or `Invoke-Expression` anywhere, or runs a script
+  (`. x.ps1`), which may run text written earlier in it.
   Interpreters (`python -c`, `node -e`) and `git` (an alias or hook) can start
   PowerShell, so text handed to them counts too;
 - downloads to a file: `curl -o <file>` (also `-sSLo <file>`) or `curl -O`,
@@ -825,6 +828,11 @@ of the call's prompt, which is normally already there.
   - A .NET write in a PowerShell script counts when a shell command writes
     the script (a redirect or `tee`), not when the `Write` or `Edit` tool
     does, nor when a script holding it is copied or renamed into place.
+  - .NET write text a `Bash` command writes to a file that is not a script,
+    and a later call runs, is not seen: for example a later
+    `Get-Content x.txt | iex` in the `PowerShell` tool, or Bash
+    `pwsh -Command (Get-Content /tmp/x.txt)`. Only the command that writes
+    the text is read, and it names no PowerShell.
   - `~` is read both as your profile folder and as `HOME` when that is set
     (Git Bash may point it elsewhere); a `~/...` path inside the project under
     either reading counts as inside. A shell's `HOME` that differs from the

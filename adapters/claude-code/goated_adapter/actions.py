@@ -267,7 +267,7 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     changes = lambda: _Changes(turn, subagents() if subagents else {}, project)
     cwd = project.cwd if project else None  # Where git measures a pull request's size.
     if tool_name in COMMAND_TOOLS:
-        command = shell.analyze(str(tool_input.get("command") or ""))
+        command = shell.analyze(str(tool_input.get("command") or ""), tool_name)
         hold = _conflict_hold(command.write_targets, tool_input, proof) if command.writes else None
         if hold is None and command.commit:
             hold = _commit_hold(command.commit_message, proof, changes)
@@ -924,7 +924,7 @@ def _setup_changes(calls, project: Project | None) -> str:
             targets = [str(call.input.get(FILE_WRITE_TOOLS[call.name]) or "")]
             unplaced = []
         elif call.name in COMMAND_TOOLS:
-            command = shell.analyze(str(call.input.get("command") or ""))
+            command = shell.analyze(str(call.input.get("command") or ""), call.name)
             installed = installed or command.installs_package
             targets, unplaced = command.write_targets, command.unplaced_targets
         else:
@@ -1031,7 +1031,7 @@ def _changed_paths(call, project: Project | None) -> list[str]:
         targets = [str(call.input.get(FILE_WRITE_TOOLS[call.name]) or "")]
         unnamed, unplaced = False, []
     elif call.name in COMMAND_TOOLS:
-        command = shell.analyze(str(call.input.get("command") or ""))
+        command = shell.analyze(str(call.input.get("command") or ""), call.name)
         targets, unnamed = command.write_targets, command.unknown_writes
         unplaced = command.unplaced_targets
     else:
@@ -1233,7 +1233,7 @@ def _proves_itself(call, project: Project | None) -> bool:
 
     if call.name not in COMMAND_TOOLS:
         return False
-    command = shell.analyze(str(call.input.get("command") or ""))
+    command = shell.analyze(str(call.input.get("command") or ""), call.name)
     return not command.unchecked_unknown_writes and not any(
         is_code(_norm(target)) for target in command.unchecked_targets
         if target and _in_project(target, project, target not in command.unplaced_targets)

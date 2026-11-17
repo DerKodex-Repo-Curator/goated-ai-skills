@@ -239,8 +239,10 @@ class ShellCommand:
         self.installs_package = False
 
 
-def analyze(command: str) -> ShellCommand:
-    """Return what `command` does; never raises on odd input."""
+def analyze(command: str, tool: str = "Bash") -> ShellCommand:
+    """Return what `command`, run by `tool` (`Bash` or `PowerShell`), does;
+    never raises on odd input. In a `PowerShell` command, .NET write text
+    counts as a write wherever it appears; see `_runs_dotnet_write` for Bash."""
 
     result = ShellCommand()
     directory: str | None = ""
@@ -265,7 +267,8 @@ def analyze(command: str) -> ShellCommand:
     result.unchecked_targets += awaiting
     result.unchecked_unknown_writes |= awaiting_unknown
     if DOTNET_WRITE_RE.search(command) and (
-        RUNS_POWERSHELL_RE.search(command)
+        tool == "PowerShell"
+        or RUNS_POWERSHELL_RE.search(command)
         or any(map(_runs_script, segments))
         or any(_runs_dotnet_write(segments, index) for index in range(len(segments)))
     ):
@@ -282,10 +285,11 @@ NO_POWERSHELL = frozenset(
      "cut", "tr", "tee", "less", "more", "write-output", "write-host", "select-object",
      "select-string", "measure-object", "out-string", "out-host"}
 )
-# A command naming PowerShell anywhere, even in a string, may run `.NET` text
-# written earlier in it, such as a `.ps1` script, so that text all counts.
-RUNS_POWERSHELL_RE = re.compile(r"(?<![\w.-])(?:pwsh|powershell)(?:\.exe)?(?![\w-])",
-                                re.IGNORECASE)
+# A Bash command naming PowerShell or its `Invoke-Expression` anywhere, even in
+# a string, may run `.NET` text written earlier in it, so that text all counts.
+RUNS_POWERSHELL_RE = re.compile(
+    r"(?<![\w.-])(?:pwsh|powershell|iex|invoke-expression)(?:\.exe)?(?![\w-])", re.IGNORECASE
+)
 # PowerShell script files: text written into one may run in this call or a later one.
 POWERSHELL_SCRIPTS = (".ps1", ".psm1", ".psd1")
 

@@ -1114,6 +1114,8 @@ class OutOfProjectTests(AdapterTestCase):
             ("PowerShell", f"Set-Location -Path '{self.outside}' && Move-Item a.py b.py"),
             ("PowerShell", f"Set-Location '{self.outside}' && Move-Item a.py b.py"),
             ("Bash", "cd /tmp/scratch && mv a.py b.py"),
+            # The maintainer's scratch merge clone (ticket 058).
+            ("Bash", f'cd "{self.outside}/merge26" && git checkout --theirs src/adapter-texts.ts'),
         ):
             with self.subTest(command=command):
                 self.assertEqual(self.changed_by(command, tool), {})
@@ -2063,9 +2065,24 @@ class CloseoutTests(AdapterTestCase):
             ("Bash", f"python3 -c \"text = '{dotnet}'\"", True),
             ("Bash", f"echo \"{dotnet}\" | grep -c IO", False),
             ("Bash", f"echo \"{dotnet}\" 2>&1 | tail -20 | sort | head -3", False),
-            ("PowerShell", f"Write-Output \"{dotnet}\" | Select-Object -First 1", False),
+            # In the PowerShell tool, .NET text counts wherever it is (058 review).
+            ("PowerShell", f"Write-Output \"{dotnet}\" | Select-Object -First 1", True),
             ("Bash", f"git log -S \"{dotnet}\"", True),
-            ("PowerShell", f"Write-Output \"{dotnet}\"", False),
+            ("PowerShell", f"Write-Output \"{dotnet}\"", True),
+            ("PowerShell", f"$p = '{native}\\w12.ps1'; Write-Output \"{dotnet}\" > $p; & $p", True),
+            ("PowerShell", f"Write-Output \"{dotnet}\" > {native}\\w13.txt; "
+                           f"Get-Content {native}\\w13.txt | Invoke-Expression", True),
+            ("PowerShell", f"Write-Output \"{dotnet}\" > {native}\\w14.txt; "
+                           f"Invoke-Expression (Get-Content -Raw {native}\\w14.txt)", True),
+            # Bash near misses: the same text to a non-script file stays data,
+            # unless the command names `iex`, `Invoke-Expression`, or PowerShell.
+            ("Bash", f"echo \"{dotnet}\" > {scratch}/w13.txt; cat {scratch}/w13.txt", False),
+            ("Bash", f"echo \"{dotnet}\" > {scratch}/w14.txt && wc -l {scratch}/w14.txt", False),
+            ("Bash", f"echo \"{dotnet}\" > {scratch}/w13.txt; "
+                     f"pwsh -c 'Get-Content {scratch}/w13.txt | iex'", True),
+            ("Bash", f"echo \"{dotnet}\" > {scratch}/w14.txt; "
+                     f"cat {scratch}/w14.txt | Invoke-Expression", True),
+            ("Bash", f"echo \"{dotnet}\" > {scratch}/w14.txt; cat {scratch}/w14.txt | iex", True),
             # Near misses: PowerShell runs each of these.
             ("Bash", f"cp a.py b.py; {dotnet}", True),
             ("Bash", f"pwsh -NoProfile -Command \"{dotnet}\"", True),
@@ -2105,7 +2122,8 @@ class CloseoutTests(AdapterTestCase):
             ("PowerShell", f"Write-Output \"{dotnet}\"; & '{native}\\run.ps1'", True),
             # Near misses: the text written to a file that is not a script.
             ("Bash", f"cat > {scratch}/w.ps1.txt <<'EOF'\n{dotnet}\nEOF", False),
-            ("PowerShell", f"Write-Output \"{dotnet}\" > {native}\\notes.txt", False),
+            ("PowerShell", f"Write-Output \"{dotnet}\" > {native}\\notes.txt", True),
+            ("Bash", f"echo \"{dotnet}\" > {scratch}/notes.txt", False),
             ("Bash", f"echo \"{dotnet}\" | tee {scratch}/log.txt", False),
         ):
             with self.subTest(command=command):
