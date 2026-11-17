@@ -54,7 +54,7 @@ Fallback: If companion skills or docs are unavailable, inspect minimal evidence,
    - Select the smallest stable observable boundary that can catch the regression or missing behavior.
    - Choose the first tracer bullet: the smallest end-to-end behavior that proves the path works.
    - Prefer critical paths, regression risks, and complex logic over exhaustive edge-case theater.
-   - Read [Test Design](references/test-design.md) when test shape, naming, public-interface proof, or good-vs-bad test judgment matters.
+   - Read [Test Design](references/test-design.md) when test shape, naming, public-interface proof, or good-vs-bad test judgment matters: when creating a test file or adding twenty or more lines to one, a changed line counting as added.
    - Read [Mocking And Seams](references/mocking-and-seams.md) before introducing mocks, fakes, ports, dependency injection, or adapter seams.
    - Read [Deep Modules](references/deep-modules.md) when the interface feels wide, setup-heavy, shallow, or awkward to test.
    - Read [Testing Anti-Patterns](references/testing-anti-patterns.md) when tempted to skip RED, write tests after, change tests to match current behavior, over-mock, or claim completion from weak proof.

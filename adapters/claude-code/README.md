@@ -156,8 +156,8 @@ item (see the closeout table below).
 | `pr-review` | justified-skip | A pull-request command or tool the `pull-request` gate holds, once that gate passes, when the pull request is [large](#large-pull-requests): 400 or more changed lines of non-test code against its base | `standards-and-spec-review` [counts as loaded](#loads); then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
 | `spawn` | strict | Starting an agent or session with a brief, except a [read-only subagent](#plain-reads) | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, each in this turn or an earlier one since the last compaction (see [Loads](#loads)); and the brief, on every spawn, passes the [content check](#content-checks) |
 | `design` | justified-skip | The turn's first write adding five or more lines to a non-test code file inside the project folder (or any such write while the skill does not count as loaded). A test file never triggers it and is not counted when finding the turn's first such write: in TDD the test comes first and the design happens in the code after it | `software-design-principles` [counts as loaded](#loads), and every [reference the edit's signals select](#design-references) has been read since the last compaction |
-| `design-reads` | justified-skip | Any later write to a code or configuration file inside the project folder, once `software-design-principles` [counts as loaded](#loads), whose [signals](#design-references) select a reference not read since the last compaction. The hold names each file and what selected it | Each required reference is read with the Read tool |
-| `reference-reads` | justified-skip | A write by a write tool or a shell command that is not a check, inside the project folder or, for a `gate-fires` signal, anywhere, that fires a signal the installed registry declares for a reference of a skill that [counts as loaded](#loads) (see [Registry references](#registry-references)). The hold names each file by its path under the skill, `<skill>/references/<file>`, and what selected it | Each reference it names is read with the Read tool, in this turn or an earlier one since the last compaction; or a skip line naming its skill, for the turn |
+| `design-reads` | justified-skip | Any later write to a code or configuration file inside the project folder, once `software-design-principles` [counts as loaded](#loads), whose [signals](#design-references) select a reference not read since the last compaction; a test file edit selects `coding.md` only when it creates the file or adds twenty or more lines. The hold names each file and what selected it | Each required reference is read with the Read tool |
+| `reference-reads` | justified-skip | A write by a write tool or a shell command that is not a check, inside the project folder or, for a `gate-fires` signal, anywhere, that fires a signal the installed registry declares for a reference of a skill that [counts as loaded](#loads) (see [Registry references](#registry-references)); `tdd`'s `test-design.md` is required by a test edit that creates the file or adds twenty or more lines, and a shell write meets only the signals that need no added text. The hold names each file by its path under the skill, `<skill>/references/<file>`, and what selected it | Each reference it names is read with the Read tool, in this turn or an earlier one since the last compaction; or a skip line naming its skill, for the turn |
 | `review-intake` | justified-skip | A write, by a write tool or a shell command, to a code file inside the project folder, once a [reviewer subagent](#reviewer-subagents) started by `Agent` or `Task` has reported in the turn: its result arrived, or, started in the background, its completion did. A held or failed spawn, any other brief, and a side session trigger nothing. A test file is held like other code; a docs or config file is not | `receiving-code-review` [counts as loaded](#loads), in this turn or an earlier one since the last compaction; or a skip line naming it, for the turn |
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` [counts as loaded](#loads) |
 | `scripted-edit` | justified-skip | A shell command whose [inline script](#inline-scripts) (`python -c`, `node -e`, a heredoc on `python -`) writes a code file inside the project folder, test files included, or writes a file it names only at run time, which counts as code wherever the command runs. A path through a name the script binds once to one literal is judged as that literal's file. The hold asks for the change to be made with a file edit tool, where the `design`, `design-reads`, and `reference-reads` gates can judge it; a script suits only a mechanical rewrite across many files. It comes after the `security` and `review-intake` gates for the same file. Once cleared, the script runs and its files count as changed | A `goated-skip: software-design-principles: <reason>` line in the turn, or the typed override `skip software-design-principles`; loading the skill does not clear it |
@@ -510,10 +510,19 @@ signals read, so `# try the cache, then raise` selects neither.
 A **small edit**, one writing fewer than five lines as the `design` gate counts
 them (every line of the text it writes, unchanged context and a trailing
 newline's empty line included; `DESIGN_MIN_LINES` in `actions.py`),
-selects no reference by the kind of file or text it touches: no `coding.md`
-for a test file, no `decoupling.md` for a configuration file or the third
-code file, and no `readability.md` for a comment or docstring.
+selects no reference by the kind of file or text it touches: no
+`decoupling.md` for a configuration file or the third code file, and no
+`readability.md` for a comment or docstring.
 `software-design-principles` states this rule; the adapter enforces it.
+A test file has its own rule, for `coding.md` only: the edit must create
+the file or add twenty or more lines, an added line being one of the text
+it writes that the text it replaces did not hold, so a changed line counts
+and unchanged context does not (spec R9). The registry states it, as the
+`tdd` signal for `test-design.md` (see [Registry
+references](#registry-references)), and the adapter reads it from there, so
+both references follow one rule. With no registry, or none declaring an
+`edit-of-file-kind` signal for `test` files, any test edit that is not small
+selects `coding.md`, failing toward holding.
 Outside test files, which get no signal read from the code, signals read from
 the added code apply at any size: a new code file or public top-level
 definition, error handling, and concurrency. An edit whose added lines cannot be
@@ -522,12 +531,12 @@ not small.
 
 | Reference | Selected when the edit |
 | --- | --- |
-| `process.md` | creates a code file (a `Write` to a code file no earlier write in the turn made and that is not on disk), or adds a public top-level definition: an unindented line starting with `def`, `async def`, `class`, `function`, `export`, `func`, `fn`, `pub fn`, `public`, `interface`, `struct`, `enum`, `trait`, `impl`, or `defmodule`, whose name does not start with `_`; a shell `export NAME=` is not one |
+| `process.md` | creates a code file (a `Write`, or an `Edit` with no old text, to a code file no earlier write in the turn made and that is not on disk), or adds a public top-level definition: an unindented line starting with `def`, `async def`, `class`, `function`, `export`, `func`, `fn`, `pub fn`, `public`, `interface`, `struct`, `enum`, `trait`, `impl`, or `defmodule`, whose name does not start with `_`; a shell `export NAME=` is not one |
 | `complexity-and-modules.md` | the same as `process.md` |
 | `decoupling.md` | is not small, and edits a configuration file or is to the third or later distinct non-test code file the turn edits |
 | `readability.md` | the same as `process.md`, or is not small and adds a comment or docstring: a line opening with `#`, `//`, `/*`, `*`, `"""`, `'''`, `-- `, or `<!--`, a line inside a docstring or block comment, or a trailing `#` or `//` comment after two spaces |
 | `errors.md` | adds code holding `try`, `except`, `catch`, `raise`, `throw`, `finally`, `defer` as words, or `with open` |
-| `coding.md` | is not small and edits a test file; a test file selects nothing else |
+| `coding.md` | edits a test file and creates it or adds twenty or more lines, by the registry's rule above; a test file selects nothing else |
 | `concurrency.md` | adds code holding `threading`, `Lock`, `RLock`, `Mutex`, `asyncio`, `synchronized`, `Promise.all`, a word starting `Atomic`, or `go func` |
 | `differences.md` | never selected: no tool call shows two rules pulling apart, so the registry declares it advisory |
 
@@ -551,8 +560,8 @@ software-design-principles` clears both gates for the turn.
 The first substantial non-test code edit of a turn meets `design`, which asks
 for what is missing: the load and the reads. A later edit, or any
 test file edit once the skill counts as loaded, meets `design-reads`, which
-asks only for reads; a test file edit that is not small still requires
-`coding.md`. A small edit while the skill does not count as loaded is not
+asks only for reads; a test file edit that creates the file or adds twenty
+or more lines still requires `coding.md`. A small edit while the skill does not count as loaded is not
 held, as before.
 
 The skill's section ids and its Section Index name sections for navigation;
@@ -586,7 +595,7 @@ for a code file written by a write tool:
 | Kind | Fires when the write |
 | --- | --- |
 | `edit-adds-pattern` | adds code matching the named pattern, in a file of `file_kind` when the signal gives one. Comments and docstrings are left out, as for the [design signals](#design-references) |
-| `edit-of-file-kind` | is of a file of `file_kind` and adds at least `min_added_lines` lines |
+| `edit-of-file-kind` | is of a file of `file_kind` and adds at least `min_added_lines` lines, or, with `new_file: true`, creates the file: a `Write`, or an `Edit` with no old text, to a file no earlier write in the turn made and that is not on disk. The `design-reads` gate judges a test edit for `coding.md` by the registry's one such signal for `test` files (`validate_skills.py` refuses a second), so one rule decides both (see [Design references](#design-references)) |
 | `write-under-path` | is of a file under the `path` folder of the project, case aside: the file's path below a project root, as the adapter places files (see [What It Holds](#what-it-holds)), starts with it. So with `docs/specs/`, `docs/specs.md` does not fire it, and a `tickets/` folder outside the project never does. Each project root counts: from a session working in the checkout's root, `src/docs/specs/x.md` does not fire it, but from a session working in `src/`, that folder is a root too, so it does |
 | `gate-fires` | comes while the named gate's condition holds, whether or not that gate holds the write: its own skill may be loaded. The adapter observes `repeated-failure` only (`OBSERVED_GATES` in `reference_reads.py`), whose condition is one check failed twice in a row with no pass since, its runs counted as that gate counts them. The schema allows any gate name, so `validate_skills.py` fails on an entry naming another; an installed registry that names one anyway asks for nothing by it |
 | `sensitive-category-count` | is to a [security-sensitive](#what-it-holds) file inside the project while the turn's changes to such files, its subagents' included and this write counted, span at least `min_categories` of the `security` gate's categories |
@@ -607,8 +616,8 @@ matches them; so `dispatch` holds no patch, and `retrieve` no retry:
 | `sleep-retry-or-timeout` | in any case: a word holding `sleep`, `timeout`, `retry`, `retries`, `retried`, or `retrying` (`asyncio.sleep`, `setTimeout`, `MAX_RETRIES`); `poll`, `polls`, `polled`, `polling`, or `poller` at the end of a word or before an underscore or a capital (`poll_interval`, `pollInterval`); `wait_for` or `waitFor` likewise at a word start (`waitForSelector`, `wait_for_element`); or `setInterval` |
 
 So the first enforced set is: `tdd`'s `mocking-and-seams.md` when a test
-edit adds a mock or patch, its `test-design.md` at a test edit adding five
-or more lines; `diagnose`'s `condition-based-waiting.md` when an edit adds a
+edit adds a mock or patch, at any size, its `test-design.md` at a test edit
+creating the file or adding twenty or more lines; `diagnose`'s `condition-based-waiting.md` when an edit adds a
 sleep, retry, or timeout, and its `root-cause-tracing.md` at a write after
 one check failed twice; `code-security-review`'s
 `security-review-checklist.md` at a sensitive write once the turn's
@@ -1575,15 +1584,25 @@ of the call's prompt, which is normally already there.
   takes the registry's plain block YAML only. A block scalar (`|`), an
   anchor, a flow mapping, a plain value wrapped onto more lines, a sequence
   not indented under its key, or a key with no value makes the whole
-  registry unreadable to it. It reads `true`, `null`, `~`, and `-1` as
-  strings, and a quoted value without its escapes. `validate_skills.py`
+  registry unreadable to it. It takes only `true` and `false` as booleans,
+  and reads `True`, `yes`, `on`, `null`, `~`, and `-1` as strings, and a
+  quoted value without its escapes. `validate_skills.py`
   fails when this reader and a full YAML parser read the source registry's
-  references differently, so a registry edit cannot switch the gate off
-  unnoticed; an installed registry edited by hand is not checked. A
+  references differently, so such a mismatch is refused and a registry edit
+  cannot switch the gate off unnoticed; it also fails when more than one
+  reference has an `edit-of-file-kind` signal for `test` files, since the
+  design gate reads only one. An installed registry edited by hand is not
+  checked. A
   signal value of the wrong type, such as a list for `pattern`, makes the
   registry unreadable too. A signal naming a
-  pattern or file kind the adapter does not list asks for nothing. It judges
-  only edits by a write tool, not shell writes, and does not run inside a
+  pattern or file kind the adapter does not list asks for nothing. A shell
+  write meets only the signals that need no added text (`write-under-path`,
+  `gate-fires`, `sensitive-category-count`): the edit kinds read the code a
+  write adds, which only a write tool's input shows. A file is created only
+  by a write tool's `Write`, or `Edit` with no old text, to a path not on
+  disk, so a test file a shell command made earlier in the turn, such as
+  `touch tests/test_x.py`, is on disk, and a short `Write` over it asks
+  neither gate for `coding.md` or `test-design.md`. It does not run inside a
   [subagent](#subagents). Its patterns match words by their letters, so a word
   that only starts like one, such as `patches` or `spyglass`, or one in a
   string, still selects the reference; the read counts until the next

@@ -9,7 +9,9 @@ observed at one write (Tickets 067 and 068):
 - `edit-adds-pattern`: the code an edit adds matches a pattern the registry
   names (`PATTERNS`), in a file of the given kind if one is given;
 - `edit-of-file-kind`: an edit of a file of that kind adds at least
-  `min_added_lines` lines;
+  `min_added_lines` lines, or, with `new_file: true`, creates the file. The
+  design gate judges a test edit for `coding.md` by the same signal
+  (`file_kind_signal`), so the registry owns one rule for both (Ticket 090);
 - `write-under-path`: the file written is under that folder of the project;
 - `gate-fires`: the named gate's condition holds at the write, whether or not
   that gate holds it (its skill may be loaded);
@@ -113,7 +115,8 @@ class Edit(NamedTuple):
     file. `added_code` is the code of each line the write adds
     (`design_reads.added_code`): the non-blank lines the text it replaces, or
     the file on disk for a Write, did not hold, indentation aside; empty when
-    unknown, as for a shell write. `project_paths` are the file's paths below
+    unknown, as for a shell write. `new_file` says the write creates the file
+    (`design_reads.creates_file`). `project_paths` are the file's paths below
     each project root that holds it, with `/` separators; empty when its place
     is unknown. `gates` names the gates whose condition holds at this write
     (`repeated-failure`). `categories` are the security-sensitive categories
@@ -126,6 +129,7 @@ class Edit(NamedTuple):
     project_paths: tuple[str, ...] = ()
     gates: frozenset[str] = frozenset()
     categories: frozenset[str] = frozenset()
+    new_file: bool = False
 
 
 def load(path: Path | None) -> tuple[Reference, ...]:
@@ -157,10 +161,21 @@ def selected(references, edit: Edit) -> list[tuple[Reference, str]]:
 
     found = []
     for reference in references:
-        why = _fires(reference.signal, edit)
+        why = fires(reference.signal, edit)
         if why is not None:
             found.append((reference, why))
     return found
+
+
+def file_kind_signal(references, file_kind: str) -> dict | None:
+    """The first `edit-of-file-kind` signal among `references` for files of
+    `file_kind`, such as `tdd`'s for `test-design.md`, or None. Another gate
+    judges its own edits of that kind by it (`fires`), whether or not the
+    declaring skill is loaded; `validate_skills.py` refuses a source registry
+    declaring two for test files, so "first" never picks between rules."""
+
+    return next((r.signal for r in references if r.signal.get("kind") == "edit-of-file-kind"
+                 and r.signal.get("file_kind") == file_kind), None)
 
 
 def reads_in(calls) -> list[str]:
@@ -177,7 +192,7 @@ def reads_in(calls) -> list[str]:
     return found
 
 
-def _fires(signal: dict, edit: Edit) -> str | None:
+def fires(signal: dict, edit: Edit) -> str | None:
     """What makes `signal` fire for `edit`, in a hold's words, or None."""
 
     kind = signal.get("kind")
@@ -217,8 +232,12 @@ def _edit_fires(signal: dict, edit: Edit) -> str | None:
         if token is None:
             return None
         return f'adds {pattern.label} ("{token}"){in_file}, the registry\'s {signal["pattern"]} pattern'
+    if file_kind is None:
+        return None
+    if signal.get("new_file") is True and edit.new_file:
+        return f"a new {file_kind} file"
     least, added = signal.get("min_added_lines", 1), len(edit.added_code)
-    if file_kind is None or added < least:
+    if added < least:
         return None
     return f"an edit of a {file_kind} file adding {added} lines, {least} or more"
 
@@ -257,8 +276,11 @@ def _declared(data) -> list[Reference]:
             if not isinstance(signal, dict) or not isinstance(signal.get("kind"), str):
                 raise ValueError("a reference signal has no kind")
             for key, kind in (("pattern", str), ("file_kind", str), ("min_added_lines", int),
-                              ("path", str), ("gate", str), ("min_categories", int)):
-                if key in signal and not isinstance(signal[key], kind):
+                              ("new_file", bool), ("path", str), ("gate", str),
+                              ("min_categories", int)):
+                # A bool is an int to Python, but `true` is no line count.
+                if key in signal and (not isinstance(signal[key], kind)
+                                      or kind is int and isinstance(signal[key], bool)):
                     raise ValueError(f"a reference signal's {key} is not {kind.__name__}")
             found.append(Reference(skill["name"], entry["file"], signal))
     return found
@@ -268,8 +290,9 @@ def _declared(data) -> list[Reference]:
 #
 # Block mappings and sequences, each item indented under its key, `- ` items
 # whose first key sits on the dash line, one-line plain scalars (an integer
-# when all digits, any other a string, `true`, `null`, `~` and `-1`
-# included), one-line quoted scalars without escapes, flow sequences of plain
+# when all digits, a boolean when `true` or `false`, any other a string,
+# `True`, `yes`, `null`, `~` and `-1` included), one-line quoted scalars
+# without escapes, flow sequences of plain
 # scalars (`[a, b]`), and `#` comments. A block scalar (`|`), an anchor, a
 # flow mapping, a plain scalar wrapped onto more lines, a sequence not
 # indented under its key, or a key with no value raises ValueError rather
@@ -357,6 +380,8 @@ def _scalar(text: str):
         if len(text) < 2 or text[-1] != text[0]:
             raise ValueError("an unclosed quoted value")
         return text[1:-1]
+    if text in ("true", "false"):
+        return text == "true"
     return int(text) if text.isdigit() else text
 
 

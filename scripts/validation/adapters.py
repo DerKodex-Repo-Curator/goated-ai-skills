@@ -65,7 +65,8 @@ def validate_registry_reader(repo: Path) -> list[Finding]:
     Nothing is reported without the reader or a registry that YAML parses;
     the registry check owns reporting those. When the two agree, a finding is
     returned for each `gate-fires` signal naming a gate outside the reader's
-    `OBSERVED_GATES`, which the adapter would never enforce.
+    `OBSERVED_GATES`, which the adapter would never enforce, and one when
+    more than one reference has an `edit-of-file-kind` signal for test files.
     """
 
     reader_path, registry_path = repo / REGISTRY_READER_PATH, repo / REGISTRY_PATH
@@ -102,12 +103,22 @@ def validate_registry_reader(repo: Path) -> list[Finding]:
     # The schema allows a `gate-fires` signal to name any gate, but the adapter
     # observes only some; an entry naming another would never be enforced.
     observed = ", ".join(sorted(reader.OBSERVED_GATES))
-    return [
+    findings = [
         Finding(label, f"{skill}'s {file} has a gate-fires signal for the {signal['gate']} gate, "
                        f"which the Claude Code adapter does not observe (it observes: {observed})")
         for skill, file, signal in found
         if signal.get("kind") == "gate-fires" and signal.get("gate") not in reader.OBSERVED_GATES
     ]
+    # The design gate also judges a test edit for `coding.md` by the test
+    # file-kind signal (`file_kind_signal`), so a second one would decide it
+    # silently by registry order.
+    test_kind = [f"{skill}'s {file}" for skill, file, signal in found
+                 if signal.get("kind") == "edit-of-file-kind" and signal.get("file_kind") == "test"]
+    if len(test_kind) > 1:
+        findings.append(Finding(label, "more than one reference has an edit-of-file-kind signal "
+                                       f"for test files ({', '.join(test_kind)}); the Claude Code "
+                                       "adapter's design gate reads only one"))
+    return findings
 
 
 def _non_stdlib_imports(path: Path, repo: Path) -> list[Finding]:

@@ -10,6 +10,7 @@ for the first enforced set, or a fixture registry written by the test.
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -172,55 +173,112 @@ class NotLoaded(ReferenceReadsTestCase):
         self.assertPasses(s.call("Edit", edit(TEST_FILE, "client = MagicMock()")))
 
 
-class TestDesign(ReferenceReadsTestCase):
-    """AC: a four-line test edit is not held for `test-design.md`; a five-line one is."""
+CODING = "software-design-principles/references/coding.md"
+TEST_DESIGN_PATH = "tdd/references/test-design.md"
+HELD_PATH_RE = re.compile(r"`([a-z0-9-]+/references/[a-z0-9-]+\.md)`")
 
-    def test_four_lines_pass_and_five_lines_are_held(self) -> None:
-        s = self.first_turn("tdd")
-        self.assertPasses(s.call("Edit", edit(TEST_FILE, *plain_lines(4))))
-        held = s.call("Edit", edit(TEST_FILE, *plain_lines(5)))
-        self.assertHeldFor(held, "tdd/references/test-design.md")
-        self.assertNotIn("mocking-and-seams.md", reason(held))
-        s.read(TEST_DESIGN)
-        self.assertPasses(s.call("Edit", edit(TEST_FILE, *plain_lines(5))))
 
-    def test_five_lines_of_non_test_code_are_not_held_for_it(self) -> None:
+class TestEditThresholds(ReferenceReadsTestCase):
+    """Ticket 090 (spec R9): with `software-design-principles` and `tdd`
+    loaded, a test-file edit requires `coding.md` and `test-design.md` only
+    when it creates the file or adds twenty or more lines, an added line being
+    one of the new text not in the old text."""
+
+    def required(self, tool: str, tool_input: dict, *, mock_read: bool = True,
+                 on_disk: str | None = None) -> set[str]:
+        """Every reference the holds of one call ask for, in a turn where both
+        skills load: each named is read and the call retried until it passes.
+        `on_disk` is the test file's text before the call, if it exists."""
+
+        s = self.first_turn("software-design-principles", "tdd")
+        if mock_read:
+            s.read(MOCKING)
+        if on_disk is not None:
+            target = s.project / tool_input["file_path"]
+            target.parent.mkdir(parents=True)
+            target.write_text(on_disk, encoding="utf-8")
+        asked: set[str] = set()
+        for _ in range(5):
+            output = s.call(tool, tool_input)
+            if decision(output) == "pass":
+                return asked
+            named = set(HELD_PATH_RE.findall(reason(output))) - asked
+            self.assertTrue(named, reason(output))
+            asked |= named
+            for path in named:
+                s.read(f"{SKILLS}/{path}")
+        self.fail("the call was still held after reading every reference named")
+
+    def test_a_ten_line_edit_of_an_existing_test_file_requires_nothing(self) -> None:
+        self.assertEqual(self.required("Edit", edit(TEST_FILE, *plain_lines(10))), set())
+
+    def test_a_write_creating_a_three_line_test_file_requires_both(self) -> None:
+        content = "\n".join(plain_lines(3)) + "\n"
+        self.assertEqual(self.required("Write", {"file_path": TEST_FILE, "content": content}),
+                         {CODING, TEST_DESIGN_PATH})
+
+    def test_a_write_over_a_test_file_on_disk_is_not_a_creation(self) -> None:
+        old = "\n".join(plain_lines(8)) + "\n"
+        content = "\n".join(plain_lines(11)) + "\n"
+        self.assertEqual(self.required("Write", {"file_path": TEST_FILE, "content": content},
+                                       on_disk=old), set())
+
+    def test_an_edit_with_no_old_text_creating_the_file_requires_both(self) -> None:
+        created = {"file_path": TEST_FILE, "old_string": "",
+                   "new_string": "\n".join(plain_lines(3)) + "\n"}
+        self.assertEqual(self.required("Edit", created), {CODING, TEST_DESIGN_PATH})
+        # The near miss: the same Edit of a file already on disk creates nothing.
+        self.assertEqual(self.required("Edit", created, on_disk="\n".join(plain_lines(8)) + "\n"),
+                         set())
+
+    def test_a_file_already_on_disk_is_not_created_even_when_empty(self) -> None:
+        # A known limit: a file a shell command made (`touch`) is on disk, so a
+        # later Write over it is no creation, whatever made it.
+        content = "\n".join(plain_lines(3)) + "\n"
+        self.assertEqual(self.required("Write", {"file_path": TEST_FILE, "content": content},
+                                       on_disk=""), set())
+
+    def test_twenty_added_lines_require_both_and_nineteen_neither(self) -> None:
+        self.assertEqual(self.required("Edit", edit(TEST_FILE, *plain_lines(20))),
+                         {CODING, TEST_DESIGN_PATH})
+        self.assertEqual(self.required("Edit", edit(TEST_FILE, *plain_lines(19))), set())
+
+    def test_unchanged_context_does_not_count_and_a_changed_line_does(self) -> None:
+        context = [f"assert kept_{n} == {n}" for n in range(30)]
+        four_more = {"file_path": TEST_FILE, "old_string": "\n".join(context),
+                     "new_string": "\n".join(context + plain_lines(4))}
+        self.assertEqual(self.required("Edit", four_more), set())
+        changed = {"file_path": TEST_FILE, "old_string": "\n".join(context[:20]),
+                   "new_string": "\n".join(f"assert kept_{n} == {n + 1}" for n in range(20))}
+        self.assertEqual(self.required("Edit", changed), {CODING, TEST_DESIGN_PATH})
+        nineteen = dict(changed, new_string="\n".join(
+            f"assert kept_{n} == {n + 1}" for n in range(19)) + f"\n{context[19]}")
+        self.assertEqual(self.required("Edit", nineteen), set())
+
+    def test_a_mock_still_requires_mocking_and_seams_at_any_size(self) -> None:
+        self.assertEqual(self.required("Edit", edit(TEST_FILE, "client = MagicMock()"),
+                                       mock_read=False),
+                         {"tdd/references/mocking-and-seams.md"})
+        self.assertEqual(self.required("Edit", edit(TEST_FILE, "client = Client()"),
+                                       mock_read=False), set())
+        self.assertEqual(self.required("Edit", edit(TEST_FILE, "client = MagicMock()",
+                                                    *plain_lines(19)), mock_read=False),
+                         {CODING, TEST_DESIGN_PATH, "tdd/references/mocking-and-seams.md"})
+
+    def test_twenty_lines_of_non_test_code_are_not_held_for_test_design(self) -> None:
         s = self.first_turn("tdd")
-        held = s.call("Edit", edit(CODE_FILE, *[f"total_{n} = {n}" for n in range(5)]))
+        held = s.call("Edit", edit(CODE_FILE, *[f"total_{n} = {n}" for n in range(20)]))
         # The design gate holds a substantial code edit; this gate does not.
         self.assertNotEqual(hold_line(held), GATE_LINE)
-        self.assertPasses(s.call("Edit", edit(CODE_FILE, *[f"total_{n} = {n}" for n in range(4)])))
 
-    def test_lines_kept_from_the_old_text_do_not_count(self) -> None:
-        context = ["def test_a():", "    x = 1", "    y = 2", "    z = 3", "    assert x"]
+    def test_each_hold_says_why_in_the_registrys_terms(self) -> None:
+        s = self.first_turn("software-design-principles", "tdd")
+        held = s.call("Edit", edit(TEST_FILE, *plain_lines(20)))
+        self.assertIn(f"`{CODING}` (an edit of a test file adding 20 lines, 20 or more)",
+                      reason(held))
         s = self.first_turn("tdd")
-        self.assertPasses(s.call("Edit", {
-            "file_path": TEST_FILE, "old_string": "\n".join(context),
-            "new_string": "\n".join(context[:-1] + ["    assert x == 1"]),
-        }))
-
-    def test_a_new_four_line_file_with_a_trailing_newline_is_not_held(self) -> None:
-        s = self.first_turn("tdd")
-        self.assertPasses(s.call("Write", {"file_path": "tests/test_new.py",
-                                           "content": "\n".join(plain_lines(4)) + "\n"}))
-        held = s.call("Write", {"file_path": "tests/test_new.py",
-                                "content": "\n".join(plain_lines(5)) + "\n"})
-        self.assertHeldFor(held, "tdd/references/test-design.md")
-
-    def test_a_write_over_a_test_file_counts_only_the_lines_it_adds(self) -> None:
-        s = self.first_turn("tdd")
-        existing = s.project / TEST_FILE
-        existing.parent.mkdir(parents=True)
-        old = "\n".join(plain_lines(8)) + "\n"
-        existing.write_text(old, encoding="utf-8")
-        self.assertPasses(s.call("Write", {"file_path": TEST_FILE,
-                                           "content": old + "assert extra == 9\n"}))
-
-    def test_a_long_test_edit_with_a_mock_asks_for_both(self) -> None:
-        s = self.first_turn("tdd")
-        held = s.call("Edit", edit(TEST_FILE, "client = MagicMock()", *plain_lines(4)))
-        self.assertHeldFor(held, "tdd/references/test-design.md")
-        self.assertIn("`tdd/references/mocking-and-seams.md`", reason(held))
+        held = s.call("Write", {"file_path": TEST_FILE, "content": "assert True\n"})
+        self.assertIn(f"`{TEST_DESIGN_PATH}` (a new test file)", reason(held))
 
 
 class ConditionBasedWaiting(ReferenceReadsTestCase):
@@ -723,11 +781,13 @@ class NoRegistry(ReferenceReadsTestCase):
         self.assertIn("missing.yaml", self.warning(s))
 
     def test_a_registry_with_a_malformed_signal_value_declares_nothing(self) -> None:
-        for field in ("pattern: [mock-or-patch]", "file_kind: 3", "min_added_lines: five"):
+        for field in ("pattern: [mock-or-patch]", "file_kind: 3", "min_added_lines: five",
+                      "min_added_lines: true", "new_file: sometimes", "new_file: 1"):
             with self.subTest(field=field):
                 registry = self.root / "malformed.yaml"
-                kind = "edit-of-file-kind" if field.startswith("min") else "edit-adds-pattern"
-                extra = "\n          file_kind: test" if field.startswith("min") else ""
+                of_kind = field.startswith(("min", "new"))
+                kind = "edit-of-file-kind" if of_kind else "edit-adds-pattern"
+                extra = "\n          file_kind: test" if of_kind else ""
                 registry.write_text(
                     "skills:\n  - name: tdd\n    references:\n      - file: x.md\n"
                     f"        signal:\n          kind: {kind}\n          {field}{extra}\n",
@@ -749,7 +809,7 @@ class OtherGatesUnchanged(ReferenceReadsTestCase):
         return [
             s.call("Write", {"file_path": "src/new_module.py",
                              "content": "".join(f"VALUE_{n} = {n}\n" for n in range(6))}),
-            s.call("Edit", edit(TEST_FILE, *plain_lines(6))),
+            s.call("Edit", edit(TEST_FILE, *plain_lines(20))),
             s.call("Edit", edit(CODE_FILE, "try:", "    run()", "except OSError:", "    raise")),
             s.spawn("a1", BRIEF),
         ]
@@ -762,6 +822,11 @@ class OtherGatesUnchanged(ReferenceReadsTestCase):
             "goated-hold: design-reads | justified-skip",
             "goated-hold: spawn | strict",
         ])
+        # A test edit's `coding.md` follows the registry's test-edit rule (Ticket
+        # 090), so only its reason differs: the registry's threshold, or none.
+        self.assertIn("20 or more", reason(with_registry[1]))
+        self.assertIn("(edits a test file)", reason(without[1]))
+        del with_registry[1], without[1]
         self.assertEqual([reason(o) for o in with_registry], [reason(o) for o in without])
 
     def test_existing_rule_references_are_not_asked_for_by_this_gate(self) -> None:

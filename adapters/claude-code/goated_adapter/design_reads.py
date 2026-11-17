@@ -91,7 +91,7 @@ def applies(path: str, *, is_code: bool, is_test: bool) -> bool:
 
 def required(path: str, tool_input: dict, *, is_code: bool, is_test: bool, small: bool,
              written_before: bool, other_code_files: int,
-             cwd: str | None) -> dict[str, str]:
+             cwd: str | None, test_edit: str | None = None) -> dict[str, str]:
     """The references an edit's signals select, each with why, in the skill's order.
 
     `small`: the edit adds too few lines for the `design` gate, so no signal
@@ -100,16 +100,30 @@ def required(path: str, tool_input: dict, *, is_code: bool, is_test: bool, small
     wrote this file. `other_code_files`: how many other non-test code files
     the turn has edited. A Write is compared with the file on disk, a
     relative path taken from `cwd`, so only what it adds counts.
+    `test_edit`: for a test file, why the edit designs a test, which selects
+    `coding.md`, or None when it does not; the caller judges it by the
+    registry's rule for test edits.
     """
 
     on_disk = _disk_text(path, cwd) if "content" in tool_input else None
     found = _signals(
         path, _Added(tool_input, on_disk),
-        new_file=is_code and "content" in tool_input and not written_before and on_disk is None,
-        is_test=is_test, small=small,
+        new_file=is_code and creates_file(path, tool_input, written_before=written_before, cwd=cwd),
+        is_test=is_test, small=small, test_edit=test_edit,
         code_files=other_code_files + 1 if is_code and not is_test else 0,
     )
     return {name: found[name] for name in REFERENCES if name in found}
+
+
+def creates_file(path: str, tool_input: dict, *, written_before: bool, cwd: str | None) -> bool:
+    """Whether an edit creates `path`: a Write, or an Edit with no old text
+    (which Claude Code lets make a file), to a file no earlier write in the
+    turn made (`written_before`) and that is not on disk, a relative path
+    taken from `cwd`. A file a shell command made is on disk, so it is not."""
+
+    writes_whole = "content" in tool_input or (
+        tool_input.get("old_string") == "" and "edits" not in tool_input)
+    return writes_whole and not written_before and _disk_text(path, cwd) is None
 
 
 def added_code(path: str, tool_input: dict, cwd: str | None) -> list[str]:
@@ -287,19 +301,20 @@ def _code_lines(text: str, syntax: _CommentSyntax) -> list[str] | None:
 
 
 def _signals(path: str, added: _Added, *, new_file: bool, is_test: bool, small: bool,
-             code_files: int) -> dict[str, str]:
+             test_edit: str | None, code_files: int) -> dict[str, str]:
     """The references an edit's signals select, each with why.
 
-    A small edit selects none by the kind of file or text it touches: a test
-    file, a configuration file, the third code file, or an added comment
-    (the skill's small-edit rule). Signals read from the added code apply at
-    any size: a new code file or public definition, error handling, and
-    concurrency.
+    A test file selects `coding.md` only when the edit designs a test
+    (`test_edit`, the registry's rule). Otherwise a small edit selects none
+    by the kind of file or text it touches: a configuration file, the third
+    code file, or an added comment (the skill's small-edit rule). Signals
+    read from the added code apply at any size: a new code file or public
+    definition, error handling, and concurrency.
     """
 
     if is_test:
         # Test code needs the reasoning on tests, not on interfaces or errors.
-        return {} if small else {"coding.md": "edits a test file"}
+        return {"coding.md": test_edit} if test_edit else {}
     found: dict[str, str] = {}
     public = next((name for name in added.definitions if not name.startswith("_")), None)
     if new_file or public is not None:

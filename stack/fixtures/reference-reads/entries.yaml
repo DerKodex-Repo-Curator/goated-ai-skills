@@ -28,6 +28,15 @@ cases:
         kind: edit-of-file-kind
         file_kind: test
         min_added_lines: 5
+  - name: new-or-substantial-test-edit
+    valid: true
+    entry:
+      file: test-design.md
+      signal:
+        kind: edit-of-file-kind
+        file_kind: test
+        min_added_lines: 20
+        new_file: true
   - name: write-under-a-path
     valid: true
     entry:
@@ -104,6 +113,14 @@ cases:
         kind: write-under-path
         path: docs/specs/
         min_added_lines: 5
+  - name: new-file-that-is-not-a-boolean
+    valid: false
+    entry:
+      file: test-design.md
+      signal:
+        kind: edit-of-file-kind
+        file_kind: test
+        new_file: "true"
   - name: path-without-a-trailing-slash
     valid: false
     entry:
