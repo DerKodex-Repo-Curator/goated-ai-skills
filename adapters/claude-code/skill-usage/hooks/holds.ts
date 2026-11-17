@@ -132,11 +132,34 @@ export function holdSettlement(): HoldSettlement {
   const closeoutItems: Record<string, Counts<Outcome>> = {}
   const skipReasons: SkipReasons = {}
   const refAsks: RefAsks = {}
-  /** Adds `by` (one, or minus one to take it back) to what became of one reference of an ask's skill, by file name. */
-  const countRef = (n: Open, file: string, outcome: RefAskOutcome, by = 1) => {
-    const counts = ((refAsks[n.anyOf[0] ?? ''] ??= {})[`references/${file}`] ??= {})
-    counts[outcome] = (counts[outcome] ?? 0) + by
-    if (counts[outcome] === 0) delete counts[outcome]
+  const countRef = (skill: string, file: string, outcome: RefAskOutcome) => {
+    const counts = ((refAsks[skill] ??= {})[`references/${file}`] ??= {})
+    counts[outcome] = (counts[outcome] ?? 0) + 1
+  }
+  // The references holds named in each loop's running turn and that are still unread, by agent ('' for the main agent),
+  // then skill, then file name. Kept apart from the asks, which settle by other rules: a design hold's ask is met by
+  // loading the skill, and a later hold's reference may come after its skill's ask settled. A reference counts as fired
+  // once while it waits, then read by the Read tool, or skipped by a skip line naming its skill; a turn end drops what is
+  // left, which went unanswered.
+  const unread = new Map<string, Map<string, Set<string>>>()
+  const unreadOf = (agent?: string) => {
+    const key = agent ?? ''
+    let skills = unread.get(key)
+    if (!skills) unread.set(key, (skills = new Map()))
+    return skills
+  }
+  /** A hold names `file` of `skill`: fired, unless it already waits; skipped at once when a skip line already declined the skill. */
+  const nameRef = (skill: string, file: string, agent: string | undefined, isDeclined: boolean) => {
+    const files = unreadOf(agent).get(skill) ?? new Set<string>()
+    if (files.has(file)) return
+    countRef(skill, file, 'fired')
+    if (isDeclined) return countRef(skill, file, 'skipped')
+    unreadOf(agent).set(skill, files.add(file))
+  }
+  /** A skip line declines `skill`: each of its references still unread was skipped. */
+  const skipRefs = (skill: string, agent?: string) => {
+    for (const file of unreadOf(agent).get(skill) ?? []) countRef(skill, file, 'skipped')
+    unreadOf(agent).delete(skill)
   }
   let turnNudged = new Set<string>()
   // One open ask per nudge: the skills any one of which answers it (`anyOf`; more than one only for a gate whose skills
@@ -149,11 +172,11 @@ export function holdSettlement(): HoldSettlement {
   // `isSkipRejected`: a closeout hold asked for it after a skip line, so that skip line did not clear it.
   // `refs`, `needsLine`: what a design or reference-reads hold that offers its skill only as a skip line asks instead:
   // a Read of each of the skill's references still unread, by file name, and for a design hold a design-reads line.
-  // It is followed once both are in, as the adapter judges. `askedRefs`: every reference the ask's holds named, read or not.
+  // It is followed once both are in, as the adapter judges.
   // `items`: the labels of the closeout items that asked for it, whose counts follow its outcome.
   // `skip`: the skip line that declined it, kept so a reopen takes its reason back.
   type Skip = { skill: string; reason: string }
-  type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; isCloseout?: true; isSkipOnly?: true; isSkipRejected?: true; isBriefAdded?: true; refs?: Set<string>; askedRefs?: Set<string>; needsLine?: boolean; items: Set<string>; skip?: Skip; mark: NudgedSkill; row: NudgeRow }
+  type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; isCloseout?: true; isSkipOnly?: true; isSkipRejected?: true; isBriefAdded?: true; refs?: Set<string>; needsLine?: boolean; items: Set<string>; skip?: Skip; mark: NudgedSkill; row: NudgeRow }
   /** Whether an ask is a design hold's, answered by its reads and line rather than by any read of the skill's files. */
   const asksDesign = (n: Open) => n.refs !== undefined || n.needsLine !== undefined
   /** Settles a design hold's ask once nothing it asked is missing; `outcome` names what came last. */
@@ -217,10 +240,7 @@ export function holdSettlement(): HoldSettlement {
     const was = n.mark.status
     unbump(nudges, n.hook, was)
     for (const label of n.items) unbump(closeoutItems, label, was)
-    if (was === 'declined') {
-      n.isSkipRejected = true
-      for (const file of n.refs ?? []) countRef(n, file, 'skipped', -1)
-    }
+    if (was === 'declined') n.isSkipRejected = true
     if (n.skip) {
       const reasons = skipReasons[n.skip.skill]
       if (reasons) unbump(reasons, n.hook, storedReason(n.skip.reason))
@@ -273,7 +293,6 @@ export function holdSettlement(): HoldSettlement {
   const decline = (n: Open, skip: Skip, by: UsageEvent) => {
     n.mark.reason = skip.reason
     n.skip = skip
-    for (const file of n.refs ?? []) countRef(n, file, 'skipped')
     bump((skipReasons[skip.skill] ??= {}), n.hook, storedReason(skip.reason))
     settle(m => m === n, 'declined', by)
   }
@@ -295,10 +314,6 @@ export function holdSettlement(): HoldSettlement {
       items: itemsAsking(e, ask),
       mark,
       row: held.row,
-    }
-    if (n.refs) {
-      n.askedRefs = new Set(n.refs)
-      for (const file of n.refs) countRef(n, file, 'fired')
     }
     held.asks.push(n)
     for (const skill of ask) turnNudged.add(skill)
@@ -323,13 +338,6 @@ export function holdSettlement(): HoldSettlement {
       const n = known(ask)
       if (!n) return addAsk(held, e, [...ask])
       if (e.isStop) reopen(n)
-      // A repeat naming a reference its earlier holds did not asks for it too: a later edit's reference.
-      for (const file of n.askedRefs ? refsOf(e.refs ?? [], ask) : []) {
-        if (n.askedRefs?.has(file)) continue
-        n.askedRefs?.add(file)
-        countRef(n, file, 'fired')
-        if (open.includes(n)) n.refs?.add(file)
-      }
       // A repeat may list the ask under another item; an ask already settled keeps the items it was counted under.
       if (open.includes(n)) for (const label of itemsAsking(e, ask)) n.items.add(label)
       return n
@@ -356,6 +364,11 @@ export function holdSettlement(): HoldSettlement {
     }
     // A gate whose skills are alternatives asks once; any other nudge asks for each skill it names.
     const asks = ALTERNATIVE_GATES.has(e.hook) && e.named.length > 1 ? [e.named] : e.named.map(s => [s])
+    // Each reference the hold names counts whether or not the hold joins an earlier row: a repeat may name a new one.
+    for (const ask of asks) {
+      const isDeclined = e.holdKind !== 'strict' && !isCloseoutHold(e) && skipFor(ask, e.agent) !== undefined
+      for (const file of refsOf(e.refs ?? [], ask)) nameRef(ask[0] ?? '', file, e.agent, isDeclined)
+    }
     if (joinRepeat(e, asks)) return undefined
     const row: NudgeRow = {
       ...stamp(e),
@@ -385,6 +398,7 @@ export function holdSettlement(): HoldSettlement {
       case 'prompt':
         // Anything still open belongs to a turn that is over, a turn end the mod did not see included.
         closeTurn(() => true, e)
+        unread.clear()
         lastClosed = closedInTurn
         closedInTurn = []
         skipped.clear()
@@ -414,11 +428,13 @@ export function holdSettlement(): HoldSettlement {
         const own = skipsOf(e.agent)
         own.set(e.skill, e.reason)
         skipped.set(e.agent ?? '', own)
+        skipRefs(e.skill, e.agent)
         for (const n of open.filter(n => n.anyOf.includes(e.skill) && n.agent === e.agent && !n.isStrict)) decline(n, { skill: e.skill, reason: e.reason }, e)
         break
       }
       case 'turn-end':
         closeTurn(n => n.agent === e.agent, e)
+        unread.delete(e.agent ?? '')
         skipped.delete(e.agent ?? '')
         forgetHolds(e.agent)
         if (!e.agent) {
@@ -436,11 +452,9 @@ export function holdSettlement(): HoldSettlement {
       case 'ref':
         // Only the Read tool counts as a reference read, as the adapter counts it; a subagent's reads are its own.
         if (!e.isReadTool || e.isSubagent) break
+        if (e.file.startsWith('references/') && unreadOf().get(e.skill)?.delete(e.file.slice('references/'.length))) countRef(e.skill, e.file.slice('references/'.length), 'read')
         for (const n of open.filter(n => !n.agent && n.refs !== undefined && n.anyOf.includes(e.skill))) {
-          const file = e.file.split('/').pop() ?? ''
-          if (!n.refs?.delete(file)) continue
-          countRef(n, file, 'read')
-          settleDesign(n, 'read files', e)
+          if (n.refs?.delete(e.file.split('/').pop() ?? '')) settleDesign(n, 'read files', e)
         }
         break
       case 'design-reads':

@@ -174,9 +174,9 @@ export type Measures = {
 export type SkipReasons = Record<string, Record<string, Record<string, number>>>
 
 /**
- * What became of a skill reference a hold asked to read: the hold `fired`, once per hold row whatever its repeats; then
- * the reference was `read` with the Read tool, or its skill's ask was declined by a skip line while it was unread
- * (`skipped`). A fired reference with neither went unanswered.
+ * What became of a skill reference a hold asked to read: a hold named it (`fired`), once while it waits unread in its
+ * turn, however many holds name it; then it was `read` with the Read tool, or a skip line naming its skill declined it
+ * while it was unread (`skipped`). A fired reference with neither went unanswered.
  */
 export type RefAskOutcome = 'fired' | 'read' | 'skipped'
 

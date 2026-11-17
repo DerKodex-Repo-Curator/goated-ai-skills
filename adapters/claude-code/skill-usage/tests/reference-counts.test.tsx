@@ -1,12 +1,12 @@
 // Counts per declared reference (Ticket 078): for a reference the registry enforces, how often a hold asked for it
 // (fired), then it was read, or its skill was skipped; for an advisory one, its reads beside its skill's loads.
 
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
 import type { DeclaredReferences, UsageEvent } from '../types'
 import { addSession, DATA_VERSION, hookEvents, markerEvents, mergeSummaries, summarize, toolUseEvents } from '../hooks/classify'
-import { declaredReferences } from '../hooks/registry'
+import { declaredReferences, registryPlaces } from '../hooks/registry'
 import { reportText } from '../hooks/view'
 import { ADAPTER_TEXTS } from './adapter-texts'
 import { REGISTRY_FIXTURE } from './registry-fixture'
@@ -143,8 +143,18 @@ test('with no readable registry, the report shows reads as before and no declare
 
 type On = Parameters<TestBody>[1]
 
-/** Claude Code beneath the mod for one session; `registry`: what reading the registry gives, or an error to reject with. */
-function world(on: On, registry: string | Error, asked: string[] = []) {
+/** A path as the tests compare it: forward slashes. */
+const slashed = (path: string) => path.replace(/\\/g, '/')
+/** Files readable only at the path ending `place`: the registry's text there, nothing anywhere else. */
+const onlyAt = (place: string, text: string = REGISTRY_FIXTURE.text) => (path: string) => (slashed(path).endsWith(place) ? text : undefined)
+const everywhere = (text: string) => () => text
+const nowhere = () => undefined
+
+/**
+ * Claude Code beneath the mod for one session. `readable`: the text of the file at a path, undefined for one missing,
+ * which the read rejects as missing; `asked`: every path the mod asked to read, in order, with forward slashes.
+ */
+function world(on: On, readable: (path: string) => string | undefined, asked: string[] = []) {
   const state: Record<string, unknown> = {}
   const store = new Map<string, unknown>()
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -159,9 +169,11 @@ function world(on: On, registry: string | Error, asked: string[] = []) {
   on('ui.open', () => ({ value: { isPlaced: false, reason: 'no pane in this test' } }))
   on('ui.status', () => ({ value: undefined }))
   on('fs.read', (_, e) => {
-    asked.push((e as { path: string }).path)
-    if (registry instanceof Error) throw registry
-    return { value: registry }
+    const { path } = e as { path: string }
+    asked.push(slashed(path))
+    const text = readable(path)
+    if (text === undefined) throw new Error(`ENOENT: no such file, open '${path}'`)
+    return { value: text }
   })
   on('state.get', (_, e) => {
     const key = (e as { key: string }).key
@@ -202,15 +214,15 @@ async function seen($: Parameters<TestBody>[0], state: Record<string, unknown>) 
   return { report, pane, error: state.lastError ?? null }
 }
 
-test("the mod reads the installed registry two folders above its adapter, and All time and the report show each declared reference", async ($, on) => {
+const INTEGRATED = '/home/dev/.claude/goated/stack/goated-stack.yaml'
+
+test("the mod reads the integrated install's registry under your home folder, and All time and the report show each declared reference", async ($, on) => {
+  mock.env(on, { HOME: '/home/dev' })
   const asked: string[] = []
-  const state = world(on, REGISTRY_FIXTURE.text, asked)
+  const state = world(on, onlyAt(INTEGRATED), asked)
   const { report, pane, error } = await seen($, state)
-  // Three folders above the mod's own (`adapters/claude-code/skill-usage`): the distribution's root.
   expect(asked.length).toBe(1)
-  const path = (asked[0] ?? '').replace(/\\/g, '/')
-  expect(path.endsWith('/stack/goated-stack.yaml')).toBe(true)
-  expect(path).not.toContain('/adapters/')
+  expect(asked[0]?.endsWith(INTEGRATED)).toBe(true)
   expect(error).toBeNull()
   expect(report).toContain('- tdd › mocking-and-seams.md: enforced · fired 1 · read 1 · skipped 0')
   expect(pane).toContain('Declared references')
@@ -218,9 +230,54 @@ test("the mod reads the installed registry two folders above its adapter, and Al
   expect(pane).toContain('fired 1 · read 1 · skipped 0')
 })
 
-/** What the mod shows with `registry` as what reading the registry gives: reads as it does today, and no error. */
-async function expectReadsAsToday($: Parameters<TestBody>[0], on: On, registry: string | Error) {
-  const { report, pane, error } = await seen($, world(on, registry))
+test('near miss: with no HOME, as on Windows, the home folder is USERPROFILE', async ($, on) => {
+  mock.env(on, { USERPROFILE: 'C:\\Users\\dev' })
+  const { report } = await seen($, world(on, onlyAt('/Users/dev/.claude/goated/stack/goated-stack.yaml')))
+  expect(report).toContain('## Declared references')
+})
+
+test("the mod reads a source checkout's registry, three folders above its own, when the integrated install has none", async ($, on) => {
+  mock.env(on, { HOME: '/home/dev' })
+  const asked: string[] = []
+  // Any registry path but the integrated install's: the one beside the mod, as `--plugin-dir` runs it from a checkout.
+  const { report } = await seen($, world(on, path => (slashed(path).endsWith(INTEGRATED) ? undefined : REGISTRY_FIXTURE.text), asked))
+  expect(asked.length).toBe(2)
+  expect(asked[1]?.endsWith('/stack/goated-stack.yaml')).toBe(true)
+  expect(asked[1]).not.toContain('/adapters/')
+  expect(report).toContain('- tdd › mocking-and-seams.md: enforced · fired 1 · read 1 · skipped 0')
+})
+
+test("a registry path set in the mod's options is read first", { options: { registryPath: '/opt/goated/stack/goated-stack.yaml' } }, async ($, on) => {
+  mock.env(on, { HOME: '/home/dev' })
+  const asked: string[] = []
+  const { report } = await seen($, world(on, onlyAt('/opt/goated/stack/goated-stack.yaml'), asked))
+  expect(asked.length).toBe(1)
+  expect(asked[0]?.endsWith('/opt/goated/stack/goated-stack.yaml')).toBe(true)
+  expect(report).toContain('## Declared references')
+})
+
+test('near miss: a set path with no registry there falls back to the integrated install', { options: { registryPath: '/opt/missing.yaml' } }, async ($, on) => {
+  mock.env(on, { HOME: '/home/dev' })
+  const asked: string[] = []
+  const { report } = await seen($, world(on, onlyAt(INTEGRATED), asked))
+  expect(asked.length).toBe(2)
+  expect(report).toContain('## Declared references')
+})
+
+test('from a plugin cache, as the documented install places the mod, the places tried still reach the integrated install', async () => {
+  const cache = 'C:/Users/dev/.claude/plugins/cache/goated-skill-usage/skill-usage/0.2.0'
+  expect(registryPlaces({ configured: '', home: 'C:/Users/dev', pluginRoot: cache })).toEqual([
+    'C:/Users/dev/.claude/goated/stack/goated-stack.yaml',
+    `${cache}/../../../stack/goated-stack.yaml`,
+  ])
+  // Near miss: with no home folder known, only a set path and the checkout's place are tried, the set path first.
+  expect(registryPlaces({ configured: '/opt/r.yaml', pluginRoot: cache })).toEqual(['/opt/r.yaml', `${cache}/../../../stack/goated-stack.yaml`])
+})
+
+/** What the mod shows when reading the registry gives `readable`: reads as it does today, and no error. */
+async function expectReadsAsToday($: Parameters<TestBody>[0], on: On, readable: (path: string) => string | undefined) {
+  mock.env(on, { HOME: '/home/dev' })
+  const { report, pane, error } = await seen($, world(on, readable))
   expect(error).toBeNull()
   expect(report).not.toContain('Declared references')
   expect(report).toContain('- tdd › references/mocking-and-seams.md: 1')
@@ -229,11 +286,11 @@ async function expectReadsAsToday($: Parameters<TestBody>[0], on: On, registry: 
 }
 
 test('with no registry where the mod looks, it shows reads as it does today and does not fail', async ($, on) => {
-  await expectReadsAsToday($, on, new Error('ENOENT: no such file'))
+  await expectReadsAsToday($, on, nowhere)
 })
 
 test('near miss: a file there that is no registry is read as none, the same way', async ($, on) => {
-  await expectReadsAsToday($, on, 'not: a registry\n')
+  await expectReadsAsToday($, on, everywhere('not: a registry\n'))
 })
 
 test("a design-reads hold counts for the design skill's reference as a reference-reads hold does", async () => {
@@ -242,4 +299,36 @@ test("a design-reads hold counts for the design skill's reference as a reference
   expect(read.refAsks?.['software-design-principles']).toEqual({ 'references/errors.md': { fired: 1, read: 1 } })
   const skipped = summarize([prompt(), ...held(2, ADAPTER_TEXTS.designReads), ...skip('software-design-principles', 3), turnEnd(4)])
   expect(skipped.refAsks?.['software-design-principles']).toEqual({ 'references/errors.md': { fired: 1, skipped: 1 } })
+})
+
+// ---------- references a hold names after its skill's ask settled, or beside a load it asks for -------------------
+
+const SDP_REFS = '/skills/software-design-principles/references/'
+const sdpCounts = (events: UsageEvent[]) => summarize(events).refAsks?.['software-design-principles']
+const concurrencyHold = ADAPTER_TEXTS.designReads.replace('software-design-principles/references/errors.md', 'software-design-principles/references/concurrency.md')
+
+test('a reference a later hold names, after the earlier hold of the turn was met, counts as fired and then read', async () => {
+  const counts = sdpCounts([prompt(), ...held(2, ADAPTER_TEXTS.designReads), ...readTool(`${SDP_REFS}errors.md`, 3), ...held(4, concurrencyHold), ...readTool(`${SDP_REFS}concurrency.md`, 5), turnEnd(6)])
+  expect(counts).toEqual({ 'references/errors.md': { fired: 1, read: 1 }, 'references/concurrency.md': { fired: 1, read: 1 } })
+  // The same for the reference-reads hold: a later hold naming test-design.md after mocking-and-seams.md was read.
+  const later = ADAPTER_TEXTS.referenceReads.replace('`tdd/references/mocking-and-seams.md`', '`tdd/references/test-design.md`')
+  const tdd = summarize([prompt(), ...held(2), ...readTool(SEAMS, 3), ...held(4, later), ...readTool('/skills/tdd/references/test-design.md', 5), turnEnd(6)]).refAsks?.tdd
+  expect(tdd).toEqual({ 'references/mocking-and-seams.md': { fired: 1, read: 1 }, 'references/test-design.md': { fired: 1, read: 1 } })
+})
+
+test('near miss: a later hold naming a reference still unread from the earlier one does not fire it again', async () => {
+  const counts = sdpCounts([prompt(), ...held(2, ADAPTER_TEXTS.designReads), ...held(3, ADAPTER_TEXTS.designReads), ...readTool(`${SDP_REFS}errors.md`, 4), turnEnd(5)])
+  expect(counts).toEqual({ 'references/errors.md': { fired: 1, read: 1 } })
+})
+
+test('a design hold made before the skill loads counts the references it names, then their reads', async () => {
+  const reads = ['process.md', 'complexity-and-modules.md', 'readability.md'].flatMap((file, i) => readTool(`${SDP_REFS}${file}`, 4 + i))
+  const counts = sdpCounts([prompt(), ...held(2, ADAPTER_TEXTS.design), load('software-design-principles', 3), ...reads, turnEnd(8)])
+  expect(counts).toEqual({
+    'references/process.md': { fired: 1, read: 1 },
+    'references/complexity-and-modules.md': { fired: 1, read: 1 },
+    'references/readability.md': { fired: 1, read: 1 },
+  })
+  // Near miss: the load alone reads none of them, so each is fired only.
+  expect(sdpCounts([prompt(), ...held(2, ADAPTER_TEXTS.design), load('software-design-principles', 3), turnEnd(4)])?.['references/process.md']).toEqual({ fired: 1 })
 })

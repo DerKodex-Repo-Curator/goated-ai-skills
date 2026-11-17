@@ -4,8 +4,21 @@
 
 import type { AllTime, Counts, DeclaredReferences, RefAskOutcome } from '../types'
 
-/** Where the registry sits from the mod's folder (`<goated-root>/adapters/claude-code/skill-usage`), as the adapter finds it from its own. */
-export const REGISTRY_FROM_MOD = '../../../stack/goated-stack.yaml'
+/**
+ * Where the mod looks for the installed registry, in order; the first that reads as a registry wins. `configured`: the
+ * path set in the mod's `registryPath` option, empty when none is. `home`: your home folder, when known: the
+ * integrated install keeps the registry in `~/.claude/goated/stack/`. `pluginRoot`: the mod's own folder; three folders
+ * above it is a GOATED checkout's root when the mod runs from one (`--plugin-dir`), as the adapter finds the registry
+ * from its own folder. A mod installed from its marketplace runs from a copy in the plugin cache, where that place
+ * holds no registry.
+ */
+export function registryPlaces(where: { configured: string; home?: string; pluginRoot: string }): string[] {
+  return [
+    ...(where.configured.trim() ? [where.configured.trim()] : []),
+    ...(where.home ? [`${where.home.replace(/[\\/]+$/, '')}/.claude/goated/stack/goated-stack.yaml`] : []),
+    `${where.pluginRoot}/../../../stack/goated-stack.yaml`,
+  ]
+}
 
 // The block-style YAML the registry is written in, as far as the references need: the top-level `skills:` list, each
 // skill's `- name:`, its `references:` list, and each entry's `- file:` with a `signal:` or an `advisory:` key.

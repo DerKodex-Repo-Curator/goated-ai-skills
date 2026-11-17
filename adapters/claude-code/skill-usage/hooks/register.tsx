@@ -19,7 +19,7 @@ import type { View } from './meaning'
 import { forgetPictures, PREVIEW_MS } from './picture'
 import { errorText } from './holds'
 import { newSalt, projectKey } from './project'
-import { declaredReferences, REGISTRY_FROM_MOD } from './registry'
+import { declaredReferences, registryPlaces } from './registry'
 import { allTimeTab, PANE_COLUMNS, reportText, sessionTab, statusText, unusedTab } from './view'
 
 const PANE = 'skill-usage'
@@ -57,14 +57,14 @@ const preview = atom({ plugin: 'skill-usage', key: 'preview' } as const, null)
 
 type Stored = { t: number; summary: SessionSummary }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     await $.command.register({ name: 'skill-usage', description: 'Skill usage pane; `/skill-usage preview` plays every animation, `/skill-usage report` prints the all-time report' })
     try {
       await claimSession($)
       await knownSkills($, true)
-      await readRegistry($)
+      await readRegistry($, String(options.registryPath ?? ''))
       await backfill($)
       showStatus($, await liveSummary($))
     } catch (error) {
@@ -185,13 +185,19 @@ async function knownSkills($: Dollar, refresh = false): Promise<string[]> {
 
 /**
  * Reads the references the installed GOATED registry declares, once per session start, so a registry edited since
- * shows in the next session: the registry the adapter reads by default, `<goated-root>/stack/goated-stack.yaml`, three
- * folders above the mod's own. A missing or unreadable file, an expected state for a mod installed without GOATED, or
- * one that is no registry, leaves none, and the pane shows reads as it would without the registry.
+ * shows in the next session: from the first of `registryPlaces` that holds a registry, `configured` (the mod's
+ * `registryPath` option) first. A place with no file, or with a file that is no registry, is passed over: a mod
+ * installed without GOATED finds none anywhere, and the pane then shows reads as it would without the registry. The
+ * home folder is `HOME`, else `USERPROFILE` as on Windows; with neither readable, the home place is not tried.
  */
-async function readRegistry($: Dollar) {
-  const text = await $.fs.read(`${$.plugin.root}/${REGISTRY_FROM_MOD}`).catch(() => '')
-  await update($, declared, () => declaredReferences(text))
+async function readRegistry($: Dollar, configured: string) {
+  const variable = (value: Promise<string | undefined>) => value.catch(() => undefined)
+  const home = (await variable($.env.get('HOME'))) || (await variable($.env.get('USERPROFILE'))) || undefined
+  for (const place of registryPlaces({ configured, ...(home ? { home } : {}), pluginRoot: $.plugin.root })) {
+    const found = declaredReferences(await $.fs.read(place).catch(() => ''))
+    if (found) return void (await update($, declared, () => found))
+  }
+  await update($, declared, () => null)
 }
 
 /**

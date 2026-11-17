@@ -26,7 +26,7 @@ without it.
 | Closeout items: each item a closeout hold lists, such as Proof, Unfinished, Docs, Design, Security, Setup, or one added later, with its own outcome | The item lines of the closeout hold's text, `- <Label>: …`, at a commit or a `Stop`; the item's skill is the first it backticks, else the skill of the skip line it offers |
 | Your overrides, by phrase | The adapter's sentence `recorded your override for this prompt` in its hook context; its `commit message` phrase shows as `commit message: <text>` |
 | Reads of skills' reference and other supporting files, whether the skill had loaded first, and when in the turn: before its first code change, between two, after the last, or in a turn with no code change | `Read` paths and shell commands; code changes are edit tool calls on a code file, by the main agent or a subagent, that ran |
-| Declared references: for each reference a hold asked to read (the `reference-reads`, `design` and `design-reads` holds), how often a hold fired for it, then it was read, or its skill's ask was declined by a skip line while it was unread (skipped). A hold repeated in the same turn fires once; a later turn's hold fires again | The references each hold backticks by path, `Read` tool calls, and skip lines, as the hold settlement counts them |
+| Declared references: for each reference a hold asked to read (the `reference-reads`, `design` and `design-reads` holds), how often a hold fired for it, then it was read with the Read tool, or a skip line naming its skill declined it while it was unread (skipped). A reference fires once while it waits unread in its turn, however many holds name it; a later turn's hold fires it again | The references each hold backticks by path, `Read` tool calls, and skip lines, as the hold settlement counts them |
 | Design-reads lines: in how many replies each reference file was declared (a reply's lines add up to one set of files, each counted once), and how many lines declared `none` | `goated-design-reads:` lines in replies, and in the same call fields as route lines |
 | Subagent spawns, with type and task, including ones that load no skill | Agent tool calls that ran; a held or failed attempt shows in the log as held but is not counted |
 | A subagent's reads of a skill's `SKILL.md` | A subagent's `Read` calls |
@@ -209,11 +209,23 @@ the registry declares for it. An enforced reference, one the registry gives
 a signal, shows how often its hold fired, then it was read, or skipped. An
 advisory one shows its reads beside its skill's loads, so its read rate
 shows. A reference the counts hold that the registry no longer declares
-stays in the stored data and shows as retired. The mod reads the registry
-the adapter reads by default, `<goated-root>/stack/goated-stack.yaml`,
-three folders above its own, once at each session start. With no registry
-there, or a file there that is no registry, the section is left out and
-the References table shows reads as before.
+stays in the stored data and shows as retired.
+
+The mod reads the registry once at each session start, from the first of
+these places that holds one:
+
+1. the path set in the mod's `registryPath` option, if any: the
+   `skill-usage.registryPath` row of Claude Code's settings menu, or
+   `pluginConfigs` in `settings.json`;
+2. the integrated install's `~/.claude/goated/stack/goated-stack.yaml`,
+   under `HOME`, or `USERPROFILE` when `HOME` is unset;
+3. `<goated-root>/stack/goated-stack.yaml`, three folders above the mod's
+   own, which holds the registry only when the mod runs from a GOATED
+   checkout, as with `--plugin-dir`. An installed mod runs from a copy in
+   Claude Code's plugin cache.
+
+With no registry in any of them, or only files that are no registry, the
+section is left out and the References table shows reads as before.
 
 In the picture, each node around the core is a cause of skill loads, with its
 count beneath: **Your /cmd** (you typed a slash command), **You asked** (your
@@ -401,9 +413,9 @@ This has not been tested end to end. Keep a backup of both files.
   while `older` still holds its earlier sum, which keeps no per-session
   parts to take back. Only a session older than the 300 most recent can be
   folded.
-- The mod finds the registry only at the adapter's default place, beside
-  the mod in the same GOATED distribution; it does not read
-  `GOATED_ADAPTER_REGISTRY`. A registry edited mid-session shows from the
+- The mod does not read the adapter's `GOATED_ADAPTER_REGISTRY`: a
+  registry kept elsewhere than the places above needs the mod's own
+  `registryPath` option too. A registry edited mid-session shows from the
   next session. Its reader reads the block-style YAML the registry is
   written in, and `tests/test_skill_usage_mod.py` checks that it agrees with
   a full YAML parser on the source registry; an installed registry edited
