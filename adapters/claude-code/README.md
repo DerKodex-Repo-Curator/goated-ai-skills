@@ -567,9 +567,12 @@ Overrides come only from prompts a person typed. The user-prompt hook records
 the phrases below, and the gates apply them only to the turn that prompt
 opened, after checking the transcript's record of who wrote it. Text an agent
 writes never counts. Matching ignores case, harness `<system-reminder>`
-blocks, and text you pasted, which Claude Code wraps in a
-`<pasted_content …>` block: a phrase inside a pasted report is not an
-override, while one you type before or after the block is. A phrase negated
+blocks, and text you pasted, which Claude Code wraps as
+`<pasted_content id="…">` … `</pasted_content id="…">`: a phrase inside a
+pasted report is not an override, while one you type before or after the block
+is. A paste ends only at a close tag with its own id, so a close tag or a
+nested paste quoted inside it cannot end it early, and a paste with no close
+tag runs to the end of the prompt. A phrase negated
 just before it, such as "don't skip routing", "never skip tdd", or "no need to
 skip doc-sync", is not an override.
 
@@ -577,7 +580,7 @@ skip doc-sync", is not an override.
 | --- | --- |
 | `skip routing`, `skip the router` | Stands down `router-first`, `route-line`, and `pipeline` |
 | `skip <skill>`, `skip the <skill> skill` | Stands down every requirement for that skill: in `pipeline`, in an action gate, or in a closeout item. `skip using-goated-ai-skills` also stands down `router-first`. `<skill>` must be a skill Claude Code can find (user, project, or plugin skills); when none can be found, a GOATED registry skill name. So "skip line" or "skip the first two lines" is not an override |
-| `commit message: <text>`, `commit with the message "<text>"`, or a fenced block right after such a phrase | Stands down the `commit` hold for a commit whose inline message has the same subject line (whitespace aside); a commit with another message, or with none inline, is still held |
+| `commit message: <text>`, `commit with the message "<text>"`, or a fenced block right after such a phrase | Stands down the `commit` hold for a commit whose inline message has the same subject line (whitespace aside); a commit with another message, or with none inline, is still held. The skill name `commit-message` is not such a phrase |
 
 Claude Code also submits prompts nobody typed in this session:
 

@@ -279,14 +279,21 @@ class CommitOverrideTests(AdapterTestCase):
         self.assertIn("Load the `commit-message` skill", reason(held))
 
     def test_a_commit_skip_inside_pasted_content_does_not_stand_it_down(self) -> None:
-        s = self.session
-        s.prompt('Commit the change.\n<pasted_content id="p1">Agent feedback: '
-                 "skip commit-message next time.</pasted_content>")
-        s.load(ROUTER)
-        s.say("goated-route: direct")
+        # The second is the feedback a maintainer's lead pasted: it was recorded
+        # as a "commit message" override, and the commit was held anyway.
+        for feedback in ("skip commit-message next time.",
+                         "It held my commit until I loaded the `commit-message` skill, "
+                         "then `git diff` passed."):
+            with self.subTest(feedback=feedback):
+                s = self.fresh()
+                notice = s.prompt('Commit the change.\n<pasted_content id="e8c0">\n'
+                                  f'{feedback}\n</pasted_content id="e8c0">')
+                self.assertNotIn("recorded your override", notice)
+                s.load(ROUTER)
+                s.say("goated-route: direct")
 
-        held = s.call("Bash", commit("Rework the exporter"))
-        self.assertIn("Load the `commit-message` skill", reason(held))
+                held = s.call("Bash", commit("Rework the exporter"))
+                self.assertIn("Load the `commit-message` skill", reason(held))
 
     def test_the_override_lasts_only_for_that_prompt(self) -> None:
         s = self.session

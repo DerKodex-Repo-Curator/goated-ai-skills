@@ -22,9 +22,10 @@ NEGATION_RE = re.compile(
 )
 # "commit message: <text>", "commit it with the message "<text>"", or a fenced
 # block right after such a phrase. The words between "commit" and "message"
-# stay on one line and short, so prose that merely mentions both is not read.
+# stay on one line and short, so prose that merely mentions both is not read,
+# and neither is the skill name `commit-message`.
 COMMIT_MESSAGE_RE = re.compile(
-    r"\bcommit\b[^\n]{0,40}?\bmessage\b(?:[ \t]+(?:is|of))?[ \t]*[:=]?[ \t]*", re.IGNORECASE
+    r"\bcommit\b(?!-)[^\n]{0,40}?\bmessage\b(?:[ \t]+(?:is|of))?[ \t]*[:=]?[ \t]*", re.IGNORECASE
 )
 FENCED_RE = re.compile(r"\n?[ \t]*```[^\n]*\n(.*?)\n[ \t]*```", re.DOTALL)
 QUOTED_RES = (
@@ -34,11 +35,14 @@ QUOTED_RES = (
     re.compile(r"'([^'\n]+)'"),
 )
 # Text the user did not type: harness `<system-reminder>` blocks, and text the
-# user pasted, which Claude Code wraps in `<pasted_content …>` (a pasted agent
-# report may quote an override). An unclosed paste runs to the end.
+# user pasted (a pasted agent report may quote an override). Claude Code wraps a
+# paste as `<pasted_content id="X">` ... `</pasted_content id="X">`, so a paste
+# ends only at a close tag repeating its own id: a bare or other-id close tag
+# inside it, or a nested paste, cannot end it early. An unclosed paste runs to
+# the end of the prompt.
 NOT_TYPED_RE = re.compile(
     r"<system-reminder>.*?</system-reminder>"
-    r"|<pasted_content\b[^>]*>.*?(?:</pasted_content>|\Z)",
+    r'|<pasted_content\b[^>]*?\bid="([^"]*)"[^>]*>.*?(?:</pasted_content\s+id="\1"\s*>|\Z)',
     re.DOTALL,
 )
 NOT_SKILLS = frozenset({"routing", "router"})
