@@ -1002,6 +1002,31 @@ class OutOfProjectTests(AdapterTestCase):
         edit = {"file_path": f"{self.inside}/.env", "old_string": "a", "new_string": "b"}
         self.assertEqual(hold_line(s.call("Edit", edit)), "goated-hold: security | justified-skip")
 
+    def test_a_cd_through_dot_dot_is_read_as_cd_reads_it(self) -> None:
+        """Ticket 058 review: `cd` drops `..` from the folder's text (bash's
+        default `cd -L`) before any mount is reached, so `cd /tmp/../c/proj`
+        is in `/c/proj`, not beside the temp folder. Near misses: a `..` that
+        lands back under `/tmp`, and one that climbs out of the project."""
+
+        for template, inside in (
+            ("cd /tmp/..{project} && echo 'print(1)' > x.py", True),
+            ("cd '/tmp/..{project}' && echo 'print(1)' > x.py", True),
+            ("cd /tmp && cd '..{project}' && echo 'print(1)' > x.py", True),
+            ("cd /c/..{project} && echo 'print(1)' > x.py", True),
+            ("cd {project}/sub/.. && echo 'print(1)' > x.py", True),
+            ("cd /tmp/scratch/.. && echo 'print(1)' > x.py", False),
+            ("cd {project}/.. && echo 'print(1)' > x.py", False),
+        ):
+            with self.subTest(command=template):
+                s = self.fresh()
+                s.prompt("Tidy it.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                project = str(s.project)
+                project = git_bash(project) if os.name == "nt" else Path(project).as_posix()
+                s.run(template.replace("{project}", project))
+                self.assertEqual("- Proof:" in stop(s).get("reason", ""), inside)
+
     def test_a_rooted_path_with_no_drive_is_outside_only_off_windows(self) -> None:
         """On Windows, `/etc/x` may be under Git Bash's install folder, a user's
         mount, or a folder on any drive, so it is not certainly outside."""
@@ -2014,9 +2039,11 @@ class CloseoutTests(AdapterTestCase):
     def test_dotnet_write_text_held_as_data_is_not_a_change(self) -> None:
         """Ticket 058's scratch-file closeout, reproduced from the maintainer's
         session: probe commands for the adapter held `.NET` write text as data,
-        in a `python -c` string and in a heredoc written to a scratch file. Each
+        in a heredoc written to a scratch file and in a `python -c` string. Each
         read as an unnamed write, which counts as project code wherever it runs,
-        so the turn got Proof and Docs items. Only code PowerShell can run counts."""
+        so the turn got Proof and Docs items. Text only a text tool is given is
+        data; text an interpreter or `git` is given still counts, since those can
+        start PowerShell, and so does any text in a command that runs PowerShell."""
 
         scratch = (self.root / "scratch").as_posix()
         if os.name == "nt":
@@ -2025,18 +2052,18 @@ class CloseoutTests(AdapterTestCase):
         for tool, command, changes in (
             ("Bash", f"cd {scratch}/merge27/adapters/claude-code && uv run --project ../.. "
                      f"python -c \"\ncases = {{\n \\\"cp a.py src/a.py; pytest; {dotnet}\\\": "
-                     f"False,\n}}\nprint(cases)\n\"", False),
+                     f"False,\n}}\nprint(cases)\n\"", True),
             ("Bash", f"cat > {scratch}/probe.py <<'EOF'\ncases = [\"{dotnet}\"]\nEOF", False),
             # A quoted delimiter: the shell expands nothing in the body.
             ("Bash", f"cat > {scratch}/probe.py <<'EOF'\ncases = [\"x=$(pwd); {dotnet}\"]\nEOF",
              False),
             ("Bash", f"cat > {scratch}/probe.py <<EOF\ncases = [\"x=$(pwd); {dotnet}\"]\nEOF",
              True),
-            ("Bash", f"python3 -c \"text = '{dotnet}'\"", False),
+            ("Bash", f"python3 -c \"text = '{dotnet}'\"", True),
             ("Bash", f"echo \"{dotnet}\" | grep -c IO", False),
-            ("Bash", f"python -c \"text = '{dotnet}'\" 2>&1 | tail -20 | sort | head -3", False),
+            ("Bash", f"echo \"{dotnet}\" 2>&1 | tail -20 | sort | head -3", False),
             ("PowerShell", f"Write-Output \"{dotnet}\" | Select-Object -First 1", False),
-            ("Bash", f"git commit -m \"Read {dotnet} as a write\"", False),
+            ("Bash", f"git log -S \"{dotnet}\"", True),
             ("PowerShell", f"Write-Output \"{dotnet}\"", False),
             # Near misses: PowerShell runs each of these.
             ("Bash", f"cp a.py b.py; {dotnet}", True),
@@ -2053,6 +2080,19 @@ class CloseoutTests(AdapterTestCase):
             ("PowerShell", f"Write-Output ({dotnet})", True),
             ("PowerShell", f"Write-Output \"$({dotnet})\"", True),
             ("PowerShell", f"if ($true) {{ {dotnet} }}", True),
+            # Data a later command runs as PowerShell, or a launcher may hand on.
+            ("Bash", f"cat > {scratch}/w.ps1 <<'EOF'\n{dotnet}\nEOF\n"
+                     f"pwsh -NoProfile -File {scratch}/w.ps1", True),
+            ("Bash", f"echo \"{dotnet}\" > {scratch}/w.ps1 && pwsh -File {scratch}/w.ps1", True),
+            ("Bash", f"echo \"{dotnet}\" | tee {scratch}/w.ps1; pwsh {scratch}/w.ps1", True),
+            ("Bash", f"echo \"{dotnet}\" > {scratch}/w.ps1 && powershell.exe {scratch}/w.ps1",
+             True),
+            ("Bash", "python -c \"import subprocess; subprocess.run(['pwsh', '-c', "
+                     f"\\\"{dotnet}\\\"])\"", True),
+            ("Bash", "git -c alias.w='!pwsh -c \"[System.IO.File]::Delete(1)\"' w", True),
+            ("Bash", f"uv run node -e \"x = '{dotnet}'\"", True),
+            # Near miss: a `.ps1` script a text tool writes and nothing runs.
+            ("Bash", f"cat > {scratch}/w.ps1 <<'EOF'\n{dotnet}\nEOF", False),
         ):
             with self.subTest(command=command):
                 s = self.fresh()

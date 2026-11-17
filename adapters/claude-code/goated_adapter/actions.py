@@ -180,8 +180,8 @@ SECURITY_CATEGORIES = (
 # Only dependency manifests among docs-like files (`requirements.txt`) are sensitive.
 ALWAYS_CHECKED_CATEGORIES = frozenset({"dependencies"})
 # Env and settings files whose change is setup (spec G3): `.env` and `.env.*`,
-# and `settings*.json` under `.claude/` or `.vscode/`. They count wherever they
-# are, since machine and application settings are setup too.
+# and `settings*.json` under `.claude/` or `.vscode/`. They count only inside
+# the project (spec R9), so a scratch folder's or `~/.claude`'s settings do not.
 SETUP_FILE_RE = re.compile(
     r"(?:^|/)\.env(?:\.[^/]*)?$|(?:^|/)\.(?:claude|vscode)/settings[^/]*\.json$", re.IGNORECASE
 )

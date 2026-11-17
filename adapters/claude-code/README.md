@@ -190,7 +190,9 @@ manager's options that take a value (`--filter`, `--workspace`, `--python`,
 `.claude/` or `.vscode/`, written by a write tool or a shell command. A
 package install counts wherever it runs; an env or settings file counts only
 inside the project, by the same rule as code changes, so a scratch folder's
-`.claude/settings.json` does not. A subagent's installs and writes count
+`.claude/settings.json` does not, and neither do global settings such as
+`~/.claude/settings.json`, unless the project holds your home folder. A
+subagent's installs and writes count
 toward the parent's closeout; that subagent's own `setup-scribe` load or skip
 line meets them, as the parent's does.
 
@@ -384,13 +386,16 @@ backtick in PowerShell). A `Bash` or `PowerShell` command meets the
   `Export-Clixml`, or one of the stock Windows PowerShell 5.1 aliases (`sc`,
   `ac`, `clc`, `del`, `erase`, `copy`, `move`, `ren`, `rd`, `ri`, `mi`, `cpi`,
   `ni`, `rni`), or a .NET `[IO.File]::Write…` style call. A .NET call's text
-  handed as data to another language or a text tool (`python -c "…"`, a
-  heredoc fed to `cat`, `echo`, `grep`, a `git commit -m` message) is not a
-  write, unless it holds a `$(` or a backtick that may still run it, outside
-  a quoted-delimiter heredoc (`<<'EOF'`), or is piped on into another program
-  (`… | pwsh -Command -`, `… | Invoke-Expression`); text tools such as `tail`,
-  `sort`, and `Select-Object` pass it on as data (`NO_POWERSHELL` in
-  `shell.py`);
+  handed only to text tools, which cannot start a program (`cat`, `echo`,
+  `printf`, `grep`, `rg`, `head`, `tail`, `sort`, `tee`, `Write-Output`,
+  `Select-Object`, and the like; `NO_POWERSHELL` in `shell.py`), is data,
+  such as a heredoc fed to `cat`. It is still a write when it holds a `$(` or
+  a backtick that may run it, outside a quoted-delimiter heredoc
+  (`<<'EOF'`); when it is piped on into any other program
+  (`… | pwsh -Command -`); and whenever the command names `pwsh` or
+  `powershell` anywhere, which may run a script written earlier in it.
+  Interpreters (`python -c`, `node -e`) and `git` (an alias or hook) can start
+  PowerShell, so text handed to them counts too;
 - downloads to a file: `curl -o <file>` (also `-sSLo <file>`) or `curl -O`,
   `wget` unless it writes to standard output, or `Invoke-WebRequest -OutFile`;
 - runs `git apply`, `git am`, `git restore`, `git mv`, `git rm`, `git clean`,
@@ -809,6 +814,14 @@ of the call's prompt, which is normally already there.
     `/etc/fstab`, or a shell whose `TMP` differs from the hook's, is not seen.
   - `CDPATH` is not read, so a `cd` to a bare relative name makes the folder
     unknown, and the writes after it count as inside.
+  - A `cd` is read as bash's default logical `cd -L`: each `..` drops the
+    name before it from the text, so `cd /tmp/../c/proj` is in `/c/proj`.
+    (`cd -P`, like any `cd` with an option, leaves the folder unknown.) A file
+    path with `..` outside a `cd`, such as `> /tmp/../x`, is read physically,
+    as the system opens it.
+  - A .NET write in a `.ps1` script written in one call and run in a later
+    one is not seen, as with any script; only a command that both writes the
+    text and names PowerShell counts it.
   - `~` is read both as your profile folder and as `HOME` when that is set
     (Git Bash may point it elsewhere); a `~/...` path inside the project under
     either reading counts as inside. A shell's `HOME` that differs from the

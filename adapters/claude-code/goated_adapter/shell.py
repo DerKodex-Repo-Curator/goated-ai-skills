@@ -264,20 +264,27 @@ def analyze(command: str) -> ShellCommand:
             directory = None  # What runs next runs even if a `cd` before it failed.
     result.unchecked_targets += awaiting
     result.unchecked_unknown_writes |= awaiting_unknown
-    if any(_runs_dotnet_write(segments, index) for index in range(len(segments))):
+    if DOTNET_WRITE_RE.search(command) and (
+        RUNS_POWERSHELL_RE.search(command)
+        or any(_runs_dotnet_write(segments, index) for index in range(len(segments)))
+    ):
         # Where in the command it runs is not read, so no check proves it.
         result.writes = result.unknown_writes = result.unchecked_unknown_writes = True
     return result
 
 
-# Programs that never run their arguments or input as PowerShell, so `.NET`
-# call text handed to them is data: other languages and text tools.
+# Text tools, which cannot start a program, so `.NET` call text handed to
+# them is data. Interpreters and `git` (through an alias or hook) can start
+# PowerShell, so they are not here.
 NO_POWERSHELL = frozenset(
-    {"python", "python3", "py", "node", "ruby", "perl", "php",
-     "cat", "echo", "printf", "grep", "rg", "git", "head", "tail", "sort", "uniq", "wc",
+    {"cat", "echo", "printf", "grep", "rg", "head", "tail", "sort", "uniq", "wc",
      "cut", "tr", "tee", "less", "more", "write-output", "write-host", "select-object",
      "select-string", "measure-object", "out-string", "out-host"}
 )
+# A command naming PowerShell anywhere, even in a string, may run `.NET` text
+# written earlier in it, such as a `.ps1` script, so that text all counts.
+RUNS_POWERSHELL_RE = re.compile(r"(?<![\w.-])(?:pwsh|powershell)(?:\.exe)?(?![\w-])",
+                                re.IGNORECASE)
 
 
 def _runs_dotnet_write(segments: list["_Segment"], index: int) -> bool:
@@ -428,7 +435,38 @@ def _change_directory(name: str, args: list[str], directory: str | None) -> str 
         return None
     if not _is_absolute(path) and not _explicitly_relative(path):
         return None  # Bash may find a bare name such as `sub` through CDPATH instead.
-    return _from_directory(directory, path)
+    return _logical(_from_directory(directory, path))
+
+
+def _logical(path: str) -> str | None:
+    """Folder `path` as `cd` and `Set-Location` hold it: each `..` drops the
+    name before it from the text (bash's default `cd -L`), before any Git Bash
+    mount is reached, so `/tmp/../c/x` is `/c/x`. None when a `..` would climb
+    above `~`, whose parent the text does not name."""
+
+    if path.startswith(("//", "\\\\")):
+        return path  # A network or device path: not read further (see actions).
+    root = ""
+    rest = path
+    if path.startswith(("/", "\\")):
+        root, rest = "/", path[1:]
+    elif DRIVE_RE.match(path):
+        root, rest = path[:2] + "/", path[3:]
+    elif path == "~" or path.startswith(("~/", "~\\")):
+        root, rest = "~/", path[2:]
+    names: list[str] = []
+    for name in re.split(r"[\\/]", rest):
+        if name in ("", "."):
+            continue
+        if name != "..":
+            names.append(name)
+        elif names and names[-1] != "..":
+            names.pop()
+        elif root == "~/":
+            return None
+        elif not root:
+            names.append("..")  # Above the starting folder, which the text does not name.
+    return root + "/".join(names) if root or names else "."
 
 
 def _change_target(name: str, args: list[str]) -> str | None:
