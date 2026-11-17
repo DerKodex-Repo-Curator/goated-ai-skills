@@ -1,4 +1,5 @@
-"""The routing gates, and the hold type and load naming every gate shares.
+"""The routing gates, and the hold type, hold message, shared hold texts and
+load naming every gate shares.
 
 This module owns which tools the routing gates hold, which skill loads count,
 and when a routing hold clears; `actions.py` owns the action and closeout
@@ -65,19 +66,28 @@ STRICT = "strict"
 
 
 class Hold:
-    """A held tool call: which gate, what kind, and what the agent must do."""
+    """A held tool call: which gate, what kind, and what the agent must do.
 
-    __slots__ = ("gate", "kind", "instruction")
+    `short` says the same in brief, for the gate's later holds in a turn
+    (`message`): what is still unmet and how to clear it, keeping every
+    skill, reference and skip line the full text names. None when the full
+    text is already as short.
+    """
 
-    def __init__(self, gate: str, kind: str, instruction: str) -> None:
+    __slots__ = ("gate", "kind", "instruction", "short")
+
+    def __init__(self, gate: str, kind: str, instruction: str, short: str | None = None) -> None:
         self.gate = gate
         self.kind = kind
         self.instruction = instruction
+        self.short = short
 
-    def message(self) -> str:
-        """The hold text shown to the agent; its first line is machine-readable."""
 
-        return f"goated-hold: {self.gate} | {self.kind}\n{self.instruction}"
+def short_form(unmet: str, clear: str) -> str:
+    """A hold's short form (`Hold.short`): `unmet`, what is still missing, and
+    `clear`, how to clear it, ending in a full stop."""
+
+    return f"Still unmet: {unmet}. {clear}"
 
 
 # Opens the full unseen-line advice.
@@ -94,8 +104,8 @@ def unseen_line_advice(line: str, way_out: str) -> str:
     out. It names those fields without backticks, since the skill-usage mod
     reads every backticked bare word in a hold as a skill.
 
-    This is the full advice; `advice_once` shortens it on every hold of the
-    turn but one.
+    This is the full advice; `message` shortens it on every hold of the turn
+    but one.
     """
 
     return (
@@ -110,7 +120,9 @@ def unseen_line_advice(line: str, way_out: str) -> str:
     )
 
 
-def _short_advice(line: str, way_out: str) -> str:
+def short_advice(line: str, way_out: str) -> str:
+    """The one sentence that stands for `unseen_line_advice` once a turn has had it."""
+
     return (
         f"Put the {line} on its own line in a shell or agent call's description or a "
         "Skill call's args, as this turn's first such hold explained, or tell the user "
@@ -129,23 +141,92 @@ _FULL_ADVICE_RE = re.compile(
 )
 
 
-def advice_once(hold: Hold | None, claim: Callable[[], bool]) -> Hold | None:
-    """Return `hold` with the unseen-line advice in full on one hold per turn.
+# The turn marker's purpose for the unseen-line advice; a gate's purpose is its name.
+ADVICE = "advice"
 
-    `claim` claims the turn's marker and returns True only for its first
-    claim, so calls held in parallel, which see no result of each other, still
-    share one full advice. It is called only when `hold` carries the advice,
-    and it must return True when it cannot claim, so the advice is then given
-    in full. Every other such hold gets one sentence that keeps the typed
-    override.
+# Paragraphs several holds or closeout items share (Ticket 095). How a hold
+# asks for a change read; no command is backticked, since the skill-usage mod
+# reads a backticked name as a skill to load.
+CHANGE_READ = (
+    "print its diff with a git diff or git show command, or Read a file you changed; "
+    "a listing of names or counts, such as --stat or --name-only, does not count"
+)
+CHAINED_STEPS = "The whole command was held, so rerun any steps chained before it too."
+UNFINISHED_READ = ("A read chained in the same command, or made in parallel with this call, "
+                   "has not finished, so it does not count.")
+SKIP_LINE_RULE = "A skip line must name the skill and give a reason of three or more words."
+# Each shared paragraph, with what its later copies in one message become.
+_SHARED_TEXTS = (
+    (CHANGE_READ, "print the diff or Read a file you changed, as above"),
+    (CHAINED_STEPS + " ", ""),
+    (CHAINED_STEPS, ""),
+    (UNFINISHED_READ + " ", ""),
+    (SKIP_LINE_RULE, ""),
+)
+
+
+def _once(text: str, full: str, again: str) -> str:
+    """`text` with every copy of `full` after the first replaced by `again`."""
+
+    first = text.find(full)
+    if first < 0:
+        return text
+    end = first + len(full)
+    return text[:end] + text[end:].replace(full, again)
+
+
+def message(holds: list[Hold], claim: Callable[[str], bool],
+            shell_tool: str | None = None) -> str:
+    """The one message that carries `holds`, every hold one call or `Stop`
+    meets, in the order the gates fire (Ticket 095): each hold's own
+    `goated-hold:` line and text, with a blank line between holds.
+
+    `claim(purpose)` claims the turn's marker for `purpose` and returns True
+    only for its first claim in the turn, so calls held in parallel, which
+    see no result of each other, still share one full text. It must return
+    True when it cannot claim, so the full text is then given. A gate's first
+    hold in the turn (purpose: its name) is full, its later ones short. The
+    unseen-line advice (purpose `ADVICE`) is given in full on one hold per
+    turn; every other hold that carries it gets one sentence that keeps its
+    typed override. Every other shared paragraph is given once per message.
+
+    `shell_tool` is the session's shell tool, for a call with no field a line
+    can go in, such as an edit: when a hold a line can clear holds it, the
+    message ends by naming a carrier in that shell (`carrier`). None for a
+    call that has a line field.
     """
 
-    found = _FULL_ADVICE_RE.search(hold.instruction) if hold else None
-    if found is None or claim():
-        return hold
-    short = _short_advice(found["line"], found["way_out"])
-    text = hold.instruction
-    return Hold(hold.gate, hold.kind, text[:found.start()] + short + text[found.end():])
+    advice_given = line_clears = False
+    texts = []
+    for hold in holds:
+        line_clears = line_clears or _FULL_ADVICE_RE.search(hold.instruction) is not None
+        # A gate's later holds in the turn are short; claimed only when a short form exists.
+        text = hold.short if hold.short and not claim(hold.gate) else hold.instruction
+        found = _FULL_ADVICE_RE.search(text)
+        if found is not None:
+            if advice_given or not claim(ADVICE):
+                short = short_advice(found["line"], found["way_out"])
+                text = text[:found.start()] + short + text[found.end():]
+            advice_given = True
+        texts.append(f"goated-hold: {hold.gate} | {hold.kind}\n{text}")
+    joined = "\n\n".join(texts)
+    for full, again in _SHARED_TEXTS:
+        joined = _once(joined, full, again)
+    if line_clears and shell_tool:
+        joined += f"\n{carrier(shell_tool)}"
+    return joined
+
+
+def carrier(shell_tool: str) -> str:
+    """The sentence naming a call that carries a line for a call with no field
+    for one, in `shell_tool` ("Bash" or "PowerShell"): a plain read that passes
+    every hold. Nothing in it is backticked, since the skill-usage mod reads a
+    backticked word as a skill."""
+
+    command = shell.POWERSHELL_NO_OP if shell_tool == "PowerShell" else "true"
+    return (f"This call has no field for a line: put it on its own line in the description "
+            f"of a {shell_tool} call with the command {command}, then make this call again in a "
+            "later message.")
 
 
 def goated_skill_name(raw: str, namespaces: tuple[str, ...]) -> str | None:
@@ -210,7 +291,16 @@ def fold_turns(
             [*state.template_reads, *contracts.templates_read(turn.calls)]
         )
         state.files_read = _unique([*state.files_read, *_files_read(turn.calls)])[:ORIENTATION_READS]
+        state.shell = last_shell_tool([turn]) or state.shell
         state.last_turn = turn.key
+
+
+def last_shell_tool(turns: list[Turn]) -> str | None:
+    """The shell tool ("Bash" or "PowerShell") of the last shell call in
+    `turns`, oldest first, or None when they hold none."""
+
+    return next((call.name for turn in reversed(turns) for call in reversed(turn.calls)
+                 if call.name in COMMAND_TOOLS), None)
 
 
 def _files_read(calls) -> list[str]:
@@ -319,11 +409,15 @@ def check_routing(
             "after a leading cd, with no output redirect but 2>/dev/null. If "
             "that skill is not installed, tell the user: they can type "
             "`skip routing` in their prompt to proceed without it.",
+            short_form(f"the `{ROUTER_SKILL}` skill has not loaded",
+                       "Load it with the Skill tool, or tell the user they can type "
+                       "`skip routing` in their prompt."),
         )
     if not writes_like_an_edit(tool_name, tool_input) or writes_scratch():
         return None
     if turn.route is None:
-        return Hold("route-line", STRICT, _route_line_instruction(turn))
+        return Hold("route-line", STRICT, _route_line_instruction(turn), short_form(
+            "this turn has no route line", short_advice("route line", "skip routing")))
     if turn.route["form"] == "continue" and state.task is None:
         # Only when saved state was missing or reset: otherwise folding the
         # turn started a task.
@@ -354,10 +448,11 @@ def check_routing(
     ]
     if not route_skills and not orient:
         return None
-    parts = []
+    parts, unmet = [], []
     if route_skills:
         names = ", ".join(f"`{skill}`" for skill in route_skills)
         parts.append(f"The current route requires {names} before the first write or spawn.")
+        unmet.append(f"load {names}")
     if orient:
         parts.append(
             f"A session started from a brief loads `{ORIENTATION_SKILL}` before its "
@@ -365,6 +460,9 @@ def check_routing(
             "finishing Read calls of three distinct files, such as the sources its "
             "brief names."
         )
+        # The mod reads this sentence's opening for the skill the brief added.
+        unmet.append(f"A session started from a brief loads `{ORIENTATION_SKILL}` or reads "
+                     "three distinct files")
     parts.append(
         "Load each with the Skill tool and follow it. A load counts until the next "
         "compaction, in this turn or an earlier one"
@@ -384,6 +482,8 @@ def check_routing(
         "pipeline",
         STRICT,
         " ".join(parts) + " " + unseen_line_advice("route line", "skip routing"),
+        short_form("; ".join(unmet), "Or write a corrected route line. "
+                   + short_advice("route line", "skip routing")),
     )
 
 

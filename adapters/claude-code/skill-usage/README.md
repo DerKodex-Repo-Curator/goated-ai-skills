@@ -79,7 +79,12 @@ project, its gate-keyed data under that project's earlier versions.
 Holds reach a session as denied tool calls, and the closeout hold as a
 blocked `Stop` or a denied commit. The mod reads each hold's gate and kind from its first line,
 and the skills it asks for from the skill names its text backticks, alone or
-as the skill of a `goated-skip:` line it offers. The pane counts a held skill
+as the skill of a `goated-skip:` line it offers. When one call meets several
+holds, the adapter joins them in one message, each further hold opening with
+its own `goated-hold:` line; the mod counts each, with its own outcome, as if
+it had been shown alone. A gate's later hold in a turn arrives in a short
+form that names the same skills, references, and skip lines, so it counts the
+same way. The pane counts a held skill
 as followed when the agent then loads it (or reads its files). A hold that no
 load, read, or skip line answered counts as one of three kinds:
 
@@ -352,7 +357,7 @@ This has not been tested end to end. Keep a backup of both files.
 
 ## Known Limits
 
-- A hold is read only as far as its `goated-hold:` first line and the skill
+- A hold is read only as far as its `goated-hold:` line and the skill
   names it backticks allow. A hold that names no skill counts by gate and
   kind with no per-skill result, and its row says what it asked for instead:
   the `spawn` holds that ask for a template read or for missing brief

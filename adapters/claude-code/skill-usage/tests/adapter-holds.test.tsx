@@ -576,3 +576,32 @@ test('a skip line naming one skill declines only that skill\'s ask', async () =>
   expect(s.nudges).toEqual({ 'reference-reads': { declined: 1, unanswered: 1 } })
   expect(s.skipReasons?.tdd?.['reference-reads']).toBeDefined()
 })
+
+// ---------- joint holds: one message, every hold counted (Ticket 095) ----------------------------------
+
+test('a message joining three holds counts each, as if shown alone', async () => {
+  const held = preHold('Edit', ADAPTER_TEXTS.jointTestEdit, 2)
+  expect(held.map(e => e.kind === 'nudge' && e.hook)).toEqual(['design-reads', 'reference-reads', 'repeated-failure'])
+  const reason = 'the new test only asserts constant values'
+  const s = summarize([
+    prompt(), ...held,
+    ...markerEvents(`goated-skip: software-design-principles: ${reason}`, 3),
+    ...readTool(`${SKILL_REFERENCES}tdd/references/test-design.md`, 4),
+    ...readTool(`${SKILL_REFERENCES}tdd/references/mocking-and-seams.md`, 5),
+    load('diagnose', 6),
+    turnEnd(7),
+  ])
+  expect(s.nudges).toEqual({ 'design-reads': { declined: 1 }, 'reference-reads': { 'read files': 1 }, 'repeated-failure': { followed: 1 } })
+  // Near miss: with nothing done after it, each of the three is left unanswered.
+  expect(summarize([prompt(), ...held, turnEnd(3)]).nudges).toEqual({
+    'design-reads': { unanswered: 1 }, 'reference-reads': { unanswered: 1 }, 'repeated-failure': { unanswered: 1 },
+  })
+})
+
+test('a short repeat names the same asks as its full hold', async () => {
+  const shortHolds = preHold('Write', ADAPTER_TEXTS.securityShort, 1)
+  const fullHolds = preHold('Write', ADAPTER_TEXTS.security, 1)
+  expect(shortHolds[0]).toEqual(fullHolds[0])
+  const items = (text: string) => stopHold(1, text).map(e => e.kind === 'nudge' && e.items)
+  expect(items(ADAPTER_TEXTS.closeoutShort)).toEqual(items(ADAPTER_TEXTS.closeout))
+})

@@ -312,7 +312,7 @@ def analyze(command: str, tool: str = "Bash") -> ShellCommand:
         bool(segments) and not result.writes
         and not NOT_PLAINLY_SPELLED_RE.search(_outside_quoted_arguments(command))
         and all(_reads_only(segment, index == 0, tool) for index, segment in enumerate(segments))
-    )
+    ) or (tool == "PowerShell" and command.strip().lower() == POWERSHELL_NO_OP)
     result.only_reads_and_writes_files = (
         bool(segments) and not result.unknown_writes and not NOT_PLAINLY_SPELLED_RE.search(command)
         and all(_reads_only(segment, index == 0, tool) or _works_on_files_only(segment, tool)
@@ -493,6 +493,9 @@ READ_ONLY_COMMANDS = frozenset(
         "get-content", "gc", "get-childitem", "gci", "select-string", "sls",
     }
 )
+# A PowerShell command that does nothing, as `true` does in Bash (`true` is
+# no command there): the carrier a hold names for a skip or route line (Ticket 095).
+POWERSHELL_NO_OP = "$null"
 # Arguments that turn a read into a write or make it run another program,
 # refused as prefixes: `find` runs or deletes with -exec, -ok, and -delete and
 # writes files with -fprint and -fls; `rg --pre` runs a program on every file

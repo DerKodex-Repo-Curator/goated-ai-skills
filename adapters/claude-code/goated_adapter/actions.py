@@ -57,7 +57,8 @@ from stat import S_ISLNK, S_ISREG
 
 from . import contracts, design_reads, reference_reads, shell
 from .gates import (
-    COMMAND_TOOLS, STRICT, Hold, goated_skill_name, spawns_a_reader, unseen_line_advice,
+    CHAINED_STEPS, CHANGE_READ, COMMAND_TOOLS, SKIP_LINE_RULE, STRICT, UNFINISHED_READ, Hold,
+    goated_skill_name, short_advice, short_form, spawns_a_reader, unseen_line_advice,
 )
 from .markers import parse_reply
 from .transcript import Call, Turn, skill_name
@@ -193,13 +194,8 @@ COMMIT_TOOL_RE = re.compile(
 )
 FILE_WRITE_TOOLS = {"Edit": "file_path", "Write": "file_path", "MultiEdit": "file_path",
                     "NotebookEdit": "notebook_path"}
-# How a hold asks for a change read. No command is backticked: the skill-usage
-# mod reads a backticked name as a skill to load.
-CHANGE_READ = (
-    "print its diff with a git diff or git show command, or Read a file you changed; "
-    "a listing of names or counts, such as --stat or --name-only, does not count"
-)
-# The same, for a turn that changed no file it names, where a Read cannot count.
+# How a hold asks for a change read (`gates.CHANGE_READ`), for a turn that
+# changed no file it names, where a Read cannot count.
 DIFF_ONLY_READ = (
     "this turn changed no file it can name, so print the diff with a git diff or git "
     "show command; a listing of names or counts, such as --stat or --name-only, does "
@@ -396,8 +392,13 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
                  subagents: Callable[[], dict] | None = None,
                  earlier: SinceCompaction = SinceCompaction(),
                  closeout: Closeout | None = None,
-                 references: Callable[[], tuple] | None = None) -> Hold | None:
-    """Return the action hold for this call, if any; the call's own entry is not yet proof.
+                 references: Callable[[], tuple] | None = None) -> list[Hold]:
+    """Return every action hold this call meets, in the order the gates fire,
+    one per gate; the call's own entry is not yet proof.
+
+    Each gate gives the answer it would give alone (Ticket 095). Only the
+    closeout at a commit waits for another hold: it is judged once the
+    `commit` gate passes the commit, so it may follow on the retry.
 
     `project` says which files are the project's (see `find_project`): only files
     inside it meet the design and security gates, and only changes to them
@@ -431,68 +432,93 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         briefed=closeout.briefed,
     )
     cwd = project.cwd if project else None  # Where git measures a pull request's size.
+    holds = _Holds()
     if tool_name in COMMAND_TOOLS:
         command = shell.analyze(str(tool_input.get("command") or ""), tool_name)
-        hold = _conflict_hold(command.write_targets, tool_input, proof) if command.writes else None
-        if hold is None and command.commit:
-            hold = _commit_hold(command.commit_message, proof, changes) or at_commit()
-        if hold is None and command.opens_pr:
-            hold = _pr_hold(proof, changes) or _pr_review_hold(
-                lambda: changed_lines(cwd, command.pr_base, command.pr_head), proof, changes)
+        if command.writes:
+            holds.add(lambda: _conflict_hold(command.write_targets, tool_input, proof))
+        if command.commit:
+            holds.add(lambda: _commit_hold(command.commit_message, proof, changes) or at_commit())
+        if command.opens_pr:
+            holds.add(lambda: _pr_hold(proof, changes))
+            holds.add(lambda: _pr_review_hold(
+                lambda: changed_lines(cwd, command.pr_base, command.pr_head), proof, changes))
         judged = False  # Whether a project file the command writes met reference-reads.
         for target in command.write_targets:
             placed = target not in command.unplaced_targets
             if _in_project(target, project, placed):
-                hold = hold or _security_hold(_norm(target), proof) or reviewed(_norm(target))
+                holds.add(lambda: _security_hold(_norm(target), proof))
+                holds.add(lambda: reviewed(_norm(target)))
                 if target in command.script_targets:
-                    hold = hold or _scripted_edit_hold(_norm(target), proof)
+                    holds.add(lambda: _scripted_edit_hold(_norm(target), proof))
                 # As for the repeated-failure gate, a check's own output is not a write
                 # the turn makes; a target written from an unknown folder has no place.
                 if placed and command.non_check_writes:
                     judged = True
-                    hold = hold or _reference_reads_hold(
-                        _norm(target), None, proof, project, references, changes)
+                    holds.add(lambda: _reference_reads_hold(
+                        _norm(target), None, proof, project, references, changes))
         if command.script_unknown_writes:
             # A script's write to a path built at run time is inside, and code (UNNAMED_FILES).
-            hold = hold or _scripted_edit_hold(None, proof)
+            holds.add(lambda: _scripted_edit_hold(None, proof))
         if command.non_check_writes:
             if not judged:
                 # A write naming no project file (`git apply`, a scratch file, an
                 # unknown folder) still meets the turn's gate signals, as the
                 # repeated-failure gate holds it.
-                hold = hold or _reference_reads_hold(None, None, proof, project, references,
-                                                     changes)
-            hold = hold or _repeated_failure_hold(proof, project)
-        return hold
-    if PR_TOOL_RE.match(tool_name):
-        return _pr_hold(proof, changes, by_tool=True) or _pr_review_hold(
-            lambda: _tool_changed_lines(tool_input, cwd), proof, changes, by_tool=True)
-    if COMMIT_TOOL_RE.match(tool_name):
+                holds.add(lambda: _reference_reads_hold(None, None, proof, project, references,
+                                                        changes))
+            holds.add(lambda: _repeated_failure_hold(proof, project))
+    elif PR_TOOL_RE.match(tool_name):
+        holds.add(lambda: _pr_hold(proof, changes, by_tool=True))
+        holds.add(lambda: _pr_review_hold(
+            lambda: _tool_changed_lines(tool_input, cwd), proof, changes, by_tool=True))
+    elif COMMIT_TOOL_RE.match(tool_name):
         message = tool_input.get("message")
-        return _commit_hold(message if isinstance(message, str) else None, proof, changes,
-                            by_tool=True) or at_commit(by_tool=True)
-    if tool_name in SPAWN_BRIEF_FIELDS:
+        holds.add(lambda: _commit_hold(message if isinstance(message, str) else None, proof,
+                                       changes, by_tool=True) or at_commit(by_tool=True))
+    elif tool_name in SPAWN_BRIEF_FIELDS:
         brief = str(tool_input.get(SPAWN_BRIEF_FIELDS[tool_name]) or "")
-        if not brief.strip() or spawns_a_reader(tool_name, tool_input):
-            return None  # A read-only subagent's search brief needs no handoff template.
-        return _spawn_hold(brief, proof)
-    if tool_name in FILE_WRITE_TOOLS:
+        # A read-only subagent's search brief needs no handoff template.
+        if brief.strip() and not spawns_a_reader(tool_name, tool_input):
+            holds.add(lambda: _spawn_hold(brief, proof))
+    elif tool_name in FILE_WRITE_TOOLS:
         path = _norm(str(tool_input.get(FILE_WRITE_TOOLS[tool_name]) or ""))
         # A conflict is open, and a check keeps failing, wherever the file lives
         # (a worktree may sit outside the project folder), as the shell branch
         # above holds every write target for them.
-        hold = _conflict_hold([path], tool_input, proof)
-        if hold is None and _in_project(path, project):
+        holds.add(lambda: _conflict_hold([path], tool_input, proof))
+        if _in_project(path, project):
             # A scratch file elsewhere is not the project's design or security.
-            hold = (_security_hold(path, proof) or reviewed(path)
-                    or _design_hold(path, tool_input, proof, project, references)
-                    or _reference_reads_hold(path, tool_input, proof, project, references,
-                                             changes))
-        elif hold is None:
+            holds.add(lambda: _security_hold(path, proof))
+            holds.add(lambda: reviewed(path))
+            holds.add(lambda: _design_hold(path, tool_input, proof, project, references))
+            holds.add(lambda: _reference_reads_hold(path, tool_input, proof, project, references,
+                                                    changes))
+        else:
             # Only the turn's gate signals reach it, as the repeated-failure gate does.
-            hold = _reference_reads_hold(None, None, proof, project, references, changes)
-        return hold or _repeated_failure_hold(proof, project)
-    return None
+            holds.add(lambda: _reference_reads_hold(None, None, proof, project, references,
+                                                    changes))
+        holds.add(lambda: _repeated_failure_hold(proof, project))
+    return holds.found
+
+
+class _Holds:
+    """The holds one call meets so far, in the order the gates fire.
+
+    A gate holds a call once: when it would hold for several of a command's
+    write targets, the first target's hold stands for them all, as it did
+    when the first hold ended the judging.
+    """
+
+    def __init__(self) -> None:
+        self.found: list[Hold] = []
+
+    def add(self, judge: Callable[[], Hold | None]) -> None:
+        """Run one gate's `judge` and keep its hold, unless its gate already held."""
+
+        hold = judge()
+        if hold is not None and all(h.gate != hold.gate for h in self.found):
+            self.found.append(hold)
 
 
 def _commit_hold(message: str | None, proof: _Proof, changes: Callable[[], "_Changes"],
@@ -511,10 +537,11 @@ def _commit_hold(message: str | None, proof: _Proof, changes: Callable[[], "_Cha
         return Hold(
             "commit", STRICT,
             f"Load the `{COMMIT_SKILL}` skill with the Skill tool{proof.within} and draft "
-            "the message with it, then run the commit again. The whole command was "
-            "held, so rerun any steps chained before it too. This hold is strict: a "
-            "goated-skip line does not clear it. A commit message the user typed in "
+            f"the message with it, then run the commit again. {CHAINED_STEPS} This hold is "
+            "strict: a goated-skip line does not clear it. A commit message the user typed in "
             "their prompt stands it down when the commit uses that message.",
+            short_form(f"`{COMMIT_SKILL}` has not loaded",
+                       "Load it, draft the message with it, and run the commit again."),
         )
     if COMMIT_SKILL in proof.user_skips:
         return None
@@ -544,9 +571,10 @@ def _pr_hold(proof: _Proof, changes: Callable[[], "_Changes"],
     return Hold(
         "pull-request", STRICT,
         f"Load the `{PR_SKILL}` skill with the Skill tool{proof.within} and draft the "
-        "title and body with it, then open the pull request again. The whole command "
-        "was held, so rerun any steps chained before it too. This hold is strict: a "
-        "goated-skip line does not clear it.",
+        f"title and body with it, then open the pull request again. {CHAINED_STEPS} This "
+        "hold is strict: a goated-skip line does not clear it.",
+        short_form(f"`{PR_SKILL}` has not loaded", "Load it, draft the title and body with "
+                   "it, and open the pull request again."),
     )
 
 
@@ -580,8 +608,12 @@ def _pr_review_hold(size_of: Callable[[], int | None], proof: _Proof,
         "it. If size is not "
         "what makes it worth reviewing, such as generated or vendored files, write "
         f"`goated-skip: {REVIEW_SKILL}: <reason>` on its own line instead. Then open the "
-        "pull request again. The whole command was held, so rerun any steps chained "
-        "before it too. " + unseen_line_advice("skip line", f"skip {REVIEW_SKILL}"),
+        f"pull request again. {CHAINED_STEPS} "
+        + unseen_line_advice("skip line", f"skip {REVIEW_SKILL}"),
+        short_form(f"a review of this {size}-line pull request",
+                   f"Load `{REVIEW_SKILL}` and review the change with it, or write "
+                   f"`goated-skip: {REVIEW_SKILL}: <reason>`. "
+                   + short_advice("skip line", f"skip {REVIEW_SKILL}")),
     )
 
 
@@ -821,12 +853,14 @@ def _change_read_hold(gate: str, skill: str, proof: _Proof, changes: "_Changes",
     tail = (f"Or write a skip line, goated-skip: {skill}: <reason>, on its own line. "
             + unseen_line_advice("skip line", f"skip {skill}") if review
             else "This hold is strict: a goated-skip line does not clear it.")
+    short_tail = (f"Or write a skip line, goated-skip: {skill}: <reason>. "
+                  + short_advice("skip line", f"skip {skill}") if review else "")
     return Hold(
         gate, JUSTIFIED_SKIP if review else STRICT,
         f"Read the change before {doing}{after}: "
-        f"{how}. Then {then}. The whole command was held, so rerun "
-        "any steps chained before it too. A read chained in the same command, or made "
-        f"in parallel with this call, has not finished, so it does not count. {tail}",
+        f"{how}. Then {then}. {CHAINED_STEPS} {UNFINISHED_READ} {tail}",
+        short_form(f"a change read{after}", f"Print the diff or Read a file you changed, then "
+                   f"{then}. {short_tail}".rstrip()),
     )
 
 
@@ -844,6 +878,9 @@ def _spawn_hold(brief: str, proof: _Proof) -> Hold | None:
             "scoped implementation or review task, load `subagent-driven-development` "
             "and fill its implementer or reviewer prompt instead. Nothing was started. "
             "This hold is strict: a goated-skip line does not clear it.",
+            short_form(f"load `{HANDOFF_SKILL}` and read its `references/spawn-brief.md` whole, "
+                       "or load `subagent-driven-development` and fill its prompt",
+                       "Then write the brief from it. Nothing was started."),
         )
     read = _templates_read(proof)
     if not read:
@@ -853,6 +890,8 @@ def _spawn_hold(brief: str, proof: _Proof) -> Hold | None:
             f"Read {files} {WHOLE_READ}{proof.within}, and write the brief from it. "
             "The template is the point of this step, so the skill load alone does not "
             "clear the hold. Nothing was started.",
+            short_form(f"read {files} {WHOLE_READ}", "Then write the brief from it. Nothing was "
+                       "started."),
         )
     problems = []
     if not _matched_templates(brief, proof):
@@ -927,7 +966,16 @@ def _review_intake_hold(path: str, proof: _Proof, closeout: Closeout | None) -> 
         f"report has nothing to act on, write `goated-skip: {INTAKE_SKILL}: <reason>` on its "
         "own line instead. This edit was not applied. "
         + unseen_line_advice("skip line", f"skip {INTAKE_SKILL}"),
+        _load_or_skip(INTAKE_SKILL, "a reviewer's report has arrived"),
     )
+
+
+def _load_or_skip(skill: str, unmet: str) -> str:
+    """The short form of a justified-skip hold that `skill`'s load or skip line clears."""
+
+    return short_form(unmet, f"Load `{skill}` with the Skill tool, or write "
+                             f"`goated-skip: {skill}: <reason>`. "
+                      + short_advice("skip line", f"skip {skill}"))
 
 
 def _reviewer_returned(call, proof: _Proof, spawn_templates: dict[str, list[str]]) -> bool:
@@ -956,6 +1004,7 @@ def _security_hold(path: str, proof: _Proof) -> Hold | None:
         "persistence, execution, dependency, or deployment behaviour, write "
         f"`goated-skip: {SECURITY_SKILL}: <reason>` on its own line instead. This edit "
         "was not applied. " + unseen_line_advice("skip line", f"skip {SECURITY_SKILL}"),
+        _load_or_skip(SECURITY_SKILL, f"a review of \"{path.rsplit('/', 1)[-1]}\" ({category})"),
     )
 
 
@@ -980,6 +1029,10 @@ def _scripted_edit_hold(path: str | None, proof: _Proof) -> Hold | None:
         f"write `goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. Loading "
         "the skill does not clear this hold. This command was not run. "
         + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
+        short_form(f"an inline script writes {what}",
+                   "Make the change with a file edit tool, or write "
+                   f"`goated-skip: {DESIGN_SKILL}: <reason>`. "
+                   + short_advice("skip line", f"skip {DESIGN_SKILL}")),
     )
 
 
@@ -1010,6 +1063,7 @@ def _conflict_hold(paths: list[str], tool_input: dict, proof: _Proof) -> Hold | 
         "intent behind both sides. If this write does not resolve the conflict, write "
         f"`goated-skip: {CONFLICT_SKILL}: <reason>` on its own line instead. This write "
         "was not applied. " + unseen_line_advice("skip line", f"skip {CONFLICT_SKILL}"),
+        _load_or_skip(CONFLICT_SKILL, "a merge conflict is open"),
     )
 
 
@@ -1086,6 +1140,7 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
             f"apply it: {_reference_list(unread)}. If the edit has no design in it, "
             f"write `goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. This edit "
             "was not applied. " + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
+            _design_short(f"read {_reference_list(unread)} {WHOLE_READ}"),
         )
     steps = [] if loaded else [
         f"load `{DESIGN_SKILL}` with the Skill tool{proof.within} and apply its 'Before "
@@ -1099,7 +1154,15 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
         f"mechanical, with no design in it, write `goated-skip: {DESIGN_SKILL}: <reason>` on "
         "its own line instead. This edit was not applied. "
         + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
+        _design_short("; ".join(steps)),
     )
+
+
+def _design_short(unmet: str) -> str:
+    """The short form of a design gate's hold, whose `unmet` steps its skip line answers too."""
+
+    return short_form(unmet, f"Or write `goated-skip: {DESIGN_SKILL}: <reason>`. "
+                      + short_advice("skip line", f"skip {DESIGN_SKILL}"))
 
 
 def _test_edit(path: str, tool_input: dict, project: Project | None,
@@ -1177,6 +1240,8 @@ def _reference_reads_hold(path: str | None, tool_input: dict | None, proof: _Pro
         f"before the write, and apply it: {listing}. If one does not apply to this write, "
         f"write {skip_lines} on its own line instead, naming its skill. This write was not "
         "applied. " + unseen_line_advice("skip line", way_out),
+        short_form(f"read {listing} {WHOLE_READ}",
+                   f"Or write {skip_lines}. " + short_advice("skip line", way_out)),
     )
 
 
@@ -1220,6 +1285,7 @@ def _repeated_failure_hold(proof: _Proof, project: Project | None) -> Hold | Non
         f"`goated-skip: {DIAGNOSE_SKILL}: <reason>` on its own line instead. This write was "
         "not applied. Rerunning the check is not held, and a pass of it resets the count. "
         + unseen_line_advice("skip line", f"skip {DIAGNOSE_SKILL}"),
+        _load_or_skip(DIAGNOSE_SKILL, "a check keeps failing in this turn"),
     )
 
 
@@ -1452,12 +1518,13 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
         last_sensitive = sensitive[-1][0]
         if not changes.read_after(last_sensitive):
             categories = ", ".join(dict.fromkeys(category for _, category in sensitive))
-            items.append(
+            skip = f"`goated-skip: {SECURITY_SKILL}: <reason>`"
+            items.append(_Item(
                 f"- Security: a security-sensitive file changed ({categories}). After the "
                 f"last sensitive change, read the change itself and review it: {CHANGE_READ}. "
-                f"Or, if it crosses no trust boundary, write "
-                f"`goated-skip: {SECURITY_SKILL}: <reason>`."
-            )
+                f"Or, if it crosses no trust boundary, write {skip}.",
+                f"- Security: read the change after the last sensitive change and review it, "
+                f"or write {skip}."))
     setup_item = _setup_item(turn, subagents or {}, proof, project)
     if setup_item:
         items.append(setup_item)
@@ -1469,17 +1536,26 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     )
     when = "committing in" if at_commit else "finishing"
     rerun = (
-        "\nThe whole command was held, so rerun any steps chained before it too. A check "
+        f"\n{CHAINED_STEPS} A check "
         "chained before the commit in the same command has not run yet, so it does not count."
     ) if at_commit and not by_tool else ""
     return Hold(
         "closeout", JUSTIFIED_SKIP,
-        f"Before {when} this turn, which {what}:\n" + "\n".join(items)
-        + "\nA skip line must name the skill and give a reason of three or more words." + rerun,
+        f"Before {when} this turn, which {what}:\n" + "\n".join(i.text for i in items)
+        + f"\n{SKIP_LINE_RULE}" + rerun,
+        f"Still unmet before {when} this turn:\n" + "\n".join(i.short for i in items),
     )
 
 
-def _code_items(changes: "_Changes", proof: _Proof) -> list[str]:
+class _Item(NamedTuple):
+    """One closeout item: its `text`, and its `short` form for a later
+    closeout hold in the turn, which keeps the label, skill and skip line."""
+
+    text: str
+    short: str
+
+
+def _code_items(changes: "_Changes", proof: _Proof) -> list[_Item]:
     """The closeout items a code change needs: proof, a handoff for a failed
     check, doc-sync, and the design red flags, each with what is missing."""
 
@@ -1490,60 +1566,66 @@ def _code_items(changes: "_Changes", proof: _Proof) -> list[str]:
     checks = _checks(proof.turn.calls[max(unproven, default=last) + 1 :])
     # Loading a verification skill is not proof; a check run, or a skip, is.
     if unproven and not checks and not proof.skipped(PROOF_SKILL):
-        items.append(
+        skip = f"`goated-skip: {PROOF_SKILL}: <reason>`"
+        items.append(_Item(
             "- Proof: no test, lint, build, or check command ran after the last code "
-            "change. Run the relevant check, or, if none can run, write "
-            f"`goated-skip: {PROOF_SKILL}: <reason>` and tell the user it is unverified."
-        )
+            f"change. Run the relevant check, or, if none can run, write {skip} and tell "
+            "the user it is unverified.",
+            f"- Proof: run a check after the last code change, or write {skip}."))
     if checks and not checks[-1].ok and not proof.loaded_or_skipped(HANDOFF_SKILL):
-        items.append(
+        skip = f"`goated-skip: {HANDOFF_SKILL}: <reason>`"
+        items.append(_Item(
             "- Unfinished: the last check after the change failed. Fix it, or load "
-            f"`{HANDOFF_SKILL}` and leave a handoff for what remains, or write "
-            f"`goated-skip: {HANDOFF_SKILL}: <reason>`."
-        )
+            f"`{HANDOFF_SKILL}` and leave a handoff for what remains, or write {skip}.",
+            f"- Unfinished: fix the failed check, or load `{HANDOFF_SKILL}` and leave a "
+            f"handoff, or write {skip}."))
     non_test = any(
         not is_test(path, changes.project) for change in code for path in change.code_paths
     )
     if non_test and not proof.skipped(DOC_SYNC_SKILL):
         loaded = proof.load_index(DOC_SYNC_SKILL)
+        skip = f"`goated-skip: {DOC_SYNC_SKILL}: <reason>`"
         if loaded is None:
-            items.append(
+            items.append(_Item(
                 f"- Docs: code changed. Load `{DOC_SYNC_SKILL}`, then read the change itself "
                 f"and check whether durable docs now drift: {CHANGE_READ}. Or, if behavior "
-                f"and interfaces did not change, write `goated-skip: {DOC_SYNC_SKILL}: <reason>`."
-            )
+                f"and interfaces did not change, write {skip}.",
+                f"- Docs: load `{DOC_SYNC_SKILL}` and read the change for docs drift, or "
+                f"write {skip}."))
         elif not changes.read_after(last):
             # The skill is loaded, so it is named only in the skip line: no load answers this.
             # A read before the load counts (Ticket 059): the load adds nothing to see.
-            items.append(
+            items.append(_Item(
                 f"- Docs: after your last code change, read the change itself and check "
-                f"whether durable docs now drift: {CHANGE_READ}. Or write "
-                f"`goated-skip: {DOC_SYNC_SKILL}: <reason>`."
-            )
+                f"whether durable docs now drift: {CHANGE_READ}. Or write {skip}.",
+                f"- Docs: read the change after your last code change for docs drift, or "
+                f"write {skip}."))
     if _designing(proof, changes.project) and not proof.skipped(DESIGN_SKILL):
         # Fixing a comment the red-flags scan found needs no second scan (Ticket 059).
         designed = [c for c in code if not c.comment_only]
         flags = _red_flags_read(proof, designed)
+        skip = f"`goated-skip: {DESIGN_SKILL}: <reason>`"
         if flags is None:
-            items.append(
+            items.append(_Item(
                 f"- Design: read `{RED_FLAGS_REFERENCE}` {WHOLE_READ}, after your last "
                 f"code change (an edit of comments only aside), then read the change itself "
                 f"and scan it against them: {CHANGE_READ}. Then answer their closing "
-                f"question: {RED_FLAGS_QUESTION} "
-                f"Or write `goated-skip: {DESIGN_SKILL}: <reason>`."
-            )
+                f"question: {RED_FLAGS_QUESTION} Or write {skip}.",
+                f"- Design: read `{RED_FLAGS_REFERENCE}` whole after your last code change, "
+                f"then the change itself, and answer: {RED_FLAGS_QUESTION} Or write {skip}."))
         elif not changes.read_after(max([flags, *(c.index for c in designed)])):
-            items.append(
+            items.append(_Item(
                 "- Design: after reading the red flags and after your last code change, read "
                 "the change itself and scan it against them, not your memory of it: "
                 f"{CHANGE_READ}. Then answer their closing question: {RED_FLAGS_QUESTION} "
-                f"Or write `goated-skip: {DESIGN_SKILL}: <reason>`."
-            )
+                f"Or write {skip}.",
+                "- Design: read the change after the red flags and your last code change, "
+                f"and answer: {RED_FLAGS_QUESTION} Or write {skip}."))
     return items
 
 
 def _review_item(changes: "_Changes", proof: _Proof, spawn_templates: dict[str, list[str]],
-                 branch_size: Callable[[], int | None]) -> list[str]:
+                 branch_size: Callable[[], int | None]) -> list[_Item]:
     """The Review item for a turn that changed code (spec R1), or [] when the
     branch's work is not large, cannot be measured, or the item is met: by a
     reviewer subagent started after the last code change that has finished
@@ -1575,18 +1657,24 @@ def _review_item(changes: "_Changes", proof: _Proof, spawn_templates: dict[str, 
         f"{REVIEW_MIN_LINES} or more, counting committed, staged, unstaged, and untracked files "
         "that git does not ignore"
     )
+    skip_line = f"`goated-skip: {REVIEW_SKILL}: <reason>`"
     skip = (f"Or, if size is not what makes it worth reviewing, such as generated or vendored "
-            f"files, write `goated-skip: {REVIEW_SKILL}: <reason>`.")
+            f"files, write {skip_line}.")
+    short_tail = (f"or start a reviewer subagent briefed from "
+                  f"`{contracts.REVIEWER_TEMPLATE.reference}`, or write {skip_line}.")
     if loaded is None:
-        return [f"- Review: {size_text}. Load `{REVIEW_SKILL}`, then read the change itself "
-                f"and review it: {CHANGE_READ}. {reviewer} {skip}"]
+        return [_Item(f"- Review: {size_text}. Load `{REVIEW_SKILL}`, then read the change "
+                      f"itself and review it: {CHANGE_READ}. {reviewer} {skip}",
+                      f"- Review: load `{REVIEW_SKILL}` and review the change, {short_tail}")]
     # The skill is loaded, so it is named only in the skip line: no load answers this.
-    return [f"- Review: {size_text}. After your last code change, read the change itself "
-            f"and review it: {CHANGE_READ}. {reviewer} {skip}"]
+    return [_Item(f"- Review: {size_text}. After your last code change, read the change itself "
+                  f"and review it: {CHANGE_READ}. {reviewer} {skip}",
+                  f"- Review: read the change after your last code change and review it, "
+                  f"{short_tail}")]
 
 
 def _verification_item(changes: "_Changes", proof: _Proof, intensity: str | None,
-                       branch_size: Callable[[], int | None]) -> list[str]:
+                       branch_size: Callable[[], int | None]) -> list[_Item]:
     """The Verification item (spec R3) for a turn that changed code or a
     sensitive file, or [] when no trigger holds or `verification-before-completion`
     counts as loaded or is skipped. Its skip line is the Proof item's too.
@@ -1607,11 +1695,13 @@ def _verification_item(changes: "_Changes", proof: _Proof, intensity: str | None
             return []
         triggers.append(
             f"this branch's work is {size} changed lines of non-test code against its base")
-    return [
+    skip = f"`goated-skip: {PROOF_SKILL}: <reason>`"
+    return [_Item(
         f"- Verification: {', and '.join(triggers)}, so verify the work before claiming it "
-        f"is done. Load `{PROOF_SKILL}` and follow it. Or write "
-        f"`goated-skip: {PROOF_SKILL}: <reason>`, which also answers the proof item."
-    ]
+        f"is done. Load `{PROOF_SKILL}` and follow it. Or write {skip}, which also answers "
+        "the proof item.",
+        f"- Verification: {', and '.join(triggers)}. Load `{PROOF_SKILL}` and follow it, or "
+        f"write {skip}.")]
 
 
 def _designing(proof: _Proof, project: Project | None) -> bool:
@@ -1658,8 +1748,9 @@ def _large(added_lines: list[int | None]) -> bool:
     return None in added_lines or sum(added_lines) >= DESIGN_MIN_LINES
 
 
-def _setup_item(turn: Turn, subagents: dict, proof: _Proof, project: Project | None) -> str:
-    """The Setup item, or "" when the turn changed no setup or met it.
+def _setup_item(turn: Turn, subagents: dict, proof: _Proof,
+                project: Project | None) -> _Item | None:
+    """The Setup item, or None when the turn changed no setup or met it.
 
     The turn's own `setup-scribe` load or skip line meets every setup change,
     its subagents' included; a subagent's own load or skip line meets only the
@@ -1667,19 +1758,19 @@ def _setup_item(turn: Turn, subagents: dict, proof: _Proof, project: Project | N
     """
 
     if proof.loaded_or_skipped(SETUP_SKILL):
-        return ""
+        return None
     calls = list(turn.calls) + [
         call for sub_turns in subagents.values() if not _setup_met(sub_turns, proof.namespaces)
         for sub_turn in sub_turns for call in sub_turn.calls
     ]
     setup = _setup_changes(calls, project)
     if not setup:
-        return ""
-    return (
+        return None
+    skip = f"`goated-skip: {SETUP_SKILL}: <reason>`"
+    return _Item(
         f"- Setup: this turn {setup}. Load `{SETUP_SKILL}` and record the setup so it "
-        "can be repeated, or, if it leaves nothing to record, write "
-        f"`goated-skip: {SETUP_SKILL}: <reason>`."
-    )
+        f"can be repeated, or, if it leaves nothing to record, write {skip}.",
+        f"- Setup: load `{SETUP_SKILL}` and record the setup, or write {skip}.")
 
 
 def _setup_met(sub_turns: list[Turn], namespaces: tuple[str, ...]) -> bool:

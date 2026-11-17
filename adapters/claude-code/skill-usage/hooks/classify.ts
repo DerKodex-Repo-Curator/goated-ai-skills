@@ -182,26 +182,37 @@ function namedIn(gate: string, body: string): { named: string[]; skipOnly: strin
 }
 
 /**
- * The adapter hold a piece of hook output carries, unwrapped from Claude
+ * The adapter holds a piece of hook output carries, unwrapped from Claude
  * Code's wrapper: the first line of an errored tool result (`isErrorResult`),
- * or the reason of a blocked Stop. A hold line anywhere else, such as in a
- * failing command's output or another hook's context, is not one.
+ * or the reason of a blocked Stop, opens the first. A message that joins
+ * several holds (the adapter's Ticket 095) opens each later one with its own
+ * hold line, alone on a line; each hold's body runs to the next. A hold line
+ * anywhere else, such as in a failing command's output or another hook's
+ * context, is not one.
  */
-function adapterHold(text: string, isErrorResult: boolean): { gate: string; kind: HoldKind; body: string; isStop: boolean } | null {
+function adapterHolds(text: string, isErrorResult: boolean): { gate: string; kind: HoldKind; body: string; isStop: boolean }[] {
   let lines = text.trimStart().split(/\r?\n/)
   if (!isErrorResult) {
-    if (lines[0]?.trim() !== '<system-reminder>') return null
+    if (lines[0]?.trim() !== '<system-reminder>') return []
     lines = lines.slice(1)
   }
   const first = (lines[0] ?? '').trim()
   const reason = isErrorResult ? first.replace(CALL_HELD, '') : STOP_BLOCKED.exec(first)?.[1]
-  const hold = reason === undefined ? null : ADAPTER_HOLD.exec(reason)
-  return hold ? { gate: hold[1] ?? '', kind: hold[2] as HoldKind, body: lines.slice(1).join('\n'), isStop: !isErrorResult } : null
+  const opening = reason === undefined ? null : ADAPTER_HOLD.exec(reason)
+  if (!opening) return []
+  const holds = [{ gate: opening[1] ?? '', kind: opening[2] as HoldKind, body: [] as string[] }]
+  for (const line of lines.slice(1)) {
+    const next = ADAPTER_HOLD.exec(line)
+    if (next) holds.push({ gate: next[1] ?? '', kind: next[2] as HoldKind, body: [] })
+    else holds.at(-1)?.body.push(line)
+  }
+  return holds.map(h => ({ gate: h.gate, kind: h.kind, body: h.body.join('\n'), isStop: !isErrorResult }))
 }
 
 /**
- * The adapter hold in one piece of hook output, as a nudge with the skills it
- * names; none when the output carries no hold. Its `hook` is its gate;
+ * The adapter holds in one piece of hook output, each as a nudge with the
+ * skills it names, as if shown alone; none when the output carries no hold. A
+ * nudge's `hook` is its gate;
  * `isStop`: it held a `Stop`, not a call; `skipOnly`: the named skills it
  * offers only as a skip line, which no load answers; `refs`: the design
  * references a design hold asks for, or the skill references a reference-reads
@@ -209,10 +220,10 @@ function adapterHold(text: string, isErrorResult: boolean): { gate: string; kind
  * `holdsOnly`: the text is an errored tool result.
  */
 export function hookNudges(text: string, holdsOnly = false): { hook: string; named: string[]; holdKind: HoldKind; isStop?: true; skipOnly?: string[]; refs?: string[]; items?: CloseoutItem[]; briefAdded?: string[] }[] {
-  const hold = adapterHold(text, holdsOnly)
-  if (!hold) return []
-  const { named, skipOnly, ...design } = adapterHoldNamed(hold.gate, hold.body)
-  return [{ hook: hold.gate, named, holdKind: hold.kind, ...(hold.isStop ? { isStop: true as const } : {}), ...(skipOnly.length > 0 ? { skipOnly } : {}), ...design }]
+  return adapterHolds(text, holdsOnly).map(hold => {
+    const { named, skipOnly, ...design } = adapterHoldNamed(hold.gate, hold.body)
+    return { hook: hold.gate, named, holdKind: hold.kind, ...(hold.isStop ? { isStop: true as const } : {}), ...(skipOnly.length > 0 ? { skipOnly } : {}), ...design }
+  })
 }
 
 /**

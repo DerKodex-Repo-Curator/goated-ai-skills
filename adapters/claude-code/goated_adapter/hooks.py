@@ -21,6 +21,7 @@ from .policy import (
 from .state import StateStore, StateUnsafe
 from .transcript import (
     CONTINUATION,
+    LINE_FIELDS,
     NOT_PROMPT,
     TYPED,
     TranscriptUnreadable,
@@ -198,33 +199,42 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
     earlier = _since_compaction(state)
     registry_warnings: list[str] = []
     cwd = Path(str(payload.get("cwd") or "."))
-    hold = gates.check_routing(
+    routing = gates.check_routing(
         state, tool_name, tool_input, current, overrides,
         orientation_installed=lambda: gates.ORIENTATION_SKILL in installed_skill_names(cwd, config.home),
         writes_scratch=lambda: actions.writes_only_scratch(
             tool_name, tool_input, _project(payload, config), str(config.home)
         ),
     )
-    if hold is None:
-        hold = actions.check_action(
-            tool_name, tool_input, current, overrides, config.skill_namespaces,
-            _project(payload, config), spawned, earlier,
-            closeout=actions.Closeout(state.spawn_templates_of(current.key),
-                                      _route_intensity(state), state.briefed),
-            references=lambda: _registry_references(config, registry_warnings),
-        )
+    # Every gate judges the call, so one message carries every hold (Ticket 095).
+    holds = ([routing] if routing else []) + actions.check_action(
+        tool_name, tool_input, current, overrides, config.skill_namespaces,
+        _project(payload, config), spawned, earlier,
+        closeout=actions.Closeout(state.spawn_templates_of(current.key),
+                                  _route_intensity(state), state.briefed),
+        references=lambda: _registry_references(config, registry_warnings),
+    )
     tool_use_id = str(payload.get("tool_use_id") or "")
-    if hold is None and tool_use_id:
+    if not holds and tool_use_id:
         # Which templates a spawn's brief followed, for the closeout.
         templates = actions.brief_templates(
             tool_name, tool_input, current, overrides, config.skill_namespaces, earlier)
         if templates:
             state.record_spawn_templates(current.key, tool_use_id, templates)
-    friction.observe(state, current, friction.action_of(tool_name, tool_input), hold)
-    hold = gates.advice_once(hold, lambda: _claim_turn(store, session_id, current.key))
+    friction.observe(state, current, friction.action_of(tool_name, tool_input), holds)
+    text = gates.message(holds, lambda purpose: _claim_turn(
+        store, session_id, current.key, purpose), _carrier_shell(tool_name, state.shell))
     warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread),
                 *registry_warnings]
-    return _with_warnings(_deny(hold), warnings)
+    return _with_warnings(_deny(text), warnings)
+
+
+def _carrier_shell(tool_name: str, shell_tool: str | None) -> str | None:
+    """The shell whose carrier a hold on `tool_name` names (`gates.message`):
+    None for a tool with a line field, else the session's shell tool, or
+    Bash before its first shell call, since Claude Code always has Bash."""
+
+    return None if tool_name in LINE_FIELDS else shell_tool or "Bash"
 
 
 def _registry_references(config: Config, warnings: list[str]) -> tuple:
@@ -256,13 +266,14 @@ def _since_compaction(state) -> actions.SinceCompaction:
 
 
 def _claim_turn(
-    store: StateStore, session_id: str, turn_key: str, agent_id: str | None = None
+    store: StateStore, session_id: str, turn_key: str, purpose: str,
+    agent_id: str | None = None,
 ) -> bool:
     """`StateStore.claim_turn`, or True when the marker cannot be claimed or
-    read: the hold then gives the advice in full, and no hook fails."""
+    read: the hold then gives its full text, and no hook fails."""
 
     try:
-        return store.claim_turn(session_id, turn_key, agent_id)
+        return store.claim_turn(session_id, turn_key, purpose, agent_id)
     except (OSError, StateUnsafe):
         return True
 
@@ -292,14 +303,15 @@ def _subagent_pre_tool_use(
         )
     except TranscriptUnreadable as exc:
         raise _FailOpen(f"in a subagent, {exc}") from exc
-    hold = actions.check_action(
+    holds = actions.check_action(
         tool_name, tool_input, turns[-1], {}, config.skill_namespaces,
         _project(payload, config),
     )
     session_id = str(payload.get("session_id"))
-    hold = gates.advice_once(hold, lambda: _claim_turn(
-        StateStore(config.state_dir), session_id, turns[-1].key, agent_id))
-    return _with_warnings(_deny(hold), [])
+    text = gates.message(holds, lambda purpose: _claim_turn(
+        StateStore(config.state_dir), session_id, turns[-1].key, purpose, agent_id),
+        _carrier_shell(tool_name, gates.last_shell_tool(turns)))
+    return _with_warnings(_deny(text), [])
 
 
 def _current_call(payload: dict, tool_name: str, tool_input: dict) -> tuple[str, str, dict]:
@@ -365,7 +377,8 @@ def _stop(payload: dict, config: Config) -> str:
         intensity=_route_intensity(state),
         briefed=state.briefed,
     )
-    friction.observe(state, current, friction.STOP, hold)
+    holds = [hold] if hold else []
+    friction.observe(state, current, friction.STOP, holds)
     if hold is None:
         # The turn ends here, and so do its typed overrides: a subagent's
         # report arriving later continues the turn (see `is_own_report`)
@@ -373,7 +386,9 @@ def _stop(payload: dict, config: Config) -> str:
         # then goes on without its overrides, which only holds more.
         state.overrides = {}
     warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread)]
-    output = {"decision": "block", "reason": hold.message()} if hold else {}
+    text = gates.message(holds, lambda purpose: _claim_turn(
+        store, session_id, current.key, purpose))
+    output = {"decision": "block", "reason": text} if text else {}
     return _with_warnings(output, warnings)
 
 
@@ -415,14 +430,16 @@ def _prompt_id(payload: dict) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _deny(hold) -> dict:
-    if hold is None:
+def _deny(text: str) -> dict:
+    """The PreToolUse output that holds a call with the message `text`; {} for none."""
+
+    if not text:
         return {}
     return {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
-            "permissionDecisionReason": hold.message(),
+            "permissionDecisionReason": text,
         }
     }
 
