@@ -438,12 +438,17 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
             placed = target not in command.unplaced_targets
             if _in_project(target, project, placed):
                 hold = hold or _security_hold(_norm(target), proof) or reviewed(_norm(target))
+                if target in command.script_targets:
+                    hold = hold or _scripted_edit_hold(_norm(target), proof)
                 # As for the repeated-failure gate, a check's own output is not a write
                 # the turn makes; a target written from an unknown folder has no place.
                 if placed and command.non_check_writes:
                     judged = True
                     hold = hold or _reference_reads_hold(
                         _norm(target), None, proof, project, references, changes)
+        if command.script_unknown_writes:
+            # A script's write to a path built at run time is inside, and code (UNNAMED_FILES).
+            hold = hold or _scripted_edit_hold(None, proof)
         if command.non_check_writes:
             if not judged:
                 # A write naming no project file (`git apply`, a scratch file, an
@@ -923,6 +928,30 @@ def _security_hold(path: str, proof: _Proof) -> Hold | None:
         "persistence, execution, dependency, or deployment behaviour, write "
         f"`goated-skip: {SECURITY_SKILL}: <reason>` on its own line instead. This edit "
         "was not applied. " + unseen_line_advice("skip line", f"skip {SECURITY_SKILL}"),
+    )
+
+
+def _scripted_edit_hold(path: str | None, proof: _Proof) -> Hold | None:
+    """Hold an inline interpreter script that writes the project code file
+    `path`, or a file it names only at run time (None), which counts as code
+    as an unnamed write does for the closeout. A script's edit meets no
+    design or reference read, so the hold asks for a file edit tool; a skip
+    line or the typed override for the design skill clears it for the turn,
+    loading the skill does not. So the text names the skill only in its skip
+    line: a bare backticked name reads as a skill to load (`friction.py`)."""
+
+    if (path is not None and not is_code(path)) or proof.skipped(DESIGN_SKILL):
+        return None
+    what = (f"the code file \"{path.rsplit('/', 1)[-1]}\"" if path is not None
+            else "a file it names only at run time, which counts as code")
+    return Hold(
+        "scripted-edit", JUSTIFIED_SKIP,
+        f"An inline script in this command writes {what}. Make the change with a file "
+        "edit tool (Edit, MultiEdit, or Write), where the design and reference holds can "
+        "judge it. A script suits only a mechanical rewrite across many files; for one, "
+        f"write `goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. Loading "
+        "the skill does not clear this hold. This command was not run. "
+        + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
     )
 
 

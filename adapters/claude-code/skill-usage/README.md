@@ -97,7 +97,7 @@ load, read, or skip line answered counts as one of three kinds:
 A Skill call whose result is an error
 loaded nothing, so it neither counts as a load nor answers a hold. A
 `justified-skip` hold (`design`, `design-reads`, `reference-reads`, `review-intake`, `security`,
-`conflict-resolution`, `repeated-failure`, `pr-review`, `closeout`) also counts as declined when a
+`scripted-edit`, `conflict-resolution`, `repeated-failure`, `pr-review`, `closeout`) also counts as declined when a
 skip line names the skill in the same turn, before or after the hold; a
 `strict` hold (`router-first`, `route-line`, `pipeline`, `commit`,
 `pull-request`, `spawn`) never does, because only loading the skill clears
@@ -115,6 +115,10 @@ it. In particular:
   held call's own reply already answered counts as followed. A route line or
   load in an earlier reply does not count, and nor does a `continue` route
   line while there is no task to continue, which the adapter holds as well.
+- A `scripted-edit` hold asks for the change to be made with a file edit
+  tool and offers `software-design-principles` only as a skip line, so
+  loading that skill does not follow it; the main agent's next code-file
+  edit by a file edit tool does, whichever file it is.
 - A `pipeline` hold also counts as followed for a skill that a corrected route
   line drops, as the hold tells the agent to do. The orientation skill a
   session started from a brief must load, which its route line never names,

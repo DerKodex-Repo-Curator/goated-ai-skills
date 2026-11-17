@@ -273,6 +273,8 @@ the same checks sequentially.
   imagined futures are failures too.
 - This skill is not a reason to widen scope or refactor code the task did not
   touch.
+- Change a code file with the file edit tools, and with a script only for a
+  mechanical rewrite across many files.
 
 ## References
 
