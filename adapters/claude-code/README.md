@@ -734,6 +734,20 @@ contract states plainly enough to test without judgement
   `Review Mode`, `Review Inputs`, and `Required Report Format` for the
   reviewer prompt. A brief passes when it matches a template whose reference
   was read in the turn.
+- **Skills line in a brief.** Every spawn brief, including a card's, also
+  needs a skills line naming the skills the new agent should read before it
+  starts: `goated-skills: <skill>, <skill>`, or
+  `goated-skills: none: <reason>` with a reason of three words or more. A
+  skill is named by its installed name, bare or with a plugin namespace
+  (`goated:tdd`). Like a route line, the line counts only on its own line
+  outside code blocks, bare or in one pair of backticks; it may also be a
+  `- ` or `* ` list item. `handoff`'s `references/spawn-brief.md` defines
+  the line, and the implementer and reviewer prompts carry it. A brief is
+  held when it has no such line or its line is malformed, and the hold names
+  the problem: a missing line, no skill named, none with too short a reason,
+  none mixed with names, an empty or malformed name, a capitalised prefix, or
+  no space after it. Whether the named skills are the right ones, and whether
+  the agent reads them, is not checked.
 
 ### Hold messages
 

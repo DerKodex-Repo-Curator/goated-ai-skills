@@ -28,7 +28,8 @@ ROUTER = "using-goated-ai-skills"
 SPAWN_BRIEF_PATH = "D:\\goated\\skills\\handoff\\references\\spawn-brief.md"
 BRIEF = (
     "## Goal\n\nAudit the exporter.\n\n## Scope\n\n- Work in: src/export/\n\n"
-    "## Done Means\n\n- A list of findings.\n"
+    "## Done Means\n\n- A list of findings.\n\n"
+    "goated-skills: code-security-review\n"
 )
 
 

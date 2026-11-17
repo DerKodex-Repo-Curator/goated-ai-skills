@@ -1,6 +1,6 @@
 # Implementer Prompt
 
-Use this template when dispatching a fresh implementer for one scoped task. Fill in only the context needed for the task; do not rely on hidden session history.
+Use this template when dispatching a fresh implementer for one scoped task. Fill in only the context needed for the task; do not rely on hidden session history. Keep its skills line: name the skills the implementer reads first, such as `tdd`, or write `goated-skills: none: <reason>` with a reason of three words or more. The line stands on its own line, outside code blocks.
 
 ```markdown
 You are implementing one scoped task in a target project.
@@ -49,6 +49,11 @@ Report `NEEDS_CONTEXT` when you need a missing source path, command, fixture, sp
 Report `BLOCKED` when the task is too broad, the plan appears wrong, required tools are unavailable, tests fail for unclear reasons after focused investigation, or a safe implementation requires a product/architecture/security decision you were not given.
 
 Report `DONE_WITH_CONCERNS` when the task is implemented but you have doubts about correctness, coverage, integration, maintainability, or skipped evidence.
+
+Read each skill below before you start: load it with your skill tool, or
+read its SKILL.md file if you have no skill tool.
+
+goated-skills: <skill>, <skill>
 
 ## Required Report Format
 

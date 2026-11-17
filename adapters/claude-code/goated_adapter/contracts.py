@@ -12,15 +12,19 @@ contract states plainly enough to test without judgement:
   the scope, and what done looks like", so Goal, Scope, and Done Means stay.
   `subagent-driven-development`'s implementer and reviewer prompts require the
   task or review mode, the write ownership or review inputs, and the report
-  format.
+  format. Every brief also carries the skills line that `handoff`'s spawn
+  brief defines (Ticket 071): `goated-skills: <skill>, <skill>` naming the
+  skills the new agent reads first, or `goated-skills: none: <reason>`.
 
 Whether a message or brief is *good* stays the skill's judgement, not this
-module's.
+module's, and so does whether the named skills are the right ones.
 """
 
 from __future__ import annotations
 
 import re
+
+from .markers import FENCE_PREFIXES, MIN_REASON_WORDS, SKILL, candidate_line
 
 SUBJECT_LIMIT = 72
 # Well-known credential shapes. A match is reported by kind, never echoed.
@@ -60,6 +64,62 @@ BRIEF_TEMPLATES = (
         ("Review Mode", "Review Inputs", "Required Report Format"),
     ),
 )
+
+
+SKILLS_LINE_PREFIX = "goated-skills:"
+# An installed skill name: bare, or with the plugin namespace a plugin install
+# adds, such as `goated:tdd`. Whether the skill exists is not checked.
+INSTALLED_SKILL_RE = re.compile(rf"(?:{SKILL}:)?{SKILL}")
+LIST_MARKER_RE = re.compile(r"^[-*][ \t]+")
+
+
+def skills_line_problem(brief: str) -> str | None:
+    """Say what is wrong with the brief's skills line, as a predicate for "The
+    brief ..."; None when it has a valid one. Like a route line, the line counts
+    only on its own line outside code blocks, bare or in one pair of backticks,
+    and may also be a `- ` or `* ` list item. One valid line is enough; else the
+    first malformed line's problem is named."""
+
+    first_problem = None
+    in_fence = False
+    for raw in brief.splitlines():
+        if raw.strip().startswith(FENCE_PREFIXES):
+            in_fence = not in_fence
+            continue
+        line = candidate_line(LIST_MARKER_RE.sub("", raw.strip(), count=1))
+        if in_fence or not line.lower().startswith(SKILLS_LINE_PREFIX):
+            continue
+        problem = _skills_line_fault(line)
+        if problem is None:
+            return None
+        first_problem = first_problem or problem
+    return first_problem or "lacks a skills line"
+
+
+def _skills_line_fault(line: str) -> str | None:
+    """The problem with one line that opens with the prefix in any case, or None."""
+
+    if not line.startswith(SKILLS_LINE_PREFIX):
+        return "writes its skills line's goated-skills: in capitals; write it in lowercase"
+    rest = line[len(SKILLS_LINE_PREFIX):]
+    if rest and rest[0] not in " \t":
+        return "has no space after goated-skills: in its skills line"
+    rest = rest.strip()
+    if not rest:
+        return "has a skills line that names no skill"
+    if rest == "none" or rest.startswith("none:"):
+        if len(rest[len("none:"):].split()) < MIN_REASON_WORDS:
+            return f"says none without a reason of {MIN_REASON_WORDS} words or more"
+        return None
+    names = [name.strip() for name in rest.split(",")]
+    if "none" in names:
+        return "mixes none with skill names in its skills line"
+    if "" in names:
+        return "has an empty name in its skills line"
+    bad = [name for name in names if not INSTALLED_SKILL_RE.fullmatch(name)]
+    if bad:
+        return f'names "{bad[0]}" in its skills line, which is not a lowercase skill name'
+    return None
 
 
 def commit_message_problems(message: str) -> list[str]:
