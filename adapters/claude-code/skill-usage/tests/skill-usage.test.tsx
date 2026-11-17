@@ -274,7 +274,7 @@ test('the pane shows the session and switches tabs, on every surface', async ($,
   const stored: Record<string, unknown> = {
     // The events atom keeps a shape tag; an untagged value would read as empty.
     events: {
-      shape: 'events-3',
+      shape: 'events-4',
       value: [
         { kind: 'prompt', t: 1, named: [] },
         { kind: 'nudge', t: 2, hook: 'router-first', named: ['using-goated-ai-skills'], holdKind: 'strict' },
@@ -352,7 +352,7 @@ test('a nudge flies from Hooks to the agent it spoke to, straight to Agent or to
   })
   on('state.set', () => ({ value: { isSet: true, version: 2 } }))
   const motion = async (isSubagent: boolean) => {
-    stored.events = { shape: 'events-3', value: [{ kind: 'prompt', t: 1, named: [] }, nudge(isSubagent)] }
+    stored.events = { shape: 'events-4', value: [{ kind: 'prompt', t: 1, named: [] }, nudge(isSubagent)] }
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
     const svg = String((await frameOf(ui))?.source)
     await ui.unmount()
@@ -389,7 +389,7 @@ test('moments queue one after another with a gap, from event times alone, and an
 test('a waiting nudge holds its dotted trail in amber, fading in when its dot sets off', async ($, on) => {
   const stored: Record<string, unknown> = {
     tab: 'session',
-    events: { shape: 'events-3', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'nudge', t: 450, hook: 'pull-request', named: ['pr-description'], holdKind: 'strict' }] },
+    events: { shape: 'events-4', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'nudge', t: 450, hook: 'pull-request', named: ['pr-description'], holdKind: 'strict' }] },
   }
   let now = 500
   on('clock.now', () => ({ value: now }))
@@ -424,7 +424,7 @@ test('a waiting nudge holds its dotted trail in amber, fading in when its dot se
 test('the still copy under the frame shows a trail only when the frame does, so a rebuilt frame never flashes one', async ($, on) => {
   const stored: Record<string, unknown> = {
     tab: 'session',
-    events: { shape: 'events-3', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'nudge', t: 450, hook: 'pull-request', named: ['pr-description'], holdKind: 'strict' }] },
+    events: { shape: 'events-4', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'nudge', t: 450, hook: 'pull-request', named: ['pr-description'], holdKind: 'strict' }] },
   }
   let now = 500
   on('clock.now', () => ({ value: now }))
@@ -451,7 +451,7 @@ test("a trail whose dot set off long ago stands in the frame as drawn, not by re
   // A hold waits until its turn ends; each new moment rebuilds the frame, which must show its trail from the first paint.
   const stored: Record<string, unknown> = {
     tab: 'session',
-    events: { shape: 'events-3', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'nudge', t: 450, hook: 'router-first', named: ['using-goated-ai-skills'], holdKind: 'strict' }] },
+    events: { shape: 'events-4', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'nudge', t: 450, hook: 'router-first', named: ['using-goated-ai-skills'], holdKind: 'strict' }] },
   }
   on('clock.now', () => ({ value: 600_000 }))
   on('state.get', (_, e) => {
@@ -489,7 +489,7 @@ test('the preview script plays every kind of moment in turn, none skipped for wa
 test('during a preview the picture plays the script, while the counts and the activity rows stay real', async ($, on) => {
   const stored: Record<string, unknown> = {
     tab: 'session',
-    events: { shape: 'events-3', value: [{ kind: 'prompt', t: 1, named: [] }] },
+    events: { shape: 'events-4', value: [{ kind: 'prompt', t: 1, named: [] }] },
     preview: 100_000,
   }
   let now = 100_500
@@ -524,7 +524,7 @@ test('the Session tab breaks down this session alone: each hook with its follow 
   const stored: Record<string, unknown> = {
     tab: 'session',
     events: {
-      shape: 'events-3',
+      shape: 'events-4',
       value: [
         { kind: 'prompt', t: 1, named: [] },
         { kind: 'nudge', t: 2, hook: 'commit', named: ['commit-message'], holdKind: 'strict' },
@@ -534,7 +534,7 @@ test('the Session tab breaks down this session alone: each hook with its follow 
       ],
     },
     // Another session's totals must not show here.
-    allTime: { shape: 'all-time-1', value: { sessions: 1, loads: { diagnose: { 'self-initiated': 9 } }, nudges: { 'pull-request': { unanswered: 4 } }, router: {}, lastUsed: {} } },
+    allTime: { shape: 'all-time-2', value: { sessions: 1, loads: { diagnose: { 'self-initiated': 9 } }, nudges: { 'pull-request': { unanswered: 4 } }, router: {}, lastUsed: {} } },
   }
   on('clock.now', () => ({ value: 100_000 }))
   on('state.get', (_, e) => {
@@ -559,7 +559,7 @@ test('the Session tab breaks down this session alone: each hook with its follow 
 test("the agent a nudge spoke to holds amber on its border until it sends the result back to Hooks", async ($, on) => {
   const stored: Record<string, unknown> = {
     tab: 'session',
-    events: { shape: 'events-3', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'nudge', t: 1000, hook: 'commit', named: ['commit-message'], holdKind: 'strict' }] },
+    events: { shape: 'events-4', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'nudge', t: 1000, hook: 'commit', named: ['commit-message'], holdKind: 'strict' }] },
   }
   let now = 1050
   on('clock.now', () => ({ value: now }))
@@ -591,7 +591,7 @@ test("the agent a nudge spoke to holds amber on its border until it sends the re
   expect(holding.frame).toMatch(/r="24" fill="none" stroke="#ffa62b" stroke-width="7" opacity="0"><animate attributeName="opacity" values="0;.35;0"/)
   expect(holding.still).not.toContain('values=".55;1;.55"')
   // Followed: Agent sends the result back, so its amber ends and it shows no result colour of its own; Hooks receives the green.
-  stored.events = { shape: 'events-3', value: [...(stored.events as { value: unknown[] }).value, { kind: 'load', t: 30_000, skill: 'commit-message', via: 'tool', isSubagent: false }] }
+  stored.events = { shape: 'events-4', value: [...(stored.events as { value: unknown[] }).value, { kind: 'load', t: 30_000, skill: 'commit-message', via: 'tool', isSubagent: false }] }
   now = 30_050
   const settling = await draw()
   expect(border(settling.frame, '#5fcf8f')).toBeUndefined()
@@ -608,7 +608,7 @@ test('the picture sits in a sized frame whose text holds still across redraws un
   let now = 2000
   const stored: Record<string, unknown> = {
     tab: 'session',
-    events: { shape: 'events-3', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'load', t: 1500, skill: 'tdd', via: 'tool', isSubagent: false }] },
+    events: { shape: 'events-4', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'load', t: 1500, skill: 'tdd', via: 'tool', isSubagent: false }] },
   }
   on('clock.now', () => ({ value: now }))
   on('state.get', (_, e) => {
@@ -646,7 +646,7 @@ test('the picture sits in a sized frame whose text holds still across redraws un
   now = 9500
   expect((await draw()).source).toBe(quiet)
   // A new moment changes what the picture shows, so it is drawn afresh.
-  stored.events = { shape: 'events-3', value: [...(stored.events as { value: unknown[] }).value, { kind: 'load', t: 8900, skill: 'caveman', via: 'slash', isSubagent: false }] }
+  stored.events = { shape: 'events-4', value: [...(stored.events as { value: unknown[] }).value, { kind: 'load', t: 8900, skill: 'caveman', via: 'slash', isSubagent: false }] }
   expect((await draw()).source).not.toBe(quiet)
 })
 
@@ -654,7 +654,7 @@ test('the Unused tab lists loaded skills most loaded first with their share of a
   const load = (t: number, skill: string) => ({ kind: 'load', t, skill, via: 'tool', isSubagent: false })
   const stored: Record<string, unknown> = {
     tab: 'unused',
-    events: { shape: 'events-3', value: [{ kind: 'prompt', t: 1, named: [] }, load(2, 'tdd'), load(3, 'diagnose'), load(4, 'diagnose'), load(5, 'diagnose')] },
+    events: { shape: 'events-4', value: [{ kind: 'prompt', t: 1, named: [] }, load(2, 'tdd'), load(3, 'diagnose'), load(4, 'diagnose'), load(5, 'diagnose')] },
     available: { shape: 'available-2', value: { names: ['tdd', 'diagnose', 'caveman', 'agent-x'], own: ['tdd', 'diagnose', 'caveman', 'agent-x'], total: 4, included: 4 } },
   }
   on('clock.now', () => ({ value: 10 }))
@@ -734,7 +734,7 @@ test('the Session tab logs each reference read and lists the references this ses
   const stored: Record<string, unknown> = {
     tab: 'session',
     events: {
-      shape: 'events-3',
+      shape: 'events-4',
       value: [
         { kind: 'prompt', t: 1, named: [] },
         { kind: 'load', t: 2, skill: 'diagnose', via: 'tool', isSubagent: false },
@@ -831,7 +831,7 @@ test('the References node shows its read count, lit, with a spoke to the core, a
   const stored: Record<string, unknown> = {
     tab: 'session',
     events: {
-      shape: 'events-3',
+      shape: 'events-4',
       value: [
         { kind: 'prompt', t: 1, named: [] },
         { kind: 'load', t: 2, skill: 'diagnose', via: 'tool', isSubagent: false },
@@ -861,7 +861,7 @@ test('the References node shows its read count, lit, with a spoke to the core, a
 })
 
 test('a quiet References node is unlit and drawn with no count', async ($, on) => {
-  const stored: Record<string, unknown> = { tab: 'session', events: { shape: 'events-3', value: [{ kind: 'prompt', t: 1, named: [] }] } }
+  const stored: Record<string, unknown> = { tab: 'session', events: { shape: 'events-4', value: [{ kind: 'prompt', t: 1, named: [] }] } }
   const draw = pictureRig($, on, stored, () => 10_000)
   const node = refsNode((await draw()).frame) ?? ''
   expect(node).toMatch(/r="21" fill="#12151c" stroke="#272c36"/)
@@ -872,7 +872,7 @@ test('a reference read flies a pink page from References to Agent, its file name
   const stored: Record<string, unknown> = {
     tab: 'session',
     events: {
-      shape: 'events-3',
+      shape: 'events-4',
       value: [
         { kind: 'prompt', t: 1, named: [] },
         { kind: 'load', t: 2, skill: 'software-design-principles', via: 'tool', isSubagent: false },
@@ -904,7 +904,7 @@ test('a subagent read flies to Subagents; a read without loading arrives outline
   const stored: Record<string, unknown> = {
     tab: 'session',
     events: {
-      shape: 'events-3',
+      shape: 'events-4',
       value: [
         { kind: 'prompt', t: 1, named: [] },
         { kind: 'ref', t: 400, skill: 'tdd', file: 'references/a-very-long-reference-file-name.md', isSubagent: true },
@@ -930,7 +930,7 @@ test('the All time picture shows node counts and the core ring but no badge, wit
   const stored: Record<string, unknown> = {
     tab: 'all',
     events: {
-      shape: 'events-3',
+      shape: 'events-4',
       value: [
         { kind: 'prompt', t: 1, named: [] },
         { kind: 'ref', t: 400, skill: 'tdd', file: 'references/a.md' },
@@ -939,7 +939,7 @@ test('the All time picture shows node counts and the core ring but no badge, wit
       ],
     },
     allTime: {
-      shape: 'all-time-1',
+      shape: 'all-time-2',
       value: {
         sessions: 1,
         loads: { tdd: { 'self-initiated': 2 } },
@@ -975,7 +975,7 @@ test("the Session picture's alt text names each badge it shows, and leaves out a
   const stored: Record<string, unknown> = {
     tab: 'session',
     events: {
-      shape: 'events-3',
+      shape: 'events-4',
       value: [
         { kind: 'prompt', t: 1, named: [] },
         { kind: 'ref', t: 2, skill: 'tdd', file: 'references/a.md' },
@@ -999,7 +999,7 @@ test("the References table's subtitle counts reads made before their skill loade
   const stored: Record<string, unknown> = {
     tab: 'session',
     events: {
-      shape: 'events-3',
+      shape: 'events-4',
       value: [
         { kind: 'prompt', t: 1, named: [] },
         { kind: 'ref', t: 2, skill: 'tdd', file: 'references/a.md' },
@@ -1007,7 +1007,7 @@ test("the References table's subtitle counts reads made before their skill loade
       ],
     },
     allTime: {
-      shape: 'all-time-1',
+      shape: 'all-time-2',
       value: { sessions: 1, loads: {}, nudges: {}, router: {}, lastUsed: {}, refs: { tdd: { 'references/a.md': 4 } }, refsUnloaded: 3 },
     },
   }
@@ -1024,14 +1024,14 @@ test("the References table's subtitle counts reads made before their skill loade
   expect(await subtitle()).toEqual(["each skill's supporting files read, most read first · 5 read before their skill loaded"])
   // Read after loading: the subtitle as it was.
   stored.tab = 'session'
-  stored.events = { shape: 'events-3', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'load', t: 2, skill: 'tdd', via: 'tool', isSubagent: false }, { kind: 'ref', t: 3, skill: 'tdd', file: 'references/a.md' }] }
+  stored.events = { shape: 'events-4', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'load', t: 2, skill: 'tdd', via: 'tool', isSubagent: false }, { kind: 'ref', t: 3, skill: 'tdd', file: 'references/a.md' }] }
   expect(await subtitle()).toEqual(["each skill's supporting files read, most read first"])
 })
 
 test('a table heading\'s note wraps onto more lines in a narrow pane instead of being cut short', async ($, on) => {
   const stored: Record<string, unknown> = {
     tab: 'all',
-    events: { shape: 'events-3', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'ref', t: 2, skill: 'tdd', file: 'references/a.md' }] },
+    events: { shape: 'events-4', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'ref', t: 2, skill: 'tdd', file: 'references/a.md' }] },
   }
   pictureRig($, on, stored, () => 10_000)
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
@@ -1052,7 +1052,7 @@ test('a page leaves a dotted pink way that fades once it lands, drawn the same i
   const stored: Record<string, unknown> = {
     tab: 'session',
     events: {
-      shape: 'events-3',
+      shape: 'events-4',
       value: [
         { kind: 'prompt', t: 1, named: [] },
         { kind: 'nudge', t: 100, hook: 'pull-request', named: ['pr-description'], holdKind: 'strict' },
@@ -1085,7 +1085,7 @@ test('a page leaves a dotted pink way that fades once it lands, drawn the same i
 test('the tab keeps its columns together beside the picture in a wide pane, and fills a narrow one', async ($, on) => {
   const stored: Record<string, unknown> = {
     tab: 'session',
-    events: { shape: 'events-3', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'load', t: 2, skill: 'tdd', via: 'tool', isSubagent: false }] },
+    events: { shape: 'events-4', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'load', t: 2, skill: 'tdd', via: 'tool', isSubagent: false }] },
   }
   on('clock.now', () => ({ value: 100_000 }))
   on('state.get', (_, e) => {
@@ -1108,7 +1108,7 @@ test('the tab keeps its columns together beside the picture in a wide pane, and 
 test('Agent has Subagents as a small node beside it, joined by a line nothing flies along, with its own spoke to the core', async ($, on) => {
   const stored: Record<string, unknown> = {
     tab: 'session',
-    events: { shape: 'events-3', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'load', t: 2, skill: 'tdd', via: 'tool', isSubagent: true }] },
+    events: { shape: 'events-4', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'load', t: 2, skill: 'tdd', via: 'tool', isSubagent: true }] },
   }
   const draw = pictureRig($, on, stored, () => 500)
   const { still, frame } = await draw()
@@ -1131,7 +1131,7 @@ test('the tables chart each count by what it is: a hook by its split of outcomes
   const stored: Record<string, unknown> = {
     tab: 'session',
     events: {
-      shape: 'events-3',
+      shape: 'events-4',
       value: [
         // Four design holds, one turn each: two followed, one declined with a reason, one left unanswered.
         { kind: 'prompt', t: 1, named: [] },
@@ -1182,7 +1182,7 @@ test('rates count declines with what was acted on, so they say "handled", not "f
     { kind: 'nudge', t: 2, hook: 'design', named: ['software-design-principles'], holdKind: 'justified-skip' },
     { kind: 'skip', t: 3, skill: 'software-design-principles', reason: 'the edit renames one variable' },
   ]
-  const stored: Record<string, unknown> = { tab: 'all', events: { shape: 'events-3', value: events } }
+  const stored: Record<string, unknown> = { tab: 'all', events: { shape: 'events-4', value: events } }
   on('clock.now', () => ({ value: 100_000 }))
   on('state.get', (_, e) => {
     const key = (e as { key: string }).key
@@ -1220,7 +1220,7 @@ test('a load the agent made of its own accord says so, apart from one a subagent
   const stored: Record<string, unknown> = {
     tab: 'session',
     events: {
-      shape: 'events-3',
+      shape: 'events-4',
       value: [
         { kind: 'prompt', t: 1, named: [] },
         { kind: 'load', t: 2, skill: 'tdd', via: 'tool', isSubagent: false },
@@ -1257,7 +1257,7 @@ test('a subagent loading a skill a hook asked for loaded it after a hook, not of
     { t: 3, kind: 'load', skill: 'software-design-principles', origin: 'hook-nudged', isSubagent: true },
     { t: 4, kind: 'load', skill: 'tdd', origin: 'subagent', isSubagent: true },
   ])
-  const stored: Record<string, unknown> = { tab: 'session', events: { shape: 'events-3', value: events } }
+  const stored: Record<string, unknown> = { tab: 'session', events: { shape: 'events-4', value: events } }
   on('clock.now', () => ({ value: 100_000 }))
   on('state.get', (_, e) => {
     const key = (e as { key: string }).key
@@ -1286,7 +1286,7 @@ const near = (a: [number, number], b: [number, number], r: number) => Math.abs(d
 test("a skill load is a round trip: its cause's dot reaches SKILLS, and the skill's text flies on to the agent that loaded it, ringing it blue", async ($, on) => {
   const stored: Record<string, unknown> = {
     tab: 'session',
-    events: { shape: 'events-3', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'load', t: 400, skill: 'tdd', via: 'tool', isSubagent: false }] },
+    events: { shape: 'events-4', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'load', t: 400, skill: 'tdd', via: 'tool', isSubagent: false }] },
   }
   let now = 500
   const draw = pictureRig($, on, stored, () => now)
@@ -1309,7 +1309,7 @@ test('a load a hook asked a subagent for flies from Hooks to SKILLS and on to Su
   const stored: Record<string, unknown> = {
     tab: 'session',
     events: {
-      shape: 'events-3',
+      shape: 'events-4',
       value: [
         { kind: 'prompt', t: 1, named: [] },
         { kind: 'nudge', t: 300, hook: 'design', named: ['software-design-principles'], holdKind: 'justified-skip', isSubagent: true },
@@ -1327,7 +1327,7 @@ test("a nudge's result flies back from the agent to Hooks in its colour, and Hoo
   const stored: Record<string, unknown> = {
     tab: 'session',
     events: {
-      shape: 'events-3',
+      shape: 'events-4',
       value: [
         { kind: 'prompt', t: 1, named: [] },
         { kind: 'nudge', t: 300, hook: 'commit', named: ['commit-message'], holdKind: 'strict' },
@@ -1348,7 +1348,7 @@ test("a nudge's result flies back from the agent to Hooks in its colour, and Hoo
 test('a reference read is a round trip: a request from the reader to References, then the page back, ringing the reader pink', async ($, on) => {
   const stored: Record<string, unknown> = {
     tab: 'session',
-    events: { shape: 'events-3', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'ref', t: 400, skill: 'tdd', file: 'references/a.md', isSubagent: true }] },
+    events: { shape: 'events-4', value: [{ kind: 'prompt', t: 1, named: [] }, { kind: 'ref', t: 400, skill: 'tdd', file: 'references/a.md', isSubagent: true }] },
   }
   const draw = pictureRig($, on, stored, () => 500)
   const { frame } = await draw()
@@ -1535,7 +1535,7 @@ test('a declined row reads in pale green and reveals its reason on hover', async
   const stored: Record<string, unknown> = {
     tab: 'session',
     events: {
-      shape: 'events-3',
+      shape: 'events-4',
       value: [
         { kind: 'prompt', t: 1, named: [] },
         { kind: 'nudge', t: 2, hook: 'closeout', named: ['software-design-principles'] },
@@ -1570,7 +1570,7 @@ test('a hold that held again reads once with how many times, and one that asks f
   const stored: Record<string, unknown> = {
     tab: 'session',
     events: {
-      shape: 'events-3',
+      shape: 'events-4',
       value: [
         { kind: 'prompt', t: 1, named: [] },
         hold(2, 'route-line', ['(route line)']),

@@ -13,6 +13,7 @@ import type {
   Counts,
   DesignReadCounts,
   DesignReads,
+  EarlierHolds,
   HoldKind,
   Measures,
   Origin,
@@ -22,6 +23,7 @@ import type {
   Refs,
   Route,
   SessionSummary,
+  SideSessionKind,
   SubagentCounts,
   TimelineEntry,
   UsageEvent,
@@ -31,6 +33,18 @@ import { bump, holdSettlement, ROUTE_LINE, stamp, storedReason } from './holds'
 
 export const ROUTER = 'using-goated-ai-skills'
 export { ROUTE_LINE }
+/**
+ * The version of the data this mod records: each summary is stamped with it, and the events atom's shape tag is
+ * `events-<version>`, so a change to what is recorded bumps both. 4: Ticket 076 added routed skills, side sessions, the
+ * project key and the stamp itself; earlier versions, which stored no stamp, were 1 to 3.
+ */
+export const DATA_VERSION = 4
+/**
+ * The first data version whose holds count as current. Summaries stamped earlier, or not at all, keep their holds apart
+ * under earlier versions, since their gates may carry names the adapter has since retired, such as `design-hold`.
+ */
+const CURRENT_HOLDS_SINCE = 4
+const isEarlierVersion = (s: SessionSummary) => (s.version ?? 0) < CURRENT_HOLDS_SINCE
 /** Subagent counts before any subagent did anything. */
 export const NO_SUBAGENTS: Readonly<SubagentCounts> = { spawns: 0, starts: 0, bodyReads: 0 }
 /** Writing-turn counts before any turn wrote. */
@@ -241,8 +255,22 @@ const skillArgument = (value: unknown) => short(String(value ?? '').trim().repla
 
 // The tools that start a subagent; `Task` is the Agent tool's older name.
 const SPAWN_TOOLS = new Set(['Agent', 'Task'])
+// The tools that start a side session, as the adapter names them (`SPAWN_TOOLS` in goated_adapter/gates.py).
+const START_SESSION = 'mcp__ccd_session__start_session'
+const HAND_OFF = 'mcp__ccd_session__hand_off_to_session'
 // What the adapter holds like a write (adapters/claude-code/README.md): edits, and spawns, which hand work on.
-const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', ...SPAWN_TOOLS, 'mcp__ccd_session__start_session', 'mcp__ccd_session__hand_off_to_session'])
+const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', ...SPAWN_TOOLS, START_SESSION, HAND_OFF])
+// The `initiation` values of a `start_session` call that only shows a card, unless it starts a saved proposal
+// (`proposal_id`): the adapter's `CARD_INITIATIONS`.
+const CARD_INITIATIONS = new Set(['offer', 'own_initiative'])
+
+/** What a call to a session tool does, as the adapter's `shows_a_card` judges it: shows a card, or starts a session; null for any other tool. */
+function sideSessionKind(name: string, input: Record<string, unknown>): SideSessionKind | null {
+  if (name === HAND_OFF) return 'start'
+  if (name !== START_SESSION) return null
+  const initiation = input.initiation
+  return typeof initiation === 'string' && CARD_INITIATIONS.has(initiation) && input.proposal_id == null ? 'card' : 'start'
+}
 
 // What the adapter counts as a code file, by extension: its `CODE_EXTENSIONS` (goated_adapter/actions.py), copied
 // here because the mod cannot import it. tests/test_skill_usage_mod.py fails when the two lists differ.
@@ -316,6 +344,8 @@ export function toolUseEvents(
     if (reached.length > 0) events.push({ kind: 'read', t, skills: reached })
     events.push(...refs)
     if (WRITE_TOOLS.has(name)) events.push({ kind: 'write', t, ...ofCall })
+    const shows = sideSessionKind(name, input)
+    if (shows) events.push({ kind: 'side-session', t, ...ofCall, tool: name, shows })
   }
   return events
 }
@@ -588,6 +618,8 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   const refMoments: RefMoments = {}
   const measures: Required<Omit<Measures, 'holds' | 'closeoutItems' | 'skipReasons'>> = {
     routes: {},
+    routeSkills: {},
+    sideSessions: {},
     writingTurns: { ...NO_WRITING_TURNS },
     overrides: {},
     subagents: { ...NO_SUBAGENTS },
@@ -635,7 +667,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   let turnRouter = false
 
   for (const e of events) {
-    if ((e.kind === 'load' || e.kind === 'change') && e.id && refusedCalls.has(e.id)) continue
+    if ((e.kind === 'load' || e.kind === 'change' || e.kind === 'side-session') && e.id && refusedCalls.has(e.id)) continue
     const holdRow = holds.observe(e)
     if (holdRow) timeline.push(holdRow)
     switch (e.kind) {
@@ -669,6 +701,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         break
       case 'route': {
         measures.routes[e.form] = (measures.routes[e.form] ?? 0) + 1
+        if (e.form === 'route') for (const skill of e.requires) bump(measures.routeSkills, skill, e.intensity)
         if (!e.agent) {
           isTurnRouted = true
           if (turnWrites === 'none') turnWrites = 'late'
@@ -714,6 +747,9 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         // A write with no call id (events kept before ids were recorded) cannot be refused, so it counts at once.
         else turnWrites ??= isTurnRouted ? 'routed' : 'none'
         break
+      case 'side-session':
+        bump(measures.sideSessions, e.tool, e.shows)
+        break
       case 'refused': {
         pendingWrites.delete(e.id)
         const spawned = spawnRows.get(e.id)
@@ -733,7 +769,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   tallyWritingTurn()
   settleReadMoments()
 
-  return { loads, nudges, lastUsed, refs, refsUnloaded, refMoments, ...measures, holds: held, closeoutItems, skipReasons, timeline, router: 'off' }
+  return { loads, nudges, lastUsed, refs, refsUnloaded, refMoments, ...measures, holds: held, closeoutItems, skipReasons, timeline, router: 'off', version: DATA_VERSION }
 }
 
 /**
@@ -753,6 +789,8 @@ function addFlat(into: Record<string, number | undefined>, from: Record<string, 
 /** Adds `from`'s measures into `into`, either of which may predate them. */
 function addMeasures(into: Measures, from: Measures) {
   addFlat((into.routes ??= {}), from.routes)
+  if (from.routeSkills) addCounts((into.routeSkills ??= {}), from.routeSkills)
+  if (from.sideSessions) addCounts((into.sideSessions ??= {}), from.sideSessions)
   addFlat((into.writingTurns ??= { ...NO_WRITING_TURNS }), from.writingTurns)
   addFlat((into.holds ??= {}), from.holds)
   addFlat((into.overrides ??= {}), from.overrides)
@@ -787,17 +825,51 @@ function addLastUsed(into: Record<string, number>, from: Record<string, number>)
 // The module runs without DOM or Node globals, so no structuredClone.
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value))
 
-/** Adds one session's summary to the running all-time totals. */
+const noTotal = (): AllTime => ({ sessions: 0, loads: {}, nudges: {}, router: {}, lastUsed: {} })
+
+/**
+ * Adds one session's summary to the running all-time totals, and to its project's when it carries a project key. The
+ * holds of a summary stored by an earlier version go under `earlier`, not into the current counts.
+ */
 export function addSession(total: AllTime | null, s: SessionSummary): AllTime {
-  const out: AllTime = total ? copy(total) : { sessions: 0, loads: {}, nudges: {}, router: {}, lastUsed: {} }
+  const out = addInto(total ? copy(total) : noTotal(), s)
+  if (s.project) {
+    const byProject = (out.byProject ??= {})
+    byProject[s.project] = addInto(byProject[s.project] ?? noTotal(), s)
+  }
+  return out
+}
+
+/** The totals of the project `key` stands for, or of every project for null; empty for a key with no sessions. */
+export function forProject(all: AllTime, key: string | null): AllTime {
+  return key === null ? all : (all.byProject?.[key] ?? noTotal())
+}
+
+/** Adds one session's summary into `out`, in place, and returns it. */
+function addInto(out: AllTime, s: SessionSummary): AllTime {
   out.sessions += 1
   addCounts(out.loads, s.loads)
-  addCounts(out.nudges, s.nudges)
   out.router[s.router] = (out.router[s.router] ?? 0) + 1
   addLastUsed(out.lastUsed, s.lastUsed)
   addReads(out, s)
-  addMeasures(out, s)
+  if (!isEarlierVersion(s)) {
+    addCounts(out.nudges, s.nudges)
+    addMeasures(out, s)
+    return out
+  }
+  const { holds, ...rest } = s
+  addEarlier(out, { sessions: 1, nudges: s.nudges, ...(holds ? { holds } : {}) })
+  addMeasures(out, rest)
   return out
+}
+
+/** Adds the earlier versions' holds `from` into `into`'s, in place. */
+function addEarlier(into: AllTime, from: EarlierHolds | undefined) {
+  if (!from) return
+  const earlier = (into.earlier ??= { sessions: 0, nudges: {} })
+  earlier.sessions += from.sessions
+  addCounts(earlier.nudges, from.nudges)
+  if (from.holds) addFlat((earlier.holds ??= {}), from.holds)
 }
 
 /** Adds the totals `from` into a copy of `into`: the same sums `addSession` makes, for many sessions at once. */
@@ -812,6 +884,11 @@ function addTotals(into: AllTime | null, from: AllTime | null): AllTime | null {
   addLastUsed(out.lastUsed, from.lastUsed)
   addReads(out, from)
   addMeasures(out, from)
+  addEarlier(out, from.earlier)
+  for (const [key, project] of Object.entries(from.byProject ?? {})) {
+    const byProject = (out.byProject ??= {})
+    byProject[key] = addTotals(byProject[key] ?? null, project) ?? noTotal()
+  }
   return out
 }
 
@@ -839,11 +916,17 @@ export function allTimeOf(
 /**
  * One session's summary from two stretches of it: what was stored before a
  * resume (`earlier`) and what was observed since. The router status is the
- * earlier one's, which only a summary stored by an earlier version sets.
+ * earlier one's, which only a summary stored by an earlier version sets. The
+ * version is the older stretch's, none if either has none, since the merged
+ * counts are only as current as their oldest part; the project is the later
+ * one's, which this version read.
  */
 export function mergeSummaries(earlier: SessionSummary | null, later: SessionSummary): SessionSummary {
   if (!earlier) return later
   const out = copy(earlier)
+  if (out.version === undefined || later.version === undefined) delete out.version
+  else out.version = Math.min(out.version, later.version)
+  if (later.project) out.project = later.project
   addCounts(out.loads, later.loads)
   addCounts(out.nudges, later.nudges)
   addLastUsed(out.lastUsed, later.lastUsed)

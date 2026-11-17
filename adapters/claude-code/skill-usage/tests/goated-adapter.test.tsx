@@ -314,7 +314,7 @@ const PANE = {
 } as const
 
 function paneRig(...[$, on, events]: [...Parameters<TestBody>, UsageEvent[]]) {
-  const stored: Record<string, unknown> = { tab: 'session', events: { shape: 'events-3', value: events } }
+  const stored: Record<string, unknown> = { tab: 'session', events: { shape: 'events-4', value: events } }
   on('clock.now', () => ({ value: 100_000 }))
   on('state.get', (_, e) => {
     const key = (e as { key: string }).key
@@ -343,7 +343,7 @@ test('the Session tab logs route lines, adapter holds, overrides, spawns and sta
     expect((await ui.find({ type: 'Text', text: /^Explore started: Scan the repo$/ }))?.text).toBeDefined()
     expect((await ui.find({ type: 'Text', text: /^a subagent received its start message$/ }))?.text).toBeDefined()
     expect(
-      (await ui.find({ type: 'Text', text: /^Routes: 1 routed · Writing turns: 1 routed · Adapter holds: 1 strict · Overrides: 1 · Subagents: 1 started, 1 start message$/ }))?.text,
+      (await ui.find({ type: 'Text', text: /^Routes: 1 routed · Routed skills: tdd 1 · Writing turns: 1 routed · Adapter holds: 1 strict · Overrides: 1 · Subagents: 1 started, 1 start message$/ }))?.text,
     ).toBeDefined()
     await ui.unmount()
   }
@@ -519,7 +519,7 @@ test('a summary stored by an earlier version still shows its hook keys and alrea
   const text = reportText(all, null)
   expect(text).toContain('- commit check: 3 of 3 handled (100%)')
   expect(text).toContain('already loaded 2')
-  const stored: Record<string, unknown> = { tab: 'all', events: { shape: 'events-3', value: [] }, allTime: { shape: 'all-time-1', value: all } }
+  const stored: Record<string, unknown> = { tab: 'all', events: { shape: 'events-4', value: [] }, allTime: { shape: 'all-time-2', value: all } }
   on('clock.now', () => ({ value: 100_000 }))
   on('state.get', (_, e) => {
     const key = (e as { key: string }).key

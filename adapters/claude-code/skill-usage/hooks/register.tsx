@@ -13,10 +13,11 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface as Dollar, Register, SessionAppendInput } from 'claude-code'
 
 import type { AllTime, Available, SessionSummary, Tab, UsageEvent } from '../types'
-import { addSession, allTimeOf, closeOpen, historyEvents, isObservedRow, mergeSummaries, rowEvents, short, summarize } from './classify'
+import { addSession, allTimeOf, closeOpen, DATA_VERSION, historyEvents, isObservedRow, mergeSummaries, rowEvents, short, summarize } from './classify'
 import type { HistoryMessage } from './classify'
 import type { View } from './meaning'
 import { forgetPictures, PREVIEW_MS } from './picture'
+import { projectKey } from './project'
 import { allTimeTab, PANE_COLUMNS, reportText, sessionTab, statusText, unusedTab } from './view'
 
 const PANE = 'skill-usage'
@@ -34,13 +35,17 @@ const OWN_SOURCES = new Set(['userSettings', 'projectSettings'])
 // count with no moment. `events-3`: Ticket 075 added closeout items to holds and cut skip reasons; holds stored
 // before it have no items. The backfill mark carries the same tag, so a session whose events a bump dropped reads its
 // history again, as a mod that loaded mid-session does, instead of going on with what it observes from then on.
-const EVENTS_SHAPE = 'events-3'
+// `events-4`: Ticket 076 added side sessions; the tag now follows the data version, which each summary carries too.
+const EVENTS_SHAPE = `events-${DATA_VERSION}`
 const events = atom({ plugin: 'skill-usage', key: 'events' } as const, [], { shape: EVENTS_SHAPE })
 const owner = atom({ plugin: 'skill-usage', key: 'owner' } as const, null)
 const backfilled = atom({ plugin: 'skill-usage', key: 'backfilled' } as const, null, { shape: EVENTS_SHAPE })
 const baseline = atom({ plugin: 'skill-usage', key: 'baseline' } as const, null, { shape: 'summary-1' })
 const available = atom({ plugin: 'skill-usage', key: 'available' } as const, null, { shape: 'available-2' })
-const allTime = atom({ plugin: 'skill-usage', key: 'allTime' } as const, null, { shape: 'all-time-1' })
+// `all-time-2`: Ticket 076 added totals by project and the earlier versions' holds.
+const allTime = atom({ plugin: 'skill-usage', key: 'allTime' } as const, null, { shape: 'all-time-2' })
+const project = atom({ plugin: 'skill-usage', key: 'project' } as const, null)
+const allProject = atom({ plugin: 'skill-usage', key: 'allProject' } as const, null)
 const tab = atom({ plugin: 'skill-usage', key: 'tab' } as const, 'session')
 const lastError = atom({ plugin: 'skill-usage', key: 'lastError' } as const, null)
 const preview = atom({ plugin: 'skill-usage', key: 'preview' } as const, null)
@@ -117,7 +122,9 @@ export const register: Register = on => {
     const { Box, Button, Text } = v.ui
     const current = await read($, tab)
     const session = summarize(await read($, events))
-    const live = mergeSummaries(await read($, baseline), session)
+    // The project key as kept: a render reads it and never asks the session, which liveSummary does.
+    const own = (await read($, project)) ?? undefined
+    const live = mergeSummaries(await read($, baseline), { ...session, ...(own ? { project: own } : {}) })
     const error = await read($, lastError)
     // The Work Map's feed length: enough to follow a turn, short enough to stay under the picture.
     const rows = 16
@@ -125,7 +132,7 @@ export const register: Register = on => {
     const now = await $.clock.now()
     const body =
       current === 'session' ? sessionTab(v, live, session.timeline, rows, now, await read($, preview))
-      : current === 'all' ? allTimeTab(v, addSession(await read($, allTime), live), rows)
+      : current === 'all' ? allTimeTab(v, addSession(await read($, allTime), live), rows, { shown: await read($, allProject), ...(own ? { own } : {}), choose: key => update($, allProject, () => key) })
       : unusedTab(v, addSession(await read($, allTime), live), await read($, available))
 
     return (
@@ -234,10 +241,24 @@ async function loadAllTime($: Dollar, id: string) {
   if (JSON.stringify(await read($, allTime)) !== JSON.stringify(result.total)) await update($, allTime, () => result.total)
 }
 
-/** This session so far: the stored baseline plus what was observed since. */
+/** This session so far: the stored baseline plus what was observed since, with its project key. */
 async function liveSummary($: Dollar, isFinal = false): Promise<SessionSummary> {
   const { timeline: _, ...summary } = summarize(await read($, events), isFinal)
-  return mergeSummaries(await read($, baseline), summary)
+  return mergeSummaries(await read($, baseline), { ...summary, project: await projectOf($) })
+}
+
+/**
+ * This session's project key, read once and kept. The folder is the repository's root, the main working tree's for a
+ * worktree, so sessions in a repository's worktrees count as that one project; outside a repository, the session's
+ * project root. Only the key is kept, never the folder.
+ */
+async function projectOf($: Dollar): Promise<string> {
+  const kept = await read($, project)
+  if (kept) return kept
+  const folder = (await $.session.repo())?.root ?? (await $.session.root())
+  const key = await projectKey(folder)
+  await update($, project, () => key)
+  return key
 }
 
 async function persist($: Dollar, isFinal: boolean) {
