@@ -117,7 +117,7 @@ so file text, edit text, and commands never carry a line, and no typed
 | `design-reads` | justified-skip | Any later write to a code or configuration file inside the project folder, once `software-design-principles` has loaded in the turn, whose [signals or the turn's design-reads lines](#design-references) require a reference not read since the last compaction. The hold names each file and what selected it | Each required reference is read with the Read tool |
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` loads in the turn |
 | `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an `Edit` or `MultiEdit` whose old text has a `<<<<<<<` or `>>>>>>>` marker at a line start; a write, by a write tool or a shell command such as `git checkout --theirs`, to a file a Read in the turn showed with such a marker; or any write after a git merge, rebase, cherry-pick, revert, or pull whose result in the turn reported a conflict. A finished abort, quit, continue, or skip of that operation, or a finished commit, ends the conflict and drops the Reads before it. Only the turn is read, not the repository, so a conflict opened in an earlier turn is caught only by markers the turn shows: an edit whose old text spans only `=======` and one side, in a file not read this turn, is not held, because `=======` alone is also a heading underline. A conflicting stash pop or apply is not held | `resolving-merge-conflicts` loads in the turn |
-| `repeated-failure` | justified-skip | A write, by a write tool or a shell command, once one check command (as the closeout's Proof item recognises checks) has failed twice in a row in the turn. A shell command is held when any of its simple commands writes and is not itself a check, so `sed -i … && pytest` and `pytest \| tee out.txt` are held, while `pytest > out.txt` is a rerun. "The same check" is the same command text, whitespace aside, without a trailing pipe into output filters (`tail`, `head`, `grep`, `findstr`, `more`, `less`, `tee`, `Select-Object`, `Select-String`, `Out-Host`, `Out-String`) or a `2>&1` before it; so `pytest -q \| tail -20` and `pytest -q \| tail -40` are one check, and a narrowed rerun such as one test file of a failing suite is another. A piped run fails by what it prints (`N failed`, `N errors`, `FAILED (`, `FAIL`, `npm ERR!`, `error TS…`, `test result: FAILED`, and the like), since the exit code is the filter's; any other run fails by its exit code. A failed run whose output shows an import or collection error (pytest's `ERROR collecting` or `ImportError while importing test module`, `ModuleNotFoundError: No module named`, unittest's `Failed to import test module`, jest's `Cannot find module … from`, each where the runner prints it; `IMPORT_ERROR_SIGNS` in `actions.py`) neither adds to the count nor resets it, since in TDD the first red run often fails because the module under test does not exist yet; an assertion failure that only quotes such text still counts. A pass of the check resets its count; other commands between runs do not. A call that never ran does not count: one the adapter or another hook held, one refused at a permission prompt, or one interrupted | `diagnose` loads in the turn |
+| `repeated-failure` | justified-skip | A write, by a write tool or a shell command, once one check command (as the closeout's Proof item recognises checks) has failed twice in a row in the turn. A shell command is held when any of its simple commands writes and is not itself a check, so `sed -i … && pytest` and `pytest \| tee out.txt` are held, while `pytest > out.txt` is a rerun. "The same check" is the same command text, whitespace aside, without a trailing pipe into output filters (`tail`, `head`, `grep`, `findstr`, `more`, `less`, `tee`, `Select-Object`, `Select-String`, `Out-Host`, `Out-String`) or a `2>&1` before it; so `pytest -q \| tail -20` and `pytest -q \| tail -40` are one check, and a narrowed rerun such as one test file of a failing suite is another. A piped run fails by what it prints (`N failed`, `N errors`, `FAILED (`, `FAIL`, `npm ERR!`, `error TS…`, `test result: FAILED`, and the like), since the exit code is the filter's; any other run fails by its exit code. A run whose only failures are test modules that could not load a missing module or name neither adds to the count nor resets it, whether or not it looks failed, since in TDD the first red run often fails because the module under test does not exist yet. Only each runner's own report counts: pytest's `ERROR collecting` section showing `ImportError while importing test module` or ending in an `ImportError` or `ModuleNotFoundError`; unittest's `_FailedTest` error ending in one of those; jest's `Test suite failed to run` with `Cannot find module`. A run counts as usual when it also shows a failure in a test that ran (`1 failed, 1 error`), when a module that is there fails to load (a `SyntaxError` or `NameError`: the edit-and-crash loop the gate exists for), or when a test only prints such text. These miss, toward holding: output cut before the runner names the cause (`pytest -q \| tail -3`), ts-jest's `TS2307`, and vitest's `Failed to load url`. The table is `LOAD_ERROR_SIGNS` in `actions.py`. A pass of the check resets its count; other commands between runs do not. A call that never ran does not count: one the adapter or another hook held, one refused at a permission prompt, or one interrupted | `diagnose` loads in the turn |
 | `closeout` | justified-skip | The end of a turn that changed code, that loaded `code-security-review` and changed a security-sensitive file, or that changed setup (a `Stop` hook) | Every item below is met or skipped |
 
 The closeout items, each judged against the turn's last code change. A code
@@ -205,9 +205,17 @@ sees only the whole command's result.
   Every other tool, including reads and the Skill tool, is never held.
 - **Code** is a file with a programming-language extension such as `.py`,
   `.ts`, `.go`, `.ps1`, or `.sh`; the list is `CODE_EXTENSIONS` in
-  `actions.py`. Docs and config files are not code. A test file is one under
-  `tests/`, `test/`, `spec/`, or `__tests__/`, or named `test_*`, `*_test.*`,
-  `*.test.*`, or `*.spec.*`.
+  `actions.py`. Docs and config files are not code. A **test file** is judged
+  by its path inside the project, so a folder above the project, such as
+  the `tests` in `D:/tests/myapp/`, makes nothing a test. It is one under a
+  `tests/`, `test/`, or `__tests__/` folder at any depth, or a top-level
+  `spec/` folder; or one named `test_*`, `*_test.*`, `*_spec.*`, `*.test.*`,
+  or `*.spec.*`. So `tests/helpers/factory.py` and `src/app/test_runner.py`
+  (named as runners collect tests) are test files, and `src/spec/parser.py`
+  is not. A file whose place in the project is unknown, because the project
+  is unknown or the path cannot be read for certain, is not a test file. The
+  rule is `TEST_PATH_RE` in `design_reads.py`; the `design` gate and the
+  closeout's Docs item share it.
 - **A task** starts at a route line that is not `continue` and runs through
   later `goated-route: continue` turns. Route lines in one turn with no write
   or spawn that ran between them are one task, corrected: the last one is its
@@ -311,9 +319,10 @@ design-reads line, `goated-design-reads: <file>, <file>` or
 enforce those reads where the skill is loaded.
 
 The rules live in one place,
-[`goated_adapter/design_reads.py`](goated_adapter/design_reads.py); only what
-counts as code and as a test file (the closeout's test-path rule) stays with
-the other action gates, which pass in their answers. They apply to an edit of
+[`goated_adapter/design_reads.py`](goated_adapter/design_reads.py), with the
+test-path rule the closeout shares; only what counts as code, and where a
+file sits in the project, stay with the other action gates, which pass in
+their answers. They apply to an edit of
 a code file, or of a configuration file (`.yaml`, `.yml`, `.toml`, `.json`,
 `.env`, `.env.*`, `settings.*`) that is neither a lock file (`*-lock.json`,
 `pnpm-lock.yaml`, `npm-shrinkwrap.json`) nor under a test path.

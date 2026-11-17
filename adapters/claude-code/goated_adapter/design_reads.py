@@ -9,8 +9,9 @@ signal: only a design-reads line names it.
 
 Signals are word and shape matches on the code an edit adds, so they lean
 toward selecting; a reference read counts until the next compaction, which
-bounds the cost. What is code and what is a test file are the action gates'
-rules (`actions.is_code`, `actions.TEST_PATH_RE`); callers pass their answers.
+bounds the cost. What is code is the action gates' rule (`actions.is_code`);
+what is a test file is this module's (`is_test_path`), which the closeout
+shares. Callers pass both answers.
 """
 
 from __future__ import annotations
@@ -61,6 +62,25 @@ CONFIG_PATH_RE = re.compile(
 # Lock files are written by tools, not designed.
 LOCK_FILE_RE = re.compile(r"(?:^|/)(?:[^/]*[-.]lock\.(?:json|ya?ml|toml)|npm-shrinkwrap\.json)$",
                           re.IGNORECASE)
+
+
+# A test file, by its path inside the project: under a `tests`, `test`, or
+# `__tests__` folder at any depth, or a top-level `spec` folder (a `spec`
+# folder deeper down is as often source, such as a parser for one); or named
+# as runners collect tests, which makes `test_runner.py` one too.
+TEST_PATH_RE = re.compile(
+    r"(?:^|/)(?:tests?|__tests__)/|^spec/"
+    r"|(?:^|/)test_[^/]*$|_(?:test|spec)\.[^/.]+$|\.(?:test|spec)\.[^/.]+$",
+    re.IGNORECASE,
+)
+
+
+def is_test_path(project_path: str | None) -> bool:
+    """Whether a file is a test file, given its path inside the project with
+    `/` separators. None, a file whose place in the project is unknown, is not
+    one, so it meets every gate a code file meets."""
+
+    return project_path is not None and bool(TEST_PATH_RE.search(project_path))
 
 
 def applies(path: str, *, is_code: bool, is_test: bool) -> bool:

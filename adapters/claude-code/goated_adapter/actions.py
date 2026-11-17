@@ -76,19 +76,55 @@ FAILURE_SIGNS_RE = re.compile(
     r"|^npm error\b|\berror TS\d+|\berror\[E\d+\]|test result: FAILED|^error: ",
     re.MULTILINE,
 )
-# What test runners print when a test module cannot be imported or collected.
-# Such a run failed before any test ran: in TDD the first red run is often one,
-# because the module under test does not exist yet, and the agent knows why.
-# Each sign is anchored where the runner prints it, so an assertion message
-# that merely quotes one is a real failure.
-IMPORT_ERROR_SIGNS = (
-    r"^_* ?ERROR collecting\b",  # pytest, a module that failed to collect
-    r"^ImportError while importing test module\b",  # pytest
-    r"^(?:E +)?ModuleNotFoundError: No module named\b",  # Python; `E` is pytest's prefix
-    r"^ImportError: Failed to import test module:",  # unittest
-    r"^\s*Cannot find module '[^']+' from\b",  # jest
+
+class _LoadErrorSigns(NamedTuple):
+    """How one test runner reports a test module it could not load.
+
+    `start` is the runner's own header for one such error; the error's text
+    runs to the next line matching `end`. `real_failure` is what the runner
+    prints for a failure in a test that did run.
+    """
+
+    start: re.Pattern
+    end: re.Pattern
+    real_failure: re.Pattern
+
+
+def _signs(start: str, end: str, real_failure: str) -> _LoadErrorSigns:
+    return _LoadErrorSigns(*(re.compile(p, re.MULTILINE) for p in (start, end, real_failure)))
+
+
+# What test runners print when a test module could not be loaded. A run whose
+# only failures are such errors, each caused by a missing module or name,
+# failed before any test ran: in TDD the first red run is often one, because
+# the module under test does not exist yet, and the agent knows why. A module
+# that is there but broken (a SyntaxError, a NameError) is the edit-and-crash
+# loop the gate exists for, so it counts. Only the runner's own headers count,
+# so a test that prints import-error text is a real failure.
+LOAD_ERROR_SIGNS = (
+    _signs(  # pytest
+        r"^_+ ERROR collecting \S.* _+$", r"^(?:_{3,} \S|={3,} )",
+        r"^(?:=+ )?[1-9]\d* failed\b|^(?:FAILED|ERROR) \S+::",
+    ),
+    _signs(  # unittest
+        r"^ERROR: \S+ \(unittest\.loader\._FailedTest\b", r"^={20,}$|^Ran \d+ tests? in ",
+        r"^FAIL: |^ERROR: (?!\S+ \(unittest\.loader\._FailedTest\b)|^FAILED \(.*\bfailures=[1-9]",
+    ),
+    _signs(  # jest
+        r"^\s*● Test suite failed to run$", r"^\s*●|^\s*(?:FAIL|PASS) |^Test Suites:",
+        r"^Tests:.*\b[1-9]\d* failed\b|^\s*● (?!Test suite failed to run$)",
+    ),
 )
-IMPORT_ERROR_RE = re.compile("|".join(IMPORT_ERROR_SIGNS), re.MULTILINE)
+# The lines in a load error's text that name its cause, the last one winning:
+# a Python exception line, plain or with pytest's `E` prefix; pytest's own
+# line for an import error, which it prints before the traceback, so it
+# survives a cut; and jest's missing-module message.
+LOAD_ERROR_CAUSE_RE = re.compile(
+    r"^(?:E\s+|\s*)(?:(?P<exception>[A-Z]\w*(?:Error|Exception)):"
+    r"|(?P<missing>ImportError while importing test module|Cannot find module) ')",
+    re.MULTILINE,
+)
+MISSING_MODULE_EXCEPTIONS = frozenset({"ImportError", "ModuleNotFoundError"})
 SETUP_SKILL = "setup-scribe"
 REVIEW_SKILL = "standards-and-spec-review"
 RED_FLAGS_REFERENCE = "software-design-principles/references/red-flags.md"
@@ -165,10 +201,6 @@ CODE_EXTENSIONS = frozenset(
     ".zig .r .jl .ipynb".split()
 )
 DOC_EXTENSIONS = (".md", ".mdx", ".rst", ".adoc", ".txt")
-TEST_PATH_RE = re.compile(
-    r"(?:^|/)(?:tests?|spec|__tests__)/|(?:^|/)test_[^/]*$|_test\.[^/.]+$|\.(?:test|spec)\.[^/.]+$",
-    re.IGNORECASE,
-)
 # Security-sensitive surfaces, by path. The first matching category is named.
 # Paths are lowercased with camelCase humps split by `_` first, and words must
 # stand alone between `/`, `.`, `_`, or `-`, so `tokenizer.py` and `author.py`
@@ -642,7 +674,7 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
     the user's skip of the skill clears both gates.
     """
 
-    code, test = is_code(path), bool(TEST_PATH_RE.search(path))
+    code, test = is_code(path), is_test(path, project)
     if not design_reads.applies(path, is_code=code, is_test=test) or proof.skipped(DESIGN_SKILL):
         return None
     # A test file is never substantial: in TDD the test comes first, and the
@@ -656,7 +688,7 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
     required = design_reads.required(
         path, tool_input, is_code=code, is_test=test,
         written_before=any(p == path for p, _ in earlier),
-        other_code_files=len({p for p, _ in earlier if p != path and not TEST_PATH_RE.search(p)}),
+        other_code_files=len({p for p, _ in earlier if p != path and not is_test(p, project)}),
         declared=declared, cwd=project.cwd if project else None,
     )
     read = references_read | set(design_reads.reads_in(proof.turn.calls))
@@ -670,7 +702,7 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
         "nothing: " + ", ".join(f'"{name}"' for name in unknown) + "."
     ) if unknown else ""
     first = substantial and not any(
-        lines >= DESIGN_MIN_LINES for p, lines in earlier if not TEST_PATH_RE.search(p)
+        lines >= DESIGN_MIN_LINES for p, lines in earlier if not is_test(p, project)
     )
     if loaded and not needs_line and not first:
         return Hold(
@@ -731,9 +763,10 @@ def _repeated_failure_hold(proof: _Proof) -> Hold | None:
     without a trailing pipe into output filters (`| tail -20`): a narrowed
     rerun, such as one test file of a failing suite, is another command. A
     pass of that check resets its count; other commands between runs do not.
-    Only runs count: a call held, refused, or interrupted never ran. A failed
-    run that shows an import or collection error (`IMPORT_ERROR_SIGNS`)
-    neither adds to the count nor resets it.
+    Only runs count: a call held, refused, or interrupted never ran. A run
+    whose only failures are test modules missing a module (`LOAD_ERROR_SIGNS`)
+    neither adds to the count nor resets it, failed or not, since a pipe can
+    cut the failure signs from its output.
     """
 
     if proof.loaded_or_skipped(DIAGNOSE_SKILL):
@@ -745,10 +778,13 @@ def _repeated_failure_hold(proof: _Proof) -> Hold | None:
             continue
         command = str(call.input.get("command") or "")
         key, piped = _check_key(command)
-        # A pipe's exit code is its last filter's, so a piped run fails by what it prints.
-        failed = bool(FAILURE_SIGNS_RE.search(call.output)) if piped else not call.ok
-        if failed and IMPORT_ERROR_RE.search(call.output):
+        load_errors = _load_errors(call.output)
+        if load_errors == "missing-module":
             continue
+        # A pipe's exit code is its last filter's, so a piped run fails by what it prints.
+        failed = (
+            bool(load_errors or FAILURE_SIGNS_RE.search(call.output)) if piped else not call.ok
+        )
         if not failed and key not in in_a_row:
             continue  # A pass of a command that never failed changes nothing.
         if key not in is_check:
@@ -769,6 +805,33 @@ def _repeated_failure_hold(proof: _Proof) -> Hold | None:
         "not applied. Rerunning the check is not held, and a pass of it resets the count. "
         + unseen_line_advice("skip line", f"skip {DIAGNOSE_SKILL}"),
     )
+
+
+def _load_errors(output: str) -> str | None:
+    """What a run's output says about test modules that failed to load.
+
+    "missing-module" when it shows at least one, every one it shows was
+    caused by a missing module or name, and no test that ran failed; "other"
+    when it shows one for any other reason, or beside a real failure; None
+    when it shows none. Output cut before a cause reads as "other".
+    """
+
+    found, lines = False, output.splitlines()
+    for signs in LOAD_ERROR_SIGNS:
+        starts = [i for i, line in enumerate(lines) if signs.start.match(line)]
+        if not starts:
+            continue
+        found = True
+        if signs.real_failure.search(output):
+            return "other"
+        for start in starts:
+            end = next((i for i in range(start + 1, len(lines)) if signs.end.match(lines[i])),
+                       len(lines))
+            causes = list(LOAD_ERROR_CAUSE_RE.finditer("\n".join(lines[start + 1:end])))
+            last = causes[-1] if causes else None
+            if last is None or not (last["missing"] or last["exception"] in MISSING_MODULE_EXCEPTIONS):
+                return "other"
+    return "missing-module" if found else None
 
 
 def _check_key(command: str) -> tuple[str, bool]:
@@ -863,7 +926,7 @@ def _code_items(changes: "_Changes", proof: _Proof) -> list[str]:
             f"`goated-skip: {HANDOFF_SKILL}: <reason>`."
         )
     non_test = any(
-        not TEST_PATH_RE.search(path) for change in code for path in change.code_paths
+        not is_test(path, changes.project) for change in code for path in change.code_paths
     )
     if non_test and not proof.skipped(DOC_SYNC_SKILL):
         loaded = proof.load_index(DOC_SYNC_SKILL)
@@ -982,6 +1045,7 @@ class _Changes:
 
     def __init__(self, turn: Turn, subagents: dict, project: Project | None) -> None:
         self.turn = turn
+        self.project = project
         changes = list(_changes(turn, subagents, project))
         self.code = [c for c in changes if c.code_paths]
         self.sensitive = [
@@ -1111,15 +1175,42 @@ def _in_project(path: str, project: Project | None, placed: bool = True) -> bool
 
     if project is None or not placed:
         return True
-    rooted = path.startswith(("/", "\\", "~")) or (os.name == "nt" and DRIVE_RE.match(path))
-    if not rooted:
-        path = project.cwd.rstrip("/\\") + "/" + path
-    drives = {os.path.splitdrive(root)[0] for root in project.roots}
-    readings = _readings(path, drives)
+    readings = _project_readings(path, project)
     if readings is None or _under_any(readings, project.roots):
         return True
     # A link may lead into the project from outside it, or out of a root.
     return _under_any(_resolved(readings), _resolved(project.roots))
+
+
+def is_test(path: str, project: Project | None) -> bool:
+    """Whether `path` is a test file, judged by its path inside the project
+    (`design_reads.is_test_path`), so folders above the project do not count.
+    A file whose place in the project is unknown is not a test file."""
+
+    return design_reads.is_test_path(_path_in_project(path, project))
+
+
+def _path_in_project(path: str, project: Project | None) -> str | None:
+    """`path` below the outermost project root holding it, with `/` separators
+    and in comparable form, or None: no project, no certain reading, or
+    outside every root. A path reached only through a link is outside."""
+
+    readings = _project_readings(path, project) if project else None
+    inside = [
+        full[len(root.rstrip(os.sep)) + 1:]
+        for full in readings or () for root in project.roots
+        if full.startswith(root.rstrip(os.sep) + os.sep)
+    ]
+    return max(inside, key=len).replace(os.sep, "/") if inside else None
+
+
+def _project_readings(path: str, project: Project) -> list[str] | None:
+    """`_readings` of `path`, a relative one taken from the session's folder."""
+
+    rooted = path.startswith(("/", "\\", "~")) or (os.name == "nt" and DRIVE_RE.match(path))
+    if not rooted:
+        path = project.cwd.rstrip("/\\") + "/" + path
+    return _readings(path, {os.path.splitdrive(root)[0] for root in project.roots})
 
 
 def _under_any(paths, roots) -> bool:

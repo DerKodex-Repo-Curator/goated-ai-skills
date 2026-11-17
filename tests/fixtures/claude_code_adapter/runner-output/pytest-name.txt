@@ -1,0 +1,17 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.4, pytest-9.2.0, pluggy-1.7.0
+rootdir: C:\repo
+collected 0 items / 1 error
+
+=================================== ERRORS ====================================
+_______________________ ERROR collecting test_export.py _______________________
+test_export.py:1: in <module>
+    from export import export_rows
+export.py:1: in <module>
+    ROWS = load()
+           ^^^^
+E   NameError: name 'load' is not defined
+=========================== short test summary info ===========================
+ERROR test_export.py - NameError: name 'load' is not defined
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+============================== 1 error in 0.14s ===============================

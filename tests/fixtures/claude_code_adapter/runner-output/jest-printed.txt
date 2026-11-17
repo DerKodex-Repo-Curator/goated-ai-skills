@@ -1,0 +1,20 @@
+  console.log
+    Cannot find module './plugin' from 'src/loader.js'
+
+      at Object.log (src/loader.test.js:3:11)
+
+ FAIL  src/loader.test.js
+  ● reports a missing module
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "missing"
+    Received: "ok"
+
+      at Object.toBe (src/loader.test.js:4:20)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 total
+Snapshots:   0 total
+Time:        0.377 s
+Ran all test suites.

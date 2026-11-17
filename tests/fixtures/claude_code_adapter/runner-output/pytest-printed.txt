@@ -1,0 +1,23 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.4, pytest-9.2.0, pluggy-1.7.0
+rootdir: C:\repo
+collected 1 item
+
+test_loader.py F                                                         [100%]
+
+================================== FAILURES ===================================
+_________________________ test_reports_missing_module _________________________
+
+    def test_reports_missing_module():
+        print("ModuleNotFoundError: No module named 'foo'")
+        print("ImportError while importing test module '/x/test_y.py'.")
+>       assert False
+E       assert False
+
+test_loader.py:4: AssertionError
+---------------------------- Captured stdout call -----------------------------
+ModuleNotFoundError: No module named 'foo'
+ImportError while importing test module '/x/test_y.py'.
+=========================== short test summary info ===========================
+FAILED test_loader.py::test_reports_missing_module - assert False
+============================== 1 failed in 0.10s ==============================
