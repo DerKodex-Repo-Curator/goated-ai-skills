@@ -25,6 +25,10 @@ shaped the change, Ticket 051's reads prove only that a file was opened.
   cannot be read, fail open for this item and say so in the README.
 - Keep the `red-flags.md` read and the change read as they are.
 - Update the README's closeout table and hold text.
+- Keep the item inside the closeout's item list. Ticket 062
+  (`docs/specs/2026-11-17-adapter-hook-friction.md`, R1) also holds a commit
+  on unmet closeout items, so the citation item joins that commit-time list
+  with no extra work.
 
 ## Recommended First Reads
 

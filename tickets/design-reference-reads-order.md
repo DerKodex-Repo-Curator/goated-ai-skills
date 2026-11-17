@@ -29,6 +29,8 @@ Source spec: `docs/specs/2026-11-16-design-reference-reads.md`
 5. `tickets/052-adapter-design-citations-at-closeout.md`
    - Blocked by: `tickets/051-adapter-design-reference-reads.md`
    - Enables: a closeout that needs a cited id from each required reference.
+     It also unblocks Tickets 061 and 062 in
+     `tickets/adapter-hook-friction-order.md`.
 
 Tickets 048 and 049 change only skill files, so they can run alongside the
 adapter queue (047, then 042 to 046). Ticket 050 edits the mod after 047.
