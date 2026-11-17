@@ -171,6 +171,9 @@ HELD = [
     ("Bash", "ls '//host/share'"),
     ("PowerShell", "Get-Content //host/share/a"),
     ("PowerShell", "Get-Content -Path //host/share/a"),
+    # In the PowerShell tool, `.NET` write text counts as a write (Ticket 058),
+    # so it is no plain read either; in Bash the same text is data.
+    ("PowerShell", "cat '[System.IO.File]::WriteAllText(1,2)'"),
 ]
 
 

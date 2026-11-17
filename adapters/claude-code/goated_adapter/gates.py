@@ -216,7 +216,7 @@ def check_routing(
     user_skipped = set(overrides.get("skills") or ())
     routed = state.router_loaded or state.brief_routed
     if not routed and ROUTER_SKILL not in user_skipped:
-        if tool_name in COMMAND_TOOLS and shell.analyze(str(tool_input.get("command") or "")).read_only:
+        if tool_name in COMMAND_TOOLS and shell.analyze(str(tool_input.get("command") or ""), tool_name).read_only:
             return None
         return Hold(
             "router-first",
