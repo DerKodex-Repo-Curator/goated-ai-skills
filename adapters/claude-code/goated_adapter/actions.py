@@ -76,6 +76,19 @@ FAILURE_SIGNS_RE = re.compile(
     r"|^npm error\b|\berror TS\d+|\berror\[E\d+\]|test result: FAILED|^error: ",
     re.MULTILINE,
 )
+# What test runners print when a test module cannot be imported or collected.
+# Such a run failed before any test ran: in TDD the first red run is often one,
+# because the module under test does not exist yet, and the agent knows why.
+# Each sign is anchored where the runner prints it, so an assertion message
+# that merely quotes one is a real failure.
+IMPORT_ERROR_SIGNS = (
+    r"^_* ?ERROR collecting\b",  # pytest, a module that failed to collect
+    r"^ImportError while importing test module\b",  # pytest
+    r"^(?:E +)?ModuleNotFoundError: No module named\b",  # Python; `E` is pytest's prefix
+    r"^ImportError: Failed to import test module:",  # unittest
+    r"^\s*Cannot find module '[^']+' from\b",  # jest
+)
+IMPORT_ERROR_RE = re.compile("|".join(IMPORT_ERROR_SIGNS), re.MULTILINE)
 SETUP_SKILL = "setup-scribe"
 REVIEW_SKILL = "standards-and-spec-review"
 RED_FLAGS_REFERENCE = "software-design-principles/references/red-flags.md"
@@ -620,7 +633,7 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
                  references_read: frozenset[str]) -> Hold | None:
     """Hold a project file write until its design is done (spec R5).
 
-    The `design` gate holds a turn's first substantial code edit until
+    The `design` gate holds a turn's first substantial non-test code edit until
     `software-design-principles` loads, a design-reads line is in the turn,
     and every reference the edit requires is read. The `design-reads` gate
     holds any later edit the design-reads rules apply to, once the skill is
@@ -632,7 +645,9 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
     code, test = is_code(path), bool(TEST_PATH_RE.search(path))
     if not design_reads.applies(path, is_code=code, is_test=test) or proof.skipped(DESIGN_SKILL):
         return None
-    substantial = code and added_lines(tool_input) >= DESIGN_MIN_LINES
+    # A test file is never substantial: in TDD the test comes first, and the
+    # design happens in the code after it (Ticket 057).
+    substantial = code and not test and added_lines(tool_input) >= DESIGN_MIN_LINES
     loaded = proof.loaded(DESIGN_SKILL)
     if not loaded and not substantial:
         return None
@@ -654,7 +669,9 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
         " Your design-reads lines name files that are not design references, so they require "
         "nothing: " + ", ".join(f'"{name}"' for name in unknown) + "."
     ) if unknown else ""
-    first = substantial and not any(lines >= DESIGN_MIN_LINES for _, lines in earlier)
+    first = substantial and not any(
+        lines >= DESIGN_MIN_LINES for p, lines in earlier if not TEST_PATH_RE.search(p)
+    )
     if loaded and not needs_line and not first:
         return Hold(
             "design-reads", JUSTIFIED_SKIP,
@@ -714,7 +731,9 @@ def _repeated_failure_hold(proof: _Proof) -> Hold | None:
     without a trailing pipe into output filters (`| tail -20`): a narrowed
     rerun, such as one test file of a failing suite, is another command. A
     pass of that check resets its count; other commands between runs do not.
-    Only runs count: a call held, refused, or interrupted never ran.
+    Only runs count: a call held, refused, or interrupted never ran. A failed
+    run that shows an import or collection error (`IMPORT_ERROR_SIGNS`)
+    neither adds to the count nor resets it.
     """
 
     if proof.loaded_or_skipped(DIAGNOSE_SKILL):
@@ -728,6 +747,8 @@ def _repeated_failure_hold(proof: _Proof) -> Hold | None:
         key, piped = _check_key(command)
         # A pipe's exit code is its last filter's, so a piped run fails by what it prints.
         failed = bool(FAILURE_SIGNS_RE.search(call.output)) if piped else not call.ok
+        if failed and IMPORT_ERROR_RE.search(call.output):
+            continue
         if not failed and key not in in_a_row:
             continue  # A pass of a command that never failed changes nothing.
         if key not in is_check:
