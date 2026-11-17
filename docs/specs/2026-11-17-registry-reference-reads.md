@@ -2,8 +2,8 @@
 
 ## Status
 
-Draft. Decisions settled with the maintainer on 2026-11-17 in a
-grill-with-docs session; awaiting the maintainer's review before tickets.
+Approved by the maintainer on 2026-11-17 in a
+grill-with-docs session. Ticket ready.
 Builds on
 [the design reference reads spec](2026-11-16-design-reference-reads.md),
 [the written-line holds spec](2026-11-17-adapter-written-line-holds.md) and
@@ -142,6 +142,11 @@ suite for R9. A live check in one real session with `tdd` loaded.
 
 ## Constraints
 
+- Every new rule (a signal, a trigger, a threshold, an item's wording of
+  what is required) is stated in the registry, the shared policy or a skill.
+  The adapter maps Claude Code's events to those rules and adds none of its
+  own, as ADR 0003 requires, so another harness's adapter can enforce the
+  same rules ([portable enforcement spec](2026-11-17-portable-enforcement-core.md)).
 - Fail toward holding only where the registry is readable. If the adapter
   cannot find or read the registry, it asks for nothing new and says so in
   Known Limits, as the Design citations item does.

@@ -2,8 +2,8 @@
 
 ## Status
 
-Draft. Decisions settled with the maintainer on 2026-11-17 in a
-grill-with-docs session; awaiting the maintainer's review before tickets.
+Approved by the maintainer on 2026-11-17 in a
+grill-with-docs session. Ticket ready.
 Builds on
 [the skill enforcement spec](2026-11-15-skill-enforcement-adapter.md),
 [the activation gates spec](2026-11-16-adapter-skill-activation-gates.md),
@@ -104,9 +104,11 @@ or two sessions. The gaps that matter:
   - The `retrospective` skill's description and the router's map name the
     moment after a wave of delegated tickets is merged. The skill takes the
     skill-usage mod's numbers as an input when they exist.
-- **R7, skills in a brief.** The spawn-brief template gains a line naming
-  the skills the new agent should read, or none with a reason. The `spawn`
-  gate's content check requires the line.
+- **R7, skills in a brief.** Each brief template the `spawn` gate knows
+  (`handoff`'s spawn brief, and the implementer and reviewer prompts of
+  `subagent-driven-development`) gains a line naming the skills the new
+  agent should read, or none with a reason. The gate's content check
+  requires the line.
 - **R8, design principles as a dependency.** Every skill is audited, and
   `software-design-principles` is added as a soft dependency wherever a
   skill judges or produces design. The maintainer reviews the proposed
@@ -158,6 +160,11 @@ that commits a large change.
 
 ## Constraints
 
+- Every new rule (a signal, a trigger, a threshold, an item's wording of
+  what is required) is stated in the registry, the shared policy or a skill.
+  The adapter maps Claude Code's events to those rules and adds none of its
+  own, as ADR 0003 requires, so another harness's adapter can enforce the
+  same rules ([portable enforcement spec](2026-11-17-portable-enforcement-core.md)).
 - Every hold added here is justified-skip, except the orientation
   requirement, which is strict like the rest of `pipeline` and is dropped
   by a corrected route line.

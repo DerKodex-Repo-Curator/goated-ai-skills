@@ -2,8 +2,8 @@
 
 ## Status
 
-Draft. Decisions settled with the maintainer on 2026-11-17 in a
-grill-with-docs session; awaiting the maintainer's review before tickets.
+Approved by the maintainer on 2026-11-17 in a
+grill-with-docs session. Ticket ready.
 Builds on [the skill enforcement spec](2026-11-15-skill-enforcement-adapter.md)
 and [the registry reference reads spec](2026-11-17-registry-reference-reads.md).
 
@@ -116,6 +116,10 @@ by the maintainer.
 
 ## Constraints
 
+- What the mod records is defined by the hold line and marker grammar,
+  which are portable. The store and pane are Claude desktop specific; a
+  harness-neutral log follows in the
+  [portable enforcement spec](2026-11-17-portable-enforcement-core.md).
 - The mod keeps reading holds from their first line and backticked skill
   names; the adapter's hold texts are regenerated, not hand-copied.
 - A change to the stored shape bumps the events shape tag, as Ticket 033's
