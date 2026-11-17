@@ -225,14 +225,20 @@ class ShellCommand:
     a file (a Bash `2>/dev/null` aside), heredoc, group, substitution, or
     background job, and with none of the text in `NOT_PLAINLY_SPELLED_RE`
     outside a whole single-quoted argument (see `_outside_quoted_arguments`);
-    when the reading is in doubt it is False.
+    when the reading is in doubt it is False. `only_reads_and_writes_files`
+    is the same test loosened only for file work: each simple command may
+    instead be a `cd`, a command that only writes the files it names
+    (`FILE_WRITERS`, such as `cp` or `rm`), or a plain read whose output is
+    redirected into a file, and every write's files are named. It says
+    nothing about where those files are.
     """
 
     __slots__ = (
         "writes", "write_targets", "unplaced_targets", "unknown_writes", "commit",
         "commit_message", "opens_pr", "pr_base", "pr_head", "is_check",
         "non_check_writes", "unchecked_targets", "unchecked_unknown_writes", "prints_changes",
-        "installs_package", "read_only", "script_targets", "script_unknown_writes",
+        "installs_package", "read_only", "only_reads_and_writes_files", "script_targets",
+        "script_unknown_writes",
     )
 
     def __init__(self) -> None:
@@ -254,6 +260,7 @@ class ShellCommand:
         self.read_only = False
         self.script_targets: list[str] = []
         self.script_unknown_writes = False
+        self.only_reads_and_writes_files = False
 
 
 def analyze(command: str, tool: str = "Bash") -> ShellCommand:
@@ -297,6 +304,11 @@ def analyze(command: str, tool: str = "Bash") -> ShellCommand:
         bool(segments) and not result.writes
         and not NOT_PLAINLY_SPELLED_RE.search(_outside_quoted_arguments(command))
         and all(_reads_only(segment, index == 0, tool) for index, segment in enumerate(segments))
+    )
+    result.only_reads_and_writes_files = (
+        bool(segments) and not result.unknown_writes and not NOT_PLAINLY_SPELLED_RE.search(command)
+        and all(_reads_only(segment, index == 0, tool) or _works_on_files_only(segment, tool)
+                for index, segment in enumerate(segments))
     )
     return result
 
@@ -633,7 +645,29 @@ def _may_name_network_path(text: str) -> bool:
                for pair in SEPARATOR_PAIR_RE.finditer(text))
 
 
-def _reads_only(segment: "_Segment", first: bool, tool: str) -> bool:
+# Commands whose only effect is to write, copy, move, link, or remove the
+# files they name. Left out: `install`, whose `--strip-program` runs a
+# program, and `rename`, which is Perl's on many systems and runs its
+# expression as code.
+FILE_WRITERS = (TARGETS_ARE_ARGS | TARGET_IS_LAST_ARG | TARGET_IS_PATH_PARAM) - {"install", "rename"}
+
+
+def _works_on_files_only(segment: "_Segment", tool: str) -> bool:
+    """True when `segment`, written as the bare command, only changes
+    folder, only writes the files it names (`FILE_WRITERS`), or is a plain
+    read but for redirecting its output into a file (`cat <<'EOF' > x`)."""
+
+    name, original, _ = _resolve(segment.words)
+    if segment.words[0] != original or original.lower() != name:
+        return False
+    if segment.nested or segment.after not in READ_ONLY_ENDS:
+        return False
+    if name in FILE_WRITERS or name in CHANGE_DIRECTORY:
+        return True
+    return _reads_only(segment, False, tool, writes_output=True)
+
+
+def _reads_only(segment: "_Segment", first: bool, tool: str, writes_output: bool = False) -> bool:
     """True when `segment` is a plain read, written as the bare command.
 
     A wrapper (`sudo`, `xargs`), a variable assignment, or a keyword before
@@ -645,14 +679,18 @@ def _reads_only(segment: "_Segment", first: bool, tool: str) -> bool:
     Bash redirect of another stream than standard output into `/dev/null`
     (`2>/dev/null`). The command's `first` segment may also be a `cd` to
     one plain path, which moves the reads after it but writes nothing.
+    With `writes_output`, it may also redirect its output into files and
+    read a heredoc.
     """
 
     name, original, args = _resolve(segment.words)
     if segment.words[:1] != [original] or original.lower() != name:
         return False
-    if segment.nested or segment.heredocs or segment.after not in READ_ONLY_ENDS:
+    if segment.nested or segment.after not in READ_ONLY_ENDS:
         return False
-    if segment.redirects and not (
+    if segment.heredocs and not writes_output:
+        return False
+    if segment.redirects and not writes_output and not (
         tool == "Bash" and not segment.out_redirects
         and all(target == BASH_NULL_DEVICE for target in segment.redirects)
     ):

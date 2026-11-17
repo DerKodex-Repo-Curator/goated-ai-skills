@@ -29,6 +29,11 @@ export type UsageEvent = Stamp &
      */
     | { kind: 'turn-end'; agent?: string; reason?: 'answer' | 'aborted' | 'refusal' | 'error' }
     | { kind: 'read'; skills: string[] }
+    /**
+     * A main-agent Read tool call, by the file it names, as the adapter counts a briefed session's orientation reads.
+     * `id`: the call's tool_use id, so a failed read (`refused`) read nothing.
+     */
+    | { kind: 'file-read'; id?: string; file: string }
     /** A supporting file of a skill read, such as `references/x.md`, by the main agent or a subagent; `isReadTool`: by the Read tool, not a shell command. */
     | { kind: 'ref'; skill: string; file: string; isReadTool?: true; isSubagent?: true }
     /** A subagent reading a skill's SKILL.md, the skill's body, without the Skill tool. */

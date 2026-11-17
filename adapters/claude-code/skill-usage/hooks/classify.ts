@@ -352,6 +352,7 @@ export function toolUseEvents(
       events.push(...refs)
       continue
     }
+    if (name === 'Read' && target) events.push({ kind: 'file-read', t, ...ofCall, file: target })
     const reached = skillsInPath(target)
     if (reached.length > 0) events.push({ kind: 'read', t, skills: reached })
     events.push(...refs)
@@ -679,7 +680,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   let turnRouter = false
 
   for (const e of events) {
-    if ((e.kind === 'load' || e.kind === 'change' || e.kind === 'side-session') && e.id && refusedCalls.has(e.id)) continue
+    if ((e.kind === 'load' || e.kind === 'change' || e.kind === 'side-session' || e.kind === 'file-read') && e.id && refusedCalls.has(e.id)) continue
     const holdRow = holds.observe(e)
     if (holdRow) timeline.push(holdRow)
     switch (e.kind) {

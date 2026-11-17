@@ -1908,6 +1908,74 @@ def _in_project(path: str, project: Project | None, placed: bool = True) -> bool
     return _under_any(_resolved(readings), _resolved(project.roots))
 
 
+def writes_only_scratch(tool_name: str, tool_input: dict, project: Project | None, home: str) -> bool:
+    """True for a write that touches only scratch files, so the routing gates
+    let it through: every file it writes is outside the project (see
+    `_in_project`), inside no git checkout, outside the Claude folder
+    (`~/.claude`, and `home`'s), and holds no project folder; when any of
+    that cannot be checked, the file does not count as outside.
+
+    The write is an edit tool's file, or a shell command made only of plain
+    reads and writes whose files it names (see
+    `shell.ShellCommand.only_reads_and_writes_files`), with at least one
+    write. Any other call is not such a write.
+    """
+
+    if project is None:
+        return False
+    if tool_name in FILE_WRITE_TOOLS:
+        targets, unplaced = [str(tool_input.get(FILE_WRITE_TOOLS[tool_name]) or "")], []
+    elif tool_name in COMMAND_TOOLS:
+        command = shell.analyze(str(tool_input.get("command") or ""), tool_name)
+        if not command.only_reads_and_writes_files:
+            return False
+        targets, unplaced = command.write_targets, command.unplaced_targets
+    else:
+        return False
+    claude = _readings("~/.claude", ())
+    if claude is None:
+        return False
+    claude += [_comparable(os.path.join(home, ".claude"))]
+    claude += _resolved(claude)
+    return bool(targets) and all(
+        target and _scratch(target, project, target not in unplaced, claude) for target in targets
+    )
+
+
+def _scratch(path: str, project: Project, placed: bool, claude: list[str]) -> bool:
+    """Whether `path` is certainly a scratch file: see `writes_only_scratch`."""
+
+    if _in_project(path, project, placed):
+        return False
+    readings = _project_readings(path, project)
+    if readings is None:
+        return False
+    every = readings + _resolved(readings)
+    roots = [*project.roots, *_resolved(project.roots)]
+    if _under_any(roots, every) or _under_any(every, claude):
+        return False
+    return not any(_in_checkout(reading) is not False for reading in every)
+
+
+def _in_checkout(path: str) -> bool | None:
+    """Whether `path`, or a folder above it, holds a `.git` entry (a file in
+    a worktree, a folder in a clone); None when a folder cannot be checked."""
+
+    folder = path
+    while True:
+        try:
+            os.lstat(os.path.join(folder, ".git"))
+            return True
+        except (FileNotFoundError, NotADirectoryError):
+            pass
+        except OSError:
+            return None
+        parent = os.path.dirname(folder)
+        if parent == folder:
+            return False
+        folder = parent
+
+
 def is_test(path: str, project: Project | None) -> bool:
     """Whether `path` is a test file, judged by its path inside the project
     (`design_reads.is_test_path`), so folders above the project do not count.

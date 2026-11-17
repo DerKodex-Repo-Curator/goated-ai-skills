@@ -14,11 +14,19 @@ gates. The rules enforce contracts defined elsewhere, never new ones
   corrected route line (the last one wins), so this hold is strict. A load
   counts from its call until the next compaction (spec R3), when its text
   leaves the context. In a session routed by its brief, the router's
-  orientation skill, when installed, joins a `standard` or `full` route.
+  orientation skill, when installed, joins a `standard` or `full` route;
+  Read calls of `ORIENTATION_READS` distinct files meet it as well as its
+  load does (spec R3), since targeted reading is that skill's own work.
+
+A write whose every file is scratch, outside the project and any other checkout
+(`actions.writes_only_scratch`), meets none of these holds (spec R4): routing
+guards the project's work, not a scratch copy.
 """
 
 from __future__ import annotations
 
+import hashlib
+import os
 import re
 from typing import Callable
 
@@ -28,6 +36,8 @@ from .transcript import Turn
 
 ROUTER_SKILL = "using-goated-ai-skills"
 ORIENTATION_SKILL = "session-start-progressive-disclosure"
+# How many distinct files a briefed session reads to orient without the skill.
+ORIENTATION_READS = 3
 
 WRITE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
 START_SESSION = "mcp__ccd_session__start_session"
@@ -198,7 +208,21 @@ def fold_turns(
         state.template_reads = _unique(
             [*state.template_reads, *contracts.templates_read(turn.calls)]
         )
+        state.files_read = _unique([*state.files_read, *_files_read(turn.calls)])[:ORIENTATION_READS]
         state.last_turn = turn.key
+
+
+def _files_read(calls) -> list[str]:
+    """A digest of each file a finished Read call among `calls` read, in order.
+
+    Two spellings of one path (case and separators on Windows) give one digest.
+    """
+
+    return [
+        hashlib.sha256(os.path.normcase(os.path.normpath(path)).encode("utf-8")).hexdigest()[:16]
+        for call in calls
+        if call.name == "Read" and call.ok and (path := str(call.input.get("file_path") or ""))
+    ]
 
 
 def _task_route_in(turn: Turn) -> dict | None:
@@ -258,6 +282,7 @@ def check_routing(
     turn: Turn,
     overrides: dict,
     orientation_installed: Callable[[], bool],
+    writes_scratch: Callable[[], bool],
 ) -> Hold | None:
     """Return the first routing hold that applies to this main-agent call, if any.
 
@@ -269,6 +294,9 @@ def check_routing(
     (`shows_a_card`) passes every routing gate. `orientation_installed` says
     whether the orientation skill is installed; it is asked only when a
     briefed route would require that skill (`_brief_orientation`).
+    `writes_scratch` says whether the call is a write whose every file is
+    scratch (`actions.writes_only_scratch`); such a write passes every routing gate,
+    and it is asked only of a call one of them would otherwise hold.
     """
 
     if tool_name not in GATED_TOOLS or overrides.get("routing") or shows_a_card(tool_name, tool_input):
@@ -277,6 +305,8 @@ def check_routing(
     routed = state.router_loaded or state.brief_routed
     if not routed and ROUTER_SKILL not in user_skipped:
         if tool_name in COMMAND_TOOLS and shell.analyze(str(tool_input.get("command") or ""), tool_name).read_only:
+            return None
+        if writes_scratch():
             return None
         return Hold(
             "router-first",
@@ -289,7 +319,7 @@ def check_routing(
             "that skill is not installed, tell the user: they can type "
             "`skip routing` in their prompt to proceed without it.",
         )
-    if not writes_like_an_edit(tool_name, tool_input):
+    if not writes_like_an_edit(tool_name, tool_input) or writes_scratch():
         return None
     if turn.route is None:
         return Hold("route-line", STRICT, _route_line_instruction(turn))
@@ -312,7 +342,12 @@ def check_routing(
     def unmet(skill: str) -> bool:
         return skill not in state.loads and skill not in user_skipped
 
-    orient = _brief_orientation(state, task) and unmet(ORIENTATION_SKILL) and orientation_installed()
+    orient = (
+        _brief_orientation(state, task)
+        and unmet(ORIENTATION_SKILL)
+        and len(state.files_read) < ORIENTATION_READS
+        and orientation_installed()
+    )
     route_skills = [
         skill for skill in task.route["requires"] if unmet(skill) and not (orient and skill == ORIENTATION_SKILL)
     ]
@@ -325,11 +360,14 @@ def check_routing(
     if orient:
         parts.append(
             f"A session started from a brief loads `{ORIENTATION_SKILL}` before its "
-            "first write or spawn when its route is standard or full."
+            "first write or spawn when its route is standard or full, or orients by "
+            "finishing Read calls of three distinct files, such as the sources its "
+            "brief names."
         )
     parts.append(
         "Load each with the Skill tool and follow it. A load counts until the next "
-        "compaction, in this turn or an earlier one."
+        "compaction, in this turn or an earlier one"
+        + (", and so does a read." if orient else ".")
     )
     if route_skills:
         parts.append(

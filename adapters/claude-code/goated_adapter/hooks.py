@@ -201,6 +201,9 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
     hold = gates.check_routing(
         state, tool_name, tool_input, current, overrides,
         orientation_installed=lambda: gates.ORIENTATION_SKILL in installed_skill_names(cwd, config.home),
+        writes_scratch=lambda: actions.writes_only_scratch(
+            tool_name, tool_input, _project(payload, config), str(config.home)
+        ),
     )
     if hold is None:
         hold = actions.check_action(

@@ -198,6 +198,29 @@ test("a pipeline hold for a brief's orientation is followed only by a route line
   expect(loaded.nudges).toEqual({ pipeline: { followed: 1 } })
 })
 
+test("three Read calls of distinct files since the last compaction answer a brief's orientation hold, as the adapter counts them (Ticket 087)", async () => {
+  const read = (file: string, t: number, id = `r${t}`) => toolUseEvents([{ id, name: 'Read', input: { file_path: file } }], false, t)
+  const nudges = (...events: UsageEvent[][]) => summarize([
+    { kind: 'prompt', t: 0, named: [] },
+    ...events.flat(),
+    { kind: 'turn-end', t: 99 },
+  ]).nudges
+  const hold = hookEvents(PIPELINE_BRIEF, 1, { holdsOnly: true })
+  // The adapter counts reads from the session's start, so reads before the hold count too.
+  expect(nudges(read('/w/a.md', 0.5), hold, read('/w/b.md', 2), read('/w/c.md', 3))).toEqual({ pipeline: { 'read files': 1 } })
+  // Near misses: two files, one file read three times, a failed read, reads before a compaction.
+  expect(nudges(hold, read('/w/a.md', 2), read('/w/b.md', 3))).toEqual({ pipeline: { unanswered: 1 } })
+  expect(nudges(hold, read('/w/a.md', 2), read('/w/a.md', 3), read('/w/a.md', 4))).toEqual({ pipeline: { unanswered: 1 } })
+  expect(nudges(hold, read('/w/a.md', 2), read('/w/b.md', 3), read('/w/c.md', 4, 'bad'), [{ kind: 'refused', t: 5, id: 'bad' }])).toEqual({ pipeline: { unanswered: 1 } })
+  expect(nudges(read('/w/a.md', 0.2), read('/w/b.md', 0.3), [{ kind: 'compact', t: 0.4 }], hold, read('/w/c.md', 2))).toEqual({ pipeline: { unanswered: 1 } })
+  // One file spelled with `.` or `..` segments, or in another case or separator on Windows, is one file.
+  expect(nudges(hold, read('C:\\w\\a.md', 2), read('c:/w/./a.md', 3), read('C:\\w\\x\\..\\a.md', 4))).toEqual({ pipeline: { unanswered: 1 } })
+  expect(nudges(hold, read('/w/a.md', 2), read('/w/./a.md', 3), read('/w/x/../a.md', 4))).toEqual({ pipeline: { unanswered: 1 } })
+  // A route's own skills are not answered by reads.
+  const own = hookEvents(held('Edit', ADAPTER_TEXTS.pipeline), 1, { holdsOnly: true })
+  expect(nudges(own, read('/w/a.md', 2), read('/w/b.md', 3), read('/w/c.md', 4)).pipeline?.['read files']).toBeUndefined()
+})
+
 test('the router-first hold is followed by loading the router, the route-line hold by a route line, the pipeline hold by each skill', async () => {
   const s = summarize([
     { kind: 'prompt', t: 1, named: [] },

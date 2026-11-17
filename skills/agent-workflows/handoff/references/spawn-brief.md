@@ -33,8 +33,10 @@ write ownership and review statuses. Use this template for everything else.
 - If you already routed the task, end the brief with its route line, such as
   `goated-route: standard | requires: tdd`, on its own line outside code
   blocks. A new session takes it as its route and still loads those skills.
-  On a `standard` or `full` route it loads
-  `session-start-progressive-disclosure` first, when installed.
+  On a `standard` or `full` route it orients before its first write by
+  reading the sources the brief names, at least three files, or by loading
+  `session-start-progressive-disclosure`, when installed, if the area is
+  unfamiliar.
   A route line anywhere in the brief counts, so quote no other.
 
 ## Template

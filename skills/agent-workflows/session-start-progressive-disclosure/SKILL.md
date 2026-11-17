@@ -15,6 +15,10 @@ stale, or boundary-uncertain work.
 Leave a fresh, obvious tiny task to the shared router, which owns proportional
 orientation and can initialize a lightweight envelope silently.
 
+A session started from a brief, on a `standard` or `full` route, orients
+before its first write by reading the sources its brief names, at least
+three files, or by loading this skill when the area is unfamiliar.
+
 ## Inputs
 
 - User request, current directory, and applicable instructions.
