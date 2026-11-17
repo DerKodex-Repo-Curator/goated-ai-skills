@@ -216,14 +216,19 @@ class ShellCommand:
     `READ_ONLY_COMMANDS`), joined only by pipes or list separators, with no
     wrapper, redirect into a file, heredoc, group, substitution, or
     background job, and with none of the text in `NOT_PLAINLY_SPELLED_RE`;
-    when the reading is in doubt it is False.
+    when the reading is in doubt it is False. `only_reads_and_writes_files`
+    is the same test loosened only for file work: each simple command may
+    instead be a `cd`, a command that only writes the files it names
+    (`FILE_WRITERS`, such as `cp` or `rm`), or a plain read whose output is
+    redirected into a file, and every write's files are named. It says
+    nothing about where those files are.
     """
 
     __slots__ = (
         "writes", "write_targets", "unplaced_targets", "unknown_writes", "commit",
         "commit_message", "opens_pr", "pr_base", "pr_head", "is_check",
         "non_check_writes", "unchecked_targets", "unchecked_unknown_writes", "prints_changes",
-        "installs_package", "read_only",
+        "installs_package", "read_only", "only_reads_and_writes_files",
     )
 
     def __init__(self) -> None:
@@ -243,6 +248,7 @@ class ShellCommand:
         self.prints_changes = False
         self.installs_package = False
         self.read_only = False
+        self.only_reads_and_writes_files = False
 
 
 def analyze(command: str, tool: str = "Bash") -> ShellCommand:
@@ -283,6 +289,10 @@ def analyze(command: str, tool: str = "Bash") -> ShellCommand:
     result.read_only = (
         bool(segments) and not result.writes and not NOT_PLAINLY_SPELLED_RE.search(command)
         and all(_reads_only(segment) for segment in segments)
+    )
+    result.only_reads_and_writes_files = (
+        bool(segments) and not result.unknown_writes and not NOT_PLAINLY_SPELLED_RE.search(command)
+        and all(_reads_only(segment) or _works_on_files_only(segment) for segment in segments)
     )
     return result
 
@@ -492,7 +502,29 @@ NOT_PLAINLY_SPELLED_RE = re.compile(
 )
 
 
-def _reads_only(segment: "_Segment") -> bool:
+# Commands whose only effect is to write, copy, move, link, or remove the
+# files they name. Left out: `install`, whose `--strip-program` runs a
+# program, and `rename`, which is Perl's on many systems and runs its
+# expression as code.
+FILE_WRITERS = (TARGETS_ARE_ARGS | TARGET_IS_LAST_ARG | TARGET_IS_PATH_PARAM) - {"install", "rename"}
+
+
+def _works_on_files_only(segment: "_Segment") -> bool:
+    """True when `segment`, written as the bare command, only changes
+    folder, only writes the files it names (`FILE_WRITERS`), or is a plain
+    read but for redirecting its output into a file (`cat <<'EOF' > x`)."""
+
+    name, original, _ = _resolve(segment.words)
+    if segment.words[0] != original or original.lower() != name:
+        return False
+    if segment.nested or segment.after not in READ_ONLY_ENDS:
+        return False
+    if name in FILE_WRITERS or name in CHANGE_DIRECTORY:
+        return True
+    return _reads_only(segment, writes_output=True)
+
+
+def _reads_only(segment: "_Segment", writes_output: bool = False) -> bool:
     """True when `segment` is a plain read, written as the bare command.
 
     A wrapper (`sudo`, `xargs`), a variable assignment, or a keyword before
@@ -500,7 +532,8 @@ def _reads_only(segment: "_Segment") -> bool:
     word must come first. It must be the bare name, in any case, with no
     folder or extension: `./cat` or `cat.cmd` may be any program. It has no
     output redirect, not even into a null device: `nul` is a real file in
-    bash, and `/dev/null` a real path in PowerShell.
+    bash, and `/dev/null` a real path in PowerShell. With `writes_output`,
+    it may redirect its output into files and read a heredoc.
     """
 
     name, original, args = _resolve(segment.words)
@@ -508,9 +541,9 @@ def _reads_only(segment: "_Segment") -> bool:
         return False
     if original.lower() != name:
         return False
-    if segment.nested or segment.heredocs or segment.after not in READ_ONLY_ENDS:
+    if segment.nested or segment.after not in READ_ONLY_ENDS:
         return False
-    if segment.redirects:
+    if (segment.heredocs or segment.redirects) and not writes_output:
         return False
     if name == "git":
         return _git_reads_only(args)

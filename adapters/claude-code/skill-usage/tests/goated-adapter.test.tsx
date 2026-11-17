@@ -213,6 +213,9 @@ test("three Read calls of distinct files since the last compaction answer a brie
   expect(nudges(hold, read('/w/a.md', 2), read('/w/a.md', 3), read('/w/a.md', 4))).toEqual({ pipeline: { unanswered: 1 } })
   expect(nudges(hold, read('/w/a.md', 2), read('/w/b.md', 3), read('/w/c.md', 4, 'bad'), [{ kind: 'refused', t: 5, id: 'bad' }])).toEqual({ pipeline: { unanswered: 1 } })
   expect(nudges(read('/w/a.md', 0.2), read('/w/b.md', 0.3), [{ kind: 'compact', t: 0.4 }], hold, read('/w/c.md', 2))).toEqual({ pipeline: { unanswered: 1 } })
+  // One file spelled with `.` or `..` segments, or in another case or separator on Windows, is one file.
+  expect(nudges(hold, read('C:\\w\\a.md', 2), read('c:/w/./a.md', 3), read('C:\\w\\x\\..\\a.md', 4))).toEqual({ pipeline: { unanswered: 1 } })
+  expect(nudges(hold, read('/w/a.md', 2), read('/w/./a.md', 3), read('/w/x/../a.md', 4))).toEqual({ pipeline: { unanswered: 1 } })
   // A route's own skills are not answered by reads.
   const own = hookEvents(held('Edit', ADAPTER_TEXTS.pipeline), 1, { holdsOnly: true })
   expect(nudges(own, read('/w/a.md', 2), read('/w/b.md', 3), read('/w/c.md', 4)).pipeline?.['read files']).toBeUndefined()

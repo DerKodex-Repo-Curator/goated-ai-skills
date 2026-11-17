@@ -28,8 +28,21 @@ const STOP_BLOCK_LIMIT = 9
 
 /** How many distinct files read orient a session started from a brief, as the adapter's `ORIENTATION_READS` says. */
 const ORIENTATION_READS = 3
-/** A path as the adapter compares it: a Windows path in either case and with either separator is one file. */
-const comparablePath = (file: string) => (/^[a-z]:|\\/i.test(file) ? file.replace(/\\/g, '/').toLowerCase() : file)
+/**
+ * A path as the adapter compares it (Python's `normcase(normpath(...))`): `.` and `..` segments collapsed, and a
+ * Windows path in either case and with either separator is one file.
+ */
+function comparablePath(file: string): string {
+  const isWindows = /^[a-z]:|\\/i.test(file)
+  const slashed = isWindows ? file.replace(/\\/g, '/').toLowerCase() : file
+  const parts: string[] = []
+  for (const part of slashed.split('/')) {
+    if (part === '.') continue
+    if (part === '..' && parts.length > 0 && parts[parts.length - 1] !== '..' && parts[parts.length - 1] !== '') parts.pop()
+    else parts.push(part)
+  }
+  return parts.join('/')
+}
 
 /** An event's time, as a timeline row carries it. */
 export const stamp = (e: UsageEvent) => (e.isEarlier ? { t: e.t, isEarlier: true as const } : { t: e.t })

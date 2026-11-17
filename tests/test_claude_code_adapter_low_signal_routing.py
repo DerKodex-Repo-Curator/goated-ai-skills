@@ -91,6 +91,17 @@ class OrientationByReadsTests(BriefTestCase):
 
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
+    def test_a_subagents_reads_do_not_count(self) -> None:
+        s = self.full_brief()
+        self.read_files(s, "a.md")
+        agent = s.subagent("a1")
+        for name in ("b.md", "c.md", "d.md"):
+            agent.read(str(self.session.project / name))
+
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), PIPELINE)
+        self.read_files(s, "b.md", "c.md")
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
     def test_reads_before_a_compaction_do_not_count(self) -> None:
         """A compaction also ends the brief's route, so no hold can show the
         reads it dropped; the saved state does."""
@@ -173,6 +184,61 @@ class OutsideWriteTests(unittest.TestCase):
         self.assertEqual(hold_line(s.call("Agent", brief)), "goated-hold: route-line | strict")
         s.say("goated-route: standard | requires: tdd")
         self.assertEqual(hold_line(s.call("Agent", brief)), PIPELINE)
+
+    def routed_without_a_line(self) -> Session:
+        s = self.session
+        s.prompt("Tidy it.")
+        s.load(ROUTER)
+        return s
+
+    def test_a_write_into_another_checkout_under_temp_is_routed(self) -> None:
+        """A worktree under the temp folder is another repo's work, not scratch."""
+
+        worktree = self.session.root / "scratch" / "wt"
+        worktree.mkdir(parents=True)
+        (worktree / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+        s = self.routed_without_a_line()
+
+        inside = {"file_path": (worktree / "src" / "x.py").as_posix(), "content": "x = 1\n"}
+        self.assertEqual(hold_line(s.call("Write", inside)), "goated-hold: route-line | strict")
+        # The near miss: a plain temp file beside it passes.
+        plain = {"file_path": f"{self.outside}/x.py", "content": "x = 1\n"}
+        self.assertEqual(decision(s.call("Write", plain)), "pass")
+
+    def test_before_the_router_a_copy_into_another_checkout_is_held(self) -> None:
+        sibling = self.session.root / "sibling"
+        (sibling / ".git").mkdir(parents=True)
+        s = self.session
+        s.prompt("Tidy it.")
+
+        held = s.run(f'cp src/app.py "{sibling.as_posix()}/app.py"')
+        self.assertEqual(hold_line(held), "goated-hold: router-first | strict")
+
+    def test_a_write_into_the_claude_folder_is_routed(self) -> None:
+        s = self.routed_without_a_line()
+
+        for path in ("~/.claude/settings.json", (self.session.config.home / ".claude" / "x.md").as_posix()):
+            held = s.call("Write", {"file_path": path, "content": "{}\n"})
+            self.assertEqual(hold_line(held), "goated-hold: route-line | strict", path)
+
+    def test_removing_a_folder_that_holds_the_project_is_routed(self) -> None:
+        s = self.session
+        s.prompt("Tidy it.")
+
+        held = s.run(f'rm -rf "{(self.session.root / "home" / "work").as_posix()}"')
+        self.assertEqual(hold_line(held), "goated-hold: router-first | strict")
+
+    def test_a_command_chained_to_an_outside_write_is_held(self) -> None:
+        s = self.session
+        s.prompt("Tidy it.")
+        copy = f'cp a.py "{self.outside}/a.py"'
+
+        for rest in ("./script.sh", "make deploy", "git push origin main", "npm publish",
+                     "python tools/migrate.py", "npm install left-pad"):
+            held = s.run(f"{copy} && {rest}")
+            self.assertEqual(hold_line(held), "goated-hold: router-first | strict", rest)
+        # The near miss: a plain read chained to it passes.
+        self.assertEqual(decision(s.run(f"{copy} && cat f")), "pass")
 
 
 if __name__ == "__main__":

@@ -18,8 +18,9 @@ gates. The rules enforce contracts defined elsewhere, never new ones
   Read calls of `ORIENTATION_READS` distinct files meet it as well as its
   load does (spec R3), since targeted reading is that skill's own work.
 
-A write whose every file is certainly outside the project meets none of these
-holds (spec R4): routing guards the project's work, not a scratch copy.
+A write whose every file is scratch, outside the project and any other checkout
+(`actions.writes_only_scratch`), meets none of these holds (spec R4): routing
+guards the project's work, not a scratch copy.
 """
 
 from __future__ import annotations
@@ -281,7 +282,7 @@ def check_routing(
     turn: Turn,
     overrides: dict,
     orientation_installed: Callable[[], bool],
-    writes_outside: Callable[[], bool],
+    writes_scratch: Callable[[], bool],
 ) -> Hold | None:
     """Return the first routing hold that applies to this main-agent call, if any.
 
@@ -293,8 +294,8 @@ def check_routing(
     (`shows_a_card`) passes every routing gate. `orientation_installed` says
     whether the orientation skill is installed; it is asked only when a
     briefed route would require that skill (`_brief_orientation`).
-    `writes_outside` says whether the call is a write whose every file is
-    certainly outside the project; such a write passes every routing gate,
+    `writes_scratch` says whether the call is a write whose every file is
+    scratch (`actions.writes_only_scratch`); such a write passes every routing gate,
     and it is asked only of a call one of them would otherwise hold.
     """
 
@@ -305,7 +306,7 @@ def check_routing(
     if not routed and ROUTER_SKILL not in user_skipped:
         if tool_name in COMMAND_TOOLS and shell.analyze(str(tool_input.get("command") or ""), tool_name).read_only:
             return None
-        if writes_outside():
+        if writes_scratch():
             return None
         return Hold(
             "router-first",
@@ -317,7 +318,7 @@ def check_routing(
             "redirect. If that skill is not installed, tell the user: they "
             "can type `skip routing` in their prompt to proceed without it.",
         )
-    if not writes_like_an_edit(tool_name, tool_input) or writes_outside():
+    if not writes_like_an_edit(tool_name, tool_input) or writes_scratch():
         return None
     if turn.route is None:
         return Hold("route-line", STRICT, _route_line_instruction(turn))
