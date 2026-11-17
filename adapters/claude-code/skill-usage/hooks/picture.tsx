@@ -398,7 +398,7 @@ export function previewTimeline(start: number): TimelineEntry[] {
   return [
     ...loads,
     { t: at(6), kind: 'nudge', hook: 'commit-hold', skills: [{ skill: 'commit-message', status: 'followed', at: at(7) }] },
-    { t: at(8), kind: 'nudge', hook: 'design-hold', skills: [{ skill: 'software-design-principles', status: 'ignored', at: at(9) }], isSubagent: true },
+    { t: at(8), kind: 'nudge', hook: 'design-hold', skills: [{ skill: 'software-design-principles', status: 'unanswered', at: at(9) }], isSubagent: true },
     { t: at(10), kind: 'nudge', hook: 'pr-hold', skills: [{ skill: 'pr-description', status: 'followed', at: at(12) }] },
     { t: at(11), kind: 'ref', skill: 'software-design-principles', file: 'references/red-flags.md', isLoaded: true },
     { t: at(13), kind: 'ref', skill: 'tdd', file: 'references/mocking.md', isLoaded: false, isSubagent: true },

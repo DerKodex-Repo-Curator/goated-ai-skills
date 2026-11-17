@@ -10,9 +10,9 @@
 // nudge not followed. Text colours are theme keys, so the rows read on a light
 // theme too.
 
-import type { AllTime, Available, Counts, Measures, Origin, Outcome, RefMoment, RefMoments, Refs, RouteForm, SessionSummary, TimelineEntry, WritingTurns } from '../types'
+import type { AllTime, Available, Counts, Measures, Origin, Outcome, RefMoment, RefMoments, Refs, RouteForm, SessionSummary, SkipReasons, TimelineEntry, WritingTurns } from '../types'
 import { NO_SUBAGENTS, NO_WRITING_TURNS, ORIGINS, OUTCOMES, total } from './classify'
-import { BECAUSE, COLOR, followCounts, hookName, OUTCOME_TONE, plural, rateTone, REF_MOMENT, RESULT, ROUTE_FORM, skillName, STATION, UNTIMED } from './meaning'
+import { BECAUSE, COLOR, followCounts, hookName, OUTCOME_TONE, plural, rateTone, REF_MOMENT, RESULT, ROUTE_FORM, skillName, STATION, UNANSWERED, UNANSWERED_SHORT, unansweredCount, UNTIMED } from './meaning'
 import type { Tone, View } from './meaning'
 import { badgeWords, picture, PREVIEW_MS, previewTimeline } from './picture'
 import type { Badges } from './picture'
@@ -147,15 +147,17 @@ function byOrigin(loads: Record<string, Counts<Origin>>): Record<Origin, number>
 /** The one line under the picture: where things stand, in words, each count in its meaning's colour. */
 function standing(loadCount: number, outcomes: Counts<Outcome>): Run[] {
   const f = followCounts(outcomes)
-  const ignored = outcomes.ignored ?? 0
   const runs: Run[] = [{ text: plural(loadCount, 'skill load') }]
   if (f.settled + f.pending === 0) return [...runs, { text: ' · no hook nudges yet', tone: 'dim' }]
   runs.push({ text: ' · hooks: ' }, { text: `${f.acted - f.declined} followed`, tone: 'good' })
   if (f.declined) runs.push({ text: ' · ' }, { text: `${f.declined} declined`, tone: 'declined' })
-  if (ignored) runs.push({ text: ' · ' }, { text: `${ignored} not`, tone: 'bad' })
+  for (const words of unansweredWords(outcomes)) runs.push({ text: ' · ' }, { text: words, tone: 'bad' })
   if (f.pending) runs.push({ text: ' · ' }, { text: `${f.pending} waiting`, tone: 'waiting' })
   return runs
 }
+
+/** Each kind of hold nothing answered, as `<n> <kind>`, in the pane's order, those with none left out. */
+const unansweredWords = (c: Counts<Outcome>) => UNANSWERED.flatMap(k => (c[k] ? [`${c[k]} ${UNANSWERED_SHORT[k] ?? k}`] : []))
 
 /**
  * The status line: the session's skills, its hooks in the pane's words with
@@ -163,8 +165,9 @@ function standing(loadCount: number, outcomes: Counts<Outcome>): Run[] {
  * active, that rule in a word.
  */
 export function statusText(s: SessionSummary): string {
-  const f = followCounts(sumOutcomes(s.nudges))
-  const hooks = [`${f.acted - f.declined} followed`, ...(f.declined ? [`${f.declined} declined`] : []), ...(f.settled > f.acted ? [`${f.settled - f.acted} not`] : []), ...(f.pending ? [`${f.pending} waiting`] : [])]
+  const outcomes = sumOutcomes(s.nudges)
+  const f = followCounts(outcomes)
+  const hooks = [`${f.acted - f.declined} followed`, ...(f.declined ? [`${f.declined} declined`] : []), ...unansweredWords(outcomes), ...(f.pending ? [`${f.pending} waiting`] : [])]
   const router = { first: 'router ✓', late: 'router late', never: 'router ✗', off: '' }[s.router]
   return [`skills ${Object.keys(s.loads).length}`, f.settled + f.pending > 0 ? `hooks: ${hooks.join(' · ')}` : '', router].filter(Boolean).join(' · ')
 }
@@ -219,7 +222,7 @@ function feedRow(entry: TimelineEntry): { mark: string; kind: string; runs: Run[
     case 'nudge': {
       const statuses = entry.skills.map(s => s.status)
       const tone: Tone =
-        statuses.includes('ignored') ? 'bad'
+        statuses.some(s => UNANSWERED.includes(s)) ? 'bad'
         : statuses.includes('pending') ? 'waiting'
         : statuses.length > 0 && statuses.every(s => s === 'declined') ? 'declined'
         : 'good'
@@ -296,7 +299,7 @@ export function sessionTab(v: View, s: SessionSummary, timeline: TimelineEntry[]
   const loadCount = Object.values(loads).reduce((a, b) => a + b, 0)
   const feed = timeline.slice(-rows).reverse()
   const spawns = s.subagents?.spawns ?? 0
-  const badges: Badges = { notFollowed: outcomes.ignored ?? 0, waiting: outcomes.pending ?? 0, readsUnloaded: s.refsUnloaded ?? 0, started: spawns }
+  const badges: Badges = { notFollowed: unansweredCount(outcomes), waiting: outcomes.pending ?? 0, readsUnloaded: s.refsUnloaded ?? 0, started: spawns }
   return (
     <Box flexDirection="column">
       {picture(
@@ -348,12 +351,13 @@ export function sessionTab(v: View, s: SessionSummary, timeline: TimelineEntry[]
  */
 function usageTables(
   v: View,
-  counts: { nudges: Record<string, Counts<Outcome>>; loads: Record<string, Counts<Origin>>; refs?: Refs; refsUnloaded?: number; refMoments?: RefMoments },
+  counts: { nudges: Record<string, Counts<Outcome>>; closeoutItems?: Record<string, Counts<Outcome>>; loads: Record<string, Counts<Origin>>; refs?: Refs; refsUnloaded?: number; refMoments?: RefMoments },
   rows: number,
   suffix: string,
 ) {
   const { Box } = v.ui
   const hooks = Object.entries(counts.nudges).sort(([, x], [, y]) => total(y) - total(x))
+  const items = Object.entries(counts.closeoutItems ?? {}).sort(byMostThenName)
   const skills = Object.entries(counts.loads).sort(([, x], [, y]) => total(y) - total(x))
   const most = Math.max(1, ...skills.map(([, c]) => total(c)))
   const refs = refRows(counts)
@@ -361,6 +365,24 @@ function usageTables(
   const nameWidth = Math.min(26, Math.max(12, ...hooks.map(([h]) => hookName(h).length), ...skills.slice(0, rows).map(([s]) => s.length)) + 1)
   // The column a count's bar sits in, as wide as its heading.
   const BAR = 8
+  /** One hold or closeout item with what became of it: a bar split by outcome, the counts in words, and the rate. */
+  const outcomeRow = (name: string, c: Counts<Outcome>) => {
+    const f = followCounts(c)
+    const runs: Run[] = [{ text: `${f.acted} of ${f.settled}`, tone: 'dim' }]
+    if (f.declined) runs.push({ text: ` · ${f.declined} declined`, tone: 'declined' })
+    for (const words of unansweredWords(c)) runs.push({ text: ` · ${words}`, tone: 'bad' })
+    if (f.pending) runs.push({ text: ` · ${f.pending} waiting`, tone: 'waiting' })
+    return row(
+      v,
+      [
+        cell(name, { width: nameWidth, tone: 'plain', canShrink: true }),
+        { node: meter(v, [{ n: f.acted - f.declined, tone: 'good' }, { n: f.declined, tone: 'declined' }, { n: f.settled - f.acted, tone: 'bad' }], BAR), width: BAR },
+        { runs, grow: true },
+        cell(percent(f.acted, f.settled), { width: 4, isRight: true }),
+      ],
+      rateTone(f.acted, f.settled),
+    )
+  }
   return (
     <Box flexDirection="column">
       {title(v, `Hooks${suffix}`, 'how often each hold was handled: followed, or declined with a reason')}
@@ -368,23 +390,13 @@ function usageTables(
         ? line(v, 'No GOATED hook has nudged yet.', 'dim')
         : [
             row(v, [cell('hook', { width: nameWidth, canShrink: true }), cell('outcome', { width: BAR }), cell('', { grow: true }), cell('rate', { width: 4, isRight: true })], 'dim'),
-            ...hooks.map(([hook, c]) => {
-              const f = followCounts(c)
-              const counts: Run[] = [{ text: `${f.acted} of ${f.settled}`, tone: 'dim' }]
-              if (f.declined) counts.push({ text: ` · ${f.declined} declined`, tone: 'declined' })
-              if (f.pending) counts.push({ text: ` · ${f.pending} waiting`, tone: 'waiting' })
-              return row(
-                v,
-                [
-                  cell(hookName(hook), { width: nameWidth, tone: 'plain', canShrink: true }),
-                  { node: meter(v, [{ n: f.acted - f.declined, tone: 'good' }, { n: f.declined, tone: 'declined' }, { n: f.settled - f.acted, tone: 'bad' }], BAR), width: BAR },
-                  { runs: counts, grow: true },
-                  cell(percent(f.acted, f.settled), { width: 4, isRight: true }),
-                ],
-                rateTone(f.acted, f.settled),
-              )
-            }),
+            ...hooks.map(([hook, c]) => outcomeRow(hookName(hook), c)),
           ]}
+      {items.length > 0 && [
+        title(v, `Closeout items${suffix}`, 'what became of each item a closeout hold listed'),
+        row(v, [cell('item', { width: nameWidth, canShrink: true }), cell('outcome', { width: BAR }), cell('', { grow: true }), cell('rate', { width: 4, isRight: true })], 'dim'),
+        ...items.map(([label, c]) => outcomeRow(label, c)),
+      ]}
       {title(v, `Skills${suffix}`, 'what most often makes each one load')}
       {skills.length === 0
         ? line(v, 'No skill has loaded yet.', 'dim')
@@ -454,6 +466,17 @@ function momentWords(r: RefRow): string {
   return [...timed, ...(untimed > 0 ? [`${untimed} ${UNTIMED}`] : [])].join(' · ')
 }
 
+/** Each skill a skip line declined a hold for, A to Z, then each gate, then each reason, most given first, then A to Z. */
+function skipReasonRows(reasons: SkipReasons | undefined): { skill: string; gate: string; reasons: [string, number][] }[] {
+  return Object.entries(reasons ?? {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .flatMap(([skill, gates]) =>
+      Object.entries(gates)
+        .sort(([a], [b]) => hookName(a).localeCompare(hookName(b)))
+        .map(([gate, counts]) => ({ skill, gate, reasons: Object.entries(counts).sort(([a, x], [b, y]) => y - x || a.localeCompare(b)) })),
+    )
+}
+
 /** Totals across sessions: the still picture, each hook's follow rate as a bar, and what makes each skill load. */
 export function allTimeTab(v: View, all: AllTime, rows: number) {
   const { Box } = v.ui
@@ -474,6 +497,19 @@ export function allTimeTab(v: View, all: AllTime, rows: number) {
       {ruled > 0 && line(v, `GOATED router rule: router loaded first in ${first} of ${plural(ruled, 'session')}`, rateTone(first, ruled))}
       {measuresText(all) && line(v, measuresText(all) ?? '', 'plain')}
       {usageTables(v, all, rows, '')}
+      {title(v, 'Skip reasons', 'why a skip line declined a hold, by skill and hold')}
+      {skipReasonRows(all.skipReasons).length === 0
+        ? line(v, 'No skip line has declined a hold yet.', 'dim')
+        : skipReasonRows(all.skipReasons).map(r => (
+            <Box key={`skip-${r.skill}/${r.gate}`} flexDirection="column">
+              {line(v, `${r.skill} › ${hookName(r.gate)}`, 'plain')}
+              {r.reasons.slice(0, rows).map(([reason, n]) => (
+                <Box key={reason} paddingLeft={2}>
+                  {words(v, [{ text: `"${reason}" ×${n}` }], 'declined', true)}
+                </Box>
+              ))}
+            </Box>
+          ))}
     </Box>
   )
 }
@@ -541,14 +577,24 @@ export function unusedTab(v: View, all: AllTime, avail: Available | null) {
 
 // ---------- report ----------------------------------------------------------------
 
+/** Rows of counts, most counted first, equal ones A to Z, so the order holds between redraws. */
+const byMostThenName = ([a, x]: [string, Counts<string>], [b, y]: [string, Counts<string>]) => total(y) - total(x) || a.localeCompare(b)
+
+/** What became of a hold or closeout item, in the report's words: how many were handled, then each outcome. */
+function outcomeWords(c: Counts<Outcome>): string {
+  const f = followCounts(c)
+  const parts = OUTCOMES.filter(k => c[k]).map(k => `${RESULT[k]} ${c[k]}`)
+  return `${f.acted} of ${f.settled} handled (${percent(f.acted, f.settled)})${parts.length ? ` · ${parts.join(' · ')}` : ''}`
+}
+
 /** `/skill-usage report`: the All time and Unused tabs as markdown, in the pane's own words. */
 export function reportText(all: AllTime, avail: Available | null): string {
   const out = [`# Skill usage: ${plural(all.sessions, 'session')}`, '', '## Hooks', '']
-  for (const [hook, c] of Object.entries(all.nudges).sort(([, x], [, y]) => total(y) - total(x))) {
-    const f = followCounts(c)
-    const parts = OUTCOMES.filter(k => c[k]).map(k => `${RESULT[k]} ${c[k]}`)
-    out.push(`- ${hookName(hook)}: ${f.acted} of ${f.settled} handled (${percent(f.acted, f.settled)})${parts.length ? ` · ${parts.join(' · ')}` : ''}`)
-  }
+  for (const [hook, c] of Object.entries(all.nudges).sort(([, x], [, y]) => total(y) - total(x))) out.push(`- ${hookName(hook)}: ${outcomeWords(c)}`)
+  out.push('', '## Closeout items', '')
+  const items = Object.entries(all.closeoutItems ?? {}).sort(byMostThenName)
+  if (items.length === 0) out.push('(none recorded)')
+  for (const [label, c] of items) out.push(`- ${label}: ${outcomeWords(c)}`)
   const ruled = (all.router.first ?? 0) + (all.router.late ?? 0) + (all.router.never ?? 0)
   if (ruled > 0) out.push('', `GOATED router rule: router loaded first in ${all.router.first ?? 0} of ${plural(ruled, 'session')}.`)
   out.push('', '## Skills', '')
@@ -565,6 +611,10 @@ export function reportText(all: AllTime, avail: Available | null): string {
   out.push(`- Overrides: ${overrides.join(' · ') || 'none'}`)
   out.push(`- Design reads: ${designReadWords(all) || 'none written'}`)
   out.push(`- Subagents: ${sub.spawns} started${sub.starts ? ` · ${plural(sub.starts, 'start message')}` : ''} · ${sub.bodyReads} skill bodies read`)
+  const skips = skipReasonRows(all.skipReasons)
+  out.push('', '## Skip reasons', '')
+  if (skips.length === 0) out.push('(none given yet)')
+  for (const r of skips) out.push(`- ${r.skill} › ${hookName(r.gate)}: ${r.reasons.map(([reason, n]) => `"${reason}" ×${n}`).join(' · ')}`)
   const refs = refRows(all)
   out.push('', '## References', '')
   if (refs.length === 0) out.push('(none read yet)')

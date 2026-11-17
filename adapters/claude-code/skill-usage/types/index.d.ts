@@ -18,7 +18,8 @@ export type UsageEvent = Stamp &
     /** `holdKind`: an adapter hold (`goated-hold:`), whose `hook` is its gate; `isStop`: it held a `Stop`, not a call. */
     /** `skipOnly`: the named skills the hold offers only as a skip line, which no load answers. */
     /** `refs`: the design references (`errors.md`) a design hold asks to Read; `needsLine`: it asks for a design-reads line. */
-    | { kind: 'nudge'; hook: string; named: string[]; holdKind?: HoldKind; isStop?: true; skipOnly?: string[]; refs?: string[]; needsLine?: true; isSubagent?: true; agent?: string }
+    /** `items`: the items a closeout hold lists, each with the skill it names. */
+    | { kind: 'nudge'; hook: string; named: string[]; holdKind?: HoldKind; isStop?: true; skipOnly?: string[]; refs?: string[]; needsLine?: true; items?: CloseoutItem[]; isSubagent?: true; agent?: string }
     /** A `goated-skip: <skill>: <reason>` line in a reply: the agent (or the subagent `agent`) declined a skill for this turn. */
     | { kind: 'skip'; skill: string; reason: string; isSubagent?: true; agent?: string }
     /**
@@ -81,6 +82,13 @@ export type DesignReads = { form: 'files'; files: string[] } | { form: 'none'; r
 /** Design-reads lines counted: in how many replies each file was declared, and how many lines declared `none`. */
 export type DesignReadCounts = { files: Record<string, number>; none: number }
 
+/**
+ * One item a closeout hold lists, read from its `- <Label>: ` line: its label, such as `Proof` or `Docs`, and the skill
+ * the item names, whose ask settles the item. The adapter keeps the labels stable for this; two items that share a label
+ * and a skill (the design red flags and citations) are one.
+ */
+export type CloseoutItem = { label: string; skill: string }
+
 /** An adapter hold's kind, from its `goated-hold: <gate> | <kind>` first line. */
 export type HoldKind = 'strict' | 'justified-skip'
 
@@ -91,10 +99,12 @@ export type SubagentCounts = { spawns: number; starts: number; bodyReads: number
 export type Origin = 'user-slash' | 'user-named' | 'hook-nudged' | 'router-routed' | 'self-initiated' | 'subagent'
 
 /**
- * What became of one skill a hook named. `declined`: a skip line said why it does not apply. `pending`: the turn is still open.
- * `already loaded`: only in summaries stored by earlier versions.
+ * What became of one skill a hook named. `declined`: a skip line said why it does not apply. With no load, read or skip
+ * line: `overridden` by an override you typed in the next prompt, `new prompt` when your next prompt or interruption
+ * ended its turn, else `unanswered`. `pending`: the turn is still open. `already loaded` and `ignored` (the three kinds of
+ * no answer, before they were told apart): only in summaries stored by earlier versions.
  */
-export type Outcome = 'followed' | 'read files' | 'already loaded' | 'declined' | 'ignored' | 'pending'
+export type Outcome = 'followed' | 'read files' | 'already loaded' | 'declined' | 'overridden' | 'new prompt' | 'unanswered' | 'ignored' | 'pending'
 
 /** Whether the router loaded before any other tool, where a router rule was active; summaries stored by earlier versions may carry it, and current ones are always `off`. */
 export type RouterStatus = 'first' | 'late' | 'never' | 'off'
@@ -129,7 +139,14 @@ export type Measures = {
   subagents?: SubagentCounts
   /** Design-reads lines, by file declared, and `none` declarations. */
   designReads?: DesignReadCounts
+  /** What became of each closeout item, by its label: one count per closeout hold that listed it. */
+  closeoutItems?: Record<string, Counts<Outcome>>
+  /** The reasons of the skip lines that declined a hold, by skill and gate, each cut to a fixed length. */
+  skipReasons?: SkipReasons
 }
+
+/** How often each reason declined a hold, by the skill its skip line named, then the hold's gate, then the reason. */
+export type SkipReasons = Record<string, Record<string, Record<string, number>>>
 
 /** How often each supporting file was read, by skill then path within the skill, such as `references/x.md`. */
 export type Refs = Record<string, Record<string, number>>
@@ -201,7 +218,7 @@ declare module 'claude-code' {
       /** The session id the events belong to; another id means `/clear` started a new session. */
       owner: string | null
       /** The session id whose history was read into `events`, so it is read once per session. */
-      backfilled: string | null
+      backfilled: Shaped<string | null>
       /** What was stored for this session before a resume, added to what is observed since. */
       baseline: Shaped<SessionSummary | null>
       available: Shaped<Available | null>

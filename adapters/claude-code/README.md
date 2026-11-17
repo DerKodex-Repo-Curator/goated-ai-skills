@@ -717,11 +717,17 @@ goated-hold: <gate> | <kind>
   `^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-skip)$`.
 - The lines after it are guidance for the agent and may change between
   releases; do not parse their wording. They backtick each skill they ask
-  for by its bare name, which is all the skill-usage mod reads from them,
+  for by its bare name, which the skill-usage mod reads from them,
   and backtick no other bare word: a file name is quoted, and the grammar's
   words appear backticked only inside a whole line such as
   `goated-skip: <skill>: <reason>`. A test checks every hold text against
   the registry's skill names.
+- The closeout hold lists each unmet item on its own line, starting
+  `- <Label>: `, with `Proof`, `Unfinished`, `Docs`, `Design`, `Security`,
+  or `Setup` as the label; the two design items share `Design`. These labels
+  are stable: the skill-usage mod counts each closeout hold per item by them,
+  so a release keeps them, and a new item takes a label of its own. The
+  wording after the label may change.
 - Each named skill is a separate requirement, except in the `spawn` hold,
   whose two skills are alternatives: `handoff` or
   `subagent-driven-development`, either of which answers it.

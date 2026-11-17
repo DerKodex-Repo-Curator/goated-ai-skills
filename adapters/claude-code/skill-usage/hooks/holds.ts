@@ -3,7 +3,7 @@
 // and settles what is left. Pure, like classify.ts, which reads the events and
 // feeds them here in order.
 
-import type { Counts, HoldKind, NudgedSkill, Outcome, RouteForm, TimelineEntry, UsageEvent } from '../types'
+import type { Counts, HoldKind, NudgedSkill, Outcome, RouteForm, SkipReasons, TimelineEntry, UsageEvent } from '../types'
 
 /** The adapter's route-line hold asks for a route line, which no skill load settles. */
 export const ROUTE_LINE = '(route line)'
@@ -35,6 +35,38 @@ export function bump<K extends string>(table: Record<string, Counts<K>>, row: st
   counts[key] = (counts[key] ?? 0) + 1
 }
 
+/** The gates `skip routing` stands down, as the adapter's override table says. */
+const ROUTING_GATES = new Set(['router-first', 'route-line', PIPELINE_GATE])
+const SKIP_SKILL = /^skip (?:the )?([a-z0-9:-]+?)(?: skill)?$/
+const COMMIT_MESSAGE = /^commit (?:message\b|with the message\b)/
+/**
+ * Whether an override phrase you typed, lowercased, stands down an ask, as the adapter's override table says:
+ * `skip routing` the routing gates, `skip <skill>` every ask for that skill (and `router-first` for the router), and a
+ * typed commit message the `commit` hold.
+ */
+function standsDown(phrase: string, n: { hook: string; anyOf: readonly string[] }): boolean {
+  const p = phrase.trim()
+  if (p === 'skip routing' || p === 'skip the router') return ROUTING_GATES.has(n.hook)
+  if (COMMIT_MESSAGE.test(p)) return n.hook === 'commit'
+  const skill = SKIP_SKILL.exec(p)?.[1]?.split(':').pop()
+  if (!skill) return false
+  return n.anyOf.includes(skill) || (n.hook === 'router-first' && skill === 'using-goated-ai-skills')
+}
+
+/** The longest skip reason kept: a longer one is cut to this many characters, its last an ellipsis. */
+export const REASON_LIMIT = 160
+/** A skip reason as it is kept: whole up to `REASON_LIMIT` characters, else cut. */
+export const cutReason = (reason: string) => (reason.length <= REASON_LIMIT ? reason : `${reason.slice(0, REASON_LIMIT - 1)}…`)
+
+/** Takes one from `key` in `row` of a count table, dropping a count, then a row, that reaches zero. */
+function unbump<K extends string>(table: Record<string, Counts<K>>, row: string, key: K) {
+  const counts = table[row]
+  if (!counts?.[key]) return
+  counts[key] = (counts[key] ?? 1) - 1
+  if (counts[key] === 0) delete counts[key]
+  if (Object.keys(counts).length === 0) delete table[row]
+}
+
 export type NudgeRow = TimelineEntry & { kind: 'nudge' }
 
 /** The hold settlement of one session, fed its events in order. */
@@ -50,11 +82,12 @@ export type HoldSettlement = {
   /** Whether a hold asked for `skill` in the running typed-prompt turn, settled or not. */
   wasAsked(skill: string): boolean
   /**
-   * Settles what is still open, `ignored` once the session is over (`isFinal`),
-   * else `pending`, and returns what became of the holds by gate (`nudges`)
-   * and how many held, by kind (`holds`). Call it once, after the last event.
+   * Settles what is still open, `unanswered` once the session is over (`isFinal`), else `pending`, and returns what
+   * became of the holds by gate (`nudges`), how many held, by kind (`holds`), what became of each closeout item, by its
+   * label (`closeoutItems`), and the reason of each skip line that declined a hold, by skill and gate (`skipReasons`).
+   * Call it once, after the last event.
    */
-  finish(isFinal: boolean): { nudges: Record<string, Counts<Outcome>>; holds: Counts<HoldKind> }
+  finish(isFinal: boolean): { nudges: Record<string, Counts<Outcome>>; holds: Counts<HoldKind>; closeoutItems: Record<string, Counts<Outcome>>; skipReasons: SkipReasons }
 }
 
 /**
@@ -66,6 +99,8 @@ export type HoldSettlement = {
 export function holdSettlement(): HoldSettlement {
   const nudges: Record<string, Counts<Outcome>> = {}
   const holds: Counts<HoldKind> = {}
+  const closeoutItems: Record<string, Counts<Outcome>> = {}
+  const skipReasons: SkipReasons = {}
   let turnNudged = new Set<string>()
   // One open ask per nudge: the skills any one of which answers it (`anyOf`; more than one only for a gate whose skills
   // are alternatives), and its mark on the nudge's own log row, so settling it updates that row.
@@ -77,7 +112,10 @@ export function holdSettlement(): HoldSettlement {
   // `isSkipRejected`: a closeout hold asked for it after a skip line, so that skip line did not clear it.
   // `refs`, `needsLine`: what a design hold that offers its skill only as a skip line asks instead: a Read of each
   // design reference still unread, and a design-reads line. It is followed once both are in, as the adapter judges.
-  type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; isCloseout?: true; isSkipOnly?: true; isSkipRejected?: true; refs?: Set<string>; needsLine?: boolean; mark: NudgedSkill; row: NudgeRow }
+  // `items`: the labels of the closeout items that asked for it, whose counts follow its outcome.
+  // `skip`: the skip line that declined it, kept so a reopen takes its reason back.
+  type Skip = { skill: string; reason: string }
+  type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; isCloseout?: true; isSkipOnly?: true; isSkipRejected?: true; refs?: Set<string>; needsLine?: boolean; items: Set<string>; skip?: Skip; mark: NudgedSkill; row: NudgeRow }
   /** Whether an ask is a design hold's, answered by its reads and line rather than by any read of the skill's files. */
   const asksDesign = (n: Open) => n.refs !== undefined || n.needsLine !== undefined
   /** Settles a design hold's ask once nothing it asked is missing; `outcome` names what came last. */
@@ -102,7 +140,10 @@ export function holdSettlement(): HoldSettlement {
   // Skip lines written in each loop's running turn, by agent ('' for the main agent) then skill, with their reasons.
   const skipped = new Map<string, Map<string, string>>()
   const skipsOf = (agent?: string) => skipped.get(agent ?? '') ?? new Map<string, string>()
-  const skipReason = (anyOf: readonly string[], agent?: string) => anyOf.map(s => skipsOf(agent).get(s)).find(r => r !== undefined)
+  const skipFor = (anyOf: readonly string[], agent?: string): Skip | undefined => {
+    const skill = anyOf.find(s => skipsOf(agent).has(s))
+    return skill === undefined ? undefined : { skill, reason: skipsOf(agent).get(skill) ?? '' }
+  }
   // The main agent's round trip a held call belongs to: what its reply did before the call. Claude Code records a call
   // only after its hold returns, so a route line or load beside the held call reaches the adapter one call late.
   type Reply = { route?: RouteForm; loads: Set<string> }
@@ -111,6 +152,9 @@ export function holdSettlement(): HoldSettlement {
   let isInResults = false
   // Whether the main agent replied since the last blocked `Stop`: a turn that then ends got past that hold.
   let hasRepliedSinceStop = false
+  // The main agent's asks the last turn's close left unanswered, until the agent replies in the next turn: an override
+  // the next prompt records for one of them stood it down.
+  let lastClosed: Open[] = []
   // Whether the session has a task a `continue` route line can continue, as the adapter's route-line hold checks.
   let hasTask = false
 
@@ -120,6 +164,7 @@ export function holdSettlement(): HoldSettlement {
     open = open.filter(n => {
       if (!matches(n)) return true
       bump(nudges, n.hook, outcome)
+      for (const label of n.items) bump(closeoutItems, label, outcome)
       n.mark.status = outcome
       if (chosen && n.anyOf.length > 1) n.mark.skill = chosen
       if (by && !by.isEarlier) n.mark.at = by.t
@@ -129,11 +174,16 @@ export function holdSettlement(): HoldSettlement {
   /** Takes back a settled ask's outcome and opens it again: the adapter asked for it again, so it was not met. */
   const reopen = (n: Open) => {
     if (open.includes(n)) return
-    const counts = nudges[n.hook]
     const was = n.mark.status
-    if (counts?.[was]) counts[was] = (counts[was] ?? 1) - 1
-    if (counts && counts[was] === 0) delete counts[was]
+    unbump(nudges, n.hook, was)
+    for (const label of n.items) unbump(closeoutItems, label, was)
     if (was === 'declined') n.isSkipRejected = true
+    if (n.skip) {
+      const reasons = skipReasons[n.skip.skill]
+      if (reasons) unbump(reasons, n.hook, cutReason(n.skip.reason))
+      if (reasons && Object.keys(reasons).length === 0) delete skipReasons[n.skip.skill]
+      delete n.skip
+    }
     n.mark.status = 'pending'
     delete n.mark.at
     delete n.mark.reason
@@ -141,8 +191,10 @@ export function holdSettlement(): HoldSettlement {
   }
   /**
    * A loop's turn is over: what it left open can no longer be followed, so each is declined (a skip line said why) or
-   * ignored. A closeout item, asked by a blocked `Stop` or a held commit, is the exception. The adapter judges every
-   * `Stop` it is given against every closeout item, so a main turn that ended
+   * went unanswered: ended by a new prompt when the next prompt or your interruption closed it, else unanswered. The
+   * main agent's unanswered asks wait in `lastClosed` for the next prompt's overrides. A closeout item, asked by a
+   * blocked `Stop` or a held commit, is the exception. The adapter judges every `Stop` it is given against every
+   * closeout item, so a main turn that ended
    * as an answer (not interrupted, nor ended by an error) after the agent replied to the last block got past it: what
    * that block asked was met, by a check run, a fix or a load the hold cannot name. Claude Code ends a turn after
    * `STOP_BLOCK_LIMIT` blocks whatever the hook says, and then what the last block asked was not met; what an earlier
@@ -153,13 +205,33 @@ export function holdSettlement(): HoldSettlement {
     const isAnswer = by.kind === 'turn-end' && !by.agent && (by.reason === undefined || by.reason === 'answer')
     const isPassed = isAnswer && hasRepliedSinceStop && stopBlocks < STOP_BLOCK_LIMIT
     if (isAnswer && stopBlocks >= STOP_BLOCK_LIMIT) for (const n of lastStopAsks) reopen(n)
+    const isCutOff = by.kind === 'prompt' || (by.kind === 'turn-end' && by.reason === 'aborted')
     const ending = open.filter(isInLoop)
     for (const n of ending) {
-      const reason = n.isStrict || n.isSkipRejected ? undefined : skipReason(n.anyOf, n.agent)
-      if (reason !== undefined) n.mark.reason = reason
+      const skip = n.isStrict || n.isSkipRejected ? undefined : skipFor(n.anyOf, n.agent)
       const isMet = n.isCloseout === true && (isPassed || (isAnswer && !lastStopAsks.includes(n)))
-      settle(m => m === n, reason !== undefined ? 'declined' : isMet ? 'followed' : 'ignored', by)
+      if (skip) decline(n, skip, by)
+      else if (isMet) settle(m => m === n, 'followed', by)
+      else {
+        settle(m => m === n, isCutOff ? 'new prompt' : 'unanswered', by)
+        if (!n.agent) lastClosed.push(n)
+      }
     }
+  }
+  /** Overrides the next prompt records: each of `lastClosed` one of them stands down was overridden by you. */
+  const overrideClosed = (phrases: readonly string[], by: UsageEvent) => {
+    for (const n of lastClosed.filter(n => phrases.some(p => standsDown(p, n)))) {
+      reopen(n)
+      settle(m => m === n, 'overridden', by)
+    }
+    lastClosed = lastClosed.filter(n => n.mark.status !== 'overridden')
+  }
+  /** Settles an ask as declined by a skip line, whose reason it shows and keeps under the skill and the ask's gate. */
+  const decline = (n: Open, skip: Skip, by: UsageEvent) => {
+    n.mark.reason = skip.reason
+    n.skip = skip
+    bump((skipReasons[skip.skill] ??= {}), n.hook, cutReason(skip.reason))
+    settle(m => m === n, 'declined', by)
   }
   /** A new ask on a gate's row, open until something answers it. A closeout hold has judged every skip line before it. */
   const addAsk = (held: GateRow, e: UsageEvent & { kind: 'nudge' }, ask: string[]): Open => {
@@ -175,6 +247,7 @@ export function holdSettlement(): HoldSettlement {
       ...(isSkipOnly ? { isSkipOnly: true as const } : {}),
       ...(isSkipOnly && e.refs?.length ? { refs: new Set(e.refs) } : {}),
       ...(isSkipOnly && e.needsLine ? { needsLine: true } : {}),
+      items: itemsAsking(e, ask),
       mark,
       row: held.row,
     }
@@ -201,12 +274,16 @@ export function holdSettlement(): HoldSettlement {
       const n = known(ask)
       if (!n) return addAsk(held, e, [...ask])
       if (e.isStop) reopen(n)
+      // A repeat may list the ask under another item; an ask already settled keeps the items it was counted under.
+      if (open.includes(n)) for (const label of itemsAsking(e, ask)) n.items.add(label)
       return n
     })
     if (e.isStop) lastStopAsks = asked
     else settle(n => held.asks.includes(n) && !asked.includes(n), 'followed', e)
     return true
   }
+  /** The labels of the closeout items in a hold that ask for one of `ask`'s skills. */
+  const itemsAsking = (e: UsageEvent & { kind: 'nudge' }, ask: readonly string[]) => new Set((e.items ?? []).filter(i => ask.includes(i.skill)).map(i => i.label))
   /** What the held call's own reply already did for `ask`, which the adapter could not see yet: the answering skill, or none. */
   const answeredInReply = (ask: readonly string[], e: UsageEvent & { kind: 'nudge' }) => {
     if (e.agent) return undefined
@@ -238,13 +315,10 @@ export function holdSettlement(): HoldSettlement {
     for (const ask of asks) {
       const n = addAsk(held, e, ask)
       const inReply = e.isStop ? undefined : answeredInReply(ask, e)
-      const reason = e.holdKind === 'strict' || isCloseoutHold(e) ? undefined : skipReason(ask, e.agent)
+      const skip = e.holdKind === 'strict' || isCloseoutHold(e) ? undefined : skipFor(ask, e.agent)
       if (inReply !== undefined) settle(m => m === n, 'followed', e, inReply)
-      else if (reason !== undefined) {
-        // Declined before it was asked, earlier in the same turn.
-        n.mark.reason = reason
-        settle(m => m === n, 'declined', e)
-      }
+      // Declined before it was asked, earlier in the same turn.
+      else if (skip) decline(n, skip, e)
     }
     if (e.isStop) lastStopAsks = held.asks.slice()
     return row
@@ -264,6 +338,7 @@ export function holdSettlement(): HoldSettlement {
         isInResults = false
         break
       case 'response':
+        lastClosed = []
         reply = { loads: new Set() }
         isInResults = false
         hasRepliedSinceStop = true
@@ -274,14 +349,14 @@ export function holdSettlement(): HoldSettlement {
         break
       case 'nudge':
         return hold(e)
+      case 'override':
+        overrideClosed(e.phrases, e)
+        break
       case 'skip': {
         const own = skipsOf(e.agent)
         own.set(e.skill, e.reason)
         skipped.set(e.agent ?? '', own)
-        for (const n of open.filter(n => n.anyOf.includes(e.skill) && n.agent === e.agent && !n.isStrict)) {
-          n.mark.reason = e.reason
-          settle(m => m === n, 'declined', e)
-        }
+        for (const n of open.filter(n => n.anyOf.includes(e.skill) && n.agent === e.agent && !n.isStrict)) decline(n, { skill: e.skill, reason: e.reason }, e)
         break
       }
       case 'turn-end':
@@ -337,8 +412,8 @@ export function holdSettlement(): HoldSettlement {
     observe,
     wasAsked: skill => turnNudged.has(skill),
     finish: isFinal => {
-      settle(() => true, isFinal ? 'ignored' : 'pending')
-      return { nudges, holds }
+      settle(() => true, isFinal ? 'unanswered' : 'pending')
+      return { nudges, holds, closeoutItems, skipReasons }
     },
   }
 }

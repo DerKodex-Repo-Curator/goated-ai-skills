@@ -9,6 +9,7 @@
 
 import type {
   AllTime,
+  CloseoutItem,
   Counts,
   DesignReadCounts,
   DesignReads,
@@ -26,7 +27,7 @@ import type {
   UsageEvent,
   WritingTurns,
 } from '../types'
-import { bump, holdSettlement, ROUTE_LINE, stamp } from './holds'
+import { bump, cutReason, holdSettlement, ROUTE_LINE, stamp } from './holds'
 
 export const ROUTER = 'using-goated-ai-skills'
 export { ROUTE_LINE }
@@ -38,7 +39,7 @@ export const NO_WRITING_TURNS: Readonly<WritingTurns> = { routed: 0, late: 0, no
 const noDesignReads = (): DesignReadCounts => ({ files: {}, none: 0 })
 
 export const ORIGINS: readonly Origin[] = ['user-slash', 'user-named', 'hook-nudged', 'router-routed', 'self-initiated', 'subagent']
-export const OUTCOMES: readonly Outcome[] = ['followed', 'read files', 'already loaded', 'declined', 'ignored', 'pending']
+export const OUTCOMES: readonly Outcome[] = ['followed', 'read files', 'already loaded', 'declined', 'overridden', 'new prompt', 'unanswered', 'ignored', 'pending']
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -109,6 +110,8 @@ const DESIGN_REFERENCE = /`software-design-principles\/references\/([a-z0-9]+(?:
 const ASKS_DESIGN_LINE = /`goated-design-reads: /
 // The skip line a justified-skip hold offers, backticked whole: its skill is asked for too, as for the closeout's proof item.
 const OFFERED_SKIP = /`goated-skip: ([a-z0-9]+(?:-[a-z0-9]+)*): /g
+// A closeout item's line, `- <Label>: <what it asks>`, whose label the adapter keeps stable (adapters/claude-code/README.md).
+const CLOSEOUT_ITEM = /^- ([A-Z][A-Za-z ]*): (.*)$/
 /** The grammar's own words, which adapters before Ticket 034 backticked in hold texts; they are no skills. */
 const MARKER_WORDS = new Set(['goated-hold', 'goated-route', 'goated-skip'])
 /**
@@ -118,9 +121,35 @@ const MARKER_WORDS = new Set(['goated-hold', 'goated-route', 'goated-skip'])
  * so the names are taken as they stand, whether or not the session's skill
  * listing has loaded.
  */
-function adapterHoldNamed(gate: string, body: string): { named: string[]; skipOnly: string[]; refs?: string[]; needsLine?: true } {
+function adapterHoldNamed(gate: string, body: string): { named: string[]; skipOnly: string[]; refs?: string[]; needsLine?: true; items?: CloseoutItem[] } {
   if (gate === 'router-first') return { named: [ROUTER], skipOnly: [] }
   if (gate === 'route-line') return { named: [ROUTE_LINE], skipOnly: [] }
+  if (gate === 'closeout') {
+    const items = itemsListed(body)
+    if (items.length > 0) return { ...namedIn(gate, body), items }
+  }
+  return namedIn(gate, body)
+}
+
+/**
+ * The items a closeout hold's text lists, each with the skill its line names: the first it backticks, else the skill of
+ * the skip line it offers. An item listed twice under one label and skill, such as the two design items, is one.
+ */
+function itemsListed(body: string): CloseoutItem[] {
+  const items: CloseoutItem[] = []
+  for (const line of body.split(/\r?\n/)) {
+    const item = CLOSEOUT_ITEM.exec(line)
+    if (!item) continue
+    const label = item[1] ?? ''
+    const { named } = namedIn('closeout', item[2] ?? '')
+    const skill = named[0]
+    if (skill && !items.some(i => i.label === label && i.skill === skill)) items.push({ label, skill })
+  }
+  return items
+}
+
+/** What a hold's text asks for by the skills it backticks, alone or in an offered skip line, and the design reads. */
+function namedIn(gate: string, body: string): { named: string[]; skipOnly: string[]; refs?: string[]; needsLine?: true } {
   // Only the design gates ask for reference reads; the closeout's red-flags path is another kind of ask.
   const refs = gate !== 'design' && gate !== 'design-reads' ? [] : [...body.matchAll(DESIGN_REFERENCE)].flatMap(m => (m[1] ? [m[1]] : []))
   const design = { ...(refs.length > 0 ? { refs } : {}), ...(ASKS_DESIGN_LINE.test(body) ? { needsLine: true as const } : {}) }
@@ -158,7 +187,7 @@ function adapterHold(text: string, isErrorResult: boolean): { gate: string; kind
  * the design references and design-reads line a design hold asks for.
  * `holdsOnly`: the text is an errored tool result.
  */
-export function hookNudges(text: string, holdsOnly = false): { hook: string; named: string[]; holdKind: HoldKind; isStop?: true; skipOnly?: string[]; refs?: string[]; needsLine?: true }[] {
+export function hookNudges(text: string, holdsOnly = false): { hook: string; named: string[]; holdKind: HoldKind; isStop?: true; skipOnly?: string[]; refs?: string[]; needsLine?: true; items?: CloseoutItem[] }[] {
   const hold = adapterHold(text, holdsOnly)
   if (!hold) return []
   const { named, skipOnly, ...design } = adapterHoldNamed(hold.gate, hold.body)
@@ -396,7 +425,8 @@ export function markerEvents(text: string, t: number, agent?: string): UsageEven
   const noneReasons = designReads.flatMap(d => (d.form === 'none' ? [d.reason] : []))
   return [
     ...(route ? [{ kind: 'route' as const, t, ...route, ...loop }] : []),
-    ...skips.map(k => ({ kind: 'skip' as const, t, ...k, ...loop })),
+    // A reason is kept cut, here where it enters the stored events, so no longer text is kept anywhere.
+    ...skips.map(k => ({ kind: 'skip' as const, t, skill: k.skill, reason: cutReason(k.reason), ...loop })),
     ...(designReads.length > 0 ? [{ kind: 'design-reads' as const, t, files, noneReasons, ...loop }] : []),
   ]
 }
@@ -545,7 +575,7 @@ export function rowEvents(
 /**
  * Folds a session's events into what loaded and why, what became of each
  * nudge, and a readable timeline. A nudge still open at the end is `pending`
- * while the session runs; once it has ended (`isFinal`) it was `ignored`.
+ * while the session runs; once it has ended (`isFinal`) it was `unanswered`.
  * What became of each hold is the hold settlement's (`hooks/holds.ts`); this
  * keeps loads, routes, references and when in their turn each was read,
  * design-reads lines, writing turns and subagents.
@@ -556,7 +586,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   const refs: Refs = {}
   let refsUnloaded = 0
   const refMoments: RefMoments = {}
-  const measures: Required<Omit<Measures, 'holds'>> = {
+  const measures: Required<Omit<Measures, 'holds' | 'closeoutItems' | 'skipReasons'>> = {
     routes: {},
     writingTurns: { ...NO_WRITING_TURNS },
     overrides: {},
@@ -699,11 +729,11 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         break
     }
   }
-  const { nudges, holds: held } = holds.finish(isFinal)
+  const { nudges, holds: held, closeoutItems, skipReasons } = holds.finish(isFinal)
   tallyWritingTurn()
   settleReadMoments()
 
-  return { loads, nudges, lastUsed, refs, refsUnloaded, refMoments, ...measures, holds: held, timeline, router: 'off' }
+  return { loads, nudges, lastUsed, refs, refsUnloaded, refMoments, ...measures, holds: held, closeoutItems, skipReasons, timeline, router: 'off' }
 }
 
 /**
@@ -730,6 +760,8 @@ function addMeasures(into: Measures, from: Measures) {
   const reads = (into.designReads ??= noDesignReads())
   addFlat(reads.files, from.designReads?.files)
   reads.none += from.designReads?.none ?? 0
+  if (from.closeoutItems) addCounts((into.closeoutItems ??= {}), from.closeoutItems)
+  for (const [skill, gates] of Object.entries(from.skipReasons ?? {})) addCounts(((into.skipReasons ??= {})[skill] ??= {}), gates)
 }
 
 function addCounts<K extends string>(into: Record<string, Counts<K>>, from: Record<string, Counts<K>>) {
@@ -823,13 +855,13 @@ export function mergeSummaries(earlier: SessionSummary | null, later: SessionSum
 /**
  * A stored summary whose session is over, or whose events are gone (a resume
  * starts them afresh): a nudge still waiting in it can no longer settle, so it
- * counts as ignored, as it would have at a clean end.
+ * counts as unanswered, as it would have at a clean end.
  */
 export function closeOpen(s: SessionSummary): SessionSummary {
   const out = copy(s)
-  for (const c of Object.values(out.nudges)) {
+  for (const c of [...Object.values(out.nudges), ...Object.values(out.closeoutItems ?? {})]) {
     if (!c.pending) continue
-    c.ignored = (c.ignored ?? 0) + c.pending
+    c.unanswered = (c.unanswered ?? 0) + c.pending
     delete c.pending
   }
   return out
