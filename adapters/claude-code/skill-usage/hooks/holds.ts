@@ -26,6 +26,11 @@ const ALTERNATIVE_GATES = new Set(['spawn'])
  */
 const STOP_BLOCK_LIMIT = 9
 
+/** How many distinct files read orient a session started from a brief, as the adapter's `ORIENTATION_READS` says. */
+const ORIENTATION_READS = 3
+/** A path as the adapter compares it: a Windows path in either case and with either separator is one file. */
+const comparablePath = (file: string) => (/^[a-z]:|\\/i.test(file) ? file.replace(/\\/g, '/').toLowerCase() : file)
+
 /** An event's time, as a timeline row carries it. */
 export const stamp = (e: UsageEvent) => (e.isEarlier ? { t: e.t, isEarlier: true as const } : { t: e.t })
 
@@ -154,6 +159,9 @@ export function holdSettlement(): HoldSettlement {
     if (!n.refs?.size && !n.needsLine) settle(m => m === n, outcome, by)
   }
   let open: Open[] = []
+  // The distinct files the main agent's Read tool read since the last compaction: `ORIENTATION_READS` of them answer
+  // the orientation a brief added, as the adapter counts them (Ticket 087). Two spellings of one Windows path count once.
+  let filesRead = new Set<string>()
   /** Whether an open ask is answered by loading `skill`. */
   const answers = (n: Open, skill: string) => !n.isSkipOnly && n.anyOf.includes(skill)
   // The adapter holds of each loop's running turn, by agent ('' for the main agent) and gate: the row a repeat joins,
@@ -410,6 +418,13 @@ export function holdSettlement(): HoldSettlement {
         break
       case 'read':
         settle(n => !asksDesign(n) && n.anyOf.some(s => e.skills.includes(s)), 'read files', e, e.skills.find(s => open.some(n => n.anyOf.includes(s))))
+        break
+      case 'file-read':
+        filesRead.add(comparablePath(e.file))
+        if (filesRead.size >= ORIENTATION_READS) settle(n => n.isBriefAdded === true && !n.agent, 'read files', e)
+        break
+      case 'compact':
+        filesRead = new Set()
         break
       case 'ref':
         // Only the Read tool counts as a reference read, as the adapter counts it; a subagent's reads are its own.

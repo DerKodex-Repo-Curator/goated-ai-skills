@@ -695,6 +695,8 @@ test('reading a reference is recorded for the main agent and for subagents alike
   const read = (path: string) => [{ name: 'Read', input: { file_path: path } }]
   const path = '/h/.claude/skills/diagnose/references/root-cause-tracing.md'
   expect(toolUseEvents(read(path), false, 5)).toEqual([
+    // Any file the main agent's Read tool reads counts toward a brief's orientation (Ticket 087).
+    { kind: 'file-read', t: 5, file: path },
     { kind: 'read', t: 5, skills: ['diagnose'] },
     { kind: 'ref', t: 5, skill: 'diagnose', file: 'references/root-cause-tracing.md', isReadTool: true },
   ])

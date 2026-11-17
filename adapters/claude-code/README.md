@@ -119,10 +119,15 @@ brief does, until a prompt you type opens a turn: from then on the router
 must load, as in any session. The route's `requires:` skills must still load
 in the new session before its first write (`pipeline`), and a later route
 line in the turn corrects it as usual. While the brief's route counts, a
-`standard` or `full` route also requires `session-start-progressive-disclosure`
-when Claude Code can find that skill (a user, project, or plugin skill): the
-router selects orientation on such a route from a brief, and the spawn-brief
-template says the new session loads it first. The route line never names it,
+`standard` or `full` route also requires orientation
+when Claude Code can find `session-start-progressive-disclosure` (a user,
+project, or plugin skill): the router selects orientation on such a route
+from a brief, and the spawn-brief template says the new session orients
+before its first write by reading the sources its brief names or by loading
+that skill. Either meets it: the skill loads, or Read calls of three
+distinct files finish, anywhere, since the session started or the last
+compaction; reads count across turns as loads do, and a failed Read does
+not count. The route line never names the skill,
 so leaving it out of a corrected line does not drop it; only a corrected
 `goated-route: direct` line or a `lightweight` route line does. A typed prompt
 or a compaction ends the brief's route, and the requirement with it, so a
@@ -140,9 +145,9 @@ session's message never counts, and a brief never carries an override. The
 
 | Gate | Kind | Holds | Clears when |
 | --- | --- | --- | --- |
-| `router-first` | strict | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction; a command made only of [plain reads](#plain-reads) passes | `using-goated-ai-skills` loads; or the session's first prompt is a brief with a route line (see above), until a typed prompt opens a turn |
-| `route-line` | strict | The first write or spawn after each user prompt until the current turn has a valid `goated-route:` line; also `goated-route: continue` when [missing or reset state](#failing-open) lost the task | A valid route line appears in the turn |
-| `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded, or, in a session routed by its brief, on a `standard` or `full` route, an installed `session-start-progressive-disclosure` has not loaded (see above); a spawn of a [read-only subagent](#plain-reads) passes | Each listed skill loads, or a corrected route line drops it; the brief's orientation skill loads, or a corrected `goated-route: direct` or `lightweight` route line drops it |
+| `router-first` | strict | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction; a command made only of [plain reads](#plain-reads) passes, and so does a write whose every file is certainly outside the project (see below) | `using-goated-ai-skills` loads; or the session's first prompt is a brief with a route line (see above), until a typed prompt opens a turn |
+| `route-line` | strict | The first write or spawn after each user prompt until the current turn has a valid `goated-route:` line; also `goated-route: continue` when [missing or reset state](#failing-open) lost the task; a write whose every file is certainly outside the project (see below) passes | A valid route line appears in the turn |
+| `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded, or, in a session routed by its brief, on a `standard` or `full` route, orientation is unmet while `session-start-progressive-disclosure` is installed (see above); a spawn of a [read-only subagent](#plain-reads) passes, and so does a write whose every file is certainly outside the project (see below) | Each listed skill loads, or a corrected route line drops it; the brief's orientation skill loads or three distinct files are read, or a corrected `goated-route: direct` or `lightweight` route line drops it |
 | `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` [counts as loaded](#loads), and an inline message (or the tool's `message`) passes the [content check](#content-checks); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file. Once these are met, the commit meets the [closeout](#closeout-at-commit) |
 | `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` [counts as loaded](#loads); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file |
 | `pr-review` | justified-skip | A pull-request command or tool the `pull-request` gate holds, once that gate passes, when the pull request is [large](#large-pull-requests): 400 or more changed lines against its base | `standards-and-spec-review` [counts as loaded](#loads); then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
@@ -165,6 +170,11 @@ project is not held, except by a `reference-reads` signal of the
 `gate-fires` kind. The `conflict-resolution` and `repeated-failure` gates
 hold a write wherever its file is, since a worktree with a conflict, or the
 code a failing check runs, may sit outside the project folder.
+The routing gates `router-first`, `route-line`, and `pipeline` let a write,
+by a write tool or a shell command, through when every file it writes is
+outside the project, such as a copy into a temp scratch folder. A write with
+any file inside, or whose files cannot be named (`git apply`), is held as
+before, and so are spawns and commands that write nothing.
 
 **A file counts as outside the project only when the adapter is certain.**
 When in doubt, it is inside. The project's folders are `CLAUDE_PROJECT_DIR`
@@ -1186,7 +1196,8 @@ It holds the current task's route, whether missing or reset state lost the
 task, whether the router loaded, which GOATED skills loaded and which design
 references, skill references, and spawn-brief templates were read since the
 last compaction
-(see [Loads](#loads)), which references each edit of the latest turn
+(see [Loads](#loads)), digests of the first three distinct files the Read
+tool read since then, which orient a session routed by its brief, which references each edit of the latest turn
 required when the design gates judged it, which brief templates each spawn
 of the latest turn followed when the `spawn` gate let it through (see
 [Reviewer subagents](#reviewer-subagents)), the last turn seen, the
@@ -1296,6 +1307,15 @@ of the call's prompt, which is normally already there.
   the brief is gone, so `router-first` needs the router again. Harness
   nudges such as "The user hasn't heard from you in a while" are recorded as
   `attachment` entries and never open a turn.
+- A briefed session's orientation counts any three distinct files read with
+  the Read tool, whatever they are; the adapter cannot tell whether they are
+  the sources the brief names. A file printed by a shell command (`cat`)
+  does not count, and two spellings of one path count once only when they
+  differ by case or separators on Windows.
+- The routing gates judge a shell command's writes by the files it names, not
+  by the rest of the command: a command whose only file writes are outside
+  the project passes `router-first` even if it also runs another command,
+  such as a script, that a plain read would not allow.
 
 - Shell analysis is lexical, not a shell. These forms are not seen, so a
   write in them meets only `router-first` and a commit or pull request in

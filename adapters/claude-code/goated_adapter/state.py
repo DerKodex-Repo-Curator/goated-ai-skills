@@ -4,9 +4,9 @@ State holds only what the transcript's current turn cannot answer on its own:
 the current task's route, whether missing or reset state lost the task, what
 counts until the next compaction (whether the router loaded, which GOATED
 skills loaded, which design references, skill references, and spawn-brief
-templates were read), what the current turn's design edits required and which
-template each of its spawns' briefs followed, the last turn seen, the
-latest user overrides, and the friction count (`friction.py`). Beside it, a
+templates were read, and digests of the first distinct files read), what the
+current turn's design edits required and which template each of its spawns'
+briefs followed, the last turn seen, the latest user overrides, and the friction count (`friction.py`). Beside it, a
 marker names the turn whose hold gave the unseen-line advice in full, and a
 record per project names what its onboarding notice last named. Apart from
 the short override phrases a user typed, it holds no prompt or reply text.
@@ -55,7 +55,7 @@ class SessionState:
         "router_loaded", "last_turn", "task", "task_unknown", "overrides", "policy_notice_shown",
         "reference_reads", "design_edits", "brief_routed", "loads", "template_reads",
         "skill_reference_reads", "spawn_templates", "open_holds", "held_gates", "friction",
-        "retrospective_notice_shown",
+        "retrospective_notice_shown", "files_read",
     )
 
     def __init__(self) -> None:
@@ -81,6 +81,10 @@ class SessionState:
         # The spawn-brief templates (`contracts.BriefTemplate.reference`) read
         # since the last compaction.
         self.template_reads: list[str] = []
+        # Digests of the first distinct files the Read tool read since the last
+        # compaction, up to `gates.ORIENTATION_READS`: enough of them orient a
+        # session routed by its brief. A digest keeps file names out of state.
+        self.files_read: list[str] = []
         # The design references each edit of one turn required when the
         # design gates judged it: {"turn": <turn key>, "edits": {<tool_use_id>: [<file>]}}.
         self.design_edits: dict = {}
@@ -99,7 +103,7 @@ class SessionState:
     def forget_context(self) -> None:
         """Drop what counted only while its text was in the agent's context: the
         router and other loads, the brief's route, and the design references,
-        skill references, and spawn-brief templates read. Called at a
+        skill references, spawn-brief templates, and files read. Called at a
         compaction or `/clear`."""
 
         self.router_loaded = False
@@ -108,6 +112,7 @@ class SessionState:
         self.reference_reads = []
         self.skill_reference_reads = []
         self.template_reads = []
+        self.files_read = []
 
     def record_design_edit(self, turn: str, tool_use_id: str, references: list[str]) -> None:
         """Keep what an edit the design gates let through required, for the
@@ -144,6 +149,7 @@ class SessionState:
             "reference_reads": self.reference_reads,
             "skill_reference_reads": self.skill_reference_reads,
             "template_reads": self.template_reads,
+            "files_read": self.files_read,
             "design_edits": self.design_edits,
             "spawn_templates": self.spawn_templates,
             "open_holds": self.open_holds,
@@ -168,6 +174,7 @@ class SessionState:
         state.reference_reads = _string_list(data.get("reference_reads", []))
         state.skill_reference_reads = _string_list(data.get("skill_reference_reads", []))
         state.template_reads = _string_list(data.get("template_reads", []))
+        state.files_read = _string_list(data.get("files_read", []))
         state.design_edits = _valid_calls(data.get("design_edits", {}))
         state.spawn_templates = _valid_calls(data.get("spawn_templates", {}))
         state.open_holds = [_valid_open_hold(h) for h in _expect(data.get("open_holds", []), list)]

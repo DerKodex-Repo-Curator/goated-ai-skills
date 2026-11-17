@@ -115,10 +115,13 @@ it. In particular:
   load in an earlier reply does not count, and nor does a `continue` route
   line while there is no task to continue, which the adapter holds as well.
 - A `pipeline` hold also counts as followed for a skill that a corrected route
-  line drops, as the hold tells the agent to do. The orientation skill a
-  session started from a brief must load, which its route line never names,
-  counts as followed only on a `goated-route: direct` line or a `lightweight`
-  route line, the lines the adapter says drop it.
+  line drops, as the hold tells the agent to do. The orientation a session
+  started from a brief owes, whose skill its route line never names, counts
+  as followed only on a `goated-route: direct` line or a `lightweight` route
+  line, the lines the adapter says drop it. It counts as files read once the
+  main agent's Read tool has read three distinct files since the last
+  compaction, before or after the hold, as the adapter counts them; a failed
+  Read does not count.
 - Once `software-design-principles` has loaded, the adapter's `design` hold
   asks for its design-reads line and the references the edit requires, and
   the `design-reads` hold for a later edit's references; both name the skill

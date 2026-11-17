@@ -1772,6 +1772,25 @@ def _in_project(path: str, project: Project | None, placed: bool = True) -> bool
     return _under_any(_resolved(readings), _resolved(project.roots))
 
 
+def writes_only_outside(tool_name: str, tool_input: dict, project: Project | None) -> bool:
+    """True for a write whose every file is certainly outside the project
+    (see `_in_project`): an edit tool's file, or each file a shell command
+    names as written. A command whose writes name no file, or that writes
+    nothing, is not such a write, nor is any other tool."""
+
+    if tool_name in FILE_WRITE_TOOLS:
+        path = str(tool_input.get(FILE_WRITE_TOOLS[tool_name]) or "")
+        return bool(path) and not _in_project(path, project)
+    if tool_name in COMMAND_TOOLS:
+        command = shell.analyze(str(tool_input.get("command") or ""), tool_name)
+        targets = command.write_targets
+        return (
+            command.writes and not command.unknown_writes and bool(targets)
+            and not any(_in_project(t, project, t not in command.unplaced_targets) for t in targets)
+        )
+    return False
+
+
 def is_test(path: str, project: Project | None) -> bool:
     """Whether `path` is a test file, judged by its path inside the project
     (`design_reads.is_test_path`), so folders above the project do not count.
