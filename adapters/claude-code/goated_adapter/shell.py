@@ -21,6 +21,8 @@ from __future__ import annotations
 import re
 from typing import NamedTuple
 
+from . import script_writes
+
 NULL_TARGETS = frozenset({"/dev/null", "$null", "nul", "/dev/stderr", "/dev/stdout"})
 DOTNET_WRITE_RE = re.compile(
     r"\[(?:system\.)?io\.(?:file|directory)\]::(?:write|append|copy|move|delete|create|replace)",
@@ -166,6 +168,7 @@ INLINE_CODE = {
                          attached=False),
     "ruby": _CodeOptions("e", "ICrE"), "perl": _CodeOptions("eE", "I"),
     "php": _CodeOptions("r", "cdfz"), "bash": _SHELL, "sh": _SHELL, "zsh": _SHELL,
+    "bun": _CodeOptions("ep", long_code=frozenset({"--eval", "--print"}), attached=False),
 }
 # PowerShell's options that take a value, lowercased with their short forms.
 PS_VALUE_OPTIONS = frozenset({
@@ -210,6 +213,10 @@ class ShellCommand:
     content to the agent: a git diff or show, a patch log, or patches on
     stdout; a listing of names or counts (`--stat`, `--name-only`) does not.
     Only git is read; another version control system's diff is not seen.
+    `script_targets` are the write targets that code given to an interpreter
+    inline names (`python -c`, `node -e`, a heredoc on `python -`; see
+    `_inline_script`), and `script_unknown_writes` says such code writes a
+    file it names only at run time; both are also in the facts above.
     `installs_package` says it installs or adds a dependency or tool it names
     (`uv add httpx`), not a bare restore such as `npm install`.
     `read_only` says every simple command in it is a plain read (see
@@ -223,7 +230,7 @@ class ShellCommand:
         "writes", "write_targets", "unplaced_targets", "unknown_writes", "commit",
         "commit_message", "opens_pr", "pr_base", "pr_head", "is_check",
         "non_check_writes", "unchecked_targets", "unchecked_unknown_writes", "prints_changes",
-        "installs_package", "read_only",
+        "installs_package", "read_only", "script_targets", "script_unknown_writes",
     )
 
     def __init__(self) -> None:
@@ -243,6 +250,8 @@ class ShellCommand:
         self.prints_changes = False
         self.installs_package = False
         self.read_only = False
+        self.script_targets: list[str] = []
+        self.script_unknown_writes = False
 
 
 def analyze(command: str, tool: str = "Bash") -> ShellCommand:
@@ -403,6 +412,12 @@ def _add_segment(result: ShellCommand, segment: "_Segment",
             result.pr_head = branches.get("head") or result.pr_head
         if rest[:2] == [noun, "diff"] and "--name-only" not in rest:
             prints = True
+    scripted: list[str] = []  # The files inline interpreter code writes.
+    script = _inline_script(name, args, segment.heredocs)
+    if script is not None:
+        scripted, script_unknown = script_writes.writes(*script)
+        if script_unknown:
+            unknown = result.script_unknown_writes = True
     # Output redirected into a file never reached the agent; a stderr redirect leaves it.
     if prints and not [t for t in segment.out_redirects if t.lower() not in NULL_TARGETS]:
         result.prints_changes = True
@@ -411,11 +426,15 @@ def _add_segment(result: ShellCommand, segment: "_Segment",
         result.is_check = True
     if _installs_package(name, args):
         result.installs_package = True
-    for target in filter(None, targets):
+    for target, from_script in [(t, False) for t in targets] + [(t, True) for t in scripted]:
+        if not target:
+            continue
         if directory is None and not _is_absolute(target):
             result.unplaced_targets.append(target)
         result.write_targets.append(_from_directory(directory, target))
-    if targets or unknown:
+        if from_script:
+            result.script_targets.append(result.write_targets[-1])
+    if targets or scripted or unknown:
         result.writes = True
         if not is_check:
             result.non_check_writes = True
@@ -1190,36 +1209,79 @@ def _is_check(name: str, original: str, args: list[str]) -> bool:
 
 def _inline_code(name: str, args: list[str]) -> str | None:
     """The code interpreter `name` is given inline, or None when it runs a
-    script, a module, or nothing. Only its own options are read, those
-    before a module or script (`python -m pytest -c setup.cfg` runs pytest),
-    with combined short options (`-Bc`) and options that take a value."""
+    script, a module, standard input, or nothing."""
 
     if name in ("pwsh", "powershell"):
         return _powershell_code(args)
+    kind, code = _interpreter_program(name, args)
+    return code if kind == "code" else None
+
+
+def _interpreter_program(name: str, args: list[str]) -> tuple[str, str]:
+    """What interpreter `name` (an `INLINE_CODE` key) runs with `args`:
+    ("code", the code) for inline code, ("stdin", "") for standard input
+    (`python -`, or no script named), or ("other", "") for a script, a
+    module, or an interpreter it does not know. Only its own options are
+    read, those before a module or script (`python -m pytest -c setup.cfg`
+    runs pytest), with combined short options (`-Bc`) and options that take
+    a value."""
+
     options = INLINE_CODE.get(name)
     if options is None:
-        return None
+        return "other", ""
     i = 0
     while i < len(args):
         arg = args[i]
-        if arg in ("-", "--") or not arg.startswith("-"):
-            return None
+        if arg == "-":
+            return "stdin", ""
+        if arg == "--" or not arg.startswith("-"):
+            return "other", ""
         if arg.startswith("--"):
             key, has_value, value = arg.partition("=")
             if key in options.long_code:
-                return value if has_value else _word_at(args, i + 1)
+                return "code", value if has_value else _word_at(args, i + 1)
             i += 2 if key in options.long_values and not has_value else 1
             continue
         for j, letter in enumerate(arg[1:], 2):
             rest = arg[j:]
             if letter in options.code:
-                return rest if rest and options.attached else _word_at(args, i + 1)
+                return "code", rest if rest and options.attached else _word_at(args, i + 1)
             if letter in options.module:
-                return None
+                return "other", ""
             if letter in options.values:
                 i += 0 if rest else 1  # an attached value, or the next word
                 break
         i += 1
+    return "stdin", ""
+
+
+def _inline_script(name: str, args: list[str], heredocs: list[str]) -> tuple[str, str] | None:
+    """The language and code of a script given inline to an interpreter in
+    `script_writes.LANGUAGES`, also through a runner (`uv run`, `npx`): code
+    given by an inline-code option (`python -c`, `node -e`, `deno eval`), or
+    a heredoc on its standard input (`python - <<'EOF'`, `deno run -`). None
+    for a script file run by name, a module, or another command."""
+
+    if name in COMMAND_RUNNERS:
+        name, _, args = _runner_command(name, args)
+    language = script_writes.LANGUAGES.get(name)
+    if language is None:
+        return None
+    if name == "deno":
+        sub = args[0] if args else ""
+        rest = [a for a in args[1:] if a == "-" or not a.startswith("-")]
+        if sub == "eval":
+            return (language, rest[0]) if rest else None
+        if sub == "run" and rest[:1] == ["-"] and heredocs:
+            return language, "\n".join(heredocs)
+        return None
+    if name == "bun" and args[:1] == ["run"]:
+        args = args[1:]
+    kind, code = _interpreter_program(name, args)
+    if kind == "code":
+        return language, code
+    if kind == "stdin" and heredocs:
+        return language, "\n".join(heredocs)
     return None
 
 

@@ -52,11 +52,14 @@ test('each action hold reads as its gate and kind and names the skills it asks f
     ['review-intake', 'Edit', ADAPTER_TEXTS.reviewIntake, 'justified-skip', ['receiving-code-review']],
     // The quoted check command it names is no skill.
     ['repeated-failure', 'Edit', ADAPTER_TEXTS.repeatedFailure, 'justified-skip', ['diagnose']],
+    // An inline script that writes a code file asks for a file edit tool, or a design skip (Ticket 093).
+    ['scripted-edit', 'Bash', ADAPTER_TEXTS.scriptedEdit, 'justified-skip', ['software-design-principles']],
   ]
   for (const [gate, tool, text, kind, named] of cases) {
     expect(preHold(tool, text, 1)).toEqual([expect.objectContaining({ kind: 'nudge', hook: gate, holdKind: kind, named })])
   }
   expect(hookName('review-intake')).toBe('review-intake hold')
+  expect(hookName('scripted-edit')).toBe('scripted-edit hold')
 })
 
 test('holds that ask for a read, missing headings or a message fix name no skill, so they count by gate and kind alone', async () => {
@@ -256,6 +259,7 @@ for (const [gate, tool, text, skill] of [
   ['repeated-failure', 'Edit', ADAPTER_TEXTS.repeatedFailure, 'diagnose'],
   ['pr-review', 'Bash', ADAPTER_TEXTS.prReview, 'standards-and-spec-review'],
   ['review-intake', 'Edit', ADAPTER_TEXTS.reviewIntake, 'receiving-code-review'],
+  ['scripted-edit', 'Bash', ADAPTER_TEXTS.scriptedEdit, 'software-design-principles'],
 ] as const) {
   const reason = 'the edit changes one constant and nothing else'
   test(`the ${gate} hold on ${tool} is followed by loading ${skill}, declined by a skip line with its reason, and otherwise ignored`, async () => {

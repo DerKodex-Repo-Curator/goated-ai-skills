@@ -182,6 +182,10 @@ def _adapter_texts() -> dict[str, str]:
             routed("shell-write").call("Bash", {"command": "echo requests >> requirements.txt"})
         )
 
+        # An inline script writing a code file is held for a file edit tool (Ticket 093).
+        texts["scriptedEdit"] = reason(routed("scripted-edit").call(
+            "Bash", {"command": "python - <<'EOF'\nopen(\"src/export.py\", \"w\").write(text)\nEOF"}))
+
         failing = routed("repeated-failure")
         failing.run("pytest -q", success=False)
         failing.run("pytest -q", success=False)
@@ -334,6 +338,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "security": "security | justified-skip",
             "shellWrite": "security | justified-skip",
             "repeatedFailure": "repeated-failure | justified-skip",
+            "scriptedEdit": "scripted-edit | justified-skip",
             "closeout": "closeout | justified-skip",
             "closeoutUnfinished": "closeout | justified-skip",
             "closeoutSetup": "closeout | justified-skip",
@@ -380,6 +385,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "securityNoExtension": "skip code-security-review",
             "conflictResolution": "skip resolving-merge-conflicts",
             "repeatedFailure": "skip diagnose",
+            "scriptedEdit": "skip software-design-principles",
             "prReview": "skip standards-and-spec-review",
             "prReviewRead": "skip standards-and-spec-review",
         }

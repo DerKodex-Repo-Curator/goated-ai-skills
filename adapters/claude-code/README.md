@@ -152,6 +152,7 @@ session's message never counts, and a brief never carries an override. The
 | `reference-reads` | justified-skip | A write by a write tool or a shell command that is not a check, inside the project folder or, for a `gate-fires` signal, anywhere, that fires a signal the installed registry declares for a reference of a skill that [counts as loaded](#loads) (see [Registry references](#registry-references)). The hold names each file by its path under the skill, `<skill>/references/<file>`, and what selected it | Each reference it names is read with the Read tool, in this turn or an earlier one since the last compaction; or a skip line naming its skill, for the turn |
 | `review-intake` | justified-skip | A write, by a write tool or a shell command, to a code file inside the project folder, once a [reviewer subagent](#reviewer-subagents) started by `Agent` or `Task` has reported in the turn: its result arrived, or, started in the background, its completion did. A held or failed spawn, any other brief, and a side session trigger nothing. A test file is held like other code; a docs or config file is not | `receiving-code-review` [counts as loaded](#loads), in this turn or an earlier one since the last compaction; or a skip line naming it, for the turn |
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` [counts as loaded](#loads) |
+| `scripted-edit` | justified-skip | A shell command whose [inline script](#inline-scripts) (`python -c`, `node -e`, a heredoc on `python -`) writes a code file inside the project folder, test files included, or writes a file it names only at run time, which counts as code. The hold asks for the change to be made with a file edit tool, where the `design`, `design-reads`, and `reference-reads` gates can judge it; a script suits only a mechanical rewrite across many files. It comes after the `security` and `review-intake` gates for the same file. Once cleared, the script runs and its files count as changed | A `goated-skip: software-design-principles: <reason>` line in the turn, or the typed override `skip software-design-principles`; loading the skill does not clear it |
 | `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an `Edit` or `MultiEdit` whose old text has a `<<<<<<<` or `>>>>>>>` marker at a line start; a write, by a write tool or a shell command such as `git checkout --theirs`, to a file a Read in the turn showed with such a marker; or any write after a git merge, rebase, cherry-pick, revert, or pull whose result in the turn reported a conflict. A finished abort, quit, continue, or skip of that operation, or a finished commit, ends the conflict and drops the Reads before it. Only the turn is read, not the repository, so a conflict opened in an earlier turn is caught only by markers the turn shows: an edit whose old text spans only `=======` and one side, in a file not read this turn, is not held, because `=======` alone is also a heading underline. A conflicting stash pop or apply is not held | `resolving-merge-conflicts` [counts as loaded](#loads) |
 | `repeated-failure` | justified-skip | A write, by a write tool or a shell command, once one check command (as the closeout's Proof item recognises checks) has failed twice in a row in the turn. A shell command is held when any of its simple commands writes and is not itself a check, so `sed -i … && pytest` and `pytest \| tee out.txt` are held, while `pytest > out.txt` is a rerun. "The same check" is the same command text, whitespace aside, without a trailing pipe into output filters (`tail`, `head`, `grep`, `findstr`, `more`, `less`, `tee`, `Select-Object`, `Select-String`, `Out-Host`, `Out-String`) or a `2>&1` before it; so `pytest -q \| tail -20` and `pytest -q \| tail -40` are one check, and a narrowed rerun such as one test file of a failing suite is another. A piped run fails by what it prints (`N failed`, `N errors`, `FAILED (`, `FAIL`, `npm ERR!`, `error TS…`, `test result: FAILED`, and the like), since the exit code is the filter's; any other run fails by its exit code. A run whose only failures are test modules that could not load a missing module or name neither adds to the count nor resets it, whether or not it looks failed, since in TDD the first red run often fails because the module under test does not exist yet. Only each runner's own report counts: pytest's `ERROR collecting` section showing `ImportError while importing test module` or ending in an `ImportError` or `ModuleNotFoundError`; unittest's `_FailedTest` error ending in one of those; jest's `Test suite failed to run` with `Cannot find module`. A run counts as usual when it also shows a failure in a test that ran (`1 failed, 1 error`), when a module that is there fails to load (a `SyntaxError` or `NameError`: the edit-and-crash loop the gate exists for), or when a test only prints such text. These miss, toward holding: output cut before the runner names the cause (`pytest -q \| tail -3`), ts-jest's `TS2307`, and vitest's `Failed to load url`. The table is `LOAD_ERROR_SIGNS` in `actions.py`. A pass of the check resets its count; other commands between runs do not. A call that never ran does not count: one the adapter or another hook held, one refused at a permission prompt, or one interrupted | `diagnose` [counts as loaded](#loads) |
 | `closeout` | justified-skip | A commit the `commit` gate lets through, or the end of the turn (a `Stop` hook), in a turn that changed code, that changed a security-sensitive file, or that changed setup | Every item below is met or skipped |
@@ -160,7 +161,7 @@ The closeout items, each judged against the turn's last code change. A code
 change is a write tool's file, or a file a shell command writes (its redirect
 target, copy destination, or removed, moved, or edited file), inside the
 project folder; a scratch or temp file elsewhere does not count. The `design`,
-`design-reads`, `reference-reads`, `review-intake`, and `security` gates use the same rule, so a scratch script outside the
+`design-reads`, `reference-reads`, `review-intake`, `scripted-edit`, and `security` gates use the same rule, so a scratch script outside the
 project is not held, except by a `reference-reads` signal of the
 `gate-fires` kind. The `conflict-resolution` and `repeated-failure` gates
 hold a write wherever its file is, since a worktree with a conflict, or the
@@ -672,7 +673,9 @@ backtick in PowerShell). A `Bash` or `PowerShell` command meets the
 - runs `git apply`, `git am`, `git restore`, `git mv`, `git rm`, `git clean`,
   `git checkout -- <path>`, `git checkout <rev> <path>`,
   `git checkout --theirs|--ours <path>`, `git reset --hard`, or
-  `git stash pop|apply`.
+  `git stash pop|apply`;
+- runs an [inline script](#inline-scripts) that writes, removes, or renames a
+  file.
 
 Text inside quotes, heredoc bodies, PowerShell here-strings, and comments is
 ignored, as are comparisons inside a `[[ ]]` test that is the command (after
@@ -719,6 +722,42 @@ PowerShell 5.1 has no `&&`, and `;` is not a safe chain, so there a
 `Set-Location` before a write leaves the write's relative targets counted as
 inside; in PowerShell 7, `Set-Location <absolute path> && …` is followed. Only
 a `cd` in the same command is followed, not one in an earlier call.
+
+#### Inline scripts
+
+When a command gives an interpreter its code inline, the adapter reads that
+code for calls that write, remove, or rename a file. It reads `python`
+(`python3`, `py`), `node`, `perl`, `ruby`, `deno`, and `bun`, each also
+through `uv run`, `npx`, and the other command runners a check is read
+through, with the code given by an inline-code option (`python -c`,
+`node -e`/`-p`/`--eval`, `perl -e`/`-E`, `ruby -e`, `deno eval`,
+`bun -e`/`--eval`) or by a heredoc on standard input when no script is named
+(`python - <<'EOF'`, `python <<'EOF'`, `node - <<'EOF'`, `deno run -`,
+`bun run -`). Such a script is a shell write: its files are the string
+literals its write calls name, placed as any write target is (a `cd` it
+follows applies), and it meets the routing gates, the path gates
+(`security`, `review-intake`, `scripted-edit`, `reference-reads`,
+`conflict-resolution`, `repeated-failure`), and the closeout. A write call
+whose path is not one literal (a variable, an f-string, a concatenation, an
+interpolated string) is an unnamed write inside the project, as `git apply`
+is. A script in which no write call is found is not a write, so
+`python -c "print(1)"` and a script that opens files only to read them pass
+as before. Inline code is never a check; `python -m pytest` still is.
+
+The calls, by language (`WRITE_CALLS` in `script_writes.py`, the one table):
+
+| Language | Write calls |
+| --- | --- |
+| Python | `open`, `io.open`, `codecs.open` with a mode holding `w`, `a`, `x`, or `+` (a mode that is not a literal counts); `os.open` with a writing flag; `os.remove`, `unlink`, `rmdir`, `removedirs`, `truncate`, `rename`, `renames`, `replace`; `shutil.copy`, `copy2`, `copyfile`, `copytree` (the destination), `move`, `rmtree`; a path's `.write_text`, `.write_bytes`, `.unlink`, `.touch`, `.rmdir` (an unnamed file unless called on `Path("…")`), and `Path("…").rename`, `.replace`, and `.open` with a writing mode |
+| JavaScript (`node`, `deno`, `bun`) | `fs` and `fs/promises`: `writeFile`, `appendFile`, `createWriteStream`, `unlink`, `rm`, `rmdir`, `truncate`, `rename`, `copyFile` and `cp` (the destination), `open` with a writing flag, and their `Sync` forms; `Deno.writeTextFile`, `writeFile`, `remove`, `create`, `truncate`, `rename`, `copyFile`, and their `Sync` forms; `Bun.write` |
+| Perl | `open` with a `>`, `>>`, or `+` mode, in its three-argument form or in the path of its two-argument form; `unlink`, `rmdir`, `rename`, `rmtree`, `remove_tree`; `File::Copy`'s `copy`/`cp` (the destination) and `move`/`mv` |
+| Ruby | `File.write`, `IO.write`, `binwrite`; `File.open` and `File.new` with a `w`, `a`, or `+` mode; `File.delete`, `unlink`, `rename`; `FileUtils.rm` and its forms, `remove…`, `rmdir`, `touch`, `mv`/`move`, and `cp`/`copy`/`install` (the destination) |
+
+The reading is lexical, like the rest: a call spelled inside a string or
+comment of the script still counts, toward holding. A name other code also
+uses (`open`, `.rename`, `.replace`) counts only where its module, receiver,
+or mode says it writes, so `text.replace("a", "b")` and
+`window.open(url, "_blank")` do not.
 
 ### Plain reads
 
@@ -936,8 +975,8 @@ goated-hold: <gate> | <kind>
 
 - `<gate>` is one of `router-first`, `route-line`, `pipeline`, `commit`,
   `pull-request`, `pr-review`, `spawn`, `design`, `design-reads`,
-  `reference-reads`, `review-intake`, `security`, `conflict-resolution`,
-  `repeated-failure`, or `closeout`.
+  `reference-reads`, `review-intake`, `scripted-edit`, `security`,
+  `conflict-resolution`, `repeated-failure`, or `closeout`.
 - `<kind>` is `strict` or `justified-skip`.
 - The first line matches
   `^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-skip)$`.
@@ -968,7 +1007,7 @@ goated-hold: <gate> | <kind>
   [subagent](#subagents), where only its current turn counts, the hold asks
   for the load or read in this turn.
 - A hold that a route or skip line can clear (`route-line`, `pipeline`,
-  `design`, `design-reads`, `reference-reads`, `review-intake`, `security`,
+  `design`, `design-reads`, `reference-reads`, `review-intake`, `scripted-edit`, `security`,
   `conflict-resolution`, `repeated-failure`, `pr-review`) says that a line in reply text may not be
   seen (see [Known Limits](#known-limits)), and to put the line in the held
   call's description, or in the description or Skill `args` of a call made
@@ -1082,7 +1121,8 @@ A hook call from inside a subagent carries `agent_id`. There:
 
 - the routing gates do not apply, because the parent's brief carries the route;
 - the action gates (`commit`, `pull-request`, `pr-review`, `spawn`, `design`,
-  `design-reads`, `security`, `conflict-resolution`, `repeated-failure`) apply,
+  `design-reads`, `scripted-edit`, `security`, `conflict-resolution`,
+  `repeated-failure`) apply,
   `reference-reads` and `review-intake` aside, judged from
   the subagent's own transcript, which Claude Code keeps in
   `<session-id>/subagents/agent-<agent_id>.jsonl` beside the main one. A
@@ -1305,9 +1345,11 @@ of the call's prompt, which is normally already there.
     (`bash <<'EOF'`); only whether a `bash -c`, `sh -c`, `zsh -c`, or
     `pwsh -Command` line is a check is read;
   - command substitution with backticks, or `$(…)` inside double quotes;
-  - a write inside an interpreter or script (`python -c "open(...)"`,
-    `node build.js`), including an interpreter fed a script on stdin
-    (`python - <<'EOF'`, `node < build.js`), or by an archive tool
+  - a write by a script file run by name (`node build.js`,
+    `python tools/gen.py`) or fed from a file (`node < build.js`), by
+    [inline code](#inline-scripts) through a call its table does not list
+    (`subprocess`, `child_process`, `system`, a dynamic call), by an
+    interpreter the adapter does not read (`php -r`), or by an archive tool
     (`tar -x`, `unzip`);
   - git aliases (`git ci`), and `gh api` calls that create a pull request
     (`gh api repos/<owner>/<repo>/pulls`);
