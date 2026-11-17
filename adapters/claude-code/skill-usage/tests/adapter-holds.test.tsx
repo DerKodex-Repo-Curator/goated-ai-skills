@@ -309,6 +309,15 @@ test('the closeout Setup item asks for setup-scribe: a load follows it, a skip l
   expect(summarize([prompt(), ...stopHold(2, text), turnEnd(3)]).nudges).toEqual({ closeout: { unanswered: 1 } })
 })
 
+test('the closeout Review and Verification items ask for their skills by label, the reviewer prompt path aside', async () => {
+  // Ticket 069: a large branch's turn. The reviewer prompt is named by its path, so it reads as no skill.
+  const text = ADAPTER_TEXTS.closeoutReview
+  expect(stopHold(1, text)).toEqual([{ kind: 'nudge', t: 1, hook: 'closeout', named: ['standards-and-spec-review', 'verification-before-completion'], holdKind: 'justified-skip', isStop: true, items: [{ label: 'Review', skill: 'standards-and-spec-review' }, { label: 'Verification', skill: 'verification-before-completion' }] }])
+  const followed = summarize([prompt(), ...stopHold(2, text), load('standards-and-spec-review', 3), load('verification-before-completion', 4), turnEnd(5)])
+  expect(followed.nudges).toEqual({ closeout: { followed: 2 } })
+  expect(followed.closeoutItems).toEqual({ Review: { followed: 1 }, Verification: { followed: 1 } })
+})
+
 test('a blocked Stop does not end the turn: blocks in a row are one hold, and the load that follows answers it once', async () => {
   const s = summarize([prompt(), response(1), ...stopHold(2), results(2), response(3), ...stopHold(4), results(4), response(5), load('doc-sync', 5), results(6), turnEnd(7)])
   expect(s.nudges.closeout).toEqual({ followed: 2 })

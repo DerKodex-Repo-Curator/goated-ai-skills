@@ -9,10 +9,12 @@ with `handoff`'s spawn brief or `subagent-driven-development`, design with
 `code-security-review`, resolve a merge conflict with
 `resolving-merge-conflicts`, investigate a check that keeps failing with
 `diagnose`, close a code-changing turn with proof, `doc-sync`, `handoff`,
-the design red flags, and citations of the design references it required,
-and close a turn that changed setup with `setup-scribe`. The
-`reference-reads` gate enforces the reads the installed registry declares
-for a loaded skill's references (`reference_reads`).
+the design red flags, citations of the design references it required, a
+review when the branch is large, and `verification-before-completion` when
+the work is large, delegated, sensitive, or on a `full` route, and close a
+turn that changed setup with `setup-scribe`. The `reference-reads` gate
+enforces the reads the installed registry declares for a loaded skill's
+references (`reference_reads`).
 
 Every decision is a pure function of the current turn as the transcript
 records it, the user's typed overrides for that turn, and what counts from
@@ -24,8 +26,11 @@ Everything else counts only within the current turn: skip lines, overrides,
 change reads, and checks. Inside a subagent nothing carries over from its
 earlier turns. The inputs from outside the transcript include a pull
 request's size, which the `pr-review` gate asks git for, and only when its
-hold would otherwise fire, and the design skill's section ids, which the
-closeout reads from the installed skill only when it checks citations, and
+hold would otherwise fire; the branch's work, which the closeout's Review
+and Verification items ask git for only when nothing else met them; which
+brief templates the turn's spawns followed, which the hooks record when the
+`spawn` gate lets one through; the design skill's section ids, which the
+closeout reads from the installed skill only when it checks citations; and
 the registry's reference declarations, read only for an edit of a project
 file.
 
@@ -49,6 +54,7 @@ from typing import NamedTuple
 import re
 import subprocess
 import time
+from stat import S_ISLNK, S_ISREG
 
 from . import contracts, design_reads, reference_reads, shell
 from .gates import (
@@ -205,13 +211,18 @@ GIT_CONFLICT_RESULT_RE = re.compile(
 )
 # An edit adding at least this many lines is a design change, not a tiny fix.
 DESIGN_MIN_LINES = 5
-# A pull request changing at least this many lines against its base, added
-# plus deleted, is large enough to review before it lands: the adapter's
-# stand-in for the skill's "large" (adapter README, Large pull requests).
+# A pull request, or a branch's work at the closeout, changing at least this
+# many lines against its base, added plus deleted, is large enough to review
+# before it lands: the threshold `standards-and-spec-review` states (adapter
+# README, Large pull requests).
 REVIEW_MIN_LINES = 400
+# The route intensity whose work always needs `verification-before-completion` (spec R3).
+FULL_ROUTE = "full"
 # How long the size check's git calls may take in all before it gives up and
 # holds nothing.
 SIZE_TIMEOUT_SECONDS = 2.0
+# How much of an untracked file the branch-size check reads at a time.
+UNTRACKED_READ_BYTES = 1 << 20
 # Where a pull request merges into when it names no base, in order of preference.
 DEFAULT_BASE_REFS = (
     "refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master",
@@ -341,11 +352,14 @@ def is_action_tool(tool_name: str) -> bool:
 
 
 class Closeout(NamedTuple):
-    """What a commit's closeout hold reads besides the turn: `edit_references`
-    and `design_ids`, as `check_closeout` takes them."""
+    """What a commit's closeout hold reads besides the turn: `edit_references`,
+    `design_ids`, `spawn_templates`, and `intensity`, as `check_closeout`
+    takes them."""
 
     edit_references: dict[str, list[str]]
     design_ids: Callable[[], dict[str, tuple[str, ...]]] | None = None
+    spawn_templates: dict[str, list[str]] | None = None
+    intensity: str | None = None
 
 
 def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
@@ -378,6 +392,7 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         turn, overrides, namespaces, subagents=spawned(), project=project,
         edit_references=closeout.edit_references, design_ids=closeout.design_ids,
         at_commit=True, by_tool=by_tool, earlier=earlier,
+        spawn_templates=closeout.spawn_templates, intensity=closeout.intensity,
     )
     cwd = project.cwd if project else None  # Where git measures a pull request's size.
     if tool_name in COMMAND_TOOLS:
@@ -522,7 +537,20 @@ def _tool_changed_lines(tool_input: dict, cwd: str | None) -> int | None:
                          f"{owner}/{repo}" if owner and repo else None)
 
 
-def changed_lines(cwd: str | None, base: str | None, head: str | None = None,
+class _WorkingTree:
+    """The type of `WORKING_TREE`; it has no other value."""
+
+    def __repr__(self) -> str:
+        return "WORKING_TREE"
+
+
+# A `changed_lines` head that is the working tree itself: the branch's
+# commits, staged and unstaged changes, and untracked files git does not
+# ignore. Not a string, so no branch name a tool supplies can ask for it.
+WORKING_TREE = _WorkingTree()
+
+
+def changed_lines(cwd: str | None, base: str | None, head: str | _WorkingTree | None = None,
                   repository: str | None = None) -> int | None:
     """Lines added plus deleted on `head` since it left `base`, as git in `cwd`
     reports them; None when that cannot be measured.
@@ -535,10 +563,16 @@ def changed_lines(cwd: str | None, base: str | None, head: str | None = None,
     `repository` ("owner/repo") is the repository a tool aims at: unless it is
     the checkout's `origin`, this checkout says nothing about its size.
 
-    Two git calls, three with `repository`, within `SIZE_TIMEOUT_SECONDS` in
-    all. Every name reaches git inside a full ref name (`refs/...`), so none
-    reads as an option, and external diff and text-conversion programs are
-    switched off, so only git runs.
+    With `head` as `WORKING_TREE`, the measure is the branch's work as it
+    stands (spec R1): the working tree against where the checked-out branch
+    left `base`, plus every line of each untracked file git does not ignore.
+    A checkout on the base branch itself, or a detached one, has no branch
+    work to compare, so it is unknown too.
+
+    Two git calls, three with `repository`, five for the working tree, within
+    `SIZE_TIMEOUT_SECONDS` in all. Every name reaches git inside a full ref
+    name (`refs/...`), so none reads as an option, and external diff and
+    text-conversion programs are switched off, so only git runs.
     """
 
     if not cwd:
@@ -548,21 +582,105 @@ def changed_lines(cwd: str | None, base: str | None, head: str | None = None,
         url = _git(["config", "--get", "remote.origin.url"], cwd, deadline)
         if url is None or not _names_repository(url, repository):
             return None
+    working_tree = head is WORKING_TREE
     base_refs = ((f"refs/remotes/origin/{base}", f"refs/heads/{base}") if base
                  else DEFAULT_BASE_REFS)
-    head_refs = (f"refs/heads/{head}", f"refs/remotes/origin/{head}") if head else ()
-    listed = _git(["for-each-ref", "--format=%(refname)", *base_refs, *head_refs], cwd, deadline)
+    head_refs = ((f"refs/heads/{head}", f"refs/remotes/origin/{head}")
+                 if isinstance(head, str) and head else ())
+    listed = _git(["for-each-ref", "--format=%(refname) %(symref)", *base_refs, *head_refs],
+                  cwd, deadline)
     if listed is None:
         return None
-    found = set(listed.split())  # A pattern also lists refs below it, so match exactly.
-    base_ref = next((ref for ref in base_refs if ref in found), None)
-    head_ref = next((ref for ref in head_refs if ref in found), None) if head else "HEAD"
+    # A pattern also lists refs below it, so match exactly. `origin/HEAD` names
+    # the branch it points at, which is the base branch's own name.
+    targets = dict((line.split(" ", 1) + [""])[:2] for line in listed.splitlines())
+    base_ref = next((ref for ref in base_refs if ref in targets), None)
+    head_ref = next((ref for ref in head_refs if ref in targets), None) if head_refs else "HEAD"
     if base_ref is None or head_ref is None:
         return None
+    if working_tree:
+        # Where a base branch is both local and on `origin`, the branch left
+        # whichever is closer to it: work merged locally and not yet pushed
+        # leaves `origin/<base>` behind (spec R1).
+        name = _branch_name(targets[base_ref] or base_ref)
+        bases = dict.fromkeys(
+            [base_ref] + [ref for ref in (f"refs/remotes/origin/{name}", f"refs/heads/{name}")
+                          if ref in targets])
+        return _branch_work_lines(cwd, list(bases), name, deadline)
     stat = _git(["diff", "--shortstat", "--no-ext-diff", "--no-textconv",
                  f"{base_ref}...{head_ref}", "--"], cwd, deadline)
-    if stat is None:
+    return None if stat is None else _shortstat_lines(stat)
+
+
+def _branch_name(ref: str) -> str:
+    """A local or `origin` branch's name, from its full ref name."""
+
+    return ref.strip().removeprefix("refs/heads/").removeprefix("refs/remotes/origin/")
+
+
+def _branch_work_lines(cwd: str, base_refs: list[str], base_branch: str,
+                       deadline: float) -> int | None:
+    """`changed_lines` with the working tree as its head, once the base is
+    found: `base_refs` are the existing refs of the base branch, named
+    `base_branch`, and the branch is measured from the fork point closest
+    to it among them."""
+
+    branch = _git(["rev-parse", "--symbolic-full-name", "HEAD"], cwd, deadline)
+    if branch is None or not branch.startswith("refs/heads/"):
+        return None  # Detached, or on a branch with no commit yet.
+    if _branch_name(branch) == base_branch:
+        return None  # On the base branch: nothing to compare it with.
+    # With several bases, git gives the best common ancestor of HEAD and any of
+    # them: the fork point no other one descends from, the closest to HEAD.
+    fork = _git(["merge-base", "HEAD", *base_refs], cwd, deadline)
+    if fork is None:
         return None
+    stat = _git(["diff", "--shortstat", "--no-ext-diff", "--no-textconv", fork.strip(), "--"],
+                cwd, deadline)
+    # `:/` lists from the top of the checkout, with paths relative to `cwd`.
+    untracked = _git(["ls-files", "--others", "--exclude-standard", "-z", "--", ":/"],
+                     cwd, deadline)
+    if stat is None or untracked is None:
+        return None
+    total = _shortstat_lines(stat)
+    for path in filter(None, untracked.split("\0")):
+        lines = _text_lines(os.path.join(cwd, path), deadline)
+        if lines is None:
+            return None
+        total += lines
+    return total
+
+
+def _text_lines(path: str, deadline: float) -> int | None:
+    """The lines in the file at `path`, as `git diff` would count them added:
+    1 for a symbolic link, whose target is never read, and 0 for a binary
+    file (one holding a NUL byte), anything else that is not a regular file,
+    or one that cannot be read. None when `deadline` passes first; it is
+    checked between reads, so a huge file cannot hold the hook past it."""
+
+    lines, last = 0, b"\n"
+    try:
+        mode = os.lstat(path).st_mode
+        if S_ISLNK(mode):
+            return 1  # git records a link as one line: its target's path.
+        if not S_ISREG(mode):
+            return 0
+        with open(path, "rb") as text:
+            while chunk := text.read(UNTRACKED_READ_BYTES):
+                if time.monotonic() > deadline:
+                    return None
+                if b"\0" in chunk:
+                    return 0
+                lines += chunk.count(b"\n")
+                last = chunk[-1:]
+    except OSError:
+        return 0  # Gone since git listed it, or unreadable: it adds nothing to see.
+    return lines + (last != b"\n")  # A last line with no newline still counts.
+
+
+def _shortstat_lines(stat: str) -> int:
+    """Lines added plus deleted, from `git diff --shortstat` output."""
+
     return sum(int(n) for n in re.findall(r"(\d+) (?:insertion|deletion)", stat))
 
 
@@ -645,7 +763,7 @@ def _spawn_hold(brief: str, proof: _Proof) -> Hold | None:
             "and fill its implementer or reviewer prompt instead. Nothing was started. "
             "This hold is strict: a goated-skip line does not clear it.",
         )
-    read = [t for t in loaded if t.reference in proof.templates_read]
+    read = _templates_read(proof)
     if not read:
         files = " or ".join(f"`{t.reference}`" for t in loaded)
         return Hold(
@@ -655,7 +773,7 @@ def _spawn_hold(brief: str, proof: _Proof) -> Hold | None:
             "clear the hold. Nothing was started.",
         )
     problems = []
-    if all(t.missing_headings(brief) for t in read):
+    if not _matched_templates(brief, proof):
         gaps = "; ".join(
             f"`{t.reference}` needs " + ", ".join(f"`## {h}`" for h in t.missing_headings(brief))
             for t in read
@@ -676,6 +794,35 @@ def _spawn_hold(brief: str, proof: _Proof) -> Hold | None:
     if not problems:
         return None
     return Hold("spawn", STRICT, " ".join(problems) + " Then start it again. Nothing was started.")
+
+
+def _templates_read(proof: _Proof) -> list[contracts.BriefTemplate]:
+    """The brief templates whose skill counts as loaded and which were read."""
+
+    return [t for t in contracts.BRIEF_TEMPLATES
+            if t.skill in proof.loads and t.reference in proof.templates_read]
+
+
+def _matched_templates(brief: str, proof: _Proof) -> list[contracts.BriefTemplate]:
+    """The templates `brief` follows: loaded, read, and with every heading they keep."""
+
+    return [t for t in _templates_read(proof) if not t.missing_headings(brief)]
+
+
+def brief_templates(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
+                    namespaces: tuple[str, ...] = (),
+                    earlier: SinceCompaction = SinceCompaction()) -> list[str]:
+    """The `reference` of each brief template a spawn's brief follows, as the
+    `spawn` gate judges it, for the closeout's Review item; [] for a call
+    that is no spawn. A brief that follows
+    `contracts.REVIEWER_TEMPLATE` starts a reviewer subagent. Call it for a
+    call `check_action` let through."""
+
+    if tool_name not in SPAWN_BRIEF_FIELDS:
+        return []
+    brief = str(tool_input.get(SPAWN_BRIEF_FIELDS[tool_name]) or "")
+    proof = _Proof(turn, overrides, namespaces, earlier=earlier)
+    return [t.reference for t in _matched_templates(brief, proof)]
 
 
 def _security_hold(path: str, proof: _Proof) -> Hold | None:
@@ -1010,7 +1157,9 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
                    edit_references: dict[str, list[str]] | None = None,
                    design_ids: Callable[[], dict[str, tuple[str, ...]]] | None = None,
                    at_commit: bool = False, by_tool: bool = False,
-                   earlier: SinceCompaction = SinceCompaction()) -> Hold | None:
+                   earlier: SinceCompaction = SinceCompaction(),
+                   spawn_templates: dict[str, list[str]] | None = None,
+                   intensity: str | None = None) -> Hold | None:
     """Return the closeout hold for a turn about to end, if any; `at_commit`:
     for a commit the turn is about to make, which must meet it first, made by
     an MCP commit tool when `by_tool`, which has no command to rerun and no
@@ -1045,14 +1194,28 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     reference's section ids from the installed skill
     (`design_reads.section_ids`); it is called only when citations are
     checked, and a reference it leaves out needs none.
+
+    A turn that changed code on a branch whose work against its base is
+    `REVIEW_MIN_LINES` or more (`changed_lines` with `WORKING_TREE`, asked
+    only when the item is not already met) needs a review (spec R1);
+    `spawn_templates` maps the tool_use_id of each spawn the `spawn` gate let
+    through in this turn to the templates its brief followed
+    (`brief_templates`), which names its reviewer subagents. A turn that
+    changed code or a sensitive file needs `verification-before-completion`
+    (spec R3) when `intensity`, the task's route intensity, is `full`, a
+    subagent changed code, a sensitive file changed, or the branch is large.
     """
 
     changes = _Changes(turn, subagents or {}, project)
     proof = _Proof(turn, overrides, namespaces, final_text, earlier)
+    branch_size = functools.cache(
+        lambda: changed_lines(project.cwd if project else None, None, WORKING_TREE))
     items = (
         _code_items(changes, proof, edit_references or {}, design_ids, at_commit, by_tool)
+        + _review_item(changes, proof, spawn_templates or {}, branch_size)
         if changes.code else []
     )
+    items += _verification_item(changes, proof, intensity, branch_size)
     sensitive = changes.sensitive
     if sensitive and SECURITY_SKILL in proof.loads and not proof.skipped(SECURITY_SKILL):
         last_sensitive = sensitive[-1][0]
@@ -1173,6 +1336,81 @@ def _code_items(changes: "_Changes", proof: _Proof, edit_references: dict[str, l
     return items
 
 
+def _review_item(changes: "_Changes", proof: _Proof, spawn_templates: dict[str, list[str]],
+                 branch_size: Callable[[], int | None]) -> list[str]:
+    """The Review item for a turn that changed code (spec R1), or [] when the
+    branch's work is not large, cannot be measured, or the item is met: by a
+    reviewer subagent started after the last code change that has finished
+    (one started in the background once its completion arrived in the turn),
+    by the skill loaded and a change read after both the load and that
+    change, or by a skip line. `branch_size` runs only when nothing else met it."""
+
+    if proof.skipped(REVIEW_SKILL):
+        return []
+    last = changes.code[-1].index
+    if any(
+        index > last and call.ok and call.name in SPAWN_BRIEF_FIELDS
+        and contracts.REVIEWER_TEMPLATE.reference in spawn_templates.get(call.tool_id, ())
+        and (not call.launched_async or call.agent_id in proof.turn.finished_agents)
+        for index, call in enumerate(proof.turn.calls)
+    ):
+        return []
+    loaded = proof.load_index(REVIEW_SKILL)
+    if loaded is not None and changes.read_after(max(loaded, last)):
+        return []
+    size = branch_size()
+    if size is None or size < REVIEW_MIN_LINES:
+        return []
+    # The template is named by its path: the skill-usage mod reads a bare backticked
+    # name as a skill the item asks for, and this item's skill is the review skill.
+    reviewer = (
+        "Or, after your last code change, start a reviewer subagent briefed from "
+        f"`{contracts.REVIEWER_TEMPLATE.reference}`, the reviewer prompt; a brief from any "
+        "other template is not a review."
+    )
+    size_text = (
+        f"this branch's work is {size} lines against its base, {REVIEW_MIN_LINES} or more, "
+        "counting committed, staged, unstaged, and untracked files that git does not ignore"
+    )
+    skip = (f"Or, if size is not what makes it worth reviewing, such as generated or vendored "
+            f"files, write `goated-skip: {REVIEW_SKILL}: <reason>`.")
+    if loaded is None:
+        return [f"- Review: {size_text}. Load `{REVIEW_SKILL}`, then read the change itself "
+                f"and review it: {CHANGE_READ}. {reviewer} {skip}"]
+    # The skill is loaded, so it is named only in the skip line: no load answers this.
+    return [f"- Review: {size_text}. After loading the {REVIEW_SKILL} skill and after your "
+            f"last code change, read the change itself and review it: {CHANGE_READ}. "
+            f"{reviewer} {skip}"]
+
+
+def _verification_item(changes: "_Changes", proof: _Proof, intensity: str | None,
+                       branch_size: Callable[[], int | None]) -> list[str]:
+    """The Verification item (spec R3) for a turn that changed code or a
+    sensitive file, or [] when no trigger holds or `verification-before-completion`
+    counts as loaded or is skipped. Its skip line is the Proof item's too.
+    `branch_size` runs only when no other trigger holds."""
+
+    if not (changes.code or changes.sensitive) or proof.loaded_or_skipped(PROOF_SKILL):
+        return []
+    triggers = []
+    if intensity == FULL_ROUTE:
+        triggers.append(f"the task's route is {FULL_ROUTE}")
+    if any(change.by_subagent for change in changes.code):
+        triggers.append("a subagent changed code")
+    if changes.sensitive:
+        triggers.append("a security-sensitive file changed")
+    if not triggers:
+        size = branch_size()
+        if size is None or size < REVIEW_MIN_LINES:
+            return []
+        triggers.append(f"this branch's work is {size} lines against its base")
+    return [
+        f"- Verification: {', and '.join(triggers)}, so verify the work before claiming it "
+        f"is done. Load `{PROOF_SKILL}` and follow it. Or write "
+        f"`goated-skip: {PROOF_SKILL}: <reason>`, which also answers the proof item."
+    ]
+
+
 def _designing(proof: _Proof, project: Project | None) -> bool:
     """Whether the turn's Design items apply: it loaded
     `software-design-principles`, or, with the skill loaded in an earlier
@@ -1277,19 +1515,20 @@ def _setup_changes(calls, project: Project | None) -> str:
 class _Change:
     """A finished call that changed files: where in the turn, which project
     files, which of them are code, whether it is already proved: by a check
-    later in the same command, or by a subagent's own check, and whether it
+    later in the same command, or by a subagent's own check, whether it
     is an edit that changed only comments and docstrings
-    (`design_reads.comment_only`)."""
+    (`design_reads.comment_only`), and whether a spawned subagent made it."""
 
-    __slots__ = ("index", "paths", "code_paths", "proven", "comment_only")
+    __slots__ = ("index", "paths", "code_paths", "proven", "comment_only", "by_subagent")
 
     def __init__(self, index: int, paths: list[str], proven: bool = False,
-                 comment_only: bool = False) -> None:
+                 comment_only: bool = False, by_subagent: bool = False) -> None:
         self.index = index
         self.paths = paths
         self.code_paths = [p for p in paths if _is_code_change(p)]
         self.proven = proven
         self.comment_only = comment_only
+        self.by_subagent = by_subagent
 
 
 class _Changes:
@@ -1353,7 +1592,8 @@ def _changes(turn: Turn, subagents: dict, project: Project | None):
                     _proves_itself(calls[code[-1]], project)
                     or bool(_checks(calls[code[-1] + 1 :]))
                 )
-                yield _Change(index, [p for paths in changed for p in paths], proven)
+                yield _Change(index, [p for paths in changed for p in paths], proven,
+                              by_subagent=True)
             continue
         paths = _changed_paths(call, project)
         if paths:

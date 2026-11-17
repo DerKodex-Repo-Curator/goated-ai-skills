@@ -199,17 +199,24 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
             tool_name, tool_input, current, overrides, config.skill_namespaces,
             _project(payload, config), spawned, earlier,
             closeout=actions.Closeout(state.design_edits_of(current.key),
-                                      _design_ids(payload, config)),
+                                      _design_ids(payload, config),
+                                      state.spawn_templates_of(current.key),
+                                      _route_intensity(state)),
             references=lambda: _registry_references(config, registry_warnings),
         )
     tool_use_id = str(payload.get("tool_use_id") or "")
     if hold is None and tool_use_id:
-        # What the design gates required of an edit they let through, for the closeout.
+        # What the design gates required of an edit they let through, and which
+        # templates a spawn's brief followed, for the closeout.
         references = actions.design_references(
             tool_name, tool_input, current, overrides, config.skill_namespaces,
             _project(payload, config), earlier)
         if references:
             state.record_design_edit(current.key, tool_use_id, references)
+        templates = actions.brief_templates(
+            tool_name, tool_input, current, overrides, config.skill_namespaces, earlier)
+        if templates:
+            state.record_spawn_templates(current.key, tool_use_id, templates)
     hold = gates.advice_once(hold, lambda: _claim_turn(store, session_id, current.key))
     warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread),
                 *registry_warnings]
@@ -228,6 +235,12 @@ def _registry_references(config: Config, warnings: list[str]) -> tuple:
             warnings.append(f"could not use the GOATED registry at {config.registry_path} ({exc}), "
                             "so the reference-reads gate asked for nothing")
         return ()
+
+
+def _route_intensity(state) -> str | None:
+    """The current task's route intensity (`full`), or None without a `requires:` route."""
+
+    return state.task.route.get("intensity") if state.task else None
 
 
 def _since_compaction(state) -> actions.SinceCompaction:
@@ -345,6 +358,8 @@ def _stop(payload: dict, config: Config) -> str:
         state.design_edits_of(current.key),
         _design_ids(payload, config),
         earlier=_since_compaction(state),
+        spawn_templates=state.spawn_templates_of(current.key),
+        intensity=_route_intensity(state),
     )
     warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread)]
     output = {"decision": "block", "reason": hold.message()} if hold else {}

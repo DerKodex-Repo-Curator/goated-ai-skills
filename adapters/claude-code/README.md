@@ -153,7 +153,7 @@ session's message never counts, and a brief never carries an override. The
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` [counts as loaded](#loads) |
 | `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an `Edit` or `MultiEdit` whose old text has a `<<<<<<<` or `>>>>>>>` marker at a line start; a write, by a write tool or a shell command such as `git checkout --theirs`, to a file a Read in the turn showed with such a marker; or any write after a git merge, rebase, cherry-pick, revert, or pull whose result in the turn reported a conflict. A finished abort, quit, continue, or skip of that operation, or a finished commit, ends the conflict and drops the Reads before it. Only the turn is read, not the repository, so a conflict opened in an earlier turn is caught only by markers the turn shows: an edit whose old text spans only `=======` and one side, in a file not read this turn, is not held, because `=======` alone is also a heading underline. A conflicting stash pop or apply is not held | `resolving-merge-conflicts` [counts as loaded](#loads) |
 | `repeated-failure` | justified-skip | A write, by a write tool or a shell command, once one check command (as the closeout's Proof item recognises checks) has failed twice in a row in the turn. A shell command is held when any of its simple commands writes and is not itself a check, so `sed -i … && pytest` and `pytest \| tee out.txt` are held, while `pytest > out.txt` is a rerun. "The same check" is the same command text, whitespace aside, without a trailing pipe into output filters (`tail`, `head`, `grep`, `findstr`, `more`, `less`, `tee`, `Select-Object`, `Select-String`, `Out-Host`, `Out-String`) or a `2>&1` before it; so `pytest -q \| tail -20` and `pytest -q \| tail -40` are one check, and a narrowed rerun such as one test file of a failing suite is another. A piped run fails by what it prints (`N failed`, `N errors`, `FAILED (`, `FAIL`, `npm ERR!`, `error TS…`, `test result: FAILED`, and the like), since the exit code is the filter's; any other run fails by its exit code. A run whose only failures are test modules that could not load a missing module or name neither adds to the count nor resets it, whether or not it looks failed, since in TDD the first red run often fails because the module under test does not exist yet. Only each runner's own report counts: pytest's `ERROR collecting` section showing `ImportError while importing test module` or ending in an `ImportError` or `ModuleNotFoundError`; unittest's `_FailedTest` error ending in one of those; jest's `Test suite failed to run` with `Cannot find module`. A run counts as usual when it also shows a failure in a test that ran (`1 failed, 1 error`), when a module that is there fails to load (a `SyntaxError` or `NameError`: the edit-and-crash loop the gate exists for), or when a test only prints such text. These miss, toward holding: output cut before the runner names the cause (`pytest -q \| tail -3`), ts-jest's `TS2307`, and vitest's `Failed to load url`. The table is `LOAD_ERROR_SIGNS` in `actions.py`. A pass of the check resets its count; other commands between runs do not. A call that never ran does not count: one the adapter or another hook held, one refused at a permission prompt, or one interrupted | `diagnose` [counts as loaded](#loads) |
-| `closeout` | justified-skip | A commit the `commit` gate lets through, or the end of the turn (a `Stop` hook), in a turn that changed code, that loaded `code-security-review` and changed a security-sensitive file, or that changed setup | Every item below is met or skipped |
+| `closeout` | justified-skip | A commit the `commit` gate lets through, or the end of the turn (a `Stop` hook), in a turn that changed code, that changed a security-sensitive file, or that changed setup | Every item below is met or skipped |
 
 The closeout items, each judged against the turn's last code change. A code
 change is a write tool's file, or a file a shell command writes (its redirect
@@ -206,6 +206,8 @@ check after its own last change, that change is already proved.
 | Docs | A code file outside the tests changed | `doc-sync` counts as loaded, and a [change read](#change-reads) follows the last code change, before or after the load | `doc-sync` |
 | Design red flags | `software-design-principles` loaded in the turn, or counts as loaded and the turn made an edit the `design` gate triggers on (five or more lines added to a non-test code file), so a later turn of small edits meets no Design item | `software-design-principles/references/red-flags.md` is read after the last code change that is not [comment-only](#comment-only-edits), then a [change read](#change-reads) after that read. The item repeats the question `red-flags.md` ends with (name one input that would break this change, and say what happens); no answer is checked | `software-design-principles` |
 | Design citations | The Design red flags item applies, and the turn's edits required a [design reference](#design-references) | The turn cites a section of each required reference as `file#id`, such as `errors.md#crash-early`, in its reply text, the reply being finished included, or in a call field that carries route and skip lines: a shell or agent call's `description` or a Skill call's `args`, the commit call being judged included (see [Design references](#design-references)) | `software-design-principles` |
+| Review | The turn changed code, and the branch's work is [large](#large-branches): 400 or more changed lines against its base, counting committed, staged, unstaged, and untracked files that git does not ignore | A [reviewer subagent](#reviewer-subagents) that finished after the last code change; or `standards-and-spec-review` counts as loaded and a [change read](#change-reads) follows the load and the last code change | `standards-and-spec-review` |
+| Verification | The turn changed code or a security-sensitive file, and one of these holds: the task's route is `full`; a subagent the turn spawned changed code; a security-sensitive file changed; or the branch's work is [large](#large-branches) | `verification-before-completion` counts as loaded | `verification-before-completion`, the Proof item's skip line, so one line answers both |
 | Security | `code-security-review` counts as loaded and a security-sensitive file (the `security` gate's paths, code or not) changed | A [change read](#change-reads) after the load and the last sensitive change | `code-security-review` |
 | Setup | The turn installed or added a dependency or tool by a command that names a package, or wrote an env or settings file (see below) | `setup-scribe` counts as loaded, the load before or after the change | `setup-scribe` |
 
@@ -317,15 +319,16 @@ sees only the whole command's result.
 ### Large pull requests
 
 `standards-and-spec-review` is for a change "large or risky enough to review
-before it lands", and the shared policy loads it "when diff size … warrants
-it". Neither gives a number. The `pr-review` gate's 400 changed lines, added
-plus deleted, is this adapter's mechanical stand-in for "large", as the
-`design` gate's five added lines are for a substantial edit; it is
-`REVIEW_MIN_LINES` in `actions.py`. Risk, unclear acceptance, and uncertain
-conventions, the policy's other reasons, are left to the router.
+before it lands", and its Activation section gives the number: a branch whose
+work against its base is 400 or more changed lines, added plus deleted. The
+`pr-review` gate and the closeout's [Review item](#large-branches) enforce
+that threshold, `REVIEW_MIN_LINES` in `actions.py`. Risk, unclear acceptance,
+and uncertain conventions, the policy's other reasons, are left to the
+router.
 
-The transcript does not hold a branch's size, so this gate is the one place
-the adapter runs commands. When a pull-request call would otherwise be held
+The transcript does not hold a branch's size, so this gate and the
+closeout's [large-branch](#large-branches) measure are the only places the
+adapter runs commands. When a pull-request call would otherwise be held
 by `pr-review` (the `pull-request` gate passed, and no load, change read, or
 skip line has cleared `pr-review`), the adapter asks git, in the hook's
 working folder, which of the candidate refs below exist (`git for-each-ref`),
@@ -363,6 +366,66 @@ rest of the adapter: holding on an unknown size would hold every pull request
 from a fork or another clone, whatever its size, and a justified-skip hold
 that fires without evidence teaches agents to skip it. The cost is in
 [Latency](#latency).
+
+#### Large branches
+
+Work is often merged locally with no pull request, so the closeout's Review
+and Verification items measure the branch's work as it stands, against the
+same base the `pr-review` gate finds without a `--base` (the first that
+exists of `origin/HEAD`, `origin/main`, `origin/master`, `main`, and
+`master`). That counts the branch's commits since it left the base, staged
+and unstaged changes, and every line of each untracked file git does not
+ignore; a binary file counts no lines and a symbolic link one, as in
+`git diff`, and a link's target is never read. Where the base branch exists
+both locally and on `origin`, the branch is measured from the fork point
+closer to it, so work merged into a local `main` and not yet pushed does not
+count toward the next branch: local merges prefer the local base. The
+`pr-review` gate keeps measuring from `origin/<base>` first.
+
+```text
+git rev-parse --symbolic-full-name HEAD
+git merge-base HEAD <base> [<the same branch's other ref>]
+git diff --shortstat --no-ext-diff --no-textconv <merge-base> --
+git ls-files --others --exclude-standard -z -- :/
+```
+
+The size is asked for only in a turn that changed code (or a sensitive file,
+for Verification), and only when nothing else has met the item. Because the
+branch is measured, not the commit, a large ticket split across commits is
+still caught: two 300-line commits raise the Review item at the second. It
+also means every later turn on a large branch that changes code, at its
+commit or at its `Stop`, raises the item again, until a review in that turn
+meets it or a skip line declines it.
+
+Two cases are not measured. A commit in a turn that changed no code, such as
+a later turn that only commits earlier work, meets no Review or Verification
+item, since both follow the turn's own code change. And git runs in the
+hook's working folder, so a commit made elsewhere, with `git -C <dir>` or
+after a `cd`, is measured as the hook's folder's branch, or not at all when
+that folder is no checkout.
+
+Nothing counts as large when the size cannot be measured: on the base branch
+itself, with a detached `HEAD`, with no base found, in a folder that is not a
+git checkout, when git fails, or past the same two-second limit. The other
+items are unchanged then.
+
+#### Reviewer subagents
+
+A reviewer subagent is a finished spawn the `spawn` gate let through whose
+brief follows `subagent-driven-development`'s reviewer prompt
+(`references/reviewer-prompt.md`, read, with its `Review Mode`,
+`Review Inputs`, and `Required Report Format` headings). The gate records
+which templates each spawn's brief followed, by the call's id, in the
+session's [state](#state); a spawn that finished after the turn's last code
+change, and whose brief followed the reviewer prompt, meets the Review item.
+A spawn started in the background (its result says `async_launched`) has
+finished only once its completion arrives later in the turn: a
+`<task-notification>` naming the agent's id with a `completed` status, or the
+agent's `<agent-message from="<id>">` hand-back, as a prompt or a queued
+command.
+A subagent briefed any other way, from `handoff`'s spawn brief or the
+implementer prompt, is not a review, and the item's text says to use the
+reviewer prompt. Whether the review was any good is not judged.
 
 ### Design references
 
@@ -694,7 +757,7 @@ Agents commit before they report, so a commit meets the closeout first. A
 commit, as the `commit` gate sees one (a git commit in a shell command or an
 MCP commit tool), that the `commit` gate lets through is held while the turn
 has an unmet closeout item: Proof, Unfinished work, Docs, Design red flags,
-Design citations, Security, or Setup. The hold's first line is the
+Design citations, Review, Verification, Security, or Setup. The hold's first line is the
 closeout's, `goated-hold: closeout | justified-skip`, its items are the
 closeout's texts, and each item accepts its usual skip line. It opens
 `Before committing in this turn`; for a shell commit it adds that the whole
@@ -725,6 +788,7 @@ no change between, needs no second read.
 | Security | The `code-security-review` load and the last change to a security-sensitive file |
 | Commit, pull request | The last change to any project file, code or not, including changes a subagent spawned in the turn made, before or after the skill load |
 | Pull-request review | The `standards-and-spec-review` load and that last change |
+| Review | The `standards-and-spec-review` load and the last code change |
 
 A change read is one of:
 
@@ -859,11 +923,13 @@ goated-hold: <gate> | <kind>
   `goated-skip: <skill>: <reason>`. A test checks every hold text against
   the registry's skill names.
 - The closeout hold lists each unmet item on its own line, starting
-  `- <Label>: `, with `Proof`, `Unfinished`, `Docs`, `Design`, `Security`,
-  or `Setup` as the label; the two design items share `Design`. Each item
-  names the skill it asks for, backticked or as the skill of the skip line
-  it offers: the mod counts an item through that skill, so an item that
-  names none is not counted. These labels
+  `- <Label>: `, with `Proof`, `Unfinished`, `Docs`, `Design`, `Review`,
+  `Verification`, `Security`, or `Setup` as the label; the two design items
+  share `Design`. Each item names the skill it asks for, backticked or as the
+  skill of the skip line it offers: the mod counts an item through that
+  skill, so an item that names none is not counted. The Review item names
+  the reviewer prompt by its path, so it counts through
+  `standards-and-spec-review`. These labels
   are stable: the skill-usage mod counts each closeout hold per item by them,
   so a release keeps them, and a new item takes a label of its own. The
   wording after the label may change.
@@ -1060,8 +1126,10 @@ task, whether the router loaded, which GOATED skills loaded and which design
 references, skill references, and spawn-brief templates were read since the
 last compaction
 (see [Loads](#loads)), which references each edit of the latest turn
-required when the design gates judged it, the last turn seen, and the latest
-typed overrides. It holds no prompt or reply
+required when the design gates judged it, which brief templates each spawn
+of the latest turn followed when the `spawn` gate let it through (see
+[Reviewer subagents](#reviewer-subagents)), the last turn seen, and the
+latest typed overrides. It holds no prompt or reply
 text beyond the short override phrases and a commit message the user typed.
 Beside the state files, a `turn-markers/` folder holds one empty file per
 session, and one per subagent of it, named for the turn whose hold gave the
@@ -1070,8 +1138,9 @@ and a `SessionStart` after compaction or `/clear` deletes the session's and
 its subagents'.
 The action and closeout gates keep no state of their own: they read the
 current turn, the loads, design and skill references, and templates read
-since the last compaction, and, for the closeout's citation item, the references
-recorded for the turn's edits. Files are not pruned automatically;
+since the last compaction, and, for the closeout's citation and Review items,
+the references recorded for the turn's edits and the templates recorded for
+its spawns. Files are not pruned automatically;
 deleting the folder between sessions is safe.
 
 ## Latency
@@ -1111,6 +1180,18 @@ on the same machine with git 2.55, in-process through `run_hook`, 30 runs each:
 
 So a pull request's hook call costs about 35 ms more, about 60 ms for an MCP
 tool that names its repository, and at most two seconds when git hangs.
+
+The closeout's [large-branch](#large-branches) measure (Ticket 069, five git
+calls) runs at a commit or `Stop` in a turn that changed code, while the
+Review or Verification item is not otherwise met. Measured on 2026-11-17 the
+same way, a `Stop` with only that measure left to run:
+
+| Case | Median | p90 |
+| --- | --- | --- |
+| No checkout at the hook's folder | 4 ms | 5 ms |
+| A branch of 450 changed lines | 58 ms | 61 ms |
+| A branch of 20,000 changed lines | 58 ms | 63 ms |
+
 Every other call costs nothing more.
 
 The hook never waits for the call it judges, which it takes from its input:
@@ -1303,6 +1384,16 @@ of the call's prompt, which is normally already there.
   hold, never a pass. The turn marker that shares the full unseen-line advice
   is claimed atomically, apart from the state file, so this race never
   repeats that advice.
+- The Verification item's sensitive-file trigger uses the `security` gate's
+  paths, so any change to one, such as an edit of a lockfile or a `.env`
+  value, asks for `verification-before-completion` too; its skip line
+  answers it.
+- The [large-branch](#large-branches) measure counts every untracked file
+  git does not ignore, so an unignored build or dependency folder makes a
+  small branch large; its skip line, or a `.gitignore` entry, answers that.
+- The Proof and Verification items name the same skill, so the skill-usage
+  mod counts a `verification-before-completion` load as answering both items
+  of a hold that lists both, though only Verification asks for the load.
 
 ## Measuring It
 
@@ -1319,3 +1410,5 @@ without it.
 gates) in the GOATED source repo drive the adapter with hook inputs and transcripts in Claude Code's recorded shape,
 including the recorded fixtures in `tests/fixtures/claude_code_adapter/`, and
 checks the adapter's marker parser against `stack/fixtures/markers/lines.yaml`.
+`tests/test_claude_code_adapter_review.py` covers the closeout's Review and
+Verification items against scratch git repositories.

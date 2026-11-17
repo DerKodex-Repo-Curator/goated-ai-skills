@@ -85,6 +85,9 @@ or two sessions. The gaps that matter:
   it. Its skip line names `standards-and-spec-review`. It joins the
   commit-time list. When git cannot measure the change, or the checkout is
   on the base branch with nothing to compare, the item is not raised.
+  Where the base exists both locally and on `origin`, the work is measured
+  from the fork point closer to the branch, so local merges prefer the
+  local base.
 - **Reviewer subagents.** For R1 and R2, a reviewer subagent is a finished
   spawn whose brief follows `subagent-driven-development`'s reviewer
   prompt. The `spawn` gate records which template a brief matched, by the

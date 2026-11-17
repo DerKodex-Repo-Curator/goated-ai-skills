@@ -219,6 +219,7 @@ def _adapter_texts() -> dict[str, str]:
         reviewed.say(NONE_LINE)
         reviewed.load("code-security-review")
         reviewed.load("doc-sync")
+        reviewed.load("verification-before-completion")  # Meets the Verification item its sensitive file raises.
         reviewed.call("Edit", _edit("src/auth.py", PLAIN))
         reviewed.run("pytest -q")
         reviewed.read("/skills/software-design-principles/references/red-flags.md")
@@ -242,6 +243,14 @@ def _adapter_texts() -> dict[str, str]:
         committing.load("commit-message")
         committing.run("git diff")
         texts["closeoutCommit"] = reason(committing.call("Bash", {"command": 'git commit -m "Add export"'}))
+        # The Review and Verification items alone: a turn's code change on a large branch (Ticket 069).
+        reviewing = routed("closeout-review")
+        git_branch_with_change(reviewing.project, 450)
+        reviewing.say("goated-skip: software-design-principles: one mechanical constant change")
+        reviewing.call("Write", _write("src/export.py"))
+        reviewing.run("pytest -q")
+        reviewing.say("goated-skip: doc-sync: internal constant with no documented behavior")
+        texts["closeoutReview"] = _stop_reason(reviewing)
 
         headings = routed("spawn-headings")
         headings.brief_with_handoff()
@@ -316,6 +325,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "closeoutSetup": "closeout | justified-skip",
             "closeoutCitation": "closeout | justified-skip",
             "closeoutCommit": "closeout | justified-skip",
+            "closeoutReview": "closeout | justified-skip",
             "commitContract": "commit | strict",
             "spawnHeadings": "spawn | strict",
             "securityNoExtension": "security | justified-skip",
@@ -330,6 +340,8 @@ class SkillUsageModFixtureTests(unittest.TestCase):
         self.assertIn("Not yet cited: errors.md.", texts["closeoutCitation"])
         self.assertIn("Before committing in this turn", texts["closeoutCommit"])
         self.assertIn("- Proof:", texts["closeoutCommit"])
+        self.assertIn("- Review:", texts["closeoutReview"])
+        self.assertIn("- Verification:", texts["closeoutReview"])
 
     def test_holds_a_line_can_clear_name_the_call_fields_and_the_user_way_out(self) -> None:
         # A route or skip line in reply text is recorded only after the hook returns, and Claude

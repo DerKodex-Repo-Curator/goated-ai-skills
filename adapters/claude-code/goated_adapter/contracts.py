@@ -57,6 +57,13 @@ class BriefTemplate:
         return path == self.reference or path.endswith("/" + self.reference)
 
 
+# A brief that follows this template starts a reviewer subagent, the one kind
+# of spawn that counts as a review (spec, Reviewer subagents).
+REVIEWER_TEMPLATE = BriefTemplate(
+    "subagent-driven-development",
+    "subagent-driven-development/references/reviewer-prompt.md",
+    ("Review Mode", "Review Inputs", "Required Report Format"),
+)
 BRIEF_TEMPLATES = (
     BriefTemplate("handoff", "handoff/references/spawn-brief.md", ("Goal", "Scope", "Done Means")),
     BriefTemplate(
@@ -64,11 +71,7 @@ BRIEF_TEMPLATES = (
         "subagent-driven-development/references/implementer-prompt.md",
         ("Task", "Ownership", "Required Report Format"),
     ),
-    BriefTemplate(
-        "subagent-driven-development",
-        "subagent-driven-development/references/reviewer-prompt.md",
-        ("Review Mode", "Review Inputs", "Required Report Format"),
-    ),
+    REVIEWER_TEMPLATE,
 )
 
 

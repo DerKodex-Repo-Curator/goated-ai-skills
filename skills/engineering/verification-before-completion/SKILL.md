@@ -23,7 +23,9 @@ This skill does not replace implementation, TDD, standards/spec review, security
 Load the full controller when work is complex, high-risk, delegated,
 multi-surface, or explicitly audited. Those conditions justify reconciling
 multiple claims, evidence sources, specialist deltas, skipped checks, and
-residual risks.
+residual risks. They always hold when the task's route is `full`, a subagent
+changed code, a security-sensitive file changed, or the branch's work is 400
+or more changed lines.
 
 For narrow, low-risk, single-surface work, verify directly from shared policy:
 name the claim, gather fresh matching evidence, report failures or skips, and

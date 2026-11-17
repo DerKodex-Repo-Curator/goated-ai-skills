@@ -2961,6 +2961,7 @@ class SetupCloseoutTests(AdapterTestCase):
     def test_the_header_names_setup_when_only_the_setup_item_is_left(self) -> None:
         s = self.routed()
         s.load("code-security-review")
+        s.load("verification-before-completion")  # A sensitive file needs verification (Ticket 069).
         s.call("Edit", {"file_path": ".env.local", "old_string": "A=1", "new_string": "A=2"})
         s.run("git diff .env.local")
 
@@ -3091,6 +3092,7 @@ class ChangeReadTests(AdapterTestCase):
     def sensitive(self) -> Session:
         s = self.routed()
         s.load("code-security-review")
+        s.load("verification-before-completion")  # A sensitive file needs verification (Ticket 069).
         s.say("goated-skip: software-design-principles: one mechanical constant change")
         s.say("goated-skip: doc-sync: internal constant with no documented behavior")
         s.call("Write", write("src/auth.py"))
@@ -3109,6 +3111,7 @@ class ChangeReadTests(AdapterTestCase):
     def test_a_sensitive_file_that_is_not_code_needs_it_too(self) -> None:
         s = self.routed()
         s.load("code-security-review")
+        s.load("verification-before-completion")  # A sensitive file needs verification (Ticket 069).
         s.call("Edit", {"file_path": "config/secrets.yaml", "old_string": "A=1", "new_string": "A=2"})
 
         self.assertIn("- Security:", stop(s)["reason"])
@@ -3117,6 +3120,7 @@ class ChangeReadTests(AdapterTestCase):
 
     def test_a_security_skip_needs_no_change_read(self) -> None:
         s = self.routed()
+        s.load("verification-before-completion")  # A sensitive file needs verification (Ticket 069).
         s.say("goated-skip: code-security-review: renames a local variable only")
         s.say("goated-skip: software-design-principles: one mechanical constant change")
         s.say("goated-skip: doc-sync: internal constant with no documented behavior")
@@ -3252,6 +3256,7 @@ class ChangeReadTests(AdapterTestCase):
     def test_the_security_item_counts_from_the_last_sensitive_change(self) -> None:
         s = self.routed()
         s.load("code-security-review")
+        s.load("verification-before-completion")  # A sensitive file needs verification (Ticket 069).
         s.call("Edit", {"file_path": "config/secrets.yaml", "old_string": "A=1", "new_string": "A=2"})
         s.read("config/secrets.yaml")
         s.say("goated-skip: software-design-principles: one mechanical constant change")
@@ -3530,6 +3535,8 @@ class ReviewRegressionTests(AdapterTestCase):
         s.run("pytest -q")
         s.load("doc-sync")
         s.run("git diff")
+        self.assertIn("- Verification: a subagent changed code", stop(s)["reason"])  # Ticket 069.
+        s.load("verification-before-completion")
         self.assertEqual(stop(s), {})
 
     def test_a_subagent_that_ran_its_own_check_proved_its_change(self) -> None:
