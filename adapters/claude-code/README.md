@@ -388,8 +388,10 @@ backtick in PowerShell). A `Bash` or `PowerShell` command meets the
   `git stash pop|apply`.
 
 Text inside quotes, heredoc bodies, PowerShell here-strings, and comments is
-ignored, as are comparisons inside `[[ ]]` and arithmetic in `$(( ))`, so
-`echo "a > b"`, `[[ $a > $b ]]`, and `ls # a > b` write nothing. Reads, test
+ignored, as are comparisons inside a `[[ ]]` test that is the command (after
+any `if`, `!`, or other keyword) and arithmetic in `$(( ))`, so
+`echo "a > b"`, `[[ $a > $b ]]`, and `ls # a > b` write nothing. Elsewhere
+`[[` is a plain word, so `cat [[ a > c ]]` writes `c`. Reads, test
 runs, `git status`, and `git checkout <branch>` stay free. Commit and
 pull-request commands are recognized the same way, per command, so
 `echo gh pr create` opens nothing.
@@ -471,7 +473,8 @@ position a plain word, so a `>` after it redirects), or `//`, which starts a
 UNC path read over the network, where Windows may send the user's
 credentials. So a Windows path with backslashes, such as
 `Get-Content src\a.py`, is held; Read or a forward-slash path passes. When
-the analysis cannot tell, the call is held. The lists are `READ_ONLY_COMMANDS`, `READ_ONLY_REFUSED_ARGS`, `GIT_READ_SUBCOMMANDS`,
+the analysis cannot tell, the call is held. The lists are
+`READ_ONLY_COMMANDS`, `READ_ONLY_REFUSED_ARGS`, `GIT_READ_SUBCOMMANDS`,
 `GIT_READ_REFUSED_ARGS`, and `NOT_PLAINLY_SPELLED_RE` in `shell.py`. Once the
 router loads, commands are judged as before.
 
