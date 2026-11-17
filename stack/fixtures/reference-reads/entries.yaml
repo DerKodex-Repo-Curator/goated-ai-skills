@@ -1,0 +1,120 @@
+schema_version: 1.0.0
+# Owner of the entry shape: $defs/referenceEntry in
+# stack/schemas/stack-registry.schema.json. README.md in this folder explains
+# the entries. Each case is one registry reference entry and whether the schema
+# accepts it. Valid cases cover every signal kind; rejected cases are near
+# misses of a valid one.
+cases:
+  - name: pattern-edit-in-a-test
+    valid: true
+    entry:
+      file: mocking-and-seams.md
+      signal:
+        kind: edit-adds-pattern
+        pattern: mock-or-patch
+        file_kind: test
+  - name: pattern-edit-in-any-file
+    valid: true
+    entry:
+      file: condition-based-waiting.md
+      signal:
+        kind: edit-adds-pattern
+        pattern: sleep-retry-or-timeout
+  - name: substantial-test-edit
+    valid: true
+    entry:
+      file: test-design.md
+      signal:
+        kind: edit-of-file-kind
+        file_kind: test
+        min_added_lines: 5
+  - name: write-under-a-path
+    valid: true
+    entry:
+      file: spec-template.md
+      signal:
+        kind: write-under-path
+        path: docs/specs/
+  - name: another-gate-fires
+    valid: true
+    entry:
+      file: root-cause-tracing.md
+      signal:
+        kind: gate-fires
+        gate: repeated-failure
+  - name: sensitive-categories-in-the-turn
+    valid: true
+    entry:
+      file: security-review-checklist.md
+      signal:
+        kind: sensitive-category-count
+        min_categories: 2
+  - name: spawn-with-a-brief
+    valid: true
+    entry:
+      file: spawn-brief.md
+      signal:
+        kind: spawn-with-brief
+  - name: existing-adapter-rule
+    valid: true
+    entry:
+      file: red-flags.md
+      signal:
+        kind: existing-rule
+        gate: closeout
+  - name: advisory-with-a-reason
+    valid: true
+    entry:
+      file: deep-modules.md
+      advisory: An interface that feels wide is a judgment no tool call shows.
+
+  - name: unknown-kind
+    valid: false
+    entry:
+      file: deep-modules.md
+      signal:
+        kind: edit-feels-risky
+  - name: advisory-with-an-empty-reason
+    valid: false
+    entry:
+      file: deep-modules.md
+      advisory: "   "
+  - name: neither-signal-nor-advisory
+    valid: false
+    entry:
+      file: deep-modules.md
+  - name: both-signal-and-advisory
+    valid: false
+    entry:
+      file: spawn-brief.md
+      signal:
+        kind: spawn-with-brief
+      advisory: Declared both ways by mistake.
+  - name: pattern-edit-without-a-pattern
+    valid: false
+    entry:
+      file: mocking-and-seams.md
+      signal:
+        kind: edit-adds-pattern
+  - name: parameter-of-another-kind
+    valid: false
+    entry:
+      file: spec-template.md
+      signal:
+        kind: write-under-path
+        path: docs/specs/
+        min_added_lines: 5
+  - name: path-without-a-trailing-slash
+    valid: false
+    entry:
+      file: spec-template.md
+      signal:
+        kind: write-under-path
+        path: docs/specs
+  - name: existing-rule-naming-an-unknown-gate
+    valid: false
+    entry:
+      file: red-flags.md
+      signal:
+        kind: existing-rule
+        gate: design-twice

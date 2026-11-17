@@ -167,7 +167,7 @@ EXPECTED_EMPTY_REPOSITORY_OUTPUT = "\n".join(
     (
         "GOATED skill validation failed for 0 implemented skills.",
         "",
-        "Blocking errors: 19",
+        "Blocking errors: 20",
         "- skills: missing skills directory",
         "- stack/goated-stack.yaml: missing required file",
         (
@@ -217,6 +217,10 @@ EXPECTED_EMPTY_REPOSITORY_OUTPUT = "\n".join(
         "- stack/fixtures/wayfinding: no wayfinding fixtures found",
         "- stack/fixtures/markers/lines.yaml: missing required file",
         "- stack/fixtures/markers/design-reads.yaml: missing required file",
+        (
+            "- stack/fixtures/reference-reads/entries.yaml: "
+            "missing required file"
+        ),
         (
             "Integrated registry checked with 0 catalog entries; "
             "shared policy is 0 words (below 800-1,200 target)."

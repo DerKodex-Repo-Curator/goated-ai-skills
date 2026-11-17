@@ -80,6 +80,27 @@
       "items": {
         "$ref": "#/$defs/skill"
       }
+    },
+    "reference_patterns": {
+      "description": "Named patterns an edit-adds-pattern reference signal can select.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "description"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/portableName"
+          },
+          "description": {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        }
+      }
     }
   },
   "$defs": {
@@ -165,8 +186,241 @@
           "items": {
             "$ref": "#/$defs/portableName"
           }
+        },
+        "references": {
+          "description": "Every file under the skill's references/ folder, each with a signal that makes its read enforced or an advisory reason.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/referenceEntry"
+          }
         }
       }
+    },
+    "referenceEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file"
+      ],
+      "properties": {
+        "file": {
+          "description": "Path relative to the skill's references/ folder.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$"
+        },
+        "signal": {
+          "$ref": "#/$defs/referenceSignal"
+        },
+        "advisory": {
+          "description": "Why no signal kind fits the skill's read-when sentence.",
+          "type": "string",
+          "pattern": "\\S"
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "signal"
+          ]
+        },
+        {
+          "required": [
+            "advisory"
+          ]
+        }
+      ]
+    },
+    "referenceSignal": {
+      "description": "What makes a reference's read required. A new kind needs a schema change and an adapter change.",
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "edit-adds-pattern",
+            "edit-of-file-kind",
+            "write-under-path",
+            "gate-fires",
+            "sensitive-category-count",
+            "spawn-with-brief",
+            "existing-rule"
+          ]
+        },
+        "pattern": {
+          "$ref": "#/$defs/portableName"
+        },
+        "file_kind": {
+          "enum": [
+            "test"
+          ]
+        },
+        "min_added_lines": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*/$"
+        },
+        "gate": {
+          "$ref": "#/$defs/portableName"
+        },
+        "min_categories": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "edit-adds-pattern"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "pattern"
+            ],
+            "propertyNames": {
+              "enum": [
+                "kind",
+                "pattern",
+                "file_kind"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "edit-of-file-kind"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "file_kind"
+            ],
+            "propertyNames": {
+              "enum": [
+                "kind",
+                "file_kind",
+                "min_added_lines"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "write-under-path"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "path"
+            ],
+            "propertyNames": {
+              "enum": [
+                "kind",
+                "path"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "gate-fires"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "gate"
+            ],
+            "propertyNames": {
+              "enum": [
+                "kind",
+                "gate"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "sensitive-category-count"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "min_categories"
+            ],
+            "propertyNames": {
+              "enum": [
+                "kind",
+                "min_categories"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "spawn-with-brief"
+              }
+            }
+          },
+          "then": {
+            "propertyNames": {
+              "enum": [
+                "kind"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "existing-rule"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "gate"
+            ],
+            "propertyNames": {
+              "enum": [
+                "kind",
+                "gate"
+              ]
+            },
+            "properties": {
+              "gate": {
+                "enum": [
+                  "closeout",
+                  "design-reads",
+                  "spawn"
+                ]
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

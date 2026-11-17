@@ -72,6 +72,32 @@ never read. A new skill's references can go uncovered with no warning.
 - [ ] `AGENTS.md` and `skills/README.md` state the standard.
 - [ ] No installed skill needs the registry at runtime.
 
+## Closeout
+
+The maintainer approved the classification of all 63 reference files on
+2026-11-17, in four batches:
+
+- **Enforced by the spec's first set (R6), approved as listed:** `tdd`
+  `mocking-and-seams.md` and `test-design.md`, `diagnose`
+  `root-cause-tracing.md` and `condition-based-waiting.md`,
+  `code-security-review` `security-review-checklist.md`, `write-a-spec`
+  `spec-template.md`, and `spec-to-tickets` `ticket-slicing-templates.md`.
+- **Enforced today, declared with the existing-rule kind, approved:** the
+  nine `software-design-principles` references (`red-flags.md` by the
+  closeout, the rest by `design-reads`), `handoff` `spawn-brief.md`, and both
+  `subagent-driven-development` prompts (by `spawn`).
+- **Enforced by a write under the skill's default path, chosen by the
+  maintainer:** `wayfinder` `artifact-templates.md` (`docs/wayfinding/`),
+  `setup-scribe` `setup-recipe-template.md` (`docs/setup/`), `doc-sync`
+  `external-docs-lookup-notes.md` (`docs/agents/external-docs/`), and
+  `grill-with-docs` `adr-capture.md` (`docs/adr/`). The ADR read is asked for
+  before recommending capture, so this signal fires later than that sentence.
+- **Advisory, approved:** the other 40, each with its reason in the
+  registry, including `tdd` `testing-anti-patterns.md`, which the
+  maintainer kept advisory rather than adding it to the mock signal.
+
+That makes 23 enforced and 40 advisory.
+
 ## Expected Proof
 
 - Validator tests for each failure, each with a passing near miss.
