@@ -22,34 +22,53 @@ tune a hold with.
 
 ## What To Build
 
-- **Retrospective notice.** When a session has had three or more holds
-  that were declined with a skip line or left unanswered, the adapter says
-  once, at the next prompt, that `retrospective` can turn the friction into
-  improvements. It is context for the agent and a line the user sees. It
-  never blocks.
+- **Counting friction.** The adapter keeps no history of holds today. The
+  saved state gains a count of the session's holds that were declined or
+  left unanswered, and whether the retrospective notice was shown.
+  - A hold is declined when a skip line cleared it.
+  - A hold is unanswered when no load, read or skip line answered it
+    before the next typed prompt.
+  - A hold the user's typed override stood down counts as neither.
+  - A hold answered by a load or a read counts as neither.
+- **Retrospective notice.** When the count reaches three, the adapter says
+  once per session, at the next prompt, that `retrospective` can turn the
+  friction into improvements. It is context for the agent and a line the
+  user sees. It never blocks.
 - **Retrospective placement.** The skill's description and the router's
   map name the moment after a wave of delegated tickets is merged. The
   skill takes the skill-usage mod's numbers as an input when they exist.
-- **Onboarding notice.** At the first session start the adapter says once
-  when the project has no agent instruction file, no context map, or no
-  standards document, and names the onboarding skill for each:
-  `agent-instructions-integrator`, `context-matrix-map`,
-  `project-standards-calibration`.
+- **Onboarding notice.** At a session start the adapter says, once per
+  project, when the project lacks any of these, and names the onboarding
+  skill for each:
+  - an agent instruction file, `AGENTS.md` or `CLAUDE.md` at the project
+    root: `agent-instructions-integrator`;
+  - a context map, `docs/agents/context-matrix.md`: `context-matrix-map`;
+  - a standards document, `docs/agents/project-standards.md`:
+    `project-standards-calibration`.
+  Confirm those paths against what the three skills write by default, and
+  use the skills' paths if they differ.
+  - That the notice was shown is recorded outside the project folder,
+    keyed by the project. It shows again only when the set of missing
+    files changes.
+  - The rule, with the file paths, is stated in the shared policy's
+    onboarding section or the three skills, inside the word budgets. The
+    adapter enforces that statement.
 - **Router wording.** The router's lines for `source-grounded-research`,
   `documentation-writer`, `documentation-cleanup` and `goated-prompt` are
   checked against each skill's description and corrected where the router
   would not select the skill for work its description names.
 - The router and shared policy stay inside their word budgets.
-- Update the README's Session Start Notices section.
+- Update the README's Session Start Notices and State sections.
 
 ## Recommended First Reads
 
 - The parent spec, R6, R9 and its Constraints.
 - `adapters/claude-code/goated_adapter/hooks.py` (session start and
-  user-prompt handling) and `policy.py` (the existing notices).
-- `adapters/claude-code/README.md`: Session Start Notices.
-- `skills/agent-workflows/retrospective/SKILL.md` and the router's skill
-  map.
+  user-prompt handling), `policy.py` (the existing notices) and `state.py`
+  (`SessionState`, `policy_notice_shown`).
+- `adapters/claude-code/README.md`: Session Start Notices, State.
+- `skills/agent-workflows/retrospective/SKILL.md`, the three onboarding
+  skills' output paths, and the router's skill map.
 - The router as Ticket 072 left it.
 
 ## Acceptance Criteria
@@ -57,11 +76,14 @@ tune a hold with.
 - [ ] A session with three declined or unanswered holds gets the
       retrospective notice once, at the next prompt. One with two gets
       none, and a fourth hold brings no second notice.
-- [ ] A hold answered by a load or a read does not count toward the three.
+- [ ] A hold answered by a load or a read, and one stood down by a typed
+      override, do not count.
 - [ ] A project with no agent instruction file gets the start notice
-      naming `agent-instructions-integrator`, once. A project with all
-      three files gets none.
-- [ ] No notice blocks a call or a `Stop`.
+      naming `agent-instructions-integrator`. A second session in the same
+      project gets none. A project with all three files gets none.
+- [ ] When a second file goes missing, the notice shows again, once.
+- [ ] No notice blocks a call or a `Stop`, and nothing is written inside
+      the project folder.
 - [ ] The router's fixtures select each of the four research and
       doc-writing skills for a prompt its description names.
 - [ ] The router and shared policy stay inside their budgets.

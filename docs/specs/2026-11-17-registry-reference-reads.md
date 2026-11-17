@@ -108,7 +108,9 @@ not covered.
   when" sentence, or advisory with the reason no signal fits.
 - **R8, one owner.** Each skill's `SKILL.md` keeps its "read when"
   sentences; the registry entry is the enforceable form. A check compares
-  the two lists of files, so they cannot drift.
+  the two lists of files in both directions, so a reference the skill
+  links but the registry lacks, and one the registry declares but the
+  skill never links, both fail.
 - **R9, documentation.** The adapter README gains the gate, its table row
   and its hold text; the skill-usage mod reads the new gate's first line
   and counts it like `design-reads`.

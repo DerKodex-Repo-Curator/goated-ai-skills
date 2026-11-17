@@ -103,6 +103,8 @@ really leaves the context.
 - `tickets/062-adapter-unseen-line-advice-once-across-parallel-holds.md`
   (the session state, and the `pipeline` hold's text).
 - `tickets/064-adapter-session-cards-pass-routing.md` (the routing check).
+- `tickets/071-spawn-briefs-name-skills.md` (the `spawn` gate, whose
+  content check it changes).
 
 ## Scope Exclusions
 

@@ -40,8 +40,9 @@ never read. A new skill's references can go uncovered with no warning.
     Present the full list to the maintainer before finishing.
 - **Validation.** `scripts/validate_skills.py` fails when a reference file
   is undeclared, a declared file is missing, a kind is unknown, an advisory
-  entry has no reason, or a skill's `SKILL.md` links a reference the
-  registry lacks. A fixture under `stack/fixtures/` covers the entries.
+  entry has no reason, a skill's `SKILL.md` links a reference the
+  registry lacks, or the registry declares a reference no `SKILL.md`
+  links. A fixture under `stack/fixtures/` covers the entries.
 - **Standard.** `AGENTS.md` and `skills/README.md` say that adding,
   renaming or removing a reference file updates the registry in the same
   change.
@@ -64,7 +65,7 @@ never read. A new skill's references can go uncovered with no warning.
       missing file, an unknown kind, and an advisory entry with no reason;
       a test covers each.
 - [ ] The validator fails when a `SKILL.md` links a reference the registry
-      lacks.
+      lacks, and when the registry declares one no `SKILL.md` links.
 - [ ] The spec's first enforced set is declared as enforced.
 - [ ] The maintainer's decision on the classification is recorded in this
       ticket's closeout.

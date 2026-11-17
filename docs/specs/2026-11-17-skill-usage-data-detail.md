@@ -33,8 +33,10 @@ could not answer several questions the next planning round needed:
   projects cannot be told apart.
 - **Versions.** Summaries from older versions use retired gate names, such
   as `design-hold` and `commit-hold`, mixed with current ones.
-- **Overrides.** The stored override phrases include `commit message` and
-  ``skip `doc-sync``, which are not phrases the adapter documents.
+- **Overrides.** The stored override phrases include `commit message`,
+  which is probably the documented `commit message: <text>` override
+  shown without its text, and ``skip `doc-sync``, which has a stray
+  backtick and no known cause.
 - **Reference reads.** Reads are counted per file, but not how often a
   reference was asked for, read, or skipped.
 
@@ -78,8 +80,10 @@ could not answer several questions the next planning round needed:
 - **R7, versions.** Each summary carries the mod's data version. All time
   shows retired gate names under a heading that says they come from
   earlier versions.
-- **R8, override phrases.** The cause of the undocumented phrases is found
-  and fixed, in the mod or the adapter, with a regression test.
+- **R8, override phrases.** Whether the stored `commit message` phrase is
+  the documented commit-message override is confirmed, and the mod labels
+  it as such. The cause of ``skip `doc-sync`` is found and fixed, in the
+  mod or the adapter, with a regression test.
 - **R9, reference counts.** For each reference the registry declares as
   enforced: times its hold fired, times it was then read, and times it was
   skipped. For advisory ones: reads, and loads of the skill.
@@ -100,9 +104,9 @@ could not answer several questions the next planning round needed:
       the stored key does not contain either path.
 - [ ] AC7: A summary stored by an earlier version shows under the
       earlier-versions heading and does not change current counts.
-- [ ] AC8: The cause of `commit message` and ``skip `doc-sync`` as stored
-      override phrases is named in the ticket's closeout, and a test pins
-      the fix.
+- [ ] AC8: The ticket's closeout says whether `commit message` is the
+      documented override and names the cause of ``skip `doc-sync``, and a
+      test pins each fix.
 - [ ] AC9: A `reference-reads` hold that is then read adds one fired and
       one read for that reference.
 - [ ] AC10: The mod's tests pass, its type check adds no errors, and the

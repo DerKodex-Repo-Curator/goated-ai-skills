@@ -10,43 +10,56 @@ AFK.
 
 ## Problem
 
-The skill-usage mod's stored summaries list override phrases the adapter
-does not document: `commit message`, three times, and ``skip `doc-sync``,
-once. The documented overrides are `skip routing` and `skip <skill>`. The
-cause is unknown. It may be how the adapter words the sentence it adds to
-the hook context, how the mod reads that sentence, or an override the
-adapter recorded that it should not have.
+The skill-usage mod's stored summaries list two override phrases that do
+not read as the documented ones:
+
+- `commit message`, three times. The adapter documents a commit-message
+  override, `commit message: <text>` and its variants, and
+  `overrides.parse_overrides` returns it as `commit_message`. The stored
+  phrase is probably that override shown without its text. This is not
+  confirmed.
+- ``skip `doc-sync``, once, with a stray backtick. The documented form is
+  `skip <skill>`. The cause is unknown: it may be how the adapter words
+  the sentence it adds to the hook context, how the mod reads that
+  sentence, or a phrase the adapter matched that it should not have.
+
+Override counts cannot be trusted until both are explained.
 
 ## What To Build
 
-- Find the cause. Reproduce each phrase from the adapter's override
-  parsing and announcement and the mod's reading of them.
-- Fix it where it lies, in the adapter or the mod, so a stored phrase is
-  always one the adapter's User Overrides section documents.
-- If the cause is an override the adapter should not have applied, report
-  that to the maintainer before changing the override rules.
-- Pin the fix with a regression test on each side that changed.
+- **`commit message`.** Confirm whether the stored phrase is the
+  documented commit-message override in shortened form. If it is, make the
+  mod show it under a label that says so, and close this part. If it is
+  not, treat it as the second case.
+- **``skip `doc-sync``.** Reproduce it from the adapter's override parsing
+  and announcement and the mod's reading of them. Fix it where it lies, in
+  the adapter or the mod, so the stored phrase is `skip doc-sync`.
+- If either cause is an override the adapter should not have applied,
+  report that to the maintainer before changing the override rules.
+- Pin each fix with a regression test on the side that changed.
 
 ## Recommended First Reads
 
 - The parent spec, R8.
-- `adapters/claude-code/goated_adapter/overrides.py` (`parse_overrides`)
-  and where `hooks.py` announces a recorded override.
+- `adapters/claude-code/goated_adapter/overrides.py` (`parse_overrides`,
+  `_commit_message`) and where `hooks.py` announces a recorded override.
 - `adapters/claude-code/README.md`: User Overrides.
 - The mod's `hooks/classify.ts`, for how it reads the announcement.
 - Tickets 047 and 054, which changed where overrides may come from.
 
 ## Acceptance Criteria
 
-- [ ] The cause of each phrase is named in this ticket's closeout, with
-      the input that produces it.
-- [ ] After the fix, that input stores a documented phrase or none.
-- [ ] A regression test pins the fix.
+- [ ] This ticket's closeout says whether `commit message` is the
+      documented override, with the input that produces it.
+- [ ] The cause of ``skip `doc-sync`` is named in the closeout, with the
+      input that produces it.
+- [ ] After the fix, that input stores `skip doc-sync` or nothing.
+- [ ] A regression test pins each fix.
 - [ ] The documented overrides still apply and are still counted.
 
 ## Expected Proof
 
-- Tests for the fix, with a near miss.
+- Tests for each fix, with a near miss.
 - The repo checks in `AGENTS.md`, on Python 3.11 and 3.14, and the mod's
   tests.
 

@@ -22,22 +22,28 @@ edits.
   a code file inside the project is held until `receiving-code-review`
   counts as loaded. The gate is justified-skip: a skip line naming the
   skill clears it for the turn.
-- A reviewer subagent is a spawn whose brief the `spawn` gate's content
-  check read as the reviewer template. An implementer subagent, a
-  read-only subagent, and a side session trigger nothing.
-- The hold has its own gate name, which the README's gate list and the
-  skill-usage mod's reading of first lines gain.
-- The trigger is stated in the skill's description or the router's map,
-  inside the word budgets, and the adapter enforces that statement.
+- A reviewer subagent is what Ticket 069 defines and records: a finished
+  spawn whose brief matched the reviewer prompt. An implementer subagent,
+  a read-only subagent, a subagent briefed from the `handoff` spawn brief,
+  and a side session trigger nothing.
+- The hold has its own gate name, added the way Ticket 067 added
+  `reference-reads`: to the adapter's gate list, the README's gate table,
+  and the skill-usage mod's reading of first lines.
+- The trigger is stated in `receiving-code-review`'s own text, not in the
+  router, which Tickets 072 and 073 edit at its word budget. The adapter
+  enforces that statement.
 - Update the README's gate table and Hold messages, and regenerate
   `adapters/claude-code/skill-usage/tests/adapter-texts.ts`.
 
 ## Recommended First Reads
 
-- The parent spec, R2 and its Constraints.
-- `adapters/claude-code/goated_adapter/actions.py` (`check_action`,
-  `_spawn_hold`, how a finished spawn is read from the turn).
-- `adapters/claude-code/goated_adapter/contracts.py` (`BRIEF_TEMPLATES`).
+- The parent spec, R2, the Reviewer subagents paragraph and its
+  Constraints.
+- The matched-template record from Ticket 069.
+- The `reference-reads` gate from Ticket 067, as the pattern for adding a
+  gate.
+- `adapters/claude-code/goated_adapter/actions.py` (`check_action`, how a
+  finished spawn is read from the turn).
 - `skills/engineering/receiving-code-review/SKILL.md`.
 - `adapters/claude-code/README.md`: the gate table, Subagents.
 
@@ -47,9 +53,11 @@ edits.
       the skill counts as loaded.
 - [ ] A skip line naming the skill clears the hold for the turn.
 - [ ] An edit of a docs file after the review is not held.
-- [ ] An implementer subagent's return, and a reviewer spawn that was held
-      or failed, hold nothing.
+- [ ] An implementer subagent's return, a `handoff`-briefed subagent's
+      return, and a reviewer spawn that was held or failed, hold nothing.
 - [ ] A skill load from an earlier turn, still counted, meets the hold.
+- [ ] The skill's own text states the trigger, inside the context
+      comparison's budgets.
 - [ ] The mod counts the new gate and its outcome.
 
 ## Expected Proof
@@ -61,8 +69,11 @@ edits.
 
 ## Blocked By
 
-- `tickets/065-adapter-loads-count-until-compaction.md` (when a skill
-  counts as loaded).
+- `tickets/069-adapter-closeout-review-and-verification.md` (the record of
+  which template a spawn's brief matched).
+- `tickets/067-adapter-reference-reads-gate-edit-signals.md` (both add a
+  gate to the action check, the README's gate table and the mod's
+  first-line reading).
 
 ## Scope Exclusions
 

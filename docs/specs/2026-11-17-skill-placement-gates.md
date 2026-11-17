@@ -72,20 +72,33 @@ or two sessions. The gaps that matter:
 ## Requirements
 
 - **R1, review at commit.** The closeout gains a Review item when the
-  change since the last commit is large: 400 or more changed lines,
-  measured by git as the `pr-review` gate measures a pull request. It is
-  met by a reviewer subagent that finished after the last code change, or
-  by a `standards-and-spec-review` load and a change read after it. Its
-  skip line names `standards-and-spec-review`. It joins the commit-time
-  list. When git cannot measure the change, the item is not raised.
+  branch's work is large: 400 or more changed lines between the branch it
+  will merge into and the working tree. That counts committed work on the
+  branch, staged and unstaged changes, and new untracked files that git
+  does not ignore. The base is found as the `pr-review` gate finds it, and
+  the size measure gains a mode for this, since today it compares two
+  committed refs. Measuring the branch, not the commit, means a large
+  ticket split across commits is still caught; it also means later
+  commits on a large branch raise the item again. The item is met by a
+  reviewer subagent that finished after the last code change, or by
+  `standards-and-spec-review` counting as loaded and a change read after
+  it. Its skip line names `standards-and-spec-review`. It joins the
+  commit-time list. When git cannot measure the change, or the checkout is
+  on the base branch with nothing to compare, the item is not raised.
+- **Reviewer subagents.** For R1 and R2, a reviewer subagent is a finished
+  spawn whose brief follows `subagent-driven-development`'s reviewer
+  prompt. The `spawn` gate records which template a brief matched, by the
+  call's id, as the design gates record an edit's references. A review
+  briefed any other way, the `handoff` spawn brief included, does not
+  count, and the Review item's text says to use the reviewer prompt.
 - **R2, review intake.** After a reviewer subagent's result arrives in a
   turn, the first write to a code file is held until
-  `receiving-code-review` counts as loaded. The hold is justified-skip. A
-  reviewer subagent is a spawn whose brief the `spawn` gate's content
-  check read as the reviewer template.
+  `receiving-code-review` counts as loaded. The hold is justified-skip.
+  The trigger is stated in that skill's own text, not in the router.
 - **R3, verification.** The closeout gains a Verification item when any of
   these holds: the task's route is `full`; a subagent changed code; a
-  security-sensitive file changed; or the change is large, as in R1. It is
+  security-sensitive file changed; or the branch's work is large, as in
+  R1. It is
   met when `verification-before-completion` counts as loaded. Its skip
   line names that skill; the Proof item keeps the same skip line, so one
   line answers both, and the README says so.
@@ -99,8 +112,12 @@ or two sessions. The gaps that matter:
 - **R6, retrospective.**
   - The adapter gives a notice, not a hold, when a session has had three or
     more holds that were declined or left unanswered: it names
-    `retrospective`. The notice appears once per session, at the next
-    prompt.
+    `retrospective`. A hold is declined when a skip line cleared it, and
+    unanswered when no load, read or skip line answered it before the
+    next typed prompt. A hold the user's typed override stood down counts
+    as neither. The saved state gains a count of such holds and whether
+    the notice was shown. The notice appears once per session, at the
+    next prompt.
   - The `retrospective` skill's description and the router's map name the
     moment after a wave of delegated tickets is merged. The skill takes the
     skill-usage mod's numbers as an input when they exist.
@@ -113,24 +130,36 @@ or two sessions. The gaps that matter:
   `software-design-principles` is added as a soft dependency wherever a
   skill judges or produces design. The maintainer reviews the proposed
   list before it lands.
-- **R9, notices for unused skills.** At the first session start the adapter
-  says once when the project has no agent instruction file, no context
-  map, or no standards document, and names the onboarding skill for each.
-  The router's wording for the research and doc-writing skills is checked
-  against their descriptions and corrected where it would not select them.
+- **R9, notices for unused skills.** At a session start the adapter says,
+  once per project, when the project lacks any of these, and names the
+  onboarding skill for each:
+  - an agent instruction file, `AGENTS.md` or `CLAUDE.md` at the project
+    root: `agent-instructions-integrator`;
+  - a context map, `docs/agents/context-matrix.md`: `context-matrix-map`;
+  - a standards document, `docs/agents/project-standards.md`:
+    `project-standards-calibration`.
+  Those are the paths the three skills write by default. The rule is
+  stated in the shared policy's onboarding section or those skills, inside
+  the word budgets. That the notice was shown is recorded outside the
+  project folder, keyed by the project, and it shows again only when the
+  set of missing files changes. The router's wording for the research and
+  doc-writing skills is checked against their descriptions and corrected
+  where it would not select them.
 - **R10, documentation.** The adapter README, the router, the registry and
   its fixtures, and the catalog lists match the changes. Changed hold
   texts are regenerated for the skill-usage mod.
 
 ## Acceptance Criteria
 
-- [ ] AC1: A commit of a change of 400 or more lines with no review is held
-      by the closeout's Review item. A finished reviewer subagent, or the
-      skill load and a change read, clears it. A 399-line change raises no
-      item.
+- [ ] AC1: A commit on a branch whose work against its base is 400 or
+      more lines, with no review, is held by the closeout's Review item. A
+      finished reviewer subagent, or the skill load and a change read,
+      clears it. A 399-line branch raises no item, and two 300-line
+      commits on one branch raise it at the second.
 - [ ] AC2: After a reviewer subagent returns, the first code edit is held
       until `receiving-code-review` loads or a skip line names it. An
-      implementer subagent's return holds nothing.
+      implementer subagent's return, and a subagent briefed from the
+      `handoff` spawn brief, hold nothing.
 - [ ] AC3: Each of the four Verification triggers raises the item alone,
       and a turn with none of them does not.
 - [ ] AC4: A briefed side session with a routed brief is held on its first
@@ -146,7 +175,8 @@ or two sessions. The gaps that matter:
       each skill on it names `software-design-principles` as a soft
       dependency.
 - [ ] AC9: A project with no agent instruction file gets the start notice
-      once; one that has all three files gets none.
+      once; a second session there gets none, and a project that has all
+      three files gets none.
 - [ ] AC10: The kept holds behave as before, and the repo checks in
       `AGENTS.md` pass on Python 3.11 and 3.14, with the router and shared
       policy inside their word budgets.
@@ -167,7 +197,7 @@ that commits a large change.
   same rules ([portable enforcement spec](2026-11-17-portable-enforcement-core.md)).
 - Every hold added here is justified-skip, except the orientation
   requirement, which is strict like the rest of `pipeline` and is dropped
-  by a corrected route line.
+  only when the task's route is `direct`.
 - The router and shared policy are at their word budgets (Ticket 053's
   notes), so R4, R5 and R9 must trade words, not add them.
 - The spawn-brief template must still fit the context comparison.

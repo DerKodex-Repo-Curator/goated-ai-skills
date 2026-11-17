@@ -19,7 +19,8 @@ Parallel waves across all five order files:
    - Blocked by: None
    - Enables: proposal and offer cards with no routing round trip.
 5. `tickets/065-adapter-loads-count-until-compaction.md`
-   - Blocked by: 061, 062 and 064
+   - Blocked by: 061, 062, 064 and
+     `tickets/071-spawn-briefs-name-skills.md`
    - Enables: no reloads of skills or templates still in context.
 
 Tickets were combined where splitting bought no parallel work, separate
@@ -33,7 +34,9 @@ adapter README and the regenerated `adapter-texts.ts`, which can be
 resolved at merge time by regenerating, as in earlier waves. Ticket 065
 changes what the turn's proof reads and the closeout's Design items (061),
 the session state and the `pipeline` hold's text (062), and the routing
-check (064), so it runs after all three. It shares no function with 063.
+check (064), so it runs after all three. It also changes the `spawn` gate
+that Ticket 071, in `tickets/skill-placement-gates-order.md`, changes
+first. It shares no function with 063.
 
 ## Ready Frontier
 
@@ -42,7 +45,7 @@ check (064), so it runs after all three. It shares no function with 063.
 - `tickets/063-adapter-design-reads-small-edits.md`
 - `tickets/064-adapter-session-cards-pass-routing.md`
 
-Ticket 065 follows 061, 062 and 064.
+Ticket 065 follows 061, 062, 064 and 071.
 
 ## Coverage
 

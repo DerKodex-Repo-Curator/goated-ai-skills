@@ -129,10 +129,11 @@ the confirmed sources of friction:
   happens. The closeout's Design red-flags item repeats it. The adapter
   checks no answer.
 - **R7, cards.** A `start_session` call whose `initiation` is `offer` or
-  `own_initiative`, and that starts no saved proposal, passes
-  `router-first`, `route-line` and `pipeline`. A card that carries a brief
-  still meets `spawn`, since that brief runs when the user starts the card.
-  Any other `initiation`, or none, is held as today.
+  `own_initiative`, and that has no `proposal_id`, the field that starts a
+  saved proposal, passes `router-first`, `route-line` and `pipeline`. An
+  `own_initiative` card always carries a brief, so it still meets `spawn`,
+  since that brief runs when the user starts the card; an `offer` card
+  carries none. Any other `initiation`, or none, is held as today.
 - **R8, restores.** Known Limits says that a restore command counts as a
   change whatever it restores, so Proof asks for a check after it, and that
   a rerun or a skip line answers it.
@@ -192,6 +193,14 @@ and R3.
 
 ## Constraints
 
+- ADR 0003 has adapters enforce portable contracts, not define them. The
+  small-edit rule (R5) and the question (R6) are stated in
+  `software-design-principles`. The rules on how long a load or a template
+  read counts (R3, R4), where a citation may be written (R1), the advice
+  (R2) and cards (R7) are adapter mechanics stated in its README; Ticket
+  079's enforcement contract
+  ([portable enforcement spec](2026-11-17-portable-enforcement-core.md))
+  restates them in harness-neutral words.
 - Every change fails toward holding when the adapter cannot tell. Missing
   state means not loaded, an unknown `initiation` is a spawn, and an edit
   whose size cannot be read is not small.

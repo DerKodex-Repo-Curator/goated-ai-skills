@@ -97,8 +97,9 @@ But nothing lets another harness use the rules:
   - the project: its folders and the working folder.
   An adapter maps its harness's tool names to call kinds; the core knows
   no harness's tool names.
-- **R4, the core.** The rules move into a package that depends on the event
-  model alone. It keeps its own session state. It is called in two ways:
+- **R4, the core.** The rules move into a package at `adapters/core/` that
+  depends on the event model alone. It keeps its own session state. It is
+  called in two ways:
   - imported from Python;
   - as a command that reads one JSON request and writes one JSON decision:
     allow, or a hold with its gate, kind and text, plus any notices.
@@ -128,8 +129,10 @@ But nothing lets another harness use the rules:
 - **R10, an OpenCode adapter.** The same for OpenCode, on its current
   plugin hooks, with the same research step.
 - **R11, documentation and standards.** `adapters/README.md` lists the
-  adapters and the core. `AGENTS.md` says a rule change updates the
-  contract and a conformance fixture in the same change.
+  adapters and the core. `AGENTS.md`'s "Where Work Lives" says `adapters/`
+  holds one subfolder per framework plus `core/`, the shared rules every
+  adapter calls, and that a rule change updates the contract and a
+  conformance fixture in the same change.
 
 ## Architecture
 

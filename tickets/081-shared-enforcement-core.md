@@ -19,7 +19,7 @@ API loop, cannot call them.
 ## What To Build
 
 - **The core.** The rule modules and the session state move into a package
-  of their own under `adapters/`, which depends on the event model alone.
+  at `adapters/core/`, which depends on the event model alone.
 - **Two ways in.**
   - A Python call: events in, decision out.
   - A command that reads one JSON request on standard input and writes one
@@ -32,6 +32,10 @@ API loop, cannot call them.
 - **Claude Code adapter.** It keeps the transcript reader, the hook entry
   point and the translation layer, and calls the core. Its install steps,
   behaviour and hold texts do not change.
+- Update `AGENTS.md`'s "Where Work Lives": `adapters/` holds one subfolder
+  per framework plus `core/`, the shared rules every adapter calls. The
+  validator's boundary check, that adapter code imports only the standard
+  library, covers the core, which an adapter may also import.
 - Update `adapters/README.md` to list the core and how an adapter uses it,
   and the Claude Code README's Install, State and Tests sections.
 
@@ -55,6 +59,7 @@ API loop, cannot call them.
       expected outcomes or hold texts, and an existing install keeps
       working with no change to the user's settings.
 - [ ] Two sessions with different ids keep separate state.
+- [ ] `AGENTS.md` and `adapters/README.md` describe `adapters/core/`.
 
 ## Expected Proof
 

@@ -9,7 +9,8 @@ Parallel waves across all five order files:
    - Blocked by: `tickets/065-adapter-loads-count-until-compaction.md`
    - Enables: review and verification before a large or risky commit.
 2. `tickets/070-adapter-review-intake-hold.md`
-   - Blocked by: `tickets/065-adapter-loads-count-until-compaction.md`
+   - Blocked by: 069,
+     `tickets/067-adapter-reference-reads-gate-edit-signals.md`
    - Enables: review findings handled through `receiving-code-review`.
 3. `tickets/071-spawn-briefs-name-skills.md`
    - Blocked by: None
@@ -30,20 +31,25 @@ proof or approval: the two closeout items (069), the two router changes
 with their `pipeline` rule (072), and the two notices (073).
 
 Ticket 065 belongs to `tickets/adapter-written-line-holds-order.md`. It
-changes when a skill counts as loaded and the functions 069, 070 and 072
-build on. Tickets 069, 070 and 072 touch different functions from each
-other; their overlaps are the adapter README and the regenerated
-`adapter-texts.ts`, resolved at merge time by regenerating. Ticket 072
-follows 071 because both edit the spawn-brief template, and 073 follows
-072 because both edit the router; each file has a word budget.
+changes when a skill counts as loaded and the functions 069 and 072 build
+on, and it follows 071, which changes the `spawn` gate first. Ticket 070
+follows 069, which records which template a spawn's brief matched, and
+067, in `tickets/registry-reference-reads-order.md`, because both add a
+gate to the action check, the README's gate table and the mod's
+first-line reading. Ticket 070 states its trigger in
+`receiving-code-review`'s own text, so it does not touch the router.
+Ticket 072 follows 071 because both edit the spawn-brief template, and 073
+follows 072 because both edit the router; each file has a word budget.
+Other overlaps are the adapter README and the regenerated
+`adapter-texts.ts`, resolved at merge time by regenerating.
 
 ## Ready Frontier
 
 - `tickets/071-spawn-briefs-name-skills.md`
 - `tickets/074-design-principles-soft-dependency-audit.md`
 
-Tickets 069 and 070 follow 065. Ticket 072 follows 065 and 071. Ticket 073
-follows 072.
+Ticket 069 follows 065. Ticket 070 follows 069 and 067. Ticket 072 follows
+065 and 071. Ticket 073 follows 072.
 
 ## Coverage
 

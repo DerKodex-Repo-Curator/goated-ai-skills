@@ -31,6 +31,9 @@ hold.
   added lines cannot be counted is not small.
 - A small edit that requires nothing adds nothing to the turn's required
   set, so it needs no citation.
+- State the small-edit rule where `software-design-principles` says which
+  references to read at which moment, inside its context budget, so the
+  adapter enforces a rule the skill owns.
 - Update the README's Design references section and its signal table.
 
 ## Recommended First Reads

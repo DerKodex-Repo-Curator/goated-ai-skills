@@ -19,11 +19,13 @@ must load the router and write a route line first.
 ## What To Build
 
 - A `start_session` call whose `initiation` is `offer` or `own_initiative`,
-  and that starts no saved proposal, passes `router-first`, `route-line`
-  and `pipeline`.
-- A card that carries a brief still meets `spawn`, with its skill load,
-  template read and content check, since that brief runs when the user
-  starts the card. A card with no brief meets no hold, as today.
+  and that has no `proposal_id`, passes `router-first`, `route-line` and
+  `pipeline`. `proposal_id` is the field that starts a saved proposal, so
+  a call carrying it starts a session and is not a card.
+- An `own_initiative` card always carries a brief, so it still meets
+  `spawn`, with its skill load, template read and content check, since
+  that brief runs when the user starts the card. An `offer` card carries
+  no brief and meets no hold, as today.
 - Any other `initiation`, a missing one, a call that starts a saved
   proposal, and `hand_off_to_session` are held as today.
 - The skill-usage mod keeps counting such a call as it does now; say in its
@@ -46,8 +48,8 @@ must load the router and write a route line first.
 - [ ] Before the router loads, an `own_initiative` card with a brief passes
       `router-first`, `route-line` and `pipeline`, and is held by `spawn`.
 - [ ] An `offer` card with no brief passes every hold.
-- [ ] A `user_asked` start, a call with no `initiation`, and a start of a
-      saved proposal are each held by `router-first` as today.
+- [ ] A `user_asked` start, a call with no `initiation`, and a call with a
+      `proposal_id` are each held by `router-first` as today.
 - [ ] `hand_off_to_session` is unchanged.
 
 ## Expected Proof

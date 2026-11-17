@@ -90,9 +90,11 @@ adapter for another harness has nothing to build on or be checked against.
 - `tickets/070-adapter-review-intake-hold.md`
 - `tickets/072-orientation-and-plans-in-routes.md`
 - `tickets/073-notices-for-retrospective-and-onboarding.md`
+- `tickets/077-undocumented-override-phrases.md`
 
 These settle the rules the contract states and change the README it is
-drawn from.
+drawn from. Ticket 077 may change the override parsing that Tickets 080
+and 081 then refactor and move.
 
 ## Scope Exclusions
 
