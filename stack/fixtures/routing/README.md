@@ -14,10 +14,19 @@ registered skill name or one of the shared gates implemented by the integrated
 policy: `proportional-orientation`, `direct-work`, `direct-proof`, and
 `consolidated-closeout`.
 
-A fixture whose request implements a ticket sets `implements_ticket: true`.
-As the router's Writing plan gate says, such a fixture at `standard` or
-`full` intensity must require `writing-plans`, and no `lightweight` fixture
-may require it.
+`proportional-orientation` is the router's own orientation check: reuse fresh
+evidence, and find out what is unfamiliar, cross-area, stale or
+boundary-uncertain. It is not a load of `session-start-progressive-disclosure`,
+which a fixture requires only when the router's Proportional orientation row
+selects it: for such work, or on a `standard` or `full` route from a brief.
+
+Two flags record what the profile cannot. A fixture whose request implements a
+ticket sets `implements_ticket: true`, and one that reuses ticket evidence
+must. A fixture for a session started from another session's brief sets
+`started_from_brief: true`. At `standard` or `full` intensity, the first must
+require `writing-plans` and the second `session-start-progressive-disclosure`.
+A required skill must also list the fixture's intensity in its registry
+`profile_eligibility`, so no `lightweight` fixture requires either.
 
 The fixture format is checked directly by `scripts/validate_skills.py`. It
 deliberately has no JSON Schema while V2 fixture serialization is still

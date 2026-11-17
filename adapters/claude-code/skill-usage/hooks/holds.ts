@@ -132,7 +132,7 @@ export function holdSettlement(): HoldSettlement {
   // `items`: the labels of the closeout items that asked for it, whose counts follow its outcome.
   // `skip`: the skip line that declined it, kept so a reopen takes its reason back.
   type Skip = { skill: string; reason: string }
-  type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; isCloseout?: true; isSkipOnly?: true; isSkipRejected?: true; refs?: Set<string>; needsLine?: boolean; items: Set<string>; skip?: Skip; mark: NudgedSkill; row: NudgeRow }
+  type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; isCloseout?: true; isSkipOnly?: true; isSkipRejected?: true; isBriefAdded?: true; refs?: Set<string>; needsLine?: boolean; items: Set<string>; skip?: Skip; mark: NudgedSkill; row: NudgeRow }
   /** Whether an ask is a design hold's, answered by its reads and line rather than by any read of the skill's files. */
   const asksDesign = (n: Open) => n.refs !== undefined || n.needsLine !== undefined
   /** Settles a design hold's ask once nothing it asked is missing; `outcome` names what came last. */
@@ -264,6 +264,7 @@ export function holdSettlement(): HoldSettlement {
       ...(e.holdKind === 'strict' ? { isStrict: true as const } : {}),
       ...(isCloseoutHold(e) ? { isCloseout: true as const, isSkipRejected: true as const } : {}),
       ...(isSkipOnly ? { isSkipOnly: true as const } : {}),
+      ...(ask.some(skill => e.briefAdded?.includes(skill)) ? { isBriefAdded: true as const } : {}),
       ...(isSkipOnly && e.refs?.length ? { refs: new Set(e.refs) } : {}),
       ...(isSkipOnly && e.needsLine ? { needsLine: true } : {}),
       items: itemsAsking(e, ask),
@@ -420,9 +421,11 @@ export function holdSettlement(): HoldSettlement {
         if (!e.agent && e.form !== 'continue') hasTask = true
         // The pipeline hold says to drop a skill that does not apply by writing a corrected route line, the last one
         // winning: a new route that no longer requires a held skill follows that hold. `continue` keeps the route.
+        // A skill the brief added, not the route, is dropped only by a route that is not standard or full (Ticket 072).
         if (e.form !== 'continue') {
           const requires: readonly string[] = e.form === 'route' ? e.requires : []
-          settle(n => n.hook === PIPELINE_GATE && n.agent === e.agent && !n.anyOf.some(s => requires.includes(s)), 'followed', e)
+          const dropsBriefAdded = e.form === 'direct' || (e.form === 'route' && e.intensity === 'lightweight')
+          settle(n => n.hook === PIPELINE_GATE && n.agent === e.agent && (n.isBriefAdded ? dropsBriefAdded : !n.anyOf.some(s => requires.includes(s))), 'followed', e)
         }
         break
     }

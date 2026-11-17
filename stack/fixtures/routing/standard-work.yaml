@@ -24,12 +24,12 @@ expected:
   route:
     required_gates:
       - proportional-orientation
-      - session-start-progressive-disclosure
       - writing-plans
       - tdd
       - direct-proof
       - consolidated-closeout
     conditional_gates:
+      - session-start-progressive-disclosure
       - standards-and-spec-review
       - doc-sync
       - verification-before-completion

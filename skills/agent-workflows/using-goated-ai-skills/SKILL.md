@@ -73,13 +73,13 @@ skill map, approval, evidence, checkpoint, and route-line rules in this file.
 
 | Gate | Select when | Skills |
 | --- | --- | --- |
-| Proportional orientation | Unfamiliar, cross-area, stale, or boundary-uncertain work, or a session started from a brief | `session-start-progressive-disclosure` |
+| Proportional orientation | Unfamiliar, cross-area, stale, or boundary-uncertain work, or a `standard` or `full` route from a brief | `session-start-progressive-disclosure` |
 | Clarification or diagnosis | Intent or root cause materially blocks action | `grill-with-docs`; `diagnose` for failures |
 | External research | Current external claims need cited, freshness-aware evidence | `source-grounded-research` |
 | Knowledge retrieval | Durable project knowledge must answer a question, especially when authority, freshness, conflict, or provenance matters | `knowledge-retrieval` |
 | Wayfinder | Uncertainty branches across focused sessions and later decisions depend on earlier evidence | `wayfinder` |
 | Spec, architecture, or tickets | Durable intent, module strategy, or multiple resumable slices must be settled | `write-a-spec`, `design-codebase-architecture`, `spec-to-tickets` |
-| Writing plan | A scoped task needs executable steps, or implements a ticket at `standard` or `full` | `writing-plans` |
+| Writing plan | A `standard` or `full` task needs executable steps or implements a ticket | `writing-plans` |
 | TDD or equivalent proof | Behavior, a public interface, or regression risk changes | `tdd` |
 | Design principles | A module, interface, abstraction, error path, or configuration surface is designed, changed, or reviewed | `software-design-principles` |
 | Standards/spec review | Diff size, risk, acceptance, scope, or convention uncertainty warrants specialist review | `standards-and-spec-review` |

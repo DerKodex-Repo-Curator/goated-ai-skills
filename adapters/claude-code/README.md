@@ -112,13 +112,15 @@ several, the last one wins. It meets `router-first`, as a subagent's parent
 brief does, until a prompt you type opens a turn: from then on the router
 must load, as in any session. The route's `requires:` skills must still load
 in the new session before its first write (`pipeline`), and a later route
-line in the turn corrects it as usual. While the brief's route counts, every
-route but `direct` also requires `session-start-progressive-disclosure`: the
-router selects orientation in a session started from a brief, and the
-spawn-brief template says the new session loads it first. A corrected
-`goated-route: direct` line drops it. A typed prompt or a compaction ends the
-brief's route, and the requirement with it, so a typed
-`skip session-start-progressive-disclosure` is never needed. When an API
+line in the turn corrects it as usual. While the brief's route counts, a
+`standard` or `full` route also requires `session-start-progressive-disclosure`
+when Claude Code can find that skill (a user, project, or plugin skill): the
+router selects orientation on such a route from a brief, and the spawn-brief
+template says the new session loads it first. The route line never names it,
+so leaving it out of a corrected line does not drop it; only a corrected
+`goated-route: direct` line or a `lightweight` route line does. A typed prompt
+or a compaction ends the brief's route, and the requirement with it, so a
+typed `skip session-start-progressive-disclosure` is never needed. When an API
 error makes the app resend the turn as a host-written `Try again` prompt,
 that prompt continues the
 turn, with its route and overrides. Only the session's first prompt counts,
@@ -134,7 +136,7 @@ session's message never counts, and a brief never carries an override. The
 | --- | --- | --- | --- |
 | `router-first` | strict | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction; a command made only of [plain reads](#plain-reads) passes | `using-goated-ai-skills` loads; or the session's first prompt is a brief with a route line (see above), until a typed prompt opens a turn |
 | `route-line` | strict | The first write or spawn after each user prompt until the current turn has a valid `goated-route:` line; also `goated-route: continue` when [missing or reset state](#failing-open) lost the task | A valid route line appears in the turn |
-| `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded, or, in a session routed by its brief, `session-start-progressive-disclosure` has not loaded and the route is not `direct` (see above); a spawn of a [read-only subagent](#plain-reads) passes | Each listed skill loads, or a corrected route line drops it |
+| `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded, or, in a session routed by its brief, on a `standard` or `full` route, an installed `session-start-progressive-disclosure` has not loaded (see above); a spawn of a [read-only subagent](#plain-reads) passes | Each listed skill loads, or a corrected route line drops it; the brief's orientation skill loads, or a corrected `goated-route: direct` or `lightweight` route line drops it |
 | `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` [counts as loaded](#loads), and an inline message (or the tool's `message`) passes the [content check](#content-checks); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file. Once these are met, the commit meets the [closeout](#closeout-at-commit) |
 | `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` [counts as loaded](#loads); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file |
 | `pr-review` | justified-skip | A pull-request command or tool the `pull-request` gate holds, once that gate passes, when the pull request is [large](#large-pull-requests): 400 or more changed lines against its base | `standards-and-spec-review` [counts as loaded](#loads); then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |

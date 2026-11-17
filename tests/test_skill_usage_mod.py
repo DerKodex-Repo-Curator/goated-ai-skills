@@ -123,6 +123,9 @@ def _adapter_texts() -> dict[str, str]:
 
         # A session started from a brief also loads the orientation skill (Ticket 072).
         briefed = session("pipeline-brief")
+        orientation = briefed.config.home / ".claude" / "skills" / "session-start-progressive-disclosure"
+        orientation.mkdir(parents=True)
+        (orientation / "SKILL.md").write_text("---\nname: x\n---\n", encoding="utf-8")
         briefed.prompt(
             "Background (from the session that started this one):\nAdd CSV export.\n\n"
             "goated-route: standard | requires: tdd",
@@ -282,6 +285,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
         self.assertTrue(texts["pipeline"].startswith("goated-hold: pipeline | strict\n"))
         self.assertTrue(texts["pipelineBrief"].startswith("goated-hold: pipeline | strict\n"))
         self.assertIn("A session started from a brief loads `session-start-progressive-disclosure`", texts["pipelineBrief"])
+        self.assertNotIn("The current route requires", texts["pipelineBrief"])
         self.assertNotIn("started from a brief", texts["pipeline"])
         self.assertIn('recorded your override for this prompt: "Skip routing"', texts["overrideContext"])
         gates = {

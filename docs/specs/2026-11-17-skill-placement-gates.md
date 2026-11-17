@@ -102,11 +102,14 @@ or two sessions. The gaps that matter:
   met when `verification-before-completion` counts as loaded. Its skip
   line names that skill; the Proof item keeps the same skip line, so one
   line answers both, and the README says so.
-- **R4, orientation.** In a session routed by its brief, the first write is
-  held by `pipeline` until `session-start-progressive-disclosure` loads,
-  unless the brief's route is `direct`. The router's table stops saying the
-  skill is always selected: it is selected for unfamiliar, cross-area,
-  stale or boundary-uncertain work, and in briefed sessions.
+- **R4, orientation.** In a session routed by its brief, on a `standard` or
+  `full` route, the first write is held by `pipeline` until
+  `session-start-progressive-disclosure` loads, when that skill is
+  installed. A `direct` or `lightweight` route needs no orientation, as the
+  registry's `profile_eligibility` for the skill lists. The router's table
+  stops saying the skill is always selected: it is selected for unfamiliar,
+  cross-area, stale or boundary-uncertain work, and on a `standard` or
+  `full` route from a brief.
 - **R5, plans.** The router requires `writing-plans` in the route of a task
   that implements a ticket at `standard` or `full` intensity.
 - **R6, retrospective.**
@@ -162,9 +165,9 @@ or two sessions. The gaps that matter:
       `handoff` spawn brief, hold nothing.
 - [ ] AC3: Each of the four Verification triggers raises the item alone,
       and a turn with none of them does not.
-- [ ] AC4: A briefed side session with a routed brief is held on its first
-      write until the orientation skill loads. One with a `direct` brief is
-      not.
+- [ ] AC4: A briefed side session with a `standard` or `full` brief route is
+      held on its first write until the orientation skill loads, when it is
+      installed. One with a `direct` or `lightweight` brief route is not.
 - [ ] AC5: The router's fixtures select `writing-plans` for a ticket
       implementation at `standard`, and not for a `lightweight` task.
 - [ ] AC6: A session with three declined holds gets the retrospective
@@ -197,7 +200,8 @@ that commits a large change.
   same rules ([portable enforcement spec](2026-11-17-portable-enforcement-core.md)).
 - Every hold added here is justified-skip, except the orientation
   requirement, which is strict like the rest of `pipeline` and is dropped
-  only when the task's route is `direct`.
+  only when the task's route is `direct` or `lightweight`, or the skill is
+  not installed.
 - The router and shared policy are at their word budgets (Ticket 053's
   notes), so R4, R5 and R9 must trade words, not add them.
 - The spawn-brief template must still fit the context comparison.

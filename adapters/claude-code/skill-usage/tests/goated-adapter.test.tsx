@@ -172,6 +172,32 @@ test('a corrected route line that drops a held skill follows the pipeline hold f
   expect(direct.nudges).toEqual({ pipeline: { followed: 2 } })
 })
 
+const PIPELINE_BRIEF = held('Edit', ADAPTER_TEXTS.pipelineBrief)
+
+test("a pipeline hold for a brief's orientation is followed only by a route line that drops it: direct or lightweight", async () => {
+  const ORIENTATION = 'session-start-progressive-disclosure'
+  expect(hookEvents(PIPELINE_BRIEF, 1, { holdsOnly: true })).toEqual([
+    { kind: 'nudge', t: 1, hook: 'pipeline', named: [ORIENTATION], holdKind: 'strict', briefAdded: [ORIENTATION] },
+  ])
+  const after = (line: string) => summarize([
+    { kind: 'prompt', t: 1, named: [] },
+    ...hookEvents(PIPELINE_BRIEF, 2, { holdsOnly: true }),
+    ...markerEvents(line, 3),
+  ]).nudges
+  // A standard route that never names the skill leaves the hold open, as the adapter still holds.
+  expect(after('goated-route: standard | requires: tdd')).toEqual({ pipeline: { pending: 1 } })
+  expect(after('goated-route: full | requires: tdd')).toEqual({ pipeline: { pending: 1 } })
+  expect(after('goated-route: lightweight | requires: tdd')).toEqual({ pipeline: { followed: 1 } })
+  expect(after('goated-route: direct')).toEqual({ pipeline: { followed: 1 } })
+  // Loading the skill still follows it.
+  const loaded = summarize([
+    { kind: 'prompt', t: 1, named: [] },
+    ...hookEvents(PIPELINE_BRIEF, 2, { holdsOnly: true }),
+    { kind: 'load', t: 3, skill: ORIENTATION, via: 'tool', isSubagent: false },
+  ])
+  expect(loaded.nudges).toEqual({ pipeline: { followed: 1 } })
+})
+
 test('the router-first hold is followed by loading the router, the route-line hold by a route line, the pipeline hold by each skill', async () => {
   const s = summarize([
     { kind: 'prompt', t: 1, named: [] },

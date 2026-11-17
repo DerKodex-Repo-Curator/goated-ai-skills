@@ -16,12 +16,14 @@ expected:
     execution: single-agent
   data_sensitivity: public
   action_reach: project-changing
+  implements_ticket: true
   route_signals:
     - evidence-stale
   proof_strategy: Re-read affected source and rerun the focused and repository checks after implementation.
   route:
     required_gates:
       - proportional-orientation
+      - writing-plans
       - tdd
       - direct-proof
       - consolidated-closeout
