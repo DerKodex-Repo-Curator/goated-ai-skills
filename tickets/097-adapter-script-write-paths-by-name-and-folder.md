@@ -1,4 +1,7 @@
-# Ticket 097: Script Writes Read A Once-Bound Path And A Known Outside Folder
+# Ticket 097: Script Writes Read A Once-Bound Path
+
+The file name keeps "and folder" from the first draft; the folder rule was
+dropped in review (see What To Build).
 
 ## Parent Spec
 
@@ -57,21 +60,22 @@ adapter read neither.
     an environment variable, a command's output, a call;
   - the shell may have expanded the code, and the literal holds `$` or a
     backtick, as Ticket 093's rule for literals already says;
-  - the binding comes after the write call.
-- **A known folder outside the project.** When the command's starting
-  folder is known from a leading `cd` to a literal path, as the adapter
-  already follows it, and that folder is certainly outside, an unnamed
-  write is placed in that folder, not inside the project. "Certainly
-  outside" is Ticket 087's rule: not in the project, in no git checkout
-  and not under the user's `~/.claude` folder. Otherwise the unnamed
-  write is inside the project, as today: no leading `cd`, a `cd` the
-  adapter cannot follow, a folder inside any checkout or under
-  `~/.claude`.
-- **What clears the reported case.** The reported command ran under
-  `~/.claude`, so the folder rule does not move it outside: routing and
-  the path gates still judge it. The once-bound name is what clears it:
-  the write is to `notes.md`, which is not a code file, so `scripted-edit`
-  does not hold it.
+  - the binding comes after the write call;
+  - the code may bind a name unseen: code the shell may expand holding `$`
+    or a backtick anywhere, or code using `exec`, `eval`, `globals`,
+    `vars`, `sys.modules`, `globalThis`, a star import or a JavaScript
+    `with`;
+  - a JavaScript statement goes on past its line (the next line opens
+    with `.`, `+`, `?` or another operator).
+- **Unnamed writes stay inside.** An unnamed write is inside the project
+  wherever the command runs, as before this ticket. A rule placing it in a
+  known folder outside the project was built and then dropped in review
+  (maintainer decision): a script reaches project files from any folder
+  (`os.path.join(ROOT, …)`, `sys.argv[1]`, `Path('<project>') / …`,
+  `os.environ`, `os.chdir`, Node's `path.join`).
+- **What clears the reported case.** The once-bound name: the write is to
+  `notes.md`, which is not a code file, so `scripted-edit` does not hold
+  it. Routing and the path gates still judge it as a shell write.
 - Keep `script_writes.writes` the one place that reads inline code, and
   the placement of a write with the other shell writes.
 - Update the README's Shell writes section and the `scripted-edit` row,
@@ -100,7 +104,7 @@ adapter read neither.
 ## Acceptance Criteria
 
 - [ ] The reported case: after a leading `cd` to a folder under
-      `~/.claude`, a `python - <<'EOF'` script that binds
+      `~/.claude` (or anywhere), a `python - <<'EOF'` script that binds
       `p = "notes.md"`, reads it and writes `open(p, "w")` meets no
       `scripted-edit` hold. It still counts as a shell write there, so
       routing judges it.
@@ -118,12 +122,16 @@ adapter read neither.
       string with `${}`, and `const p = process.env.F` are unnamed.
 - [ ] In code the shell may have expanded, `p = "$HOME/x.md"` is unnamed.
 - [ ] An unnamed write after a leading `cd` to a temp folder outside the
-      project, any git checkout and `~/.claude` is placed there: no
-      `scripted-edit` hold, no routing hold, and no closeout item.
-- [ ] An unnamed write after a `cd` into another git checkout is inside
-      the project, and so is one after a `cd` to a folder under
-      `~/.claude`, after a `cd` the adapter cannot follow, and with no
-      leading `cd`.
+      project is still held by `scripted-edit`, and once run counts as
+      changed code: a loop variable, `os.path.join(ROOT, 'src/app.py')`,
+      `sys.argv[1]`, `Path('<project>') / 'src/app.py'`, `os.environ`,
+      `os.chdir` then a write, and Node's `path.join`.
+- [ ] A JavaScript binding whose statement goes on past its line
+      (`.replace(…)`, `+ '.py'`, `? … : …` on the next line) is unnamed.
+- [ ] Code the shell may expand that holds `$` or a backtick reads no
+      name, and so does code using `exec`, `eval`, `globals`, `vars`,
+      `sys.modules`, `globalThis`, a star import or `with`.
+- [ ] 5,000 declarations are read in under a second.
 - [ ] A script with one once-bound path and one unnamed write is judged
       for both.
 - [ ] Every case Ticket 093's tests cover gives the same answer, except
