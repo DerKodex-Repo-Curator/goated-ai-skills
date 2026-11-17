@@ -161,12 +161,150 @@ class ScriptedEditHoldTests(ScriptTestCase):
         # Near miss: inline code is never a check, whatever it prints.
         self.assertFalse(shell.analyze("python -c \"print('pytest passed')\"").is_check)
 
-    def test_the_hold_names_only_the_skill_it_asks_for(self) -> None:
+    def test_the_hold_offers_the_design_skill_only_as_a_skip_line(self) -> None:
+        # A bare backticked name reads as a skill to load (friction.py, the mod),
+        # and loading the skill does not answer this hold.
         s = self.routed()
         held = reason(s.call("Bash", {"command": HEREDOC_WRITE}))
         self.assertTrue(held.startswith(SCRIPTED + "\n"), held)
-        self.assertEqual(set(BARE_BACKTICKED.findall(held)), {"software-design-principles"})
+        self.assertEqual(set(BARE_BACKTICKED.findall(held)), set())
+        self.assertIn("`goated-skip: software-design-principles: <reason>`", held)
         self.assertIn("`skip software-design-principles`", held)
+
+
+class ScriptedEditFrictionTests(ScriptTestCase):
+    """The friction count reads a `scripted-edit` hold as asking for a file edit tool."""
+
+    def friction(self, s: Session) -> int:
+        from goated_adapter.state import StateStore
+
+        return StateStore(s.config.state_dir).load(s.session_id)[0].friction
+
+    def test_rewriting_the_named_file_with_an_edit_tool_answers_the_hold(self) -> None:
+        s = self.routed()
+        self.assertEqual(hold_line(s.call("Bash", {"command": HEREDOC_WRITE})), SCRIPTED)
+        self.assertEqual(decision(s.call("Write", {"file_path": "src/app.py",
+                                                   "content": "x = 1\n"})), "pass")
+        s.prompt("Next thing.")
+        self.assertEqual(self.friction(s), 0)
+
+    def test_loading_the_skill_or_writing_another_file_leaves_it_unanswered(self) -> None:
+        loaded = self.routed()
+        loaded.call("Bash", {"command": HEREDOC_WRITE})
+        loaded.load("software-design-principles")
+        loaded.prompt("Next thing.")
+        self.assertEqual(self.friction(loaded), 1)
+        other = self.routed()
+        other.call("Bash", {"command": HEREDOC_WRITE})
+        other.call("Write", {"file_path": "docs/notes.md", "content": "x\n"})
+        other.prompt("Next thing.")
+        self.assertEqual(self.friction(other), 1)
+
+    def test_any_edit_tool_write_answers_a_hold_on_an_unnamed_file(self) -> None:
+        s = self.routed()
+        command = "python -c \"open(path, 'w').write(text)\""
+        self.assertEqual(hold_line(s.call("Bash", {"command": command})), SCRIPTED)
+        s.call("Write", {"file_path": "src/other.py", "content": "x = 1\n"})
+        s.prompt("Next thing.")
+        self.assertEqual(self.friction(s), 0)
+
+    def test_a_skip_line_declines_it(self) -> None:
+        s = self.routed()
+        s.call("Bash", {"command": HEREDOC_WRITE})
+        s.say(SKIP_LINE)
+        s.run(HEREDOC_WRITE)
+        s.prompt("Next thing.")
+        self.assertEqual(self.friction(s), 1)
+
+
+class PipedScriptTests(unittest.TestCase):
+    """Code reaching an interpreter's standard input from a text producer (review M2)."""
+
+    def test_code_piped_or_fed_as_a_here_string_is_read(self) -> None:
+        for tool, command in (
+            ("Bash", "cat <<'EOF' | python -\nopen('src/a.py', 'w').write('x')\nEOF"),
+            ("Bash", "cat <<EOF | python\nopen('src/a.py', 'w').write('x')\nEOF"),
+            ("Bash", "echo \"open('src/a.py', 'w').write('x')\" | python"),
+            ("Bash", "printf '%s' \"open('src/a.py', 'w')\" | python3 -"),
+            ("Bash", "python <<< \"open('src/a.py', 'w').write('x')\""),
+            ("Bash", "node <<< \"require('fs').writeFileSync('src/a.py', 'x')\""),
+            ("PowerShell", "@'\nopen('src/a.py','w').write('x')\n'@ | python -"),
+            ("PowerShell", "@'\nopen('src/a.py','w').write('x')\n'@ | python"),
+            ("PowerShell", "\"open('src/a.py','w')\" | python -"),
+            ("PowerShell", "Write-Output \"open('src/a.py','w')\" | python"),
+        ):
+            with self.subTest(command=command):
+                result = shell.analyze(command, tool)
+                self.assertEqual(result.script_targets, ["src/a.py"])
+
+    def test_text_piped_into_a_script_file_or_from_a_file_is_not_read(self) -> None:
+        for tool, command in (
+            ("Bash", "echo \"open('src/a.py', 'w')\" | python tools/gen.py"),
+            ("Bash", "cat notes.txt | python -"),
+            ("Bash", "echo \"open('src/a.py', 'w')\" | grep open"),
+            ("Bash", "python tools/gen.py <<< \"open('src/a.py', 'w')\""),
+            ("Bash", "echo \"print(open('src/a.py').read())\" | python"),
+            ("PowerShell", "@'\nprint(1)\n'@ | python -"),
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(shell.analyze(command, tool).script_targets, [])
+
+
+class ShellExpandedPathTests(unittest.TestCase):
+    """A path the shell expands before the interpreter runs is unnamed (review M3)."""
+
+    def test_a_path_the_shell_expands_is_an_unnamed_write(self) -> None:
+        for tool, command in (
+            ("Bash", "python -c \"open('$F', 'w').write('x')\""),
+            ("Bash", "python -c \"open('src/$NAME.py', 'w')\""),
+            ("Bash", "python -c \"open('$(ls src | head -1)', 'w')\""),
+            ("Bash", "python - <<EOF\nopen('$F', 'w').write('x')\nEOF"),
+            ("Bash", "python - <<EOF\nopen('`echo src/a.py`', 'w')\nEOF"),
+            ("Bash", "node -e \"require('fs').writeFileSync('$F', 'x')\""),
+            ("PowerShell", "python -c \"open('$env:F','w')\""),
+        ):
+            with self.subTest(command=command):
+                result = shell.analyze(command, tool)
+                self.assertEqual((result.script_targets, result.script_unknown_writes),
+                                 ([], True))
+
+    def test_a_quoted_delimiter_heredoc_expands_nothing(self) -> None:
+        result = shell.analyze("python - <<'EOF'\nopen('$F', 'w').write('x')\nEOF")
+        self.assertEqual((result.script_targets, result.script_unknown_writes), (["$F"], False))
+
+
+class AliasedCallTests(unittest.TestCase):
+    """Imported and aliased names, `ruby -i`, and versioned interpreters (review L4)."""
+
+    def test_aliases_and_versioned_interpreters_are_read(self) -> None:
+        for command, targets in (
+            ("python -c \"import shutil as s; s.move('a.py', 'src/b.py')\"", ["a.py", "src/b.py"]),
+            ("python -c \"from shutil import move; move('a.py', 'src/b.py')\"",
+             ["a.py", "src/b.py"]),
+            ("python -c \"from os import remove; remove('src/a.py')\"", ["src/a.py"]),
+            ("python -c \"from os import remove as rm, rename; rm('a.py'); rename('b.py', 'c.py')\"",
+             ["a.py", "b.py", "c.py"]),
+            ("python -c \"from pathlib import Path as P; P('src/a.py').write_text('x')\"",
+             ["src/a.py"]),
+            ("python -c \"import gzip; gzip.open('src/a.py.gz', 'wt')\"", ["src/a.py.gz"]),
+            ("node -e \"const {writeFileSync: w} = require('fs'); w('src/a.js', 'x')\"",
+             ["src/a.js"]),
+            ("node -e \"import {rmSync as r} from 'node:fs'; r('build')\"", ["build"]),
+            ("ruby -i -pe '$_.sub!(/a/, \"b\")' src/a.py", ["src/a.py"]),
+            ("python3.12 -c \"open('src/a.py', 'w')\"", ["src/a.py"]),
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(shell.analyze(command).write_targets, targets)
+
+    def test_look_alike_names_are_not_aliases(self) -> None:
+        for command in (
+            "python -c \"import shutil as s; print(s.which('git'))\"",
+            "python -c \"from os import path; print(path.exists('a.py'))\"",
+            "python -c \"import gzip; gzip.open('a.gz').read()\"",
+            "node -e \"const {readFileSync: r} = require('fs'); r('a.js')\"",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(shell.analyze(command).writes, command)
 
 
 class ScriptWriteTableTests(unittest.TestCase):

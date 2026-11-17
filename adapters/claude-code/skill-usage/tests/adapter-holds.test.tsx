@@ -259,7 +259,6 @@ for (const [gate, tool, text, skill] of [
   ['repeated-failure', 'Edit', ADAPTER_TEXTS.repeatedFailure, 'diagnose'],
   ['pr-review', 'Bash', ADAPTER_TEXTS.prReview, 'standards-and-spec-review'],
   ['review-intake', 'Edit', ADAPTER_TEXTS.reviewIntake, 'receiving-code-review'],
-  ['scripted-edit', 'Bash', ADAPTER_TEXTS.scriptedEdit, 'software-design-principles'],
 ] as const) {
   const reason = 'the edit changes one constant and nothing else'
   test(`the ${gate} hold on ${tool} is followed by loading ${skill}, declined by a skip line with its reason, and otherwise ignored`, async () => {
@@ -277,6 +276,21 @@ for (const [gate, tool, text, skill] of [
     expect(ignored.holds).toEqual({ 'justified-skip': 1 })
   })
 }
+
+test('the scripted-edit hold asks for a file edit tool: a code edit after it follows it, a load of the skill it offers to skip does not', async () => {
+  const text = ADAPTER_TEXTS.scriptedEdit
+  expect(preHold('Bash', text, 1)).toEqual([expect.objectContaining({ hook: 'scripted-edit', named: ['software-design-principles'], skipOnly: ['software-design-principles'] })])
+  const followed = summarize([prompt(), ...preHold('Bash', text, 2), { kind: 'change', t: 3, id: 'w1' }, turnEnd(4)])
+  expect(followed.nudges).toEqual({ 'scripted-edit': { followed: 1 } })
+  // A refused edit changed nothing, so it follows nothing.
+  const refused = summarize([prompt(), ...preHold('Bash', text, 2), { kind: 'change', t: 3, id: 'w1' }, { kind: 'refused', t: 3, id: 'w1' }, turnEnd(4)])
+  expect(refused.nudges).toEqual({ 'scripted-edit': { unanswered: 1 } })
+  const loaded = summarize([prompt(), ...preHold('Bash', text, 2), load('software-design-principles', 3), turnEnd(4)])
+  expect(loaded.nudges).toEqual({ 'scripted-edit': { unanswered: 1 } })
+  const reason = 'one mechanical rename across forty files'
+  const declined = summarize([prompt(), ...preHold('Bash', text, 2), ...markerEvents(`goated-skip: software-design-principles: ${reason}`, 3), turnEnd(4)])
+  expect(declined.nudges).toEqual({ 'scripted-edit': { declined: 1 } })
+})
 
 test('the repeated-failure hold has its own name and counts, apart from the earlier hooks\' diagnose key', async () => {
   expect(hookName('repeated-failure')).toBe('repeated-failure hold')

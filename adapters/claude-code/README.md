@@ -646,7 +646,7 @@ backtick in PowerShell). A `Bash` or `PowerShell` command meets the
   device (`/dev/null`, `$null`, `NUL`) or another stream (`2>&1`);
 - runs `tee`, `Tee-Object`, `cp`, `mv`, `rm`, `rmdir`, `touch`, `truncate`,
   `ln`, `unlink`, `shred`, or `patch`;
-- edits in place with `sed -i` or `perl -i`;
+- edits in place with `sed -i`, `perl -i`, or `ruby -i`;
 - runs `Set-Content`, `Add-Content`, `Out-File`, `Clear-Content`, `New-Item`,
   `Copy-Item`, `Move-Item`, `Remove-Item`, `Rename-Item`, `Export-Csv`, or
   `Export-Clixml`, or one of the stock Windows PowerShell 5.1 aliases (`sc`,
@@ -727,20 +727,37 @@ a `cd` in the same command is followed, not one in an earlier call.
 
 When a command gives an interpreter its code inline, the adapter reads that
 code for calls that write, remove, or rename a file. It reads `python`
-(`python3`, `py`), `node`, `perl`, `ruby`, `deno`, and `bun`, each also
-through `uv run`, `npx`, and the other command runners a check is read
-through, with the code given by an inline-code option (`python -c`,
-`node -e`/`-p`/`--eval`, `perl -e`/`-E`, `ruby -e`, `deno eval`,
-`bun -e`/`--eval`) or by a heredoc on standard input when no script is named
-(`python - <<'EOF'`, `python <<'EOF'`, `node - <<'EOF'`, `deno run -`,
-`bun run -`). Such a script is a shell write: its files are the string
+(`python3`, `python3.12` and other versions, `py`), `node`, `perl`, `ruby`,
+`deno`, and `bun`, each also through `uv run`, `npx`, and the other command
+runners a check is read through. The code is given by an inline-code option
+(`python -c`, `node -e`/`-p`/`--eval`, `perl -e`/`-E`, `ruby -e`,
+`deno eval`, `bun -e`/`--eval`), or reaches standard input when no script is
+named (`python -`, `python`, `deno run -`, `bun run -`) from:
+
+- a heredoc or `<<<` here-string on the interpreter (`python - <<'EOF'`,
+  `python <<< "…"`);
+- a pipe from a text producer: `cat` with no file, fed a heredoc
+  (`cat <<'EOF' | python -`); `echo`, `printf`, or `Write-Output` with their
+  arguments; or a PowerShell string or here-string alone
+  (`@'…'@ | python -`). Text piped from a file (`cat notes.txt | python -`)
+  or any other program is not read.
+
+Such a script is a shell write: its files are the string
 literals its write calls name, placed as any write target is (a `cd` it
 follows applies), and it meets the routing gates, the path gates
 (`security`, `review-intake`, `scripted-edit`, `reference-reads`,
 `conflict-resolution`, `repeated-failure`), and the closeout. A write call
 whose path is not one literal (a variable, an f-string, a concatenation, an
 interpolated string) is an unnamed write inside the project, as `git apply`
-is. A script in which no write call is found is not a write, so
+is. So is a literal holding `$` or a backtick in code the shell may expand
+first: code given as an argument, an unquoted heredoc (`<<EOF`), a `<<<`
+here-string, or piped text (`python -c "open('$F', 'w')"` writes whatever
+`$F` holds). A quoted-delimiter heredoc (`<<'EOF'`) expands nothing, so
+there `'$F'` is the file's name. A name an import gives a listed module or
+function is followed: `import shutil as s` then `s.move(…)`,
+`from os import remove` then `remove(…)`, `from pathlib import Path as P`,
+and `const {writeFileSync: w} = require('fs')` or
+`import {rmSync as r} from 'fs'`. A script in which no write call is found is not a write, so
 `python -c "print(1)"` and a script that opens files only to read them pass
 as before. Inline code is never a check; `python -m pytest` still is.
 
@@ -748,7 +765,7 @@ The calls, by language (`WRITE_CALLS` in `script_writes.py`, the one table):
 
 | Language | Write calls |
 | --- | --- |
-| Python | `open`, `io.open`, `codecs.open` with a mode holding `w`, `a`, `x`, or `+` (a mode that is not a literal counts); `os.open` with a writing flag; `os.remove`, `unlink`, `rmdir`, `removedirs`, `truncate`, `rename`, `renames`, `replace`; `shutil.copy`, `copy2`, `copyfile`, `copytree` (the destination), `move`, `rmtree`; a path's `.write_text`, `.write_bytes`, `.unlink`, `.touch`, `.rmdir` (an unnamed file unless called on `Path("…")`), and `Path("…").rename`, `.replace`, and `.open` with a writing mode |
+| Python | `open`, `io.open`, `codecs.open`, `gzip.open`, `bz2.open`, `lzma.open` with a mode holding `w`, `a`, `x`, or `+` (a mode that is not a literal counts); `os.open` with a writing flag; `os.remove`, `unlink`, `rmdir`, `removedirs`, `truncate`, `rename`, `renames`, `replace`; `shutil.copy`, `copy2`, `copyfile`, `copytree` (the destination), `move`, `rmtree`; a path's `.write_text`, `.write_bytes`, `.unlink`, `.touch`, `.rmdir` (an unnamed file unless called on `Path("…")`), and `Path("…").rename`, `.replace`, and `.open` with a writing mode |
 | JavaScript (`node`, `deno`, `bun`) | `fs` and `fs/promises`: `writeFile`, `appendFile`, `createWriteStream`, `unlink`, `rm`, `rmdir`, `truncate`, `rename`, `copyFile` and `cp` (the destination), `open` with a writing flag, and their `Sync` forms; `Deno.writeTextFile`, `writeFile`, `remove`, `create`, `truncate`, `rename`, `copyFile`, and their `Sync` forms; `Bun.write` |
 | Perl | `open` with a `>`, `>>`, or `+` mode, in its three-argument form or in the path of its two-argument form; `unlink`, `rmdir`, `rename`, `rmtree`, `remove_tree`; `File::Copy`'s `copy`/`cp` (the destination) and `move`/`mv` |
 | Ruby | `File.write`, `IO.write`, `binwrite`; `File.open` and `File.new` with a `w`, `a`, or `+` mode; `File.delete`, `unlink`, `rename`; `FileUtils.rm` and its forms, `remove…`, `rmdir`, `touch`, `mv`/`move`, and `cp`/`copy`/`install` (the destination) |
@@ -1175,7 +1192,11 @@ later lets the same action through: an edit of the same file, the same
 command, a commit or pull request whatever its message, or a spawn of the
 same tool. A closeout hold is answered by any later `Stop` or commit the
 closeout lets through. A hold is also answered once every skill it names is
-loaded and every reference it names is read. One the next typed prompt's
+loaded and every reference it names is read. A `scripted-edit` hold names
+its skill only in the skip line it offers, since loading that skill does
+not clear it; it is answered by a later write tool call that goes through
+to a file its script named, or to any file when the script named one only
+at run time. One the next typed prompt's
 override stands down counts as neither too. A gate counts once per turn,
 however often it holds in that turn, and only the main agent's holds count.
 Holds still open at a compaction or `/clear` are dropped uncounted, since
@@ -1346,11 +1367,16 @@ of the call's prompt, which is normally already there.
     `pwsh -Command` line is a check is read;
   - command substitution with backticks, or `$(…)` inside double quotes;
   - a write by a script file run by name (`node build.js`,
-    `python tools/gen.py`) or fed from a file (`node < build.js`), by
-    [inline code](#inline-scripts) through a call its table does not list
-    (`subprocess`, `child_process`, `system`, a dynamic call), by an
-    interpreter the adapter does not read (`php -r`), or by an archive tool
-    (`tar -x`, `unzip`);
+    `python tools/gen.py`) or fed from a file (`node < build.js`,
+    `cat gen.py | python -`), or by an archive tool (`tar -x`, `unzip`);
+  - a write by [inline code](#inline-scripts) through a call its table does
+    not list: another program (`subprocess`, `child_process`, `system`), a
+    library's own writer (`json.dump` to a path, `pandas` `to_csv`,
+    `Pathname#write`), a dynamic call (`getattr`, `eval`), or a name
+    renamed other than by an import it reads (`w = fs.writeFileSync`,
+    `p = os.remove`, `import fs from 'fs'` then `fs.default.rm`); by an
+    interpreter the adapter does not read (`php -r`, `pypy`); or by code
+    piped in from a program other than the text producers it reads;
   - git aliases (`git ci`), and `gh api` calls that create a pull request
     (`gh api repos/<owner>/<repo>/pulls`);
   - MCP tools that commit or open pull requests under names other than those

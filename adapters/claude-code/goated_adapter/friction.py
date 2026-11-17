@@ -5,6 +5,9 @@ The retrospective notice reads this count (Ticket 073). A hold is
   hold is strict, which no skip line clears;
 - answered when the same gate later lets the same action through, or when
   every skill it names is loaded and every reference it names is read. A
+  `scripted-edit` hold, which asks for a file edit tool, is also answered by
+  a later write tool call that goes through to a file its script named, or
+  to any file when the script named one only at run time. A
   closeout hold, on a `Stop` or a commit, is answered by any later `Stop` or
   commit the closeout gate lets through;
 - stood down when the next typed prompt's overrides cover it;
@@ -38,6 +41,8 @@ _SKIPPABLE_RE = re.compile(r"goated-skip: ([a-z0-9]+(?:-[a-z0-9]+)*):")
 # The gates `skip routing` stands down.
 _ROUTING_GATES = frozenset({"router-first", "route-line", "pipeline"})
 _CLOSEOUT_GATE = "closeout"
+_SCRIPTED_EDIT_GATE = "scripted-edit"
+_ANY_FILE = "*"
 _COMMIT = "commit"
 _COUNTED_TURN_PARTS = ("loads", "skips", "calls")
 _PATH_FIELDS = ("file_path", "notebook_path")
@@ -71,8 +76,11 @@ def observe(state, turn: Turn, action: str, hold) -> None:
     gate already held in the turn, whose open hold then follows this action."""
 
     held_gate = hold.gate if hold is not None else None
-    state.open_holds = [h for h in state.open_holds
-                        if not (_repeats(h, action) and h["gate"] != held_gate)]
+    state.open_holds = [
+        h for h in state.open_holds
+        if not ((_repeats(h, action) and h["gate"] != held_gate)
+                or (hold is None and _rewrites(h, action)))
+    ]
     if hold is None:
         return
     if state.held_gates.get("turn") != turn.key:
@@ -142,6 +150,34 @@ def _repeats(hold: dict, action: str) -> bool:
     if hold["gate"] == _CLOSEOUT_GATE:
         return action in (STOP, _COMMIT)
     return hold.get("action") == action
+
+
+def _script_files(action: str) -> list[str]:
+    """The files the inline script of a held command writes, in comparable
+    form, or `_ANY_FILE` when it names one only at run time. The action keeps
+    the command but not its tool, so both readings count."""
+
+    command = action.partition(":")[2]
+    found = [shell.analyze(command, tool) for tool in sorted(COMMAND_TOOLS)]
+    if any(f.script_unknown_writes for f in found):
+        return [_ANY_FILE]
+    return sorted({_comparable(t) for f in found for t in f.script_targets})
+
+
+def _rewrites(hold: dict, action: str) -> bool:
+    """Whether `action`, a write tool's file, is one the script of a held
+    `scripted-edit` command named; the hold keeps the command as its action."""
+
+    if hold["gate"] != _SCRIPTED_EDIT_GATE or not action.startswith("file:"):
+        return False
+    files = _script_files(hold["action"])
+    path = action.partition(":")[2]
+    return _ANY_FILE in files or any(path == f or path.endswith("/" + f) for f in files)
+
+
+def _comparable(path: str) -> str:
+    path = path.replace("\\", "/").lower()
+    return path[2:] if path.startswith("./") else path
 
 
 def _outcome(hold: dict, turns: list[Turn], skill_name) -> str | None:

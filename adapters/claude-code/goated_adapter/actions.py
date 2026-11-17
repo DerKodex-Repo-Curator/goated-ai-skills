@@ -917,7 +917,8 @@ def _scripted_edit_hold(path: str | None, proof: _Proof) -> Hold | None:
     as an unnamed write does for the closeout. A script's edit meets no
     design or reference read, so the hold asks for a file edit tool; a skip
     line or the typed override for the design skill clears it for the turn,
-    loading the skill does not."""
+    loading the skill does not. So the text names the skill only in its skip
+    line: a bare backticked name reads as a skill to load (`friction.py`)."""
 
     if (path is not None and not is_code(path)) or proof.skipped(DESIGN_SKILL):
         return None
@@ -928,8 +929,8 @@ def _scripted_edit_hold(path: str | None, proof: _Proof) -> Hold | None:
         f"An inline script in this command writes {what}. Make the change with a file "
         "edit tool (Edit, MultiEdit, or Write), where the design and reference holds can "
         "judge it. A script suits only a mechanical rewrite across many files; for one, "
-        f"skip `{DESIGN_SKILL}` with `goated-skip: {DESIGN_SKILL}: <reason>` on its own "
-        "line instead. This command was not run. "
+        f"write `goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. Loading "
+        "the skill does not clear this hold. This command was not run. "
         + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
     )
 

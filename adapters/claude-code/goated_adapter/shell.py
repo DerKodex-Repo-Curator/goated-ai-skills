@@ -265,9 +265,11 @@ def analyze(command: str, tool: str = "Bash") -> ShellCommand:
     awaiting: list[str] = []
     awaiting_unknown = False
     segments = _segments(command)
-    for segment in segments:
+    for index, segment in enumerate(segments):
         start = len(result.write_targets)
-        directory, unknown, is_check = _add_segment(result, segment, directory)
+        before = segments[index - 1] if index else None
+        piped = _piped_text(before) if before is not None and before.after == "|" else None
+        directory, unknown, is_check = _add_segment(result, segment, directory, piped)
         if is_check and not segment.nested and segment.after in CHECK_ENDS:
             awaiting, awaiting_unknown = [], False
         awaiting += result.write_targets[start:]
@@ -360,12 +362,13 @@ def _runs_dotnet_write(segments: list["_Segment"], index: int) -> bool:
     return False
 
 
-def _add_segment(result: ShellCommand, segment: "_Segment",
-                 directory: str | None) -> tuple[str | None, bool, bool]:
+def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | None,
+                 piped: tuple[str, bool] | None = None) -> tuple[str | None, bool, bool]:
     """Add one segment's facts to `result`, its write targets taken from
     `directory` (see `_change_directory`); return the directory later
     segments run in, whether it writes files it does not name, and whether
-    it is a check."""
+    it is a check. `piped` is the text the segment before pipes into it,
+    when a text producer gives it (see `_piped_text`)."""
 
     targets = [t for t in segment.redirects if t.lower() not in NULL_TARGETS]
     unknown = False
@@ -382,7 +385,7 @@ def _add_segment(result: ShellCommand, segment: "_Segment",
         targets += positional[-1:]
     elif name in TARGET_IS_PATH_PARAM:
         targets += _ps_paths(args)[:1]
-    elif name in ("sed", "perl") and _edits_in_place(args):
+    elif name in ("sed", "perl", "ruby") and _edits_in_place(args):
         targets += _in_place_files(name, args)
     elif name in DOWNLOADERS:
         output, writes = _download_target(name, args)
@@ -413,7 +416,7 @@ def _add_segment(result: ShellCommand, segment: "_Segment",
         if rest[:2] == [noun, "diff"] and "--name-only" not in rest:
             prints = True
     scripted: list[str] = []  # The files inline interpreter code writes.
-    script = _inline_script(name, args, segment.heredocs)
+    script = _inline_script(name, args, _standard_input(segment) or piped)
     if script is not None:
         scripted, script_unknown = script_writes.writes(*script)
         if script_unknown:
@@ -698,7 +701,7 @@ class _Segment:
     (`<<'EOF'`), so the shell expands nothing in its body."""
 
     __slots__ = ("words", "redirects", "out_redirects", "heredocs", "quoted_heredocs",
-                 "after", "chained", "nested")
+                 "here_strings", "after", "chained", "nested")
 
     def __init__(self) -> None:
         self.words: list[str] = []
@@ -706,6 +709,7 @@ class _Segment:
         self.out_redirects: list[str] = []
         self.heredocs: list[str] = []
         self.quoted_heredocs: list[bool] = []
+        self.here_strings: list[str] = []
         self.after = ""
         self.chained = False
         self.nested = False
@@ -725,12 +729,18 @@ def _segments(command: str) -> list[_Segment]:
     open_groups: list[str] = []  # what closes each open group or compound command
     i, n = 0, len(text)
 
+    here_string_next = False  # the next word is a `<<<` here-string, fed to standard input
+
     def end_word() -> None:
-        nonlocal word, redirect_next, in_test
+        nonlocal word, redirect_next, in_test, here_string_next
         if word is None:
             return
         value = "".join(word)
         word = None
+        if here_string_next:
+            current.here_strings.append(value)
+            here_string_next = False
+            return
         if redirect_next:
             current.redirects.append(value)
             if redirect_stdout:
@@ -821,7 +831,11 @@ def _segments(command: str) -> list[_Segment]:
             end = n if end < 0 else end
             word = (word or []) + list(text[i : end + 1])
             i = end + 1
-        elif text.startswith("<<", i) and not text.startswith("<<<", i) and not in_test:
+        elif text.startswith("<<<", i) and not in_test:
+            end_word()
+            i += 3
+            here_string_next = True
+        elif text.startswith("<<", i) and not in_test:
             end_word()
             match = re.match(r"<<(-?)[ \t]*(['\"]?)([A-Za-z_][\w.-]*)\2", text[i:])
             if match:
@@ -1056,7 +1070,7 @@ def _in_place_files(name: str, args: list[str]) -> list[str]:
             continue
         if not arg.startswith("-"):
             files.append(arg)
-    return files if script_given or name == "perl" else files[1:]
+    return files if script_given or name in ("perl", "ruby") else files[1:]
 
 
 def _download_target(name: str, args: list[str]) -> tuple[str | None, bool]:
@@ -1255,15 +1269,24 @@ def _interpreter_program(name: str, args: list[str]) -> tuple[str, str]:
     return "stdin", ""
 
 
-def _inline_script(name: str, args: list[str], heredocs: list[str]) -> tuple[str, str] | None:
+VERSIONED_PYTHON_RE = re.compile(r"^python(?:\d+(?:\.\d+)*)?$")
+
+
+def _inline_script(name: str, args: list[str],
+                   stdin: tuple[str, bool] | None) -> tuple[str, str, bool] | None:
     """The language and code of a script given inline to an interpreter in
-    `script_writes.LANGUAGES`, also through a runner (`uv run`, `npx`): code
-    given by an inline-code option (`python -c`, `node -e`, `deno eval`), or
-    a heredoc on its standard input (`python - <<'EOF'`, `deno run -`). None
-    for a script file run by name, a module, or another command."""
+    `script_writes.LANGUAGES` (`python3.12` reads as `python`), also through
+    a runner (`uv run`, `npx`), and whether the shell may have expanded it
+    (see `script_writes.writes`). The code is given by an inline-code option
+    (`python -c`, `node -e`, `deno eval`), which counts as expanded, or is
+    `stdin`, the text its standard input gets (see `_standard_input`), when
+    it runs no script (`python -`, `deno run -`). None for a script file run
+    by name, a module, or another command."""
 
     if name in COMMAND_RUNNERS:
         name, _, args = _runner_command(name, args)
+    if VERSIONED_PYTHON_RE.match(name):
+        name = "python"
     language = script_writes.LANGUAGES.get(name)
     if language is None:
         return None
@@ -1271,17 +1294,53 @@ def _inline_script(name: str, args: list[str], heredocs: list[str]) -> tuple[str
         sub = args[0] if args else ""
         rest = [a for a in args[1:] if a == "-" or not a.startswith("-")]
         if sub == "eval":
-            return (language, rest[0]) if rest else None
-        if sub == "run" and rest[:1] == ["-"] and heredocs:
-            return language, "\n".join(heredocs)
+            return (language, rest[0], True) if rest else None
+        if sub == "run" and rest[:1] == ["-"] and stdin:
+            return language, *stdin
         return None
     if name == "bun" and args[:1] == ["run"]:
         args = args[1:]
     kind, code = _interpreter_program(name, args)
     if kind == "code":
-        return language, code
-    if kind == "stdin" and heredocs:
-        return language, "\n".join(heredocs)
+        return language, code, True
+    if kind == "stdin" and stdin:
+        return language, *stdin
+    return None
+
+
+def _standard_input(segment: "_Segment") -> tuple[str, bool] | None:
+    """The text `segment`'s own heredocs or `<<<` here-strings feed its
+    standard input, and whether the shell expands it: a heredoc does unless
+    every delimiter is quoted (`<<'EOF'`); a here-string always may."""
+
+    if segment.heredocs:
+        return "\n".join(segment.heredocs), not all(segment.quoted_heredocs)
+    if segment.here_strings:
+        return "\n".join(segment.here_strings), True
+    return None
+
+
+# Programs that print their arguments, as a pipe into an interpreter feeds them.
+ECHOES = frozenset({"echo", "write-output", "write"})
+
+
+def _piped_text(segment: "_Segment") -> tuple[str, bool] | None:
+    """The text a text producer pipes on, and whether the shell expands it,
+    or None when `segment` is anything else: `cat` with no file, fed a
+    heredoc; `echo`, `printf`, or `Write-Output` with their arguments; or a
+    PowerShell string or here-string alone, which outputs itself. A word
+    alone counts as such a string when it holds a space, newline, or
+    parenthesis, which no command name does."""
+
+    name, _, args = _resolve(segment.words)
+    if name == "cat" and not _positional(args):
+        return _standard_input(segment)
+    if name in ECHOES:
+        return " ".join(a for a in args if a not in ("-n", "-e", "-E")), True
+    if name == "printf" and args:
+        return " ".join(args[1:] or args), True
+    if len(segment.words) == 1 and any(c in segment.words[0] for c in " \n("):
+        return segment.words[0], True
     return None
 
 

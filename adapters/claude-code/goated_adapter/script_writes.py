@@ -75,6 +75,8 @@ WRITE_CALLS: dict[str, tuple[_Call, ...]] = {
     "python": (
         _call(r"(?<![\w.])(?:io\.|codecs\.)?open\b", names=("file", "mode"),
               mode=_Mode(1, "mode", _PY_MODE)),
+        _call(r"\b(?:gzip|bz2|lzma)\.open\b", names=("filename", "mode"),
+              mode=_Mode(1, "mode", _PY_MODE)),
         _call(r"\bos\.open\b", names=("path", "flags"),
               mode=_Mode(1, "flags", re.compile(r"O_(?:WRONLY|RDWR|CREAT|APPEND|TRUNC)"), raw=True)),
         _call(r"\bos\.(?:remove|unlink|rmdir|removedirs|truncate)\b", names=("path",)),
@@ -143,11 +145,17 @@ _PATH_RECEIVER_RE = re.compile(r"(?<![\w.])(?:pathlib\.)?(?:Pure(?:Posix|Windows
 _BARE_END_RE = re.compile(r"\s+(?:or|and|if|unless|do)\b|\|\||&&|[;\n{}]")
 
 
-def writes(language: str, code: str) -> tuple[list[str], bool]:
+def writes(language: str, code: str, expanded: bool = False) -> tuple[list[str], bool]:
     """The files `code`, in `language` (a `LANGUAGES` value), writes, removes,
     or renames, in the order its calls appear, and whether some write call
-    names its file only at run time. An unknown language writes nothing."""
+    names its file only at run time. An unknown language writes nothing.
 
+    `expanded` says the shell may have expanded the code before the
+    interpreter got it (an argument, an unquoted heredoc), so a literal
+    holding `$` or a backtick (`'$F'`, `'$(ls)'`) names a file only the
+    shell knows: it is an unnamed write."""
+
+    code = _resolve_aliases(language, code)
     found: list[tuple[int, list[str], bool]] = []
     for call in WRITE_CALLS.get(language, ()):
         for match in call.pattern.finditer(code):
@@ -155,10 +163,63 @@ def writes(language: str, code: str) -> tuple[list[str], bool]:
             if parsed is None:
                 continue
             files, unnamed = _call_writes(call, language, code, match.start(), *parsed)
+            if expanded and any(map(_SHELL_EXPANDS_RE.search, files)):
+                files, unnamed = [f for f in files if not _SHELL_EXPANDS_RE.search(f)], True
             if files or unnamed:
                 found.append((match.start(), files, unnamed))
     found.sort(key=lambda item: item[0])
     return [f for _, files, _ in found for f in files], any(u for _, _, u in found)
+
+
+_SHELL_EXPANDS_RE = re.compile(r"[$`]")
+# The modules whose write calls the Python table names, as an import may rename them.
+_PY_MODULES = r"(?:os|shutil|io|codecs|pathlib|gzip|bz2|lzma)"
+_PY_IMPORT_AS_RE = re.compile(rf"\bimport\s+({_PY_MODULES})\s+as\s+(\w+)")
+_PY_FROM_IMPORT_RE = re.compile(rf"\bfrom\s+({_PY_MODULES})\s+import\s+\(?([\w \t,]+)\)?")
+_FS = r"""['"](?:node:)?fs(?:/promises)?['"]"""
+# `const {a: b} = require('fs')` (group 1) and `import {a as b} from 'fs'` (group 2).
+_JS_DESTRUCTURE_RE = re.compile(
+    rf"\{{([^{{}}]*)\}}\s*=\s*(?:await\s+)?(?:require|import)\(\s*{_FS}\s*\)"
+    rf"|\bimport\s*\{{([^{{}}]*)\}}\s*from\s*{_FS}"
+)
+
+
+def _resolve_aliases(language: str, code: str) -> str:
+    """`code` with each name an import gave a write call's module or function
+    spelled as the table knows it: after `import shutil as s`, `s.move(`
+    reads `shutil.move(`; after `from os import remove`, `remove(` reads
+    `os.remove(`; after `const {writeFileSync: w} = require('fs')`, `w(`
+    reads `fs.writeFileSync(`. Other renamings (an assignment, `getattr`)
+    are not followed."""
+
+    renames: list[tuple[str, str]] = []  # (pattern, replacement)
+    if language == "python":
+        for module, alias in _PY_IMPORT_AS_RE.findall(code):
+            renames.append((rf"(?<![\w.]){re.escape(alias)}\.", f"{module}."))
+        for module, names in _PY_FROM_IMPORT_RE.findall(code):
+            for name, alias in _imported(names, " as "):
+                renames.append((rf"(?<![\w.]){re.escape(alias)}(?=\s*\()", f"{module}.{name}"))
+    elif language == "js":
+        for match in _JS_DESTRUCTURE_RE.finditer(code):
+            required = match.group(1) is not None
+            entries = match.group(1) if required else match.group(2)
+            for name, alias in _imported(entries, ":" if required else " as "):
+                renames.append((rf"(?<![\w$.]){re.escape(alias)}(?=\s*\()", f"fs.{name}"))
+    for pattern, replacement in renames:
+        code = re.sub(pattern, replacement, code)
+    return code
+
+
+def _imported(entries: str, separator: str) -> list[tuple[str, str]]:
+    """Each (name, the name code calls it by) in an import list such as
+    `remove as rm, rename` (`separator` " as ") or `writeFileSync: w` (":")."""
+
+    pairs = []
+    for entry in entries.split(","):
+        name, _, alias = (part.strip() for part in entry.strip().partition(separator))
+        if re.fullmatch(r"[\w$]+", name):
+            pairs.append((name, alias if re.fullmatch(r"[\w$]+", alias) else name))
+    return pairs
 
 
 def _call_writes(call: _Call, language: str, code: str, start: int, positional: list[str],

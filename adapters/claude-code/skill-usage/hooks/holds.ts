@@ -10,6 +10,8 @@ export const ROUTE_LINE = '(route line)'
 
 /** The adapter's gate for a route's required skills. */
 const PIPELINE_GATE = 'pipeline'
+/** The gate that asks for a file edit tool instead of a script's write (Ticket 093). */
+const SCRIPTED_EDIT_GATE = 'scripted-edit'
 /** The adapter's closeout gate, which holds a commit (Ticket 059) as well as a `Stop`, asking for the same items. */
 const CLOSEOUT_GATE = 'closeout'
 /**
@@ -423,6 +425,11 @@ export function holdSettlement(): HoldSettlement {
           n.needsLine = false
           settleDesign(n, 'followed', e)
         }
+        break
+      case 'change':
+        // The scripted-edit hold asks for the change to be made with a file edit tool, which no load answers: the
+        // main agent's next code edit by one follows it. Which file is not read; a refused edit never arrives here.
+        if (!e.isSubagent) settle(n => n.hook === SCRIPTED_EDIT_GATE && !n.agent, 'followed', e)
         break
       case 'body':
         // A subagent reading a skill's body settles only what was asked of that subagent.

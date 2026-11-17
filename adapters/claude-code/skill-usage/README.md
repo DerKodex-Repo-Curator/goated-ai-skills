@@ -114,6 +114,10 @@ it. In particular:
   held call's own reply already answered counts as followed. A route line or
   load in an earlier reply does not count, and nor does a `continue` route
   line while there is no task to continue, which the adapter holds as well.
+- A `scripted-edit` hold asks for the change to be made with a file edit
+  tool and offers `software-design-principles` only as a skip line, so
+  loading that skill does not follow it; the main agent's next code-file
+  edit by a file edit tool does, whichever file it is.
 - A `pipeline` hold also counts as followed for a skill that a corrected route
   line drops, as the hold tells the agent to do. The orientation skill a
   session started from a brief must load, which its route line never names,
