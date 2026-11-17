@@ -926,13 +926,14 @@ def _changes(turn: Turn, subagents: dict, project: Project | None):
             if any(changed):
                 code = [i for i, paths in enumerate(changed) if any(map(_is_code_change, paths))]
                 proven = bool(code) and (
-                    _proves_itself(calls[code[-1]]) or bool(_checks(calls[code[-1] + 1 :]))
+                    _proves_itself(calls[code[-1]], project)
+                    or bool(_checks(calls[code[-1] + 1 :]))
                 )
                 yield _Change(index, [p for paths in changed for p in paths], proven)
             continue
         paths = _changed_paths(call, project)
         if paths:
-            yield _Change(index, paths, _proves_itself(call))
+            yield _Change(index, paths, _proves_itself(call, project))
 
 
 def _changed_paths(call, project: Project | None) -> list[str]:
@@ -1113,13 +1114,23 @@ def _long_path(path: str) -> str:
         head = parent
 
 
-def _proves_itself(call) -> bool:
-    """True when a shell call ran a check after its own last write. Only a
-    finished call changes files, so its check passed with it."""
+def _proves_itself(call, project: Project | None) -> bool:
+    """True when a shell call ran a check after each code file it wrote in
+    the project (see `ShellCommand.unchecked_targets`).
 
-    return call.name in COMMAND_TOOLS and shell.analyze(
-        str(call.input.get("command") or "")
-    ).checks_after_writes
+    The call's result stands for the whole command, so a check that failed
+    still counts when the command hid its status (`pytest || true`,
+    `pytest; echo done`, `pytest | tail`); the Unfinished item then cannot
+    see the failure either.
+    """
+
+    if call.name not in COMMAND_TOOLS:
+        return False
+    command = shell.analyze(str(call.input.get("command") or ""))
+    return not command.unchecked_unknown_writes and not any(
+        is_code(_norm(target)) for target in command.unchecked_targets
+        if target and _in_project(target, project, target not in command.unplaced_targets)
+    )
 
 
 def _checks(calls) -> list:

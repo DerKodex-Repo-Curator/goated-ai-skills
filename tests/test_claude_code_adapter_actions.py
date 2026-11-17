@@ -1603,11 +1603,55 @@ class CloseoutTests(AdapterTestCase):
             ("cp a.py src/a.py | pytest -q", False),
             ("cp a.py src/a.py && python -c \"print('tests pass')\"", False),
             ("cp a.py src/a.py && node -e \"console.log('check')\"", False),
+            # A .NET write the command cannot place, after the check.
+            ("cp a.py src/a.py; pytest; [System.IO.File]::WriteAllText('src/b.py','x')", False),
+            # A check in another branch or body, or after the command may have stopped.
+            ("if [ -f x ]; then cp a.py src/a.py; else pytest; fi", False),
+            ("if [ -f x ]; then cp a.py src/a.py; fi; pytest", False),
+            ("f() { cp a.py src/a.py; }; pytest", False),
+            ("cp a.py src/a.py && exit 0; pytest", False),
+            ("! cp a.py src/a.py && pytest", False),
+            ("if [ -f x ]; then echo; fi; cp a.py src/a.py && pytest", True),
+            # A backgrounded check.
+            ("cp a.py src/a.py && pytest -q &", False),
+            ("cp a.py src/a.py && pytest & wait", False),
+            ("cp a.py src/a.py && pytest || true", True),
+            # A non-code write after the check, such as its log.
+            ("cp a.py src/a.py && pytest 2>&1 | tee log.txt", True),
+            ("cp a.py src/a.py && pytest && echo x > notes.md", True),
+            ("cp a.py src/a.py && pytest && echo x > src/b.py", False),
+            # Inline code, by combined or valued options.
+            ("cp a.py src/a.py && python -Bc 'import tests'", False),
+            ("cp a.py src/a.py && python -W ignore -c 'print(1)' -m pytest", False),
+            ("cp a.py src/a.py && python -W ignore -m pytest", True),
+            ("cp a.py src/a.py && node -pe '\"tests\"'", False),
+            ("cp a.py src/a.py && perl -le 'print \"tests\"'", False),
+            ("cp a.py src/a.py && perl -I tests -e 'print 1'", False),
+            ("cp a.py src/a.py && ruby -ne 'puts \"check\"'", False),
+            # A shell's inline string is read as a command line.
+            ("cp a.py src/a.py && bash -c 'npm test'", True),
+            ("cp a.py src/a.py && bash -lc 'echo tests ok'", False),
+            ("cp a.py src/a.py && sh -c 'echo check'", False),
+            ("cp a.py src/a.py && pwsh -NoProfile -Command npm test", True),
+            ("cp a.py src/a.py && pwsh -c 'Write-Output tests'", False),
         ):
             with self.subTest(command=command):
                 s = self.routed()
                 s.load("doc-sync")
                 s.run(command)
+                s.run("git diff")
+                held = stop(s)
+                self.assertEqual("Proof" not in held.get("reason", ""), is_proof)
+
+    def test_a_dotnet_write_after_a_powershell_check_is_not_proved(self) -> None:
+        for command, is_proof in (
+            ("Copy-Item a.py src/a.py; Invoke-Pester; [IO.File]::Copy('a','src/b.py')", False),
+            ("Copy-Item a.py src/a.py; Invoke-Pester", True),
+        ):
+            with self.subTest(command=command):
+                s = self.routed()
+                s.load("doc-sync")
+                s.run(command, tool="PowerShell")
                 s.run("git diff")
                 held = stop(s)
                 self.assertEqual("Proof" not in held.get("reason", ""), is_proof)

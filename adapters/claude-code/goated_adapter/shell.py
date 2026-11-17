@@ -19,6 +19,7 @@ a shell, or a git alias is not seen. The adapter README lists these limits.
 from __future__ import annotations
 
 import re
+from typing import NamedTuple
 
 NULL_TARGETS = frozenset({"/dev/null", "$null", "nul", "/dev/stderr", "/dev/stdout"})
 DOTNET_WRITE_RE = re.compile(
@@ -137,13 +138,41 @@ INTERPRETERS = frozenset(
     {"python", "python3", "py", "node", "bash", "sh", "zsh", "pwsh", "powershell", "ruby",
      "perl", "php"}
 )
-# Interpreters that run program code, not a shell's command line, by the
-# flags that take that code inline (`python -c`, `node -e`, `php -r`).
-INLINE_CODE_FLAGS = {
-    "python": {"-c"}, "python3": {"-c"}, "py": {"-c"},
-    "node": {"-e", "-p", "--eval", "--print"}, "ruby": {"-e"}, "perl": {"-e", "-E"},
-    "php": {"-r"},
+class _CodeOptions(NamedTuple):
+    """How an interpreter takes inline code. `code` are the short options
+    whose value is the code, `values` the short options that take another
+    value, `module` those that run a named module instead; `long_code` and
+    `long_values` are the long options of the first two kinds. `attached`
+    says the code may follow its option in the same word (`-cprint(1)`);
+    `shell` says the code is a command line (`bash -c 'npm test'`)."""
+
+    code: str
+    values: str = ""
+    module: str = ""
+    long_code: frozenset = frozenset()
+    long_values: frozenset = frozenset()
+    attached: bool = True
+    shell: bool = False
+
+
+_PYTHON = _CodeOptions("c", "WX", "m", long_values=frozenset({"--check-hash-based-pycs"}))
+_SHELL = _CodeOptions("c", "oO", long_values=frozenset({"--rcfile", "--init-file"}),
+                      attached=False, shell=True)
+# Interpreters that take code inline (`python -c`, `node -e`, `bash -c`), by name.
+INLINE_CODE = {
+    "python": _PYTHON, "python3": _PYTHON, "py": _PYTHON,
+    "node": _CodeOptions("ep", "rC", long_code=frozenset({"--eval", "--print"}),
+                         long_values=frozenset({"--require", "--import", "--loader"}),
+                         attached=False),
+    "ruby": _CodeOptions("e", "ICrE"), "perl": _CodeOptions("eE", "I"),
+    "php": _CodeOptions("r", "cdfz"), "bash": _SHELL, "sh": _SHELL, "zsh": _SHELL,
 }
+# PowerShell's options that take a value, lowercased with their short forms.
+PS_VALUE_OPTIONS = frozenset({
+    "-executionpolicy", "-ep", "-ex", "-windowstyle", "-w", "-workingdirectory", "-wd",
+    "-outputformat", "-of", "-o", "-inputformat", "-if", "-in", "-settingsfile",
+    "-configurationname", "-version", "-v", "-psconsolefile", "-custompipename",
+})
 CHECK_WORD_RE = re.compile(
     r"(?<![a-z0-9])(?:test|tests|check|checks|validate|verify|lint|typecheck|build|ci)(?![a-z0-9])",
     re.IGNORECASE,
@@ -169,11 +198,15 @@ class ShellCommand:
     for glab), else None. `is_check` says it runs a
     test, lint, build, or check; `non_check_writes` says some simple command
     in it writes and is not itself a check (`sed -i … && pytest`, but not
-    `pytest > out.txt`). `checks_after_writes` says a check runs after the
-    command's last write, later in it and reached only through `&&`, `;`,
-    or a newline (`cp a.py src/a.py && pytest`), so it ran once that write
-    was done; not after `||`, `|`, or `&`, where it may run instead of or
-    beside the write. `prints_changes` says it prints changes'
+    `pytest > out.txt`). `unchecked_targets` are the write targets no check
+    certainly ran after, and `unchecked_unknown_writes` says some unnamed
+    write is one. A check proves the writes before it when every command
+    from the write to the check is joined by `&&`, `;`, or a newline
+    (`cp a.py src/a.py && pytest`), none of them is an `exit` or the like,
+    and neither runs inside a branch, loop, function, or group; the check
+    itself must not run in the background (`pytest &`). A check's own
+    output and anything written after it stay unchecked (`pytest | tee
+    log.txt`). `prints_changes` says it prints changes'
     content to the agent: a git diff or show, a patch log, or patches on
     stdout; a listing of names or counts (`--stat`, `--name-only`) does not.
     Only git is read; another version control system's diff is not seen.
@@ -184,7 +217,8 @@ class ShellCommand:
     __slots__ = (
         "writes", "write_targets", "unplaced_targets", "unknown_writes", "commit",
         "commit_message", "opens_pr", "pr_base", "pr_head", "is_check",
-        "non_check_writes", "checks_after_writes", "prints_changes", "installs_package",
+        "non_check_writes", "unchecked_targets", "unchecked_unknown_writes", "prints_changes",
+        "installs_package",
     )
 
     def __init__(self) -> None:
@@ -199,7 +233,8 @@ class ShellCommand:
         self.pr_head: str | None = None
         self.is_check = False
         self.non_check_writes = False
-        self.checks_after_writes = False
+        self.unchecked_targets: list[str] = []
+        self.unchecked_unknown_writes = False
         self.prints_changes = False
         self.installs_package = False
 
@@ -209,20 +244,28 @@ def analyze(command: str) -> ShellCommand:
 
     result = ShellCommand()
     directory: str | None = ""
-    after_write = False  # this segment runs after the last write, in order
+    # Writes a check may still prove: each later command so far runs after them, in order.
+    awaiting: list[str] = []
+    awaiting_unknown = False
     for segment in _segments(command):
-        directory, writes, is_check = _add_segment(result, segment, directory)
-        if writes and not is_check:
-            result.checks_after_writes = False
-            after_write = True
-        elif is_check and after_write:
-            result.checks_after_writes = True
-        if segment.after not in IN_ORDER:
-            after_write = False
+        start = len(result.write_targets)
+        directory, unknown, is_check = _add_segment(result, segment, directory)
+        if is_check and not segment.nested and segment.after in CHECK_ENDS:
+            awaiting, awaiting_unknown = [], False
+        awaiting += result.write_targets[start:]
+        awaiting_unknown = awaiting_unknown or unknown
+        if (segment.nested or segment.after not in IN_ORDER
+                or _resolve(segment.words)[0] in STOPS):
+            result.unchecked_targets += awaiting
+            result.unchecked_unknown_writes |= awaiting_unknown
+            awaiting, awaiting_unknown = [], False
         if segment.after not in AND_THEN and directory != "":
             directory = None  # What runs next runs even if a `cd` before it failed.
+    result.unchecked_targets += awaiting
+    result.unchecked_unknown_writes |= awaiting_unknown
     if DOTNET_WRITE_RE.search(command):
-        result.writes = result.unknown_writes = True
+        # Where in the command it runs is not read, so no check proves it.
+        result.writes = result.unknown_writes = result.unchecked_unknown_writes = True
     return result
 
 
@@ -230,7 +273,8 @@ def _add_segment(result: ShellCommand, segment: "_Segment",
                  directory: str | None) -> tuple[str | None, bool, bool]:
     """Add one segment's facts to `result`, its write targets taken from
     `directory` (see `_change_directory`); return the directory later
-    segments run in, whether the segment writes, and whether it is a check."""
+    segments run in, whether it writes files it does not name, and whether
+    it is a check."""
 
     targets = [t for t in segment.redirects if t.lower() not in NULL_TARGETS]
     unknown = False
@@ -295,7 +339,7 @@ def _add_segment(result: ShellCommand, segment: "_Segment",
             result.non_check_writes = True
     if unknown:
         result.unknown_writes = True
-    return next_directory, bool(targets) or unknown, is_check
+    return next_directory, unknown, is_check
 
 
 # Directory changes ---------------------------------------------------------------
@@ -321,6 +365,11 @@ AND_THEN = ("&&", "")
 # Separators after which the next command runs only once this one has finished
 # (after `&&`, only if it succeeded): a check after them ran after the write.
 IN_ORDER = ("&&", ";", "\n")
+# Separators that may end a check that proves the writes before it: any that
+# lets the check finish before the command goes on, so not `&` or a group opening.
+CHECK_ENDS = IN_ORDER + ("", "||", "|")
+# Commands after which the rest of the command may not run.
+STOPS = frozenset({"exit", "return", "exec", "logout", "break", "continue", "throw"})
 DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]")
 # Characters a shell expands, so a path holding one names no folder for certain.
 EXPANDED_CHARS = frozenset("$`%*?[{(")
@@ -391,6 +440,11 @@ def _is_absolute(path: str) -> bool:
 SHELL_KEYWORDS = frozenset(
     {"if", "then", "else", "elif", "do", "while", "until", "for", "select", "!"}
 )
+# Words that open a compound command, and the words that close one.
+COMPOUND_OPEN = frozenset({"if", "while", "until", "for", "select", "case"})
+COMPOUND_CLOSE = frozenset({"fi", "done", "esac"})
+# Separators that open a group, by the separator that closes it.
+GROUP_CLOSE = {"(": ")", "$(": ")", "{": "}"}
 
 
 class _Segment:
@@ -400,9 +454,11 @@ class _Segment:
     command's end). `chained` says it is in the command's leading `&&` chain:
     every separator before it is `&&`, and no compound command, group, or
     script block (`if`, a loop, `case`, `( )`, `{ }`, `$( )`) opened before
-    or at it."""
+    or at it. `nested` says it runs inside a compound command or group that
+    is still open (a branch, a loop or function body, a subshell), or starts
+    with a keyword (`then`, `!`), so whether and when it runs is not certain."""
 
-    __slots__ = ("words", "redirects", "out_redirects", "heredocs", "after", "chained")
+    __slots__ = ("words", "redirects", "out_redirects", "heredocs", "after", "chained", "nested")
 
     def __init__(self) -> None:
         self.words: list[str] = []
@@ -411,6 +467,7 @@ class _Segment:
         self.heredocs: list[str] = []
         self.after = ""
         self.chained = False
+        self.nested = False
 
 
 def _segments(command: str) -> list[_Segment]:
@@ -423,6 +480,7 @@ def _segments(command: str) -> list[_Segment]:
     in_test = False  # inside [[ ]], where < and > compare
     pending: list[tuple[str, bool, _Segment]] = []  # heredocs waiting for their body
     chain = True  # every separator so far is `&&`
+    open_groups: list[str] = []  # what closes each open group or compound command
     i, n = 0, len(text)
 
     def end_word() -> None:
@@ -448,12 +506,22 @@ def _segments(command: str) -> list[_Segment]:
 
         nonlocal current, in_test, chain
         end_word()
+        first = current.words[0] if current.words else ""
+        if first in COMPOUND_OPEN:
+            open_groups.append(first)
         if current.words or current.redirects or current.heredocs:
-            if current.words[:1] and current.words[0] in SHELL_KEYWORDS:
+            if first in SHELL_KEYWORDS:
                 chain = False
             current.chained = chain
+            current.nested = bool(open_groups) or first in SHELL_KEYWORDS
             current.after = after
             segments.append(current)
+        if first in COMPOUND_CLOSE and open_groups and open_groups[-1] in COMPOUND_OPEN:
+            open_groups.pop()
+        if after in GROUP_CLOSE:
+            open_groups.append(GROUP_CLOSE[after])
+        elif open_groups and after == open_groups[-1]:
+            open_groups.pop()
         if after not in AND_THEN:
             chain = False
         current = _Segment()
@@ -860,8 +928,12 @@ def _is_check(name: str, original: str, args: list[str]) -> bool:
                                      "--package", "--project", "--directory", "-e", "--env"})
         return bool(rest) and _is_check(_bare(rest[0]), rest[0], rest[1:])
     if name in INTERPRETERS:
-        if _runs_inline_code(name, args):
-            return False  # Ad-hoc code can do anything; it is not a check.
+        code = _inline_code(name, args)
+        if code is not None:
+            # A shell's inline command line is read as one; other ad-hoc code
+            # can do anything, so it is not a check.
+            is_shell = name in ("pwsh", "powershell") or INLINE_CODE[name].shell
+            return is_shell and analyze(code).is_check
         if "-m" in args:
             index = args.index("-m")
             return index + 1 < len(args) and args[index + 1] in CHECK_MODULES
@@ -875,18 +947,62 @@ def _is_check(name: str, original: str, args: list[str]) -> bool:
     return False
 
 
-def _runs_inline_code(name: str, args: list[str]) -> bool:
-    """True when interpreter `name` is given its code inline. Only its own
-    options count, those before a module or script (`python -m pytest -c
-    setup.cfg` runs pytest)."""
+def _inline_code(name: str, args: list[str]) -> str | None:
+    """The code interpreter `name` is given inline, or None when it runs a
+    script, a module, or nothing. Only its own options are read, those
+    before a module or script (`python -m pytest -c setup.cfg` runs pytest),
+    with combined short options (`-Bc`) and options that take a value."""
 
-    flags = INLINE_CODE_FLAGS.get(name, set())
-    for arg in args:
-        if arg in flags:
-            return True
-        if arg == "-m" or not arg.startswith("-"):
-            return False
-    return False
+    if name in ("pwsh", "powershell"):
+        return _powershell_code(args)
+    options = INLINE_CODE.get(name)
+    if options is None:
+        return None
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in ("-", "--") or not arg.startswith("-"):
+            return None
+        if arg.startswith("--"):
+            key, has_value, value = arg.partition("=")
+            if key in options.long_code:
+                return value if has_value else _word_at(args, i + 1)
+            i += 2 if key in options.long_values and not has_value else 1
+            continue
+        for j, letter in enumerate(arg[1:], 2):
+            rest = arg[j:]
+            if letter in options.code:
+                return rest if rest and options.attached else _word_at(args, i + 1)
+            if letter in options.module:
+                return None
+            if letter in options.values:
+                i += 0 if rest else 1  # an attached value, or the next word
+                break
+        i += 1
+    return None
+
+
+def _powershell_code(args: list[str]) -> str | None:
+    """The command line `pwsh -Command` runs (its remaining words), "" for an
+    -EncodedCommand, which cannot be read, or None for a script file."""
+
+    i = 0
+    while i < len(args):
+        arg = args[i].lower()
+        if not arg.startswith("-"):
+            return None  # the script file, PowerShell's first positional
+        if arg == "-c" or (len(arg) >= 4 and "-command".startswith(arg)):
+            return " ".join(args[i + 1 :])
+        if arg in ("-e", "-ec") or (len(arg) >= 3 and "-encodedcommand".startswith(arg)):
+            return ""
+        if arg in ("-f", "-file"):
+            return None
+        i += 2 if arg in PS_VALUE_OPTIONS else 1
+    return None
+
+
+def _word_at(words: list[str], index: int) -> str:
+    return words[index] if index < len(words) else ""
 
 
 def _is_check_script(path: str) -> bool:
