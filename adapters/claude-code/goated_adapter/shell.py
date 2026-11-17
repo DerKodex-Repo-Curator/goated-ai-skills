@@ -305,8 +305,8 @@ def _runs_dotnet_write(segments: list["_Segment"], index: int) -> bool:
     """True when segment `index` of `segments` may run a `.NET` file write,
     such as `[IO.File]::WriteAllText(...)`, which names its file only in code.
 
-    Text a program in `NO_POWERSHELL` is given is data, such as a
-    `python -c` string or a heredoc fed to `cat`, unless it can still run
+    Text a program in `NO_POWERSHELL` is given is data, such as text `echo`
+    prints or a heredoc fed to `cat`, unless it can still run
     code here (`$(`, a backtick, outside a quoted-delimiter heredoc), the
     segment pipes into a program outside `NO_POWERSHELL`, or it or a program
     it pipes into writes a PowerShell script file. Text anywhere else
