@@ -146,9 +146,13 @@ class Call:
     `agent_id` is the subagent a spawn started, from the result's
     `toolUseResult.agentId`, else None. `output` is the result's text, and
     `tool_id` the call's `tool_use_id`, "" when the transcript gives none.
+    `launched_async` is True for a spawn whose result only says the agent
+    started in the background (`status: async_launched` or `isAsync`): its
+    work is done only once `Turn.finished_agents` names it.
     """
 
-    __slots__ = ("name", "input", "ok", "held", "agent_id", "output", "tool_id")
+    __slots__ = ("name", "input", "ok", "held", "agent_id", "output", "tool_id",
+                 "launched_async")
 
     def __init__(
         self,
@@ -159,6 +163,7 @@ class Call:
         held: bool = False,
         output: str = "",
         tool_id: str = "",
+        launched_async: bool = False,
     ) -> None:
         self.name = name
         self.input = tool_input
@@ -167,6 +172,7 @@ class Call:
         self.agent_id = agent_id
         self.output = output
         self.tool_id = tool_id
+        self.launched_async = launched_async
 
 
 class Turn:
@@ -189,6 +195,8 @@ class Turn:
     turn exists. `brief_route` is the route line of the brief that opened the
     session, set only on the session's first turn when another session
     started it (see `_brief_route`); it is also the turn's first route line.
+    `finished_agents` are the ids of background agents whose completion
+    arrived in the turn (see `_finished_agents`).
     """
 
     __slots__ = (
@@ -196,6 +204,7 @@ class Turn:
         "route", "routes", "malformed", "skips", "calls", "prompt_ids",
         "opens_transcript", "design_reads", "malformed_design_reads", "call_ids",
         "unfinished", "texts", "call_texts", "brief_route", "_brief_candidate",
+        "finished_agents",
     )
 
     def __init__(self, key: str) -> None:
@@ -218,6 +227,7 @@ class Turn:
         self.texts: list[str] = []
         self.call_texts: list[str] = []
         self.brief_route: dict | None = None
+        self.finished_agents: set[str] = set()
         # The opener's brief route, until reading shows this turn is the first.
         self._brief_candidate: dict | None = None
 
@@ -491,6 +501,8 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
     skill_calls: dict[str, str] = {}
     pending: dict[str, tuple[str, dict]] = {}
     for entry in entries[1:] if opener is not None else entries:
+        if bool(entry.get("isSidechain")) == sidechain:
+            turn.finished_agents |= _finished_agents(entry)
         content = (entry.get("message") or {}).get("content")
         if not isinstance(content, list) or bool(entry.get("isSidechain")) != sidechain:
             continue
@@ -527,7 +539,8 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                 finished = pending.pop(finished_id, None)
                 if finished is not None:
                     result = entry.get("toolUseResult")
-                    agent = result.get("agentId") if isinstance(result, dict) else None
+                    result = result if isinstance(result, dict) else {}
+                    agent = result.get("agentId")
                     text = _result_text(block)
                     turn.calls.append(Call(
                         *finished,
@@ -536,6 +549,8 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                         held=bool(block.get("is_error")) and bool(HOLD_RESULT_RE.match(text)),
                         output=text,
                         tool_id=finished_id,
+                        launched_async=(result.get("status") == "async_launched"
+                                        or result.get("isAsync") is True),
                     ))
                 if (
                     block.get("tool_use_id") in skill_calls
@@ -545,6 +560,34 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                     turn.loads.append(skill)
     turn.unfinished = list(pending.values())
     return turn
+
+
+# A background agent's completion, in the two shapes Claude Code 2.1.3xx
+# records: a `<task-notification>` whose task id is the agent's id, with a
+# `completed` status, and a subagent's `<agent-message from="<id>">` hand-back.
+# Each arrives as a user entry or as a `queued_command` attachment.
+FINISHED_TASK_RE = re.compile(
+    r"<task-notification>\s*<task-id>([^<\s]+)</task-id>(?:(?!</task-notification>).)*?"
+    r"<status>completed</status>", re.DOTALL)
+HAND_BACK_RE = re.compile(r'<agent-message from="([^"\s]+)">')
+
+
+def _finished_agents(entry: dict) -> set[str]:
+    """The ids of the background agents whose completion this entry carries."""
+
+    attachment = entry.get("attachment")
+    if isinstance(attachment, dict):
+        text = attachment.get("prompt") if attachment.get("type") == "queued_command" else None
+    elif entry.get("type") == "user":
+        content = (entry.get("message") or {}).get("content")
+        text = content if isinstance(content, str) else " ".join(
+            str(b.get("text", "")) for b in content or ()
+            if isinstance(b, dict) and b.get("type") == "text")
+    else:
+        text = None
+    if not isinstance(text, str) or "<" not in text:
+        return set()
+    return set(FINISHED_TASK_RE.findall(text)) | set(HAND_BACK_RE.findall(text))
 
 
 def _brief_route(opener: dict) -> dict | None:

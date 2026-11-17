@@ -50,6 +50,7 @@ from typing import NamedTuple
 import re
 import subprocess
 import time
+from stat import S_ISLNK, S_ISREG
 
 from . import contracts, design_reads, shell
 from .gates import (
@@ -585,25 +586,40 @@ def changed_lines(cwd: str | None, base: str | None, head: str | _WorkingTree | 
     if base_ref is None or head_ref is None:
         return None
     if working_tree:
-        return _branch_work_lines(cwd, base_ref, targets[base_ref] or base_ref, deadline)
+        # Where a base branch is both local and on `origin`, the branch left
+        # whichever is closer to it: work merged locally and not yet pushed
+        # leaves `origin/<base>` behind (spec R1).
+        name = _branch_name(targets[base_ref] or base_ref)
+        bases = dict.fromkeys(
+            [base_ref] + [ref for ref in (f"refs/remotes/origin/{name}", f"refs/heads/{name}")
+                          if ref in targets])
+        return _branch_work_lines(cwd, list(bases), name, deadline)
     stat = _git(["diff", "--shortstat", "--no-ext-diff", "--no-textconv",
                  f"{base_ref}...{head_ref}", "--"], cwd, deadline)
     return None if stat is None else _shortstat_lines(stat)
 
 
-def _branch_work_lines(cwd: str, base_ref: str, base_branch: str, deadline: float) -> int | None:
-    """`changed_lines` with the working tree as its head, once `base_ref` is
-    found; `base_branch` is the full ref name `base_ref` stands for."""
+def _branch_name(ref: str) -> str:
+    """A local or `origin` branch's name, from its full ref name."""
 
-    def name(ref: str) -> str:
-        return ref.strip().removeprefix("refs/heads/").removeprefix("refs/remotes/origin/")
+    return ref.strip().removeprefix("refs/heads/").removeprefix("refs/remotes/origin/")
+
+
+def _branch_work_lines(cwd: str, base_refs: list[str], base_branch: str,
+                       deadline: float) -> int | None:
+    """`changed_lines` with the working tree as its head, once the base is
+    found: `base_refs` are the existing refs of the base branch, named
+    `base_branch`, and the branch is measured from the fork point closest
+    to it among them."""
 
     branch = _git(["rev-parse", "--symbolic-full-name", "HEAD"], cwd, deadline)
     if branch is None or not branch.startswith("refs/heads/"):
         return None  # Detached, or on a branch with no commit yet.
-    if name(branch) == name(base_branch):
+    if _branch_name(branch) == base_branch:
         return None  # On the base branch: nothing to compare it with.
-    fork = _git(["merge-base", base_ref, "HEAD"], cwd, deadline)
+    # With several bases, git gives the best common ancestor of HEAD and any of
+    # them: the fork point no other one descends from, the closest to HEAD.
+    fork = _git(["merge-base", "HEAD", *base_refs], cwd, deadline)
     if fork is None:
         return None
     stat = _git(["diff", "--shortstat", "--no-ext-diff", "--no-textconv", fork.strip(), "--"],
@@ -624,12 +640,18 @@ def _branch_work_lines(cwd: str, base_ref: str, base_branch: str, deadline: floa
 
 def _text_lines(path: str, deadline: float) -> int | None:
     """The lines in the file at `path`, as `git diff` would count them added:
-    0 for a binary file (one holding a NUL byte) or one that cannot be read.
-    None when `deadline` passes first; it is checked between reads, so a huge
-    file cannot hold the hook past it."""
+    1 for a symbolic link, whose target is never read, and 0 for a binary
+    file (one holding a NUL byte), anything else that is not a regular file,
+    or one that cannot be read. None when `deadline` passes first; it is
+    checked between reads, so a huge file cannot hold the hook past it."""
 
     lines, last = 0, b"\n"
     try:
+        mode = os.lstat(path).st_mode
+        if S_ISLNK(mode):
+            return 1  # git records a link as one line: its target's path.
+        if not S_ISREG(mode):
+            return 0
         with open(path, "rb") as text:
             while chunk := text.read(UNTRACKED_READ_BYTES):
                 if time.monotonic() > deadline:
@@ -1267,9 +1289,10 @@ def _review_item(changes: "_Changes", proof: _Proof, spawn_templates: dict[str, 
                  branch_size: Callable[[], int | None]) -> list[str]:
     """The Review item for a turn that changed code (spec R1), or [] when the
     branch's work is not large, cannot be measured, or the item is met: by a
-    reviewer subagent that finished after the last code change, by the skill
-    loaded and a change read after both the load and that change, or by a
-    skip line. `branch_size` runs only when nothing else met it."""
+    reviewer subagent started after the last code change that has finished
+    (one started in the background once its completion arrived in the turn),
+    by the skill loaded and a change read after both the load and that
+    change, or by a skip line. `branch_size` runs only when nothing else met it."""
 
     if proof.skipped(REVIEW_SKILL):
         return []
@@ -1277,6 +1300,7 @@ def _review_item(changes: "_Changes", proof: _Proof, spawn_templates: dict[str, 
     if any(
         index > last and call.ok and call.name in SPAWN_BRIEF_FIELDS
         and contracts.REVIEWER_TEMPLATE.reference in spawn_templates.get(call.tool_id, ())
+        and (not call.launched_async or call.agent_id in proof.turn.finished_agents)
         for index, call in enumerate(proof.turn.calls)
     ):
         return []

@@ -359,11 +359,16 @@ same base the `pr-review` gate finds without a `--base` (the first that
 exists of `origin/HEAD`, `origin/main`, `origin/master`, `main`, and
 `master`). That counts the branch's commits since it left the base, staged
 and unstaged changes, and every line of each untracked file git does not
-ignore; a binary file counts no lines, as in `git diff`:
+ignore; a binary file counts no lines and a symbolic link one, as in
+`git diff`, and a link's target is never read. Where the base branch exists
+both locally and on `origin`, the branch is measured from the fork point
+closer to it, so work merged into a local `main` and not yet pushed does not
+count toward the next branch: local merges prefer the local base. The
+`pr-review` gate keeps measuring from `origin/<base>` first.
 
 ```text
 git rev-parse --symbolic-full-name HEAD
-git merge-base <base> HEAD
+git merge-base HEAD <base> [<the same branch's other ref>]
 git diff --shortstat --no-ext-diff --no-textconv <merge-base> --
 git ls-files --others --exclude-standard -z -- :/
 ```
@@ -372,8 +377,16 @@ The size is asked for only in a turn that changed code (or a sensitive file,
 for Verification), and only when nothing else has met the item. Because the
 branch is measured, not the commit, a large ticket split across commits is
 still caught: two 300-line commits raise the Review item at the second. It
-also means every later commit on a large branch raises the item again, until
-a review in that turn meets it or a skip line declines it.
+also means every later turn on a large branch that changes code, at its
+commit or at its `Stop`, raises the item again, until a review in that turn
+meets it or a skip line declines it.
+
+Two cases are not measured. A commit in a turn that changed no code, such as
+a later turn that only commits earlier work, meets no Review or Verification
+item, since both follow the turn's own code change. And git runs in the
+hook's working folder, so a commit made elsewhere, with `git -C <dir>` or
+after a `cd`, is measured as the hook's folder's branch, or not at all when
+that folder is no checkout.
 
 Nothing counts as large when the size cannot be measured: on the base branch
 itself, with a detached `HEAD`, with no base found, in a folder that is not a
@@ -382,13 +395,18 @@ items are unchanged then.
 
 #### Reviewer subagents
 
-A reviewer subagent is a spawn the `spawn` gate let through whose brief
-follows `subagent-driven-development`'s reviewer prompt
+A reviewer subagent is a finished spawn the `spawn` gate let through whose
+brief follows `subagent-driven-development`'s reviewer prompt
 (`references/reviewer-prompt.md`, read, with its `Review Mode`,
 `Review Inputs`, and `Required Report Format` headings). The gate records
 which templates each spawn's brief followed, by the call's id, in the
 session's [state](#state); a spawn that finished after the turn's last code
 change, and whose brief followed the reviewer prompt, meets the Review item.
+A spawn started in the background (its result says `async_launched`) has
+finished only once its completion arrives later in the turn: a
+`<task-notification>` naming the agent's id with a `completed` status, or the
+agent's `<agent-message from="<id>">` hand-back, as a prompt or a queued
+command.
 A subagent briefed any other way, from `handoff`'s spawn brief or the
 implementer prompt, is not a review, and the item's text says to use the
 reviewer prompt. Whether the review was any good is not judged.
@@ -1264,9 +1282,10 @@ of the call's prompt, which is normally already there.
   hold, never a pass. The turn marker that shares the full unseen-line advice
   is claimed atomically, apart from the state file, so this race never
   repeats that advice.
-- A [reviewer subagent](#reviewer-subagents) counts as finished when its
-  spawn call has a result. A subagent started in the background returns at
-  once, so it meets the Review item before its review is done.
+- The Verification item's sensitive-file trigger uses the `security` gate's
+  paths, so any change to one, such as an edit of a lockfile or a `.env`
+  value, asks for `verification-before-completion` too; its skip line
+  answers it.
 - The [large-branch](#large-branches) measure counts every untracked file
   git does not ignore, so an unignored build or dependency folder makes a
   small branch large; its skip line, or a `.gitignore` entry, answers that.

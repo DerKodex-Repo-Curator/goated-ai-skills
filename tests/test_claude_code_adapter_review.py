@@ -7,6 +7,7 @@ files a turn writes are written to disk as well as recorded as tool calls.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import tempfile
 import unittest
@@ -206,6 +207,53 @@ class ReviewItemSizeTests(ReviewTestCase):
         git_branch_with_change(feature.project, 10)
         self.assertIn("- Review:", items(feature))
 
+    def test_a_stale_remote_base_measures_from_the_local_base_fork_point(self) -> None:
+        # Lead review M1: local main is 500 lines ahead of origin/main, merged locally.
+        for ticket_lines, large in ((10, False), (400, True)):
+            with self.subTest(ticket_lines=ticket_lines):
+                s = self.session()
+                git_branch_with_change(s.project, 0, remote_head=True, stay_on_base=True)
+                (s.project / "merged.txt").write_text(lines(500), encoding="utf-8")
+                git(s.project, "add", "merged.txt")
+                git(s.project, "commit", "-q", "-m", "Earlier ticket, merged locally")
+                git(s.project, "checkout", "-q", "-b", "ticket")
+                self.write(s, "src/export.py", ticket_lines)
+                self.meet_the_rest(s)
+
+                self.assertEqual("- Review:" in reason(commit_call(s)), large)
+
+    def test_a_detached_head_is_not_measured(self) -> None:
+        for detached in (True, False):
+            with self.subTest(detached=detached):
+                s = self.session()
+                git_branch_with_change(s.project, 450)
+                if detached:
+                    git(s.project, "checkout", "-q", "--detach")
+                self.write(s, "src/export.py", 6)
+                s.run("pytest -q")
+                self.assertEqual("- Review:" in stop(s)["reason"], not detached)
+
+    def test_an_untracked_symlink_counts_one_line_not_its_target(self) -> None:
+        outside = self.root / "outside.txt"
+        outside.write_text(lines(500), encoding="utf-8")
+        for linked, large in ((True, False), (False, True)):
+            with self.subTest(linked=linked):
+                s = self.session()
+                self.branch(s, 390)
+                self.write(s, "src/export.py", 5)
+                if linked:
+                    try:
+                        os.symlink(outside, s.project / "data.txt")
+                    except (OSError, NotImplementedError):
+                        self.skipTest("this system cannot create symbolic links")
+                else:
+                    (s.project / "data.txt").write_text(lines(500), encoding="utf-8")
+                self.meet_the_rest(s)
+                held = reason(commit_call(s))
+                # Python 3.11's rmtree on Windows cannot clear a folder holding a file link.
+                (s.project / "data.txt").unlink()
+                self.assertEqual("- Review:" in held, large)
+
     def test_the_pr_review_gate_measures_only_committed_work_as_before(self) -> None:
         for committed, held in ((399, False), (400, True)):
             with self.subTest(committed=committed):
@@ -256,6 +304,55 @@ class ReviewItemMetTests(ReviewTestCase):
         s.run("git diff")
 
         self.assertIn("- Review:", reason(commit_call(s)))
+
+    def launch_in_background(self, s: Session, agent_id: str) -> str:
+        """Start a reviewer in the background: its result says only that it launched."""
+
+        s.load("subagent-driven-development")
+        s.read(REVIEWER_PROMPT)
+        agent = s.subagent(agent_id)
+        agent.prompt("Review the branch.", hook=False)
+        tool_use_id, output = s._judge("Agent", {"prompt": REVIEWER_BRIEF, "run_in_background": True})
+        self.assertEqual(decision(output), "pass")
+        s._tool_result(tool_use_id, "Async agent launched successfully.", extra={
+            "toolUseResult": {"isAsync": True, "status": "async_launched", "agentId": agent_id}})
+        return tool_use_id
+
+    @staticmethod
+    def notification(agent_id: str, tool_use_id: str, status: str = "completed") -> str:
+        return (f"<task-notification>\n<task-id>{agent_id}</task-id>\n<tool-use-id>{tool_use_id}"
+                f"</tool-use-id>\n<status>{status}</status>\n<summary>Review done.</summary>\n"
+                "</task-notification>")
+
+    def test_a_background_reviewer_counts_only_once_its_completion_arrives(self) -> None:
+        # Lead review M2: both recorded shapes of the completion, and near misses.
+        def as_prompt(s: Session, text: str) -> None:
+            s.prompt(text, hook=False, new_prompt_id=False,
+                     origin={"kind": "task-notification"}, turnOrigin="task_notification")
+
+        def as_attachment(s: Session, text: str) -> None:
+            s._append({"type": "attachment",
+                       "attachment": {"type": "queued_command", "prompt": text}})
+
+        for deliver in (as_prompt, as_attachment):
+            with self.subTest(deliver=deliver.__name__):
+                s = self.large()
+                tool_use_id = self.launch_in_background(s, "bg1")
+                self.assertIn("- Review:", reason(commit_call(s)))
+                deliver(s, self.notification("other9", tool_use_id))
+                self.assertIn("- Review:", reason(commit_call(s)))
+                deliver(s, self.notification("bg1", tool_use_id, status="failed"))
+                self.assertIn("- Review:", reason(commit_call(s)))
+                deliver(s, self.notification("bg1", tool_use_id))
+                self.assertEqual(decision(commit_call(s)), "pass")
+
+    def test_a_background_reviewers_hand_back_counts_as_its_completion(self) -> None:
+        s = self.large()
+        self.launch_in_background(s, "bg2")
+        s._append({"type": "attachment", "attachment": {
+            "type": "queued_command",
+            "prompt": '<agent-message from="bg2">\n[Subagent hand-back] The report follows:\n  No findings.'}})
+        self.assertEqual(decision(commit_call(s)), "pass")
 
     def test_a_subagent_briefed_from_the_handoff_template_does_not(self) -> None:
         s = self.large()
