@@ -92,4 +92,6 @@ Keep the brief short enough that the agent reads all of it before acting.
 ## After Sending
 
 Treat the report as evidence to inspect, not a finished claim. Check changed
-paths or reproduce important results before relying on them.
+paths or reproduce important results before relying on them. For a session
+started from the brief, that inspection of the report and the changed paths is
+the starting session's review of the work.

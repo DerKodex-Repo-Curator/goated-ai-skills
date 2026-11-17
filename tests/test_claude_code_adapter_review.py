@@ -135,7 +135,7 @@ class ReviewItemSizeTests(ReviewTestCase):
                 if large:
                     self.assertEqual(reason(held).split("\n", 1)[0], CLOSEOUT_HOLD)
                     self.assertIn("- Review:", reason(held))
-                    self.assertIn("400 lines", reason(held))
+                    self.assertIn("400 changed lines of non-test code", reason(held))
                     self.assertIn("- Review:", stop(s)["reason"])
                 else:
                     self.assertEqual(decision(held), "pass")
@@ -148,7 +148,7 @@ class ReviewItemSizeTests(ReviewTestCase):
                 self.branch(s, 390)
                 self.write(s, "src/export.py", 5)
                 git(s.project, "add", "src/export.py")  # Staged.
-                with (s.project / "change.txt").open("a", encoding="utf-8") as handle:
+                with (s.project / "src" / "change.py").open("a", encoding="utf-8") as handle:
                     handle.write(lines(appended, "more"))  # Unstaged.
                 self.meet_the_rest(s)
 
@@ -184,7 +184,7 @@ class ReviewItemSizeTests(ReviewTestCase):
         self.meet_the_rest(s)
         held = commit_call(s)
         self.assertIn("- Review:", reason(held))
-        self.assertIn("600 lines", reason(held))
+        self.assertIn("600 changed lines of non-test code", reason(held))
 
     def test_on_the_base_branch_or_unmeasurable_no_review_and_the_rest_unchanged(self) -> None:
         def items(s: Session) -> str:
@@ -243,15 +243,15 @@ class ReviewItemSizeTests(ReviewTestCase):
                 self.write(s, "src/export.py", 5)
                 if linked:
                     try:
-                        os.symlink(outside, s.project / "data.txt")
+                        os.symlink(outside, s.project / "data.py")
                     except (OSError, NotImplementedError):
                         self.skipTest("this system cannot create symbolic links")
                 else:
-                    (s.project / "data.txt").write_text(lines(500), encoding="utf-8")
+                    (s.project / "data.py").write_text(lines(500), encoding="utf-8")
                 self.meet_the_rest(s)
                 held = reason(commit_call(s))
                 # Python 3.11's rmtree on Windows cannot clear a folder holding a file link.
-                (s.project / "data.txt").unlink()
+                (s.project / "data.py").unlink()
                 self.assertEqual("- Review:" in held, large)
 
     def test_the_pr_review_gate_measures_only_committed_work_as_before(self) -> None:
@@ -265,6 +265,64 @@ class ReviewItemSizeTests(ReviewTestCase):
 
                 output = s.call("Bash", OPEN_PR)
                 self.assertEqual(reason(output).startswith("goated-hold: pr-review"), held)
+
+
+class CodeOnlySizeTests(ReviewTestCase):
+    """"Large" counts changed lines in code files outside test paths only (spec R11)."""
+
+    def commit_on_branch(self, s: Session, files: dict[str, int]) -> None:
+        """Commit `files` (path: line count) on branch `feature`, off `main`."""
+
+        git_branch_with_change(s.project, 0)
+        for path, count in files.items():
+            target = s.project / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(lines(count), encoding="utf-8")
+        git(s.project, "add", "-A")
+        git(s.project, "commit", "-q", "-m", "Work")
+
+    MIXED = {"tests/test_export.py": 200, "src/export_test.go": 100,
+             "tests/fixtures/rows.json": 100, "docs/export.md": 100}
+
+    def test_test_fixture_and_doc_lines_do_not_make_a_branch_large(self) -> None:
+        for code, large in ((294, False), (394, True)):
+            with self.subTest(code=code + 6):
+                s = self.session()
+                self.commit_on_branch(s, {"src/export.py": code, **self.MIXED})
+                self.write(s, "src/more.py", 6)
+                s.run("pytest -q")
+                s.say(DOC_SKIP)
+                held = stop(s).get("reason", "")
+                self.assertEqual("- Review:" in held, large)
+                self.assertEqual("- Verification:" in held, large)
+                if large:
+                    self.assertIn("- Review: this branch's work is 400 changed lines of non-test code", held)
+                    self.assertIn("- Verification: this branch's work is 400 changed lines of non-test code", held)
+
+    def test_pr_review_counts_only_non_test_code(self) -> None:
+        for code, held in ((300, False), (400, True)):
+            with self.subTest(code=code):
+                s = self.session()
+                self.commit_on_branch(s, {"src/export.py": code, **self.MIXED})
+                s.load("pr-description")
+                s.run("git diff main...HEAD")
+
+                output = s.call("Bash", OPEN_PR)
+                self.assertEqual(reason(output).startswith("goated-hold: pr-review"), held)
+                if held:
+                    self.assertIn("has 400 changed lines of non-test code against its base", reason(output))
+
+    def test_an_untracked_non_code_folder_adds_nothing(self) -> None:
+        for name, large in (("notes.md", False), ("gen.py", True)):
+            with self.subTest(name=name):
+                s = self.session()
+                self.commit_on_branch(s, {"src/export.py": 300})
+                self.write(s, "src/more.py", 6)
+                (s.project / "scratch").mkdir()
+                (s.project / "scratch" / name).write_text(lines(200), encoding="utf-8")
+                s.run("pytest -q")
+                s.say(DOC_SKIP)
+                self.assertEqual("- Review:" in stop(s).get("reason", ""), large)
 
 
 class ReviewItemMetTests(ReviewTestCase):
@@ -393,6 +451,73 @@ class ReviewItemMetTests(ReviewTestCase):
         self.assertEqual(decision(commit_call(s)), "pass")
 
 
+class BriefedSessionReviewTests(ReviewTestCase):
+    """A session started from a brief meets no Review item (spec R10): the
+    session that started it reviews the work."""
+
+    BRIEF_PROMPT = (
+        "<system-reminder>\nLinked sessions now: none.\n</system-reminder>\n"
+        "Background (from the session that started this one):\nThe exporter work.\n\n"
+        "## Task\n\nAdd CSV export.\n\n{route}\n"
+    )
+
+    def briefed(self, route: str = "goated-route: direct") -> Session:
+        self._sessions += 1
+        folder = self.root / f"s{self._sessions}"
+        folder.mkdir()
+        s = Session(folder, session_id=f"session-{self._sessions}")
+        s.hook("SessionStart", source="startup")
+        s.prompt(self.BRIEF_PROMPT.format(route=route), origin=None,
+                 turnOrigin="host_synthetic", promptSource="sdk")
+        return s
+
+    def large_turn(self, s: Session, path: str = "src/export.py") -> str:
+        """Write 600 code lines, meet every item but Review and Verification,
+        and return the closeout's items."""
+
+        self.write(s, path, 600)
+        s.run("pytest -q")
+        s.say(DOC_SKIP)
+        held = stop(s)["reason"]
+        self.assertIn("- Verification: this branch's work is", held)  # Measured as large.
+        return held
+
+    def test_a_briefed_session_meets_no_review_item_in_any_turn(self) -> None:
+        s = self.briefed()
+        self.branch(s, 0)
+        self.assertNotIn("- Review:", self.large_turn(s))
+
+        self.turn(s)  # A typed prompt ends the brief's route, not the briefing.
+        self.assertNotIn("- Review:", self.large_turn(s, "src/second.py"))
+
+        s.compact()
+        self.turn(s)
+        self.assertNotIn("- Review:", self.large_turn(s, "src/third.py"))
+
+    def test_a_brief_with_no_route_line_still_meets_it(self) -> None:
+        # Only a brief the adapter recognizes, by its route line, marks the session.
+        s = self.briefed(route="")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        self.branch(s, 0)
+        self.assertIn("- Review:", self.large_turn(s))
+
+    def test_the_same_branch_in_a_typed_session_meets_it(self) -> None:
+        s = self.session()
+        self.branch(s, 0)
+        self.assertIn("- Review:", self.large_turn(s))
+
+    def test_a_briefed_full_route_still_meets_verification(self) -> None:
+        s = self.briefed("goated-route: full | requires: tdd")
+        s.load("tdd")
+        self.write(s, "src/export.py", 6)
+        s.run("pytest -q")
+        s.say(DOC_SKIP)
+        held = stop(s)["reason"]
+        self.assertIn("- Verification:", held)
+        self.assertNotIn("- Review:", held)
+
+
 class VerificationItemTests(ReviewTestCase):
     """Outside a git checkout, so the branch's size is unknown: each other trigger alone."""
 
@@ -481,7 +606,8 @@ class PortableStatementTests(unittest.TestCase):
 
     def test_the_review_skill_states_the_threshold_and_what_is_measured(self) -> None:
         text = self.text(REVIEW)
-        for words in ("400 or more changed lines", "untracked", "reviewer prompt"):
+        for words in ("400 or more changed lines in code files outside test paths", "untracked",
+                      "docs, fixtures, configuration, and tests add nothing", "reviewer prompt"):
             self.assertIn(words, text)
 
     def test_the_verification_skill_states_its_four_triggers(self) -> None:

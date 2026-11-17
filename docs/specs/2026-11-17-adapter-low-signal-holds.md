@@ -160,7 +160,7 @@ These are the confirmed low-signal triggers:
   reads it from there; `software-design-principles` and `tdd` state it in
   their "read when" text. `mocking-and-seams.md` keeps its pattern signal.
 - **R10, review in a briefed session.** A session whose first prompt was a
-  brief meets no Review item, for the whole session, typed prompts and
+  brief with a route line meets no Review item, for the whole session, typed prompts and
   compactions included. The spawn-brief template already says the starting
   session inspects the report and the changed paths; it gains one sentence
   saying that this is the review. Verification is unchanged.

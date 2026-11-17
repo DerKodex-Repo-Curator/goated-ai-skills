@@ -19,7 +19,9 @@ or propose safe replay automation.
 
 Scribe is project-first. Include a user-, machine-, or external-service change
 only when the project depends on it. It does not passively monitor activity or
-maintain a personal computer journal.
+maintain a personal computer journal. A package installed in a scratch folder
+outside the project is not project setup; a global or machine install, such as
+`uv tool install` or `brew install`, is, when the project depends on the tool.
 
 ## Inputs
 

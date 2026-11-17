@@ -217,8 +217,15 @@ class ShellCommand:
     inline names (`python -c`, `node -e`, a heredoc on `python -`; see
     `_inline_script`), and `script_unknown_writes` says such code writes a
     file it names only at run time; both are also in the facts above.
-    `installs_package` says it installs or adds a dependency or tool it names
-    (`uv add httpx`), not a bare restore such as `npm install`.
+    A package install is one that installs or adds a dependency or tool it
+    names (`uv add httpx`), not a bare restore such as `npm install`.
+    `installs_globally` says it runs a global, machine, or per-user install
+    (`GLOBAL_INSTALLS`, `GLOBAL_OPTIONS`, or any install under `sudo`), which
+    counts for the Setup item wherever it runs; `install_folders` holds the
+    folder each other install goes into: the one a folder option names
+    (`FOLDER_OPTIONS`), else the one it runs in, "" for the command's
+    starting folder, a path after a followed `cd`, or None when that cannot
+    be named (spec R14).
     `read_only` says every simple command in it is a plain read (see
     `READ_ONLY_COMMANDS`), perhaps after a leading `cd` to a plain path,
     joined only by pipes or list separators, with no wrapper, redirect into
@@ -237,8 +244,8 @@ class ShellCommand:
         "writes", "write_targets", "unplaced_targets", "unknown_writes", "commit",
         "commit_message", "opens_pr", "pr_base", "pr_head", "is_check",
         "non_check_writes", "unchecked_targets", "unchecked_unknown_writes", "prints_changes",
-        "installs_package", "read_only", "only_reads_and_writes_files", "script_targets",
-        "script_unknown_writes",
+        "installs_globally", "install_folders", "read_only", "only_reads_and_writes_files",
+        "script_targets", "script_unknown_writes",
     )
 
     def __init__(self) -> None:
@@ -256,7 +263,8 @@ class ShellCommand:
         self.unchecked_targets: list[str] = []
         self.unchecked_unknown_writes = False
         self.prints_changes = False
-        self.installs_package = False
+        self.installs_globally = False
+        self.install_folders: list[str | None] = []
         self.read_only = False
         self.script_targets: list[str] = []
         self.script_unknown_writes = False
@@ -442,8 +450,12 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
     is_check = _is_check(name, original, args)
     if is_check:
         result.is_check = True
-    if _installs_package(name, args):
-        result.installs_package = True
+    wrappers = segment.words[: len(segment.words) - len(args) - 1]
+    install = _package_install(name, args, elevated=any(_bare(w) == "sudo" for w in wrappers))
+    if install and install.is_global:
+        result.installs_globally = True
+    elif install:
+        result.install_folders.append(_install_folder(directory, install.folder))
     for target, from_script in [(t, False) for t in targets] + [(t, True) for t in scripted]:
         if not target:
             continue
@@ -891,6 +903,19 @@ def _from_directory(directory: str | None, path: str) -> str:
     if not directory or _is_absolute(path):
         return path
     return directory.rstrip("/\\") + "/" + path
+
+
+def _install_folder(directory: str | None, folder: str | None) -> str | None:
+    """Where a project install goes, for `install_folders`: the folder a
+    folder option names, seen from `directory`, else `directory` itself.
+    None when that cannot be named: an option value the shell expands, or a
+    relative one written from an unknown directory."""
+
+    if folder is None:
+        return directory
+    if not _plain(folder) or (directory is None and not _is_absolute(folder)):
+        return None
+    return _from_directory(directory, folder)
 
 
 def _is_absolute(path: str) -> bool:
@@ -1724,18 +1749,69 @@ PACKAGE_MANAGERS: dict[str, tuple[tuple[tuple[str, ...], ...], frozenset[str]]] 
 LOCAL_PATH_RE = re.compile(r"^(?:[.~/\\]|[A-Za-z]:[\\/])")
 
 
-def _installs_package(name: str, args: list[str]) -> bool:
-    """True when the command installs or adds a package it names, so a bare
-    restore (`npm install`, `pip install -r requirements.txt`) is not one. A
-    local path (`.`, `../lib`, `C:/pkg`) is not a package; a URL is."""
+# Installs that put a tool on the machine, not in a project, so they count
+# for the Setup item wherever they run (spec R14), by command word: the
+# subcommands that do, or None for every install the command makes.
+GLOBAL_INSTALLS: dict[str, tuple[tuple[str, ...], ...] | None] = {
+    "uv": (("tool", "install"),), "yarn": (("global", "add"),), "cargo": (("install",),),
+    "go": (("install",),), "pipx": None, "gem": None, "brew": None, "apt": None,
+    "apt-get": None, "winget": None, "choco": None, "scoop": None,
+}
+# The arguments that make an install global or per-user, whatever folder it runs in.
+GLOBAL_OPTIONS = {
+    "npm": frozenset({"-g", "--global", "--location=global"}),
+    "pnpm": frozenset({"-g", "--global"}),
+    "bun": frozenset({"-g", "--global"}),
+    "pip": frozenset({"--user"}),
+    "pip3": frozenset({"--user"}),
+}
+# The options that name the folder an install goes into, in place of the
+# folder it runs in (each also in its manager's value options above).
+FOLDER_OPTIONS = {
+    "npm": ("--prefix",), "pnpm": ("--dir", "-C"), "yarn": ("--cwd",), "bun": ("--cwd",),
+    "uv": ("--project", "--directory"), "poetry": ("-C", "--directory"), "go": ("-C",),
+}
+
+
+class _PackageInstall(NamedTuple):
+    """A command's install of a package it names: whether it is global (or
+    per-user, or run under `sudo`), so it counts wherever it runs, and the
+    folder a folder option names, None when no option names one."""
+
+    is_global: bool
+    folder: str | None
+
+
+def _package_install(name: str, args: list[str], elevated: bool = False) -> _PackageInstall | None:
+    """The install `name args` makes when it installs or adds a package it
+    names, else None, so a bare restore (`npm install`, `pip install -r
+    requirements.txt`) is not one. A local path (`.`, `../lib`, `C:/pkg`) is
+    not a package; a URL is. `elevated`: the command runs under `sudo`."""
 
     if name in ("python", "python3", "py") and args[:2] == ["-m", "pip"]:
         name, args = "pip", args[2:]
     if name not in PACKAGE_MANAGERS:
-        return False
+        return None
     subcommands, value_options = PACKAGE_MANAGERS[name]
     words = [a for a in _drop_values(args, value_options) if not a.startswith("-")]
     for sub in subcommands:
         if tuple(words[: len(sub)]) == sub:
-            return any("://" in w or not LOCAL_PATH_RE.match(w) for w in words[len(sub):])
-    return False
+            if not any("://" in w or not LOCAL_PATH_RE.match(w) for w in words[len(sub):]):
+                return None
+            machine = GLOBAL_INSTALLS.get(name, ())
+            is_global = (elevated or machine is None or sub in machine
+                         or bool(GLOBAL_OPTIONS.get(name, frozenset()) & set(args)))
+            return _PackageInstall(is_global, _last_value(args, FOLDER_OPTIONS.get(name, ())))
+    return None
+
+
+def _last_value(args: list[str], options: tuple[str, ...]) -> str | None:
+    """The value of the last of `options` in `args`, written `--opt value` or
+    `--opt=value`, or None when none is given."""
+
+    value = None
+    for index, arg in enumerate(args):
+        option, equals, inline = arg.partition("=")
+        if option in options:
+            value = inline if equals else (args[index + 1] if index + 1 < len(args) else None)
+    return value

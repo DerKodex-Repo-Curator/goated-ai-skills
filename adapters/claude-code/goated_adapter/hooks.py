@@ -212,7 +212,7 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
             closeout=actions.Closeout(state.design_edits_of(current.key),
                                       _design_ids(payload, config),
                                       state.spawn_templates_of(current.key),
-                                      _route_intensity(state)),
+                                      _route_intensity(state), state.briefed),
             references=lambda: _registry_references(config, registry_warnings),
         )
     tool_use_id = str(payload.get("tool_use_id") or "")
@@ -373,6 +373,7 @@ def _stop(payload: dict, config: Config) -> str:
         earlier=_since_compaction(state),
         spawn_templates=state.spawn_templates_of(current.key),
         intensity=_route_intensity(state),
+        briefed=state.briefed,
     )
     friction.observe(state, current, friction.STOP, hold)
     if hold is None:

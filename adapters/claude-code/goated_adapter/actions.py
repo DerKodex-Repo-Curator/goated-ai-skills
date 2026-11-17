@@ -237,15 +237,19 @@ GIT_CONFLICT_RESULT_RE = re.compile(
 # An edit adding at least this many lines is a design change, not a tiny fix.
 DESIGN_MIN_LINES = 5
 # A pull request, or a branch's work at the closeout, changing at least this
-# many lines against its base, added plus deleted, is large enough to review
-# before it lands: the threshold `standards-and-spec-review` states (adapter
-# README, Large pull requests).
+# many lines against its base, added plus deleted, in code files outside test
+# paths (spec R11), is large enough to review before it lands: the threshold
+# `standards-and-spec-review` states (adapter README, Large pull requests).
 REVIEW_MIN_LINES = 400
 # The route intensity whose work always needs `verification-before-completion` (spec R3).
 FULL_ROUTE = "full"
 # How long the size check's git calls may take in all before it gives up and
 # holds nothing.
 SIZE_TIMEOUT_SECONDS = 2.0
+# `git diff` arguments for per-file counts (`_numstat_lines`): NUL-ended
+# records, so no path is quoted, paths from the top of the checkout, and no
+# external diff or text-conversion program.
+NUMSTAT_ARGS = ("--numstat", "-z", "--no-relative", "--no-ext-diff", "--no-textconv")
 # How much of an untracked file the branch-size check reads at a time.
 UNTRACKED_READ_BYTES = 1 << 20
 # Where a pull request merges into when it names no base, in order of preference.
@@ -378,13 +382,14 @@ def is_action_tool(tool_name: str) -> bool:
 
 class Closeout(NamedTuple):
     """What a commit's closeout hold reads besides the turn: `edit_references`,
-    `design_ids`, `spawn_templates`, and `intensity`, as `check_closeout`
+    `design_ids`, `spawn_templates`, `intensity`, and `briefed`, as `check_closeout`
     takes them."""
 
     edit_references: dict[str, list[str]]
     design_ids: Callable[[], dict[str, tuple[str, ...]]] | None = None
     spawn_templates: dict[str, list[str]] | None = None
     intensity: str | None = None
+    briefed: bool = False
 
 
 def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
@@ -423,6 +428,7 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         edit_references=closeout.edit_references, design_ids=closeout.design_ids,
         at_commit=True, by_tool=by_tool, earlier=earlier,
         spawn_templates=closeout.spawn_templates, intensity=closeout.intensity,
+        briefed=closeout.briefed,
     )
     cwd = project.cwd if project else None  # Where git measures a pull request's size.
     if tool_name in COMMAND_TOOLS:
@@ -567,9 +573,10 @@ def _pr_review_hold(size_of: Callable[[], int | None], proof: _Proof,
         return None
     return hold or Hold(
         "pr-review", JUSTIFIED_SKIP,
-        f"This pull request changes {size} lines against its base, {REVIEW_MIN_LINES} or "
-        f"more, so it is large enough to review before it lands. Load `{REVIEW_SKILL}` "
-        f"with the Skill tool{proof.within} and review the change with it. If size is not "
+        f"This pull request has {size} changed lines of non-test code against its base, "
+        f"{REVIEW_MIN_LINES} or more, so it is large enough to review before it lands. "
+        f"Load `{REVIEW_SKILL}` with the Skill tool{proof.within} and review the change with "
+        "it. If size is not "
         "what makes it worth reviewing, such as generated or vendored files, write "
         f"`goated-skip: {REVIEW_SKILL}: <reason>` on its own line instead. Then open the "
         "pull request again. The whole command was held, so rerun any steps chained "
@@ -607,7 +614,8 @@ WORKING_TREE = _WorkingTree()
 def changed_lines(cwd: str | None, base: str | None, head: str | _WorkingTree | None = None,
                   repository: str | None = None) -> int | None:
     """Lines added plus deleted on `head` since it left `base`, as git in `cwd`
-    reports them; None when that cannot be measured.
+    reports them, in code files outside test paths only (`_counts_for_size`);
+    None when that cannot be measured.
 
     `base` is the branch the pull request merges into, found as `origin/<base>`
     or the local branch; without one, the first of `DEFAULT_BASE_REFS` that
@@ -619,7 +627,8 @@ def changed_lines(cwd: str | None, base: str | None, head: str | _WorkingTree | 
 
     With `head` as `WORKING_TREE`, the measure is the branch's work as it
     stands (spec R1): the working tree against where the checked-out branch
-    left `base`, plus every line of each untracked file git does not ignore.
+    left `base`, plus every line of each untracked code file git does not
+    ignore.
     A checkout on the base branch itself, or a detached one, has no branch
     work to compare, so it is unknown too.
 
@@ -661,9 +670,8 @@ def changed_lines(cwd: str | None, base: str | None, head: str | _WorkingTree | 
             [base_ref] + [ref for ref in (f"refs/remotes/origin/{name}", f"refs/heads/{name}")
                           if ref in targets])
         return _branch_work_lines(cwd, list(bases), name, deadline)
-    stat = _git(["diff", "--shortstat", "--no-ext-diff", "--no-textconv",
-                 f"{base_ref}...{head_ref}", "--"], cwd, deadline)
-    return None if stat is None else _shortstat_lines(stat)
+    stat = _git(["diff", *NUMSTAT_ARGS, f"{base_ref}...{head_ref}", "--"], cwd, deadline)
+    return None if stat is None else _numstat_lines(stat)
 
 
 def _branch_name(ref: str) -> str:
@@ -679,8 +687,9 @@ def _branch_work_lines(cwd: str, base_refs: list[str], base_branch: str,
     `base_branch`, and the branch is measured from the fork point closest
     to it among them."""
 
-    branch = _git(["rev-parse", "--symbolic-full-name", "HEAD"], cwd, deadline)
-    if branch is None or not branch.startswith("refs/heads/"):
+    found = _git(["rev-parse", "--show-toplevel", "--symbolic-full-name", "HEAD"], cwd, deadline)
+    top, branch = ((found or "").splitlines() + ["", ""])[:2]
+    if not top or not branch.startswith("refs/heads/"):
         return None  # Detached, or on a branch with no commit yet.
     if _branch_name(branch) == base_branch:
         return None  # On the base branch: nothing to compare it with.
@@ -689,16 +698,15 @@ def _branch_work_lines(cwd: str, base_refs: list[str], base_branch: str,
     fork = _git(["merge-base", "HEAD", *base_refs], cwd, deadline)
     if fork is None:
         return None
-    stat = _git(["diff", "--shortstat", "--no-ext-diff", "--no-textconv", fork.strip(), "--"],
-                cwd, deadline)
-    # `:/` lists from the top of the checkout, with paths relative to `cwd`.
-    untracked = _git(["ls-files", "--others", "--exclude-standard", "-z", "--", ":/"],
-                     cwd, deadline)
+    stat = _git(["diff", *NUMSTAT_ARGS, fork.strip(), "--"], cwd, deadline)
+    # `:/` lists from the top of the checkout; `--full-name` names paths from there too.
+    untracked = _git(["ls-files", "--others", "--exclude-standard", "--full-name", "-z", "--",
+                      ":/"], cwd, deadline)
     if stat is None or untracked is None:
         return None
-    total = _shortstat_lines(stat)
-    for path in filter(None, untracked.split("\0")):
-        lines = _text_lines(os.path.join(cwd, path), deadline)
+    total = _numstat_lines(stat)
+    for path in filter(_counts_for_size, untracked.split("\0")):
+        lines = _text_lines(os.path.join(top, path), deadline)
         if lines is None:
             return None
         total += lines
@@ -732,10 +740,32 @@ def _text_lines(path: str, deadline: float) -> int | None:
     return lines + (last != b"\n")  # A last line with no newline still counts.
 
 
-def _shortstat_lines(stat: str) -> int:
-    """Lines added plus deleted, from `git diff --shortstat` output."""
+def _counts_for_size(path: str) -> bool:
+    """Whether a changed file's lines count toward a branch's or pull request's
+    size (spec R11): a code file outside test paths, judged by its path from
+    the top of the checkout. Docs, fixtures, configuration and tests add nothing."""
 
-    return sum(int(n) for n in re.findall(r"(\d+) (?:insertion|deletion)", stat))
+    return is_code(path) and not design_reads.is_test_path(path)
+
+
+def _numstat_lines(stat: str) -> int:
+    """Lines added plus deleted in the files that `_counts_for_size`, from
+    `git diff` output with `NUMSTAT_ARGS`. Each record is "added<TAB>deleted<TAB>path",
+    or, for a rename or copy, "added<TAB>deleted<TAB>" then the old and the new
+    path, each ended by NUL; a binary file's counts are "-"."""
+
+    total = 0
+    fields = iter(stat.split("\0"))
+    for record in fields:
+        if not record:
+            continue
+        added, deleted, path = record.split("\t", 2)
+        if not path:  # A rename or copy: judged by where the file now is.
+            next(fields, "")
+            path = next(fields, "")
+        if added != "-" and _counts_for_size(path):
+            total += int(added) + int(deleted)
+    return total
 
 
 def _git(args: list[str], cwd: str, deadline: float) -> str | None:
@@ -1388,7 +1418,7 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
                    at_commit: bool = False, by_tool: bool = False,
                    earlier: SinceCompaction = SinceCompaction(),
                    spawn_templates: dict[str, list[str]] | None = None,
-                   intensity: str | None = None) -> Hold | None:
+                   intensity: str | None = None, briefed: bool = False) -> Hold | None:
     """Return the closeout hold for a turn about to end, if any; `at_commit`:
     for a commit the turn is about to make, which must meet it first, made by
     an MCP commit tool when `by_tool`, which has no command to rerun and no
@@ -1433,6 +1463,9 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     changed code or a sensitive file needs `verification-before-completion`
     (spec R3) when `intensity`, the task's route intensity, is `full`, a
     subagent changed code, a sensitive file changed, or the branch is large.
+    A `briefed` session, one whose first prompt was a brief from the session
+    that started it, meets no Review item: that session reviews the work
+    (spec R10).
     """
 
     changes = _Changes(turn, subagents or {}, project)
@@ -1441,7 +1474,7 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
         lambda: changed_lines(project.cwd if project else None, None, WORKING_TREE))
     items = (
         _code_items(changes, proof, edit_references or {}, design_ids, at_commit, by_tool)
-        + _review_item(changes, proof, spawn_templates or {}, branch_size)
+        + ([] if briefed else _review_item(changes, proof, spawn_templates or {}, branch_size))
         if changes.code else []
     )
     items += _verification_item(changes, proof, intensity, branch_size)
@@ -1594,8 +1627,9 @@ def _review_item(changes: "_Changes", proof: _Proof, spawn_templates: dict[str, 
         "other template is not a review."
     )
     size_text = (
-        f"this branch's work is {size} lines against its base, {REVIEW_MIN_LINES} or more, "
-        "counting committed, staged, unstaged, and untracked files that git does not ignore"
+        f"this branch's work is {size} changed lines of non-test code against its base, "
+        f"{REVIEW_MIN_LINES} or more, counting committed, staged, unstaged, and untracked files "
+        "that git does not ignore"
     )
     skip = (f"Or, if size is not what makes it worth reviewing, such as generated or vendored "
             f"files, write `goated-skip: {REVIEW_SKILL}: <reason>`.")
@@ -1628,7 +1662,8 @@ def _verification_item(changes: "_Changes", proof: _Proof, intensity: str | None
         size = branch_size()
         if size is None or size < REVIEW_MIN_LINES:
             return []
-        triggers.append(f"this branch's work is {size} lines against its base")
+        triggers.append(
+            f"this branch's work is {size} changed lines of non-test code against its base")
     return [
         f"- Verification: {', and '.join(triggers)}, so verify the work before claiming it "
         f"is done. Load `{PROOF_SKILL}` and follow it. Or write "
@@ -1708,8 +1743,10 @@ def _setup_changes(calls, project: Project | None) -> str:
     """What setup the finished `calls` changed, as a phrase for the Setup item
     ('installed a package', 'wrote ".env"'), or "".
 
-    A package install counts wherever it ran; a setup file counts only inside
-    `project` (see `_in_project`), so a scratch folder's settings do not.
+    A setup file counts only inside `project` (see `_in_project`), so a
+    scratch folder's settings do not. So does a package install, unless it is
+    a global or machine install, which counts wherever it ran (spec R14); one
+    run from a folder the command left unknown counts.
     """
 
     installed, files = False, []
@@ -1721,7 +1758,9 @@ def _setup_changes(calls, project: Project | None) -> str:
             unplaced = []
         elif call.name in COMMAND_TOOLS:
             command = shell.analyze(str(call.input.get("command") or ""), call.name)
-            installed = installed or command.installs_package
+            installed = installed or command.installs_globally or any(
+                folder is None or _in_project(folder or ".", project)
+                for folder in command.install_folders)
             targets, unplaced = command.write_targets, command.unplaced_targets
         else:
             continue

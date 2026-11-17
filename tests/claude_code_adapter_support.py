@@ -452,10 +452,12 @@ class Session:
 def git_branch_with_change(
     project: Path, changed_lines: int, *, base: str = "main", remote_head: bool = False,
     remote_branches: tuple[str, ...] = (), origin_url: str | None = None,
-    stay_on_base: bool = False,
+    stay_on_base: bool = False, path: str = "src/change.py",
 ) -> None:
     """Make `project` a git checkout with a branch `feature` whose diff against
-    `base` changes `changed_lines` lines, checked out unless `stay_on_base`.
+    `base` changes `changed_lines` lines of the file at `path`, a code file
+    by default, so they count toward the branch's size, checked out unless
+    `stay_on_base`.
 
     `remote_head`: also record `base` as the remote's default branch,
     `origin/HEAD`, as a clone does. `remote_branches`: remote-tracking
@@ -483,10 +485,11 @@ def git_branch_with_change(
     if remote_head:
         git("symbolic-ref", "refs/remotes/origin/HEAD", f"refs/remotes/origin/{base}")
     git("checkout", "-q", "-b", "feature")
-    (project / "change.txt").write_text(
+    (project / path).parent.mkdir(parents=True, exist_ok=True)
+    (project / path).write_text(
         "".join(f"line {n}\n" for n in range(changed_lines)), encoding="utf-8"
     )
-    git("add", "change.txt")
+    git("add", path)
     git("commit", "-q", "-m", "Change")
     if stay_on_base:
         git("checkout", "-q", base)

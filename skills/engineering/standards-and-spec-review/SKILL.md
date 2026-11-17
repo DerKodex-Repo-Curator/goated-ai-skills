@@ -27,8 +27,9 @@ Load this skill when at least one axis remains meaningfully uncertain:
   or remain uncertain.
 
 Review before committing when the branch's work against its base is 400 or
-more changed lines, counting committed, staged, unstaged, and untracked files
-that git does not ignore. A reviewer subagent briefed from
+more changed lines in code files outside test paths, counting committed,
+staged, unstaged, and untracked files that git does not ignore; docs,
+fixtures, configuration, and tests add nothing. A reviewer subagent briefed from
 `subagent-driven-development`'s reviewer prompt also counts; a brief from
 another template does not.
 
