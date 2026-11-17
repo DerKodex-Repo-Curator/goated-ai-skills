@@ -641,6 +641,12 @@ def edit(path: str, new: str, old: str = "pass") -> dict:
     return {"file_path": path, "old_string": old, "new_string": new}
 
 
+def lines_of(text: str, count: int) -> str:
+    """`count` lines, each `text` with its number in it."""
+
+    return "\n".join(text.format(n=n) for n in range(count))
+
+
 class DesignHoldTests(AdapterTestCase):
     def test_a_substantial_code_edit_is_held_until_design_loads(self) -> None:
         s = self.routed()
@@ -821,27 +827,30 @@ class DesignReferenceReadTests(AdapterTestCase):
              {"process.md", "complexity-and-modules.md", "readability.md"},
              "Edit", edit("src/env.sh", "export RATE=1")),
             ("test file selects only coding", "Edit",
-             edit("tests/test_a.py", "def test_load():\n    try:\n        load()  # the cache\n    finally:"),
+             edit("tests/test_a.py",
+                  "def test_load():\n    try:\n        load()  # the cache\n    finally:\n        reset()"),
              {"coding.md"}, "Edit", edit("tests/fixtures/rows.json", '{"rate": 1}')),
             ("comment words are not code", "Edit",
-             edit("src/a.py", "# try the cache first, then raise\n# Lock the row\nrows = load()  # Lock it"),
+             edit("src/a.py", "# try the cache first, then raise\n# Lock the row\n# then catch it\n"
+                  "# with open\nrows = load()  # Lock it"),
              {"readability.md"}, "Edit", edit("src/a.py", "rows = load()")),
             ("docstring words are not code", "Edit",
-             edit("src/a.py", '    """Raise when a Lock is held,\n    then try again."""'),
+             edit("src/a.py", '    """Raise when a Lock is held,\n    then try again,\n    catch it,\n'
+                  '    and throw it.\n    """'),
              {"readability.md"}, "Edit", edit("src/a.py", "    rows = []")),
-            ("comment", "Edit", edit("src/a.py", "rate = 1  # per second"),
+            ("comment", "Edit", edit("src/a.py", "rate = 1  # per second\n" + lines_of("x_{n} = {n}", 4)),
              {"readability.md"}, "Edit", edit("src/a.py", "rate = a // b")),
-            ("docstring", "Edit", edit("src/a.py", '    """Return the rate."""'),
+            ("docstring", "Edit", edit("src/a.py", '    """Return the rate."""\n' + lines_of("    x_{n} = {n}", 4)),
              {"readability.md"}, "Edit", edit("src/a.py", '    name = "rate"')),
             ("error handling", "Edit", edit("src/a.py", "try:\n    rate = 1"),
              {"errors.md"}, "Edit", edit("src/a.py", "retry = 1")),
             ("file resource", "Edit", edit("src/a.py", "    with open(path) as f:"),
              {"errors.md"}, "Edit", edit("src/a.py", "    opened = path")),
-            ("test file", "Edit", edit("tests/test_export.py", "x = 1"),
+            ("test file", "Edit", edit("tests/test_export.py", lines_of("x_{n} = {n}", 5)),
              {"coding.md"}, "Edit", edit("src/contest.py", "x = 1")),
             ("concurrency", "Edit", edit("src/a.py", "guard = threading.Lock()"),
              {"concurrency.md"}, "Edit", edit("src/a.py", "clock = 1")),
-            ("configuration file", "Edit", edit("config/app.yaml", "rate: 1"),
+            ("configuration file", "Edit", edit("config/app.yaml", lines_of("rate_{n}: {n}", 5)),
              {"decoupling.md"}, "Edit", edit("docs/app.md", "rate: 1")),
         )
         for name, tool, tool_input, selects, near_tool, near_input in cases:
@@ -857,7 +866,9 @@ class DesignReferenceReadTests(AdapterTestCase):
                 if not selects:
                     self.assertEqual(decision(held), "pass")
                     continue
-                self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
+                # A five-line code edit is the turn's first substantial one, so the `design` gate holds it.
+                self.assertIn(hold_line(held), ("goated-hold: design-reads | justified-skip",
+                                                "goated-hold: design | justified-skip"))
                 named = set(re.findall(r"references/([a-z-]+\.md)`", reason(held)))
                 self.assertEqual(named, selects, reason(held))
 
@@ -865,8 +876,8 @@ class DesignReferenceReadTests(AdapterTestCase):
         s = self.designing()
         for path in ("src/a.py", "src/b.py", "src/a.py"):
             self.assertEqual(decision(s.call("Edit", edit(path, "x = 1"))), "pass")
-        held = s.call("Edit", edit("src/c.py", "x = 1"))
-        self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
+        held = s.call("Edit", edit("src/c.py", PLAIN))
+        self.assertEqual(decision(held), "deny")
         self.assertIn("references/decoupling.md` (the third code file", reason(held))
 
     def test_a_later_edit_is_held_only_for_an_unread_reference_it_trips(self) -> None:
@@ -939,7 +950,7 @@ class DesignReferenceReadTests(AdapterTestCase):
         for name in named:
             s.read(REFERENCES + name)
         self.assertEqual(decision(s.call("Edit", edit("src/cli.py", "rows = load(path)"))), "pass")
-        held = s.call("Edit", edit("tests/test_rows.py", "def test_load():\n    assert load(PATH)"))
+        held = s.call("Edit", edit("tests/test_rows.py", "def test_load():\n" + lines_of("    assert load(P{n})", 4)))
         self.assertEqual(set(re.findall(r"references/([a-z-]+\.md)`", reason(held))), {"coding.md"})
 
     def test_the_third_code_file_leaves_out_test_files(self) -> None:
@@ -947,7 +958,7 @@ class DesignReferenceReadTests(AdapterTestCase):
         for path in ("src/a.py", "tests/test_a.py", "tests/test_b.py", "src/b.py"):
             s.read(REFERENCES + "coding.md")
             self.assertEqual(decision(s.call("Edit", edit(path, "x = 1"))), "pass", path)
-        held = s.call("Edit", edit("src/c.py", "x = 1"))
+        held = s.call("Edit", edit("src/c.py", PLAIN))
         self.assertIn("references/decoupling.md` (the third code file", reason(held))
 
     def test_lock_and_test_data_files_are_not_configuration(self) -> None:
@@ -955,7 +966,7 @@ class DesignReferenceReadTests(AdapterTestCase):
         s.say("goated-skip: code-security-review: lockfile regenerated with no version change")
         for path in ("package-lock.json", "pnpm-lock.yaml", "tests/fixtures/rows.json"):
             self.assertEqual(decision(s.call("Edit", edit(path, '"rate": 1'))), "pass", path)
-        self.assertEqual(hold_line(s.call("Edit", edit("config/app.json", '"rate": 1'))),
+        self.assertEqual(hold_line(s.call("Edit", edit("config/app.json", lines_of('"rate_{n}": {n},', 5)))),
                          "goated-hold: design-reads | justified-skip")
 
     def test_a_write_over_an_existing_file_counts_only_what_it_adds(self) -> None:
@@ -1028,6 +1039,96 @@ class DesignReferenceReadTests(AdapterTestCase):
         s.load(ROUTER)
         s.say("goated-route: direct")
         return s
+
+
+class SmallEditTests(AdapterTestCase):
+    """Small edits select no reference by file kind (Ticket 063): fewer than
+    five added lines, the `design` gate's threshold."""
+
+    def designing(self, line: str = NONE_LINE) -> Session:
+        """A new session, routed, with the skill loaded and `line` said."""
+
+        self.session = self.fresh()
+        s = self.routed()
+        s.load("software-design-principles")
+        s.say(line)
+        return s
+
+    def named(self, held: dict) -> set[str]:
+        return set(re.findall(r"references/([a-z-]+\.md)`", reason(held)))
+
+    def assert_requires(self, held: dict, expected: set[str]) -> None:
+        self.assertEqual(self.named(held), expected, reason(held))
+        self.assertEqual(decision(held), "deny" if expected else "pass")
+
+    def test_a_small_test_file_edit_requires_no_reference(self) -> None:
+        for count, expected in ((1, set()), (4, set()), (5, {"coding.md"}), (20, {"coding.md"})):
+            with self.subTest(lines=count):
+                s = self.designing()
+                held = s.call("Edit", edit("tests/test_export.py", lines_of("    assert total_{n}", count)))
+                self.assert_requires(held, expected)
+
+    def test_a_small_configuration_edit_requires_no_reference(self) -> None:
+        for count, expected in ((2, set()), (4, set()), (5, {"decoupling.md"})):
+            with self.subTest(lines=count):
+                s = self.designing()
+                self.assert_requires(s.call("Edit", edit("config/app.yaml", lines_of("rate_{n}: {n}", count))),
+                                     expected)
+
+    def test_a_small_edit_to_the_third_code_file_requires_no_reference(self) -> None:
+        for count, expected in ((2, set()), (4, set()), (5, {"decoupling.md"})):
+            with self.subTest(lines=count):
+                s = self.designing()
+                for path in ("src/a.py", "src/b.py"):
+                    self.assertEqual(decision(s.call("Edit", edit(path, "x = 1"))), "pass")
+                self.assert_requires(s.call("Edit", edit("src/c.py", lines_of("total_{n} = {n}", count))),
+                                     expected)
+
+    def test_a_small_added_comment_requires_no_reference(self) -> None:
+        for count, expected in ((1, set()), (4, set()), (5, {"readability.md"})):
+            with self.subTest(lines=count):
+                s = self.designing()
+                self.assert_requires(s.call("Edit", edit("src/a.py", lines_of("# note {n} on the rate", count))),
+                                     expected)
+
+    def test_signals_from_the_added_code_apply_at_any_size(self) -> None:
+        public = {"process.md", "complexity-and-modules.md", "readability.md"}
+        cases = (
+            # (name, input, references it selects, near-miss input)
+            ("error handling", edit("src/a.py", "except ValueError:"), {"errors.md"},
+             edit("src/a.py", "rate = 1")),
+            ("concurrency", edit("src/a.py", "guard = threading.Lock()"), {"concurrency.md"},
+             edit("src/a.py", "clock = 1")),
+            ("new public function", edit("src/a.py", "def export(rows):\n    rows = list(rows)\n    return rows"),
+             public, edit("src/a.py", "def _export(rows):\n    rows = list(rows)\n    return rows")),
+            ("new code file", {"file_path": "src/fresh.py", "content": "x = 1"}, public,
+             edit("src/other.py", "x = 1")),
+        )
+        for name, tool_input, selects, near in cases:
+            with self.subTest(name):
+                s = self.designing()
+                self.assertEqual(decision(s.call("Edit", near)), "pass")
+                held = s.call("Write" if "content" in tool_input else "Edit", tool_input)
+                self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
+                self.assertEqual(self.named(held), selects, reason(held))
+
+    def test_a_design_reads_line_still_requires_what_it_names(self) -> None:
+        s = self.designing("goated-design-reads: coding.md")
+        held = s.call("Edit", edit("tests/test_export.py", "    assert total == 1"))
+        self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
+        self.assertIn("references/coding.md` (named in your design-reads line)", reason(held))
+
+        s = self.designing()
+        self.assertEqual(decision(s.call("Edit", edit("tests/test_export.py", "    assert total == 1"))), "pass")
+
+    def test_an_edit_whose_lines_cannot_be_counted_is_not_small(self) -> None:
+        s = self.designing()
+        held = s.call("MultiEdit", {"file_path": "tests/test_export.py", "edits": ["assert total"]})
+        self.assert_requires(held, {"coding.md"})
+
+        s = self.designing()
+        near = {"file_path": "tests/test_export.py", "edits": [{"old_string": "a", "new_string": "b"}]}
+        self.assert_requires(s.call("MultiEdit", near), set())
 
 
 class SecurityHoldTests(AdapterTestCase):
@@ -3514,6 +3615,20 @@ class DesignCitationTests(AdapterTestCase):
         (s.project / "src").mkdir(parents=True, exist_ok=True)
         (s.project / "src" / "old.py").write_text(text, encoding="utf-8")
         return f"{s.project}/src/old.py"
+
+    def test_a_small_edit_that_requires_nothing_needs_no_citation(self) -> None:
+        # Ticket 063: a four-line test edit requires nothing; a five-line one requires coding.md.
+        s = self.designing()
+        self.assertEqual(decision(s.call("Edit", edit("tests/test_rows.py", lines_of("    assert row_{n}", 4)))),
+                         "pass")
+        self.assertEqual(uncited(stop(self.finish(s))), [])
+
+        self.session = self.fresh()
+        s = self.designing()
+        s.read(REFERENCES + "coding.md")
+        self.assertEqual(decision(s.call("Edit", edit("tests/test_rows.py", lines_of("    assert row_{n}", 5)))),
+                         "pass")
+        self.assertEqual(uncited(stop(self.finish(s))), ["coding.md"])
 
     def test_an_uncited_required_reference_holds_naming_it_and_a_citation_clears_it(self) -> None:
         s = self.closed()

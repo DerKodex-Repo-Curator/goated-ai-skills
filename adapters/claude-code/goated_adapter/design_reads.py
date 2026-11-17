@@ -101,23 +101,25 @@ def applies(path: str, *, is_code: bool, is_test: bool) -> bool:
     return is_code or (_is_config(path) and not is_test)
 
 
-def required(path: str, tool_input: dict, *, is_code: bool, is_test: bool,
+def required(path: str, tool_input: dict, *, is_code: bool, is_test: bool, small: bool,
              written_before: bool, other_code_files: int, declared: list[str],
              cwd: str | None) -> dict[str, str]:
     """The references an edit requires, each with why, in the skill's order.
 
     They are those its signals select plus the known ones in `declared`, the
-    turn's design-reads files. `written_before`: the turn already wrote this
-    file. `other_code_files`: how many other non-test code files the turn has
-    edited. A Write is compared with the file on disk, a relative path taken
-    from `cwd`, so only what it adds counts.
+    turn's design-reads files. `small`: the edit adds too few lines for the
+    `design` gate, so no signal selects a reference by the kind of file or
+    text it touches (see `_signals`). `written_before`: the turn already
+    wrote this file. `other_code_files`: how many other non-test code files
+    the turn has edited. A Write is compared with the file on disk, a
+    relative path taken from `cwd`, so only what it adds counts.
     """
 
     on_disk = _disk_text(path, cwd) if "content" in tool_input else None
     found = _signals(
         path, _Added(tool_input, on_disk),
         new_file=is_code and "content" in tool_input and not written_before and on_disk is None,
-        is_test=is_test,
+        is_test=is_test, small=small,
         code_files=other_code_files + 1 if is_code and not is_test else 0,
     )
     for name in declared:
@@ -340,22 +342,31 @@ def _code_lines(text: str, syntax: _CommentSyntax) -> list[str] | None:
     return lines
 
 
-def _signals(path: str, added: _Added, *, new_file: bool, is_test: bool,
+def _signals(path: str, added: _Added, *, new_file: bool, is_test: bool, small: bool,
              code_files: int) -> dict[str, str]:
+    """The references an edit's signals select, each with why.
+
+    A small edit selects none by the kind of file or text it touches: a test
+    file, a configuration file, the third code file, or an added comment
+    (the skill's small-edit rule). Signals read from the added code apply at
+    any size: a new code file or public definition, error handling, and
+    concurrency.
+    """
+
     if is_test:
         # Test code needs the reasoning on tests, not on interfaces or errors.
-        return {"coding.md": "edits a test file"}
+        return {} if small else {"coding.md": "edits a test file"}
     found: dict[str, str] = {}
     public = next((name for name in added.definitions if not name.startswith("_")), None)
     if new_file or public is not None:
         why = "a new code file" if new_file else f'adds a public top-level definition ("{public}")'
         for name in ("process.md", "complexity-and-modules.md", "readability.md"):
             found[name] = why
-    elif added.comment:
+    elif added.comment and not small:
         found["readability.md"] = "adds a comment or docstring"
-    if _is_config(path):
+    if not small and _is_config(path):
         found["decoupling.md"] = "edits a configuration file"
-    elif code_files >= MANY_CODE_FILES:
+    elif not small and code_files >= MANY_CODE_FILES:
         found["decoupling.md"] = f"the {_ordinal(code_files)} code file this turn edits, tests aside"
     if token := _first(ERROR_HANDLING_RE, added.code):
         found["errors.md"] = f'adds error handling ("{token}")'

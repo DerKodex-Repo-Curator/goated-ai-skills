@@ -366,14 +366,27 @@ name the old text already defined, as in a signature change, is not new.
 Comments and docstrings are left out of the code the error and concurrency
 signals read, so `# try the cache, then raise` selects neither.
 
+A **small edit**, one adding fewer than five lines as the `design` gate counts
+them (every line of the text it writes; `DESIGN_MIN_LINES` in `actions.py`),
+selects no reference by the kind of file or text it touches: no `coding.md`
+for a test file, no `decoupling.md` for a configuration file or the third
+code file, and no `readability.md` for a comment or docstring.
+`software-design-principles` states this rule; the adapter enforces it.
+Signals read from the added code apply at any size: a new code file or public
+top-level definition, error handling, and concurrency. A design-reads line
+still requires every reference it names. An edit whose added lines cannot be
+counted, such as a `MultiEdit` with an `edits` entry that is not an edit, is
+not small. A small edit that requires nothing adds nothing for the closeout's
+Design citations item to ask for.
+
 | Reference | Selected when the edit |
 | --- | --- |
 | `process.md` | creates a code file (a `Write` to a code file no earlier write in the turn made and that is not on disk), or adds a public top-level definition: an unindented line starting with `def`, `async def`, `class`, `function`, `export`, `func`, `fn`, `pub fn`, `public`, `interface`, `struct`, `enum`, `trait`, `impl`, or `defmodule`, whose name does not start with `_`; a shell `export NAME=` is not one |
 | `complexity-and-modules.md` | the same as `process.md` |
-| `decoupling.md` | edits a configuration file, or is to the third or later distinct non-test code file the turn edits |
-| `readability.md` | the same as `process.md`, or adds a comment or docstring: a line opening with `#`, `//`, `/*`, `*`, `"""`, `'''`, `-- `, or `<!--`, a line inside a docstring or block comment, or a trailing `#` or `//` comment after two spaces |
+| `decoupling.md` | is not small, and edits a configuration file or is to the third or later distinct non-test code file the turn edits |
+| `readability.md` | the same as `process.md`, or is not small and adds a comment or docstring: a line opening with `#`, `//`, `/*`, `*`, `"""`, `'''`, `-- `, or `<!--`, a line inside a docstring or block comment, or a trailing `#` or `//` comment after two spaces |
 | `errors.md` | adds code holding `try`, `except`, `catch`, `raise`, `throw`, `finally`, `defer` as words, or `with open` |
-| `coding.md` | edits a test file; a test file selects nothing else |
+| `coding.md` | is not small and edits a test file; a test file selects nothing else |
 | `concurrency.md` | adds code holding `threading`, `Lock`, `RLock`, `Mutex`, `asyncio`, `synchronized`, `Promise.all`, a word starting `Atomic`, or `go func` |
 | `differences.md` | never selected; only a design-reads line requires it |
 
@@ -393,8 +406,8 @@ software-design-principles` clears both gates for the turn.
 The first substantial non-test code edit of a turn meets `design`, which asks
 for what is missing: the load, the line, and the reads. A later edit, or any
 test file edit once the skill has loaded, meets `design-reads`, which asks
-only for reads; a test file still requires `coding.md`. A small edit before
-the skill loads is not held, as before.
+only for reads; a test file edit that is not small still requires
+`coding.md`. A small edit before the skill loads is not held, as before.
 
 At closeout, the Design citations item asks for a citation of each reference
 the turn required, whether read in this turn or an earlier one: the turn's
