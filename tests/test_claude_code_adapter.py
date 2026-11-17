@@ -801,6 +801,39 @@ class OverridePhraseTests(unittest.TestCase):
             parse_overrides("skip the doc-sync skill")["skills"], ["doc-sync"]
         )
 
+    def test_a_backticked_skill_skip_records_its_phrase_without_backticks(self) -> None:
+        # Ticket 077: "skip `doc-sync`" was recorded as "skip `doc-sync", because
+        # the closing backtick was dropped to find a word boundary after it.
+        from goated_adapter.overrides import parse_overrides
+
+        cases = {
+            "skip `doc-sync`": "skip doc-sync",
+            "Skip `doc-sync`, then ship.": "Skip doc-sync",
+            "skip `doc-sync` skill": "skip doc-sync skill",
+            "skip the `tdd` skill now": "skip the tdd skill",
+            "skip doc-sync`": "skip doc-sync",
+            "skip `tdd": "skip tdd",
+        }
+        for text, phrase in cases.items():
+            with self.subTest(text=text):
+                found = parse_overrides(text)
+                self.assertEqual(found["phrases"], [phrase])
+                self.assertEqual(len(found["skills"]), 1)
+        # Near misses stay non-overrides.
+        for text in ("skip `doc-syncing`", "don't skip `doc-sync`", "skip `line`"):
+            with self.subTest(text=text):
+                self.assertEqual(parse_overrides(text)["phrases"], [])
+
+    def test_the_commit_message_override_is_recorded_as_commit_message(self) -> None:
+        # Ticket 077: the stored "commit message" phrase is this override, its
+        # text left out of the record.
+        from goated_adapter.overrides import parse_overrides
+
+        found = parse_overrides("commit message: Fix rounding")
+        self.assertEqual(found["phrases"], ["commit message"])
+        self.assertEqual(found["commit_message"], "Fix rounding")
+        self.assertEqual(parse_overrides("Use the commit-message skill.")["phrases"], [])
+
 
 class MachinePromptTests(AdapterTestCase):
     """Prompts other sessions or the app write are not typed by this user."""

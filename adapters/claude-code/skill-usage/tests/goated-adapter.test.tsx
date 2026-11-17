@@ -375,6 +375,25 @@ test('the report lists route lines, adapter holds by kind, overrides and subagen
   expect(report).toContain('- Subagents: 1 started · 0 skill bodies read')
 })
 
+// Ticket 077: the adapter records `commit message: <text>` as "commit message", its text left out.
+test('the commit-message override is shown as the documented phrase, and no other phrase is relabelled', async () => {
+  const notice = 'GOATED Claude Code adapter: recorded your override for this prompt: "commit message", "skip commit-message".'
+  const s = summarize([{ kind: 'prompt', t: 1, named: [] }, ...overrideEvents(notice, 2)])
+  expect(s.overrides).toEqual({ 'commit message': 1, 'skip commit-message': 1 })
+  const report = reportText(addSession(null, s), null)
+  expect(report).toContain('- Overrides: "commit message: <text>" 1 · "skip commit-message" 1')
+})
+
+test('the Session tab shows the commit-message override as the documented phrase', async ($, on) => {
+  const mount = paneRig($, on, [
+    { kind: 'prompt', t: 1, named: [] },
+    ...overrideEvents('GOATED Claude Code adapter: recorded your override for this prompt: "commit message".', 2),
+  ])
+  const ui = await mount('terminal')
+  expect((await ui.find({ type: 'Text', text: /^you typed "commit message: <text>"$/ }))?.text).toBeDefined()
+  await ui.unmount()
+})
+
 // ---------- rows as session.append carries them ------------------------------------
 
 // The kit raises only a plugin's own rows (door `note`), so these drive the row reader that observeRow hands each row to.

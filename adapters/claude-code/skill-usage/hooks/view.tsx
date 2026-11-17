@@ -177,6 +177,15 @@ const ROUTER_LINE: Record<Exclude<SessionSummary['router'], 'off'>, [string, Ton
 }
 
 /**
+ * An override phrase as shown, quoted. The adapter records its commit-message
+ * override as "commit message", leaving out the message, so that one reads as
+ * the documented phrase `commit message: <text>`; others read as stored.
+ */
+function overrideLabel(phrase: string): string {
+  return `"${phrase === 'commit message' ? 'commit message: <text>' : phrase}"`
+}
+
+/**
  * A feed row: its mark, kind and words. A nudge reads as one sentence whatever
  * became of it, each skill it named in the colour of its own result, so a row
  * where one skill loaded and another did not shows both.
@@ -192,7 +201,7 @@ function feedRow(entry: TimelineEntry): { mark: string; kind: string; runs: Run[
       return { mark: '⇢', kind: 'Route', runs: [{ text: what }, ...(entry.isSubagent ? [{ text: ' · by a subagent', tone: 'dim' as const }] : [])], tone: 'plain' }
     }
     case 'override':
-      return { mark: '›', kind: 'You', runs: [{ text: `you typed ${entry.phrases.map(p => `"${p}"`).join(', ')}` }], tone: 'waiting' }
+      return { mark: '›', kind: 'You', runs: [{ text: `you typed ${entry.phrases.map(overrideLabel).join(', ')}` }], tone: 'waiting' }
     case 'spawn': {
       const task = entry.description ? `: ${entry.description}` : ''
       if (entry.isHeld) return { mark: '⑂', kind: 'Spawn', runs: [{ text: `${entry.agentType} held, not started${task}` }], tone: 'dim' }
@@ -555,7 +564,7 @@ export function reportText(all: AllTime, avail: Available | null): string {
   for (const [skill, c] of Object.entries(all.loads).sort(([, x], [, y]) => total(y) - total(x))) {
     out.push(`- ${skill}: ${total(c)} (${ORIGINS.filter(o => c[o]).map(o => `${BECAUSE[o]} ${c[o]}`).join(' · ')})`)
   }
-  const overrides = Object.entries(all.overrides ?? {}).sort(([, x], [, y]) => y - x).map(([phrase, n]) => `"${phrase}" ${n}`)
+  const overrides = Object.entries(all.overrides ?? {}).sort(([, x], [, y]) => y - x).map(([phrase, n]) => `${overrideLabel(phrase)} ${n}`)
   const sub = all.subagents ?? NO_SUBAGENTS
   const writes = all.writingTurns ?? NO_WRITING_TURNS
   out.push('', '## Routes and adapter holds', '')

@@ -813,7 +813,9 @@ not count. Type the override before the pasted text.
 Claude Code shows a short notice when the adapter records an override. The
 same sentence, `GOATED Claude Code adapter: recorded your override for this
 prompt: "<phrase>"`, also goes into the turn's context as the hook's
-`additionalContext`. A notice reaches a Claude Code mod with no text, so the
+`additionalContext`. Each phrase is recorded as typed, without backticks; a
+commit-message override is recorded as `commit message`, without its text.
+A notice reaches a Claude Code mod with no text, so the
 [skill-usage mod](skill-usage/README.md) counts overrides from that context.
 The phrase set lives in [`goated_adapter/overrides.py`](goated_adapter/overrides.py);
 change it and this table together.
