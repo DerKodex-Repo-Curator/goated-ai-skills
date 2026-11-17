@@ -31,10 +31,13 @@ const OWN_SOURCES = new Set(['userSettings', 'projectSettings'])
 // Bump the shape tag whenever what a stored event means changes: a reload then drops the session's events instead of
 // misreading them. `events-2`: Ticket 033 stopped reading the retired hand-written hooks. Ticket 050 added code
 // changes without a bump: events stored before it hold none, so their prompts lack `isTimed` and their turns' reads
-// count with no moment, while a bump would drop the session's events with no history read to rebuild them.
-const events = atom({ plugin: 'skill-usage', key: 'events' } as const, [], { shape: 'events-2' })
+// count with no moment. `events-3`: Ticket 075 added closeout items to holds and cut skip reasons; holds stored
+// before it have no items. The backfill mark carries the same tag, so a session whose events a bump dropped reads its
+// history again, as a mod that loaded mid-session does, instead of going on with what it observes from then on.
+const EVENTS_SHAPE = 'events-3'
+const events = atom({ plugin: 'skill-usage', key: 'events' } as const, [], { shape: EVENTS_SHAPE })
 const owner = atom({ plugin: 'skill-usage', key: 'owner' } as const, null)
-const backfilled = atom({ plugin: 'skill-usage', key: 'backfilled' } as const, null)
+const backfilled = atom({ plugin: 'skill-usage', key: 'backfilled' } as const, null, { shape: EVENTS_SHAPE })
 const baseline = atom({ plugin: 'skill-usage', key: 'baseline' } as const, null, { shape: 'summary-1' })
 const available = atom({ plugin: 'skill-usage', key: 'available' } as const, null, { shape: 'available-2' })
 const allTime = atom({ plugin: 'skill-usage', key: 'allTime' } as const, null, { shape: 'all-time-1' })

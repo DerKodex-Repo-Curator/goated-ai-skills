@@ -183,11 +183,11 @@ test('the router-first hold is followed by loading the router, the route-line ho
     { kind: 'load', t: 7, skill: 'tdd', via: 'tool', isSubagent: false },
     { kind: 'turn-end', t: 8 },
   ])
-  expect(s.nudges).toEqual({ 'router-first': { followed: 1 }, 'route-line': { followed: 1 }, pipeline: { followed: 1, ignored: 1 } })
+  expect(s.nudges).toEqual({ 'router-first': { followed: 1 }, 'route-line': { followed: 1 }, pipeline: { followed: 1, unanswered: 1 } })
   expect(s.holds).toEqual({ strict: 3 })
   // The log row keeps the hold's kind and each skill's own result.
   const pipeline = s.timeline.find(e => e.kind === 'nudge' && e.hook === 'pipeline')
-  expect(pipeline).toEqual({ kind: 'nudge', t: 6, hook: 'pipeline', holdKind: 'strict', skills: [{ skill: 'tdd', status: 'followed', at: 7 }, { skill: 'doc-sync', status: 'ignored', at: 8 }] })
+  expect(pipeline).toEqual({ kind: 'nudge', t: 6, hook: 'pipeline', holdKind: 'strict', skills: [{ skill: 'tdd', status: 'followed', at: 7 }, { skill: 'doc-sync', status: 'unanswered', at: 8 }] })
 })
 
 test('a skip line never declines a strict adapter hold: only loading the skill clears it', async () => {
@@ -198,9 +198,9 @@ test('a skip line never declines a strict adapter hold: only loading the skill c
     ...markerEvents('goated-skip: doc-sync: change touches only test fixtures', 4),
     { kind: 'turn-end', t: 5 },
   ])
-  expect(s.nudges).toEqual({ pipeline: { followed: 1, ignored: 1 } })
+  expect(s.nudges).toEqual({ pipeline: { followed: 1, unanswered: 1 } })
   const row = s.timeline.find(e => e.kind === 'nudge')
-  expect(row?.kind === 'nudge' && row.skills[1]).toEqual({ skill: 'doc-sync', status: 'ignored', at: 5 })
+  expect(row?.kind === 'nudge' && row.skills[1]).toEqual({ skill: 'doc-sync', status: 'unanswered', at: 5 })
 })
 
 test('a justified skip line declines a justified-skip hold it names, before or after the hold, keeping the reason', async () => {
@@ -299,7 +299,7 @@ test("a subagent reading a skill's SKILL.md is a body read, which settles that s
     ...read,
     { kind: 'turn-end', t: 5, agent: 'a2' },
   ])
-  expect(s.nudges).toEqual({ design: { 'read files': 1, ignored: 1 } })
+  expect(s.nudges).toEqual({ design: { 'read files': 1, unanswered: 1 } })
   expect(s.subagents).toEqual({ spawns: 0, starts: 0, bodyReads: 1 })
   expect(s.timeline.at(-1)).toEqual({ kind: 'body', t: 4, skill: 'tdd', isSubagent: true })
 })
@@ -314,7 +314,7 @@ const PANE = {
 } as const
 
 function paneRig(...[$, on, events]: [...Parameters<TestBody>, UsageEvent[]]) {
-  const stored: Record<string, unknown> = { tab: 'session', events: { shape: 'events-2', value: events } }
+  const stored: Record<string, unknown> = { tab: 'session', events: { shape: 'events-3', value: events } }
   on('clock.now', () => ({ value: 100_000 }))
   on('state.get', (_, e) => {
     const key = (e as { key: string }).key
@@ -519,7 +519,7 @@ test('a summary stored by an earlier version still shows its hook keys and alrea
   const text = reportText(all, null)
   expect(text).toContain('- commit check: 3 of 3 handled (100%)')
   expect(text).toContain('already loaded 2')
-  const stored: Record<string, unknown> = { tab: 'all', events: { shape: 'events-2', value: [] }, allTime: { shape: 'all-time-1', value: all } }
+  const stored: Record<string, unknown> = { tab: 'all', events: { shape: 'events-3', value: [] }, allTime: { shape: 'all-time-1', value: all } }
   on('clock.now', () => ({ value: 100_000 }))
   on('state.get', (_, e) => {
     const key = (e as { key: string }).key

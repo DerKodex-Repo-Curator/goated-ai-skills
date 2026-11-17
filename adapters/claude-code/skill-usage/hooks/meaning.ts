@@ -65,9 +65,19 @@ export const RESULT: Record<Outcome, string> = {
   'read files': 'files read',
   'already loaded': 'already loaded',
   declined: 'declined',
-  ignored: 'not loaded',
+  overridden: 'overridden by you',
+  'new prompt': 'ended by a new prompt',
+  unanswered: 'unanswered',
+  // The three kinds above together, as summaries stored before they were told apart counted them.
+  ignored: 'not answered',
   pending: 'waiting',
 }
+/** The outcomes of a hold that nothing answered, in the pane's order; `ignored` is all three, in earlier summaries. */
+export const UNANSWERED: readonly Outcome[] = ['overridden', 'new prompt', 'unanswered', 'ignored']
+/** Short words for each kind of no answer, where a line counts them side by side. */
+export const UNANSWERED_SHORT: Partial<Record<Outcome, string>> = { overridden: 'overridden', 'new prompt': 'new prompt', unanswered: 'unanswered', ignored: 'not answered' }
+/** How many holds nothing answered, of every kind. */
+export const unansweredCount = (c: Counts<Outcome>) => UNANSWERED.reduce((sum, k) => sum + (c[k] ?? 0), 0)
 export const skillName = (skill: string) => (skill === ROUTE_LINE ? 'a route line' : skill)
 /** A route line's form, as the pane counts it. */
 export const ROUTE_FORM: Record<RouteForm, string> = { direct: 'direct', continue: 'continue', route: 'routed' }
@@ -96,7 +106,17 @@ export const READ_COLOR = '#e0679b'
  * colours between the picture's dark and light ones, readable on either.
  */
 export const COLOR: Record<Tone, string | undefined> = { plain: undefined, dim: undefined, good: 'success', waiting: 'warning', bad: 'error', declined: DECLINED_COLOR, read: READ_COLOR }
-export const OUTCOME_TONE: Record<Outcome, Meaning | 'declined'> = { followed: 'good', 'read files': 'good', 'already loaded': 'good', declined: 'declined', ignored: 'bad', pending: 'waiting' }
+export const OUTCOME_TONE: Record<Outcome, Meaning | 'declined'> = {
+  followed: 'good',
+  'read files': 'good',
+  'already loaded': 'good',
+  declined: 'declined',
+  overridden: 'bad',
+  'new prompt': 'bad',
+  unanswered: 'bad',
+  ignored: 'bad',
+  pending: 'waiting',
+}
 /** Outcomes that count as handled: the skill acted on, or declined with a reason. */
 export const isHandled = (o: Outcome) => OUTCOME_TONE[o] === 'good' || o === 'declined'
 
@@ -104,7 +124,7 @@ export const isHandled = (o: Outcome) => OUTCOME_TONE[o] === 'good' || o === 'de
 export function followCounts(c: Counts<Outcome>): { acted: number; settled: number; pending: number; declined: number } {
   const declined = c.declined ?? 0
   const acted = (c.followed ?? 0) + (c['read files'] ?? 0) + (c['already loaded'] ?? 0) + declined
-  return { acted, settled: acted + (c.ignored ?? 0), pending: c.pending ?? 0, declined }
+  return { acted, settled: acted + unansweredCount(c), pending: c.pending ?? 0, declined }
 }
 
 /** A follow rate's meaning: green from 80%, amber from 40%, red below. */
