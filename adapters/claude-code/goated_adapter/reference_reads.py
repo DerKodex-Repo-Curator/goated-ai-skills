@@ -3,18 +3,25 @@
 The registry (`stack/goated-stack.yaml` in a GOATED distribution) lists each
 skill's reference files, each with a signal that makes its read required or
 an advisory reason (registry reference reads spec, R1, R2). This module owns
-how the adapter reads those declarations and how it observes the signal kinds
-judged on one edit (Ticket 067):
+how the adapter reads those declarations and how it judges the signal kinds
+observed at one write (Tickets 067 and 068):
 
 - `edit-adds-pattern`: the code an edit adds matches a pattern the registry
   names (`PATTERNS`), in a file of the given kind if one is given;
 - `edit-of-file-kind`: an edit of a file of that kind adds at least
-  `min_added_lines` lines.
+  `min_added_lines` lines;
+- `write-under-path`: the file written is under that folder of the project;
+- `gate-fires`: the named gate's condition holds at the write, whether or not
+  that gate holds it (its skill may be loaded);
+- `sensitive-category-count`: the write is to a security-sensitive file, and
+  the turn's sensitive changes, this one included, span at least
+  `min_categories` categories.
 
-Every other kind is observed elsewhere or not yet: `existing-rule` references
-keep their own gates, and the turn's kinds are Ticket 068's. A reference of an
-edit kind added to the registry later is enforced with no change here, as long
-as its pattern and file kind are ones this module knows.
+The caller observes the facts (`Edit`); this module decides which references
+they select. `existing-rule` references keep their own gates, and
+`spawn-with-brief` is not judged here. A reference of these kinds added to the
+registry later is enforced with no change here, as long as its pattern, file
+kind, and gate are ones the adapter observes.
 
 The adapter uses only the standard library, so `load` reads the block-style
 YAML subset the registry is written in, and raises `RegistryUnreadable` for a
@@ -29,8 +36,12 @@ import re
 from pathlib import Path
 from typing import NamedTuple
 
-# The signal kinds this module judges on one edit.
+# The signal kinds judged on the code a write adds; they apply to code files only.
 EDIT_KINDS = ("edit-adds-pattern", "edit-of-file-kind")
+# The gates a `gate-fires` signal can name: the ones whose condition the adapter
+# observes at a write (`Edit.gates`). The schema allows any gate, so
+# `validate_skills.py` rejects a registry entry naming another.
+OBSERVED_GATES = frozenset({"repeated-failure"})
 MAX_REGISTRY_BYTES = 1024 * 1024
 
 
@@ -96,14 +107,25 @@ class Reference(NamedTuple):
 
 
 class Edit(NamedTuple):
-    """What the edit signals read of one edit: whether its file is a code file
-    and a test file, and the code of each line it adds
+    """What the signals read of one write and the turn before it.
+
+    `is_code` and `is_test` say whether the file is a code file and a test
+    file. `added_code` is the code of each line the write adds
     (`design_reads.added_code`): the non-blank lines the text it replaces, or
-    the file on disk for a Write, did not hold, indentation aside."""
+    the file on disk for a Write, did not hold, indentation aside; empty when
+    unknown, as for a shell write. `project_paths` are the file's paths below
+    each project root that holds it, with `/` separators; empty when its place
+    is unknown. `gates` names the gates whose condition holds at this write
+    (`repeated-failure`). `categories` are the security-sensitive categories
+    the turn's changes span, this write's included, when this write is to a
+    sensitive file; else empty."""
 
     is_code: bool
     is_test: bool
     added_code: list[str]
+    project_paths: tuple[str, ...] = ()
+    gates: frozenset[str] = frozenset()
+    categories: frozenset[str] = frozenset()
 
 
 def load(path: Path | None) -> tuple[Reference, ...]:
@@ -128,9 +150,10 @@ def load(path: Path | None) -> tuple[Reference, ...]:
 
 
 def selected(references, edit: Edit) -> list[tuple[Reference, str]]:
-    """The references among `references` whose edit signal `edit` fires, each
-    with what selected it, in the given order. A signal of another kind, or
-    naming a pattern or file kind this module does not know, selects nothing."""
+    """The references among `references` whose signal `edit` fires, each with
+    what selected it, in the given order. A signal of a kind not judged here,
+    or naming a pattern, file kind, or gate this module is not told of,
+    selects nothing."""
 
     found = []
     for reference in references:
@@ -157,9 +180,32 @@ def reads_in(calls) -> list[str]:
 def _fires(signal: dict, edit: Edit) -> str | None:
     """What makes `signal` fire for `edit`, in a hold's words, or None."""
 
+    kind = signal.get("kind")
+    if kind in EDIT_KINDS:
+        return _edit_fires(signal, edit) if edit.is_code else None
+    if kind == "write-under-path":
+        # The registry's folder ends in `/`, so `docs/specs.md` is not under
+        # `docs/specs/`. Case is ignored, as Windows ignores it.
+        folder = signal.get("path")
+        under = folder is not None and any(
+            p.lower().startswith(folder.lower()) for p in edit.project_paths)
+        return f'a write under "{folder}"' if under else None
+    if kind == "gate-fires":
+        gate = signal.get("gate")
+        return f"a write while the {gate} gate's condition holds" if gate in edit.gates else None
+    if kind == "sensitive-category-count":
+        least, spanned = signal.get("min_categories", 1), sorted(edit.categories)
+        if not spanned or len(spanned) < least:
+            return None
+        return (f"a security-sensitive write, the turn's changes spanning {len(spanned)} "
+                f"categories ({', '.join(spanned)}), {least} or more")
+    return None
+
+
+def _edit_fires(signal: dict, edit: Edit) -> str | None:
+    """What makes an edit-kind `signal` fire for code-file `edit`, or None."""
+
     kind, file_kind = signal.get("kind"), signal.get("file_kind")
-    if kind not in EDIT_KINDS or not edit.is_code:
-        return None
     if file_kind is not None and (file_kind not in FILE_KINDS or not edit.is_test):
         return None
     in_file = f" to a {file_kind} file" if file_kind else ""
@@ -210,7 +256,8 @@ def _declared(data) -> list[Reference]:
                 continue  # An advisory reference: no read is required.
             if not isinstance(signal, dict) or not isinstance(signal.get("kind"), str):
                 raise ValueError("a reference signal has no kind")
-            for key, kind in (("pattern", str), ("file_kind", str), ("min_added_lines", int)):
+            for key, kind in (("pattern", str), ("file_kind", str), ("min_added_lines", int),
+                              ("path", str), ("gate", str), ("min_categories", int)):
                 if key in signal and not isinstance(signal[key], kind):
                     raise ValueError(f"a reference signal's {key} is not {kind.__name__}")
             found.append(Reference(skill["name"], entry["file"], signal))

@@ -115,6 +115,24 @@ class RegistryReaderTests(unittest.TestCase):
         messages = self.messages("skills:\n" + self.ENTRY.replace("min_added_lines: 5", "min_added_lines: -1"))
         self.assertEqual(len(messages), 1)
 
+    def gate_entry(self, gate: str) -> str:
+        return ("skills:\n  - name: diagnose\n    path: skills/engineering/diagnose/SKILL.md\n"
+                "    references:\n      - file: root-cause-tracing.md\n        signal:\n"
+                f"          kind: gate-fires\n          gate: {gate}\n")
+
+    def test_a_gate_fires_entry_the_adapter_observes_passes(self) -> None:
+        self.assertEqual(self.messages(self.gate_entry("repeated-failure")), [])
+
+    def test_a_gate_fires_entry_naming_a_gate_the_adapter_does_not_observe_is_an_error(self) -> None:
+        # The schema allows every gate name; the adapter observes only some, and
+        # would otherwise never enforce the entry, saying nothing.
+        messages = self.messages(self.gate_entry("pr-review"))
+        self.assertEqual(len(messages), 1)
+        self.assertIn("diagnose", messages[0])
+        self.assertIn("root-cause-tracing.md", messages[0])
+        self.assertIn("pr-review", messages[0])
+        self.assertIn("repeated-failure", messages[0])
+
     def test_no_reader_or_no_registry_reports_nothing_here(self) -> None:
         (self.repo / self.READER).unlink()
         self.assertEqual(self.messages("skills:\n" + self.indentless()), [])

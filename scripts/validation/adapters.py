@@ -4,7 +4,8 @@ ADR 0003 makes adapters optional layers: no skill may depend on one, and the
 repo's adapters use only the Python standard library so they install without a
 package manager. Adapter behavior itself is covered by the unit tests; this
 module checks those two boundaries, and that the Claude Code adapter's own
-registry reader reads the source registry as a full YAML parser does.
+registry reader reads the source registry as a full YAML parser does, and
+that every `gate-fires` signal names a gate the adapter observes.
 """
 
 from __future__ import annotations
@@ -62,7 +63,9 @@ def validate_registry_reader(repo: Path) -> list[Finding]:
     The adapter fails open on a registry it cannot read, so a registry edit
     its reader refuses would silently switch the `reference-reads` gate off.
     Nothing is reported without the reader or a registry that YAML parses;
-    the registry check owns reporting those.
+    the registry check owns reporting those. When the two agree, a finding is
+    returned for each `gate-fires` signal naming a gate outside the reader's
+    `OBSERVED_GATES`, which the adapter would never enforce.
     """
 
     reader_path, registry_path = repo / REGISTRY_READER_PATH, repo / REGISTRY_PATH
@@ -96,7 +99,15 @@ def validate_registry_reader(repo: Path) -> list[Finding]:
         detail = f": {first[0]!r} where YAML gives {first[1]!r}" if first else ""
         return [Finding(label, "the Claude Code adapter's registry reader reads its references "
                                f"differently from YAML{detail}")]
-    return []
+    # The schema allows a `gate-fires` signal to name any gate, but the adapter
+    # observes only some; an entry naming another would never be enforced.
+    observed = ", ".join(sorted(reader.OBSERVED_GATES))
+    return [
+        Finding(label, f"{skill}'s {file} has a gate-fires signal for the {signal['gate']} gate, "
+                       f"which the Claude Code adapter does not observe (it observes: {observed})")
+        for skill, file, signal in found
+        if signal.get("kind") == "gate-fires" and signal.get("gate") not in reader.OBSERVED_GATES
+    ]
 
 
 def _non_stdlib_imports(path: Path, repo: Path) -> list[Finding]:

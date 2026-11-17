@@ -33,6 +33,10 @@ SKILLS = "/opt/goated/skills"
 MOCKING = f"{SKILLS}/tdd/references/mocking-and-seams.md"
 TEST_DESIGN = f"{SKILLS}/tdd/references/test-design.md"
 WAITING = f"{SKILLS}/diagnose/references/condition-based-waiting.md"
+SPEC_TEMPLATE = f"{SKILLS}/write-a-spec/references/spec-template.md"
+TICKET_TEMPLATES = f"{SKILLS}/spec-to-tickets/references/ticket-slicing-templates.md"
+ROOT_CAUSE = f"{SKILLS}/diagnose/references/root-cause-tracing.md"
+CHECKLIST = f"{SKILLS}/code-security-review/references/security-review-checklist.md"
 TEST_FILE = "tests/test_export.py"
 CODE_FILE = "src/export.py"
 SKIP_TDD = "goated-skip: tdd: the mock is an existing shared fixture"
@@ -369,10 +373,18 @@ class RegistryEntries(ReferenceReadsTestCase):
             "        signal:\n"
             "          kind: existing-rule\n"
             "          gate: spawn\n"
-            "      - file: later.md\n"
+            "      - file: decisions.md\n"
             "        signal:\n"
             "          kind: write-under-path\n"
-            "          path: docs/specs/\n",
+            "          path: docs/decisions/\n"
+            "      - file: failing-tests.md\n"
+            "        signal:\n"
+            "          kind: gate-fires\n"
+            "          gate: repeated-failure\n"
+            "      - file: wide-change.md\n"
+            "        signal:\n"
+            "          kind: sensitive-category-count\n"
+            "          min_categories: 3\n",
             encoding="utf-8",
         )
         return path
@@ -389,10 +401,45 @@ class RegistryEntries(ReferenceReadsTestCase):
         # The fixture replaced the real registry, so its references are all there is.
         self.assertNotIn("test-design.md", reason(held))
 
-    def test_other_kinds_and_advisory_entries_ask_for_nothing_here(self) -> None:
-        s = self.first_turn("tdd", "prototype", registry=self.fixture_registry())
+    def test_fixture_entries_of_the_turn_kinds_are_enforced(self) -> None:
+        registry = self.fixture_registry()
+        s = self.first_turn("tdd", registry=registry)
         self.assertPasses(s.call("Write", {"file_path": "docs/specs/x.md", "content": "# X\n"}))
+        self.assertHeldFor(s.call("Write", {"file_path": "docs/decisions/x.md", "content": "# X\n"}),
+                           "tdd/references/decisions.md")
+
+        s = self.first_turn("tdd", registry=registry)
+        s.run(CHECK, success=False)
+        s.run(CHECK, success=False)
+        self.assertHeldFor(s.call("Edit", edit("docs/notes.md", "Some notes.")),
+                           "tdd/references/failing-tests.md")
+
+        # The fixture declares nothing for `code-security-review`; it loads for the security gate.
+        s = self.first_turn("tdd", "code-security-review", registry=registry)
+        self.assertPasses(s.call("Edit", edit("src/auth/login.py", "check()")))
+        self.assertPasses(s.call("Edit", edit("package.json", '"a": "1"')))
+        self.assertHeldFor(s.call("Edit", edit(".env", "KEY=1")), "tdd/references/wide-change.md")
+
+    def test_advisory_entries_ask_for_nothing(self) -> None:
+        s = self.first_turn("tdd", "prototype", registry=self.fixture_registry())
         self.assertPasses(s.call("Edit", edit("docs/notes.md", "Some notes.")))
+        held = s.call("Write", {"file_path": "docs/decisions/x.md", "content": "# X\n"})
+        self.assertNotIn("spike-notes.md", reason(held))
+
+    def test_a_gate_the_adapter_does_not_observe_fails_open(self) -> None:
+        # Not a way to declare a reference: validate_skills rejects such an entry
+        # (tests/test_validate_adapters.py). This guards an installed registry the
+        # validator never saw, which must not hold every write.
+        self.assertEqual(reference_reads.OBSERVED_GATES, frozenset({"repeated-failure"}))
+        reference = reference_reads.Reference(
+            "tdd", "x.md", {"kind": "gate-fires", "gate": "pr-review"})
+        edit_ = reference_reads.Edit(True, False, [], gates=frozenset({"repeated-failure"}))
+        self.assertEqual(reference_reads.selected([reference], edit_), [])
+
+    def test_a_path_signal_naming_no_path_selects_nothing(self) -> None:
+        reference = reference_reads.Reference("tdd", "x.md", {"kind": "write-under-path"})
+        edit = reference_reads.Edit(False, False, [], project_paths=("none/x.md", "docs/x.md"))
+        self.assertEqual(reference_reads.selected([reference], edit), [])
 
     def test_the_reader_gives_what_the_registry_declares(self) -> None:
         data = yaml.safe_load(REGISTRY.read_text(encoding="utf-8"))
@@ -403,6 +450,231 @@ class RegistryEntries(ReferenceReadsTestCase):
         )
         found = sorted((r.skill, r.file, r.signal) for r in reference_reads.load(REGISTRY))
         self.assertEqual(found, expected)
+
+
+class SpecTemplate(ReferenceReadsTestCase):
+    """AC (Ticket 068): with `write-a-spec` loaded, a write under `docs/specs/`
+    is held until `spec-template.md` is read; one under `docs/` elsewhere is not."""
+
+    def test_a_write_under_docs_specs_is_held_until_the_template_is_read(self) -> None:
+        s = self.first_turn("write-a-spec")
+        held = s.call("Write", {"file_path": "docs/specs/2026-11-17-export.md", "content": "# X\n"})
+        self.assertHeldFor(held, "write-a-spec/references/spec-template.md")
+        self.assertIn('"docs/specs/"', reason(held))
+        self.assertIn("`goated-skip: write-a-spec: <reason>`", reason(held))
+        s.read(SPEC_TEMPLATE)
+        self.assertPasses(s.call("Write", {"file_path": "docs/specs/2026-11-17-export.md",
+                                           "content": "# X\n"}))
+
+    def test_a_write_under_docs_elsewhere_is_not_held(self) -> None:
+        s = self.first_turn("write-a-spec")
+        for path in ("docs/plans/2026-11-17-export.md", "docs/specs.md",
+                     "src/docs/specs/notes.md"):
+            with self.subTest(path=path):
+                self.assertPasses(s.call("Write", {"file_path": path, "content": "# X\n"}))
+
+    def test_an_absolute_path_inside_the_project_is_held(self) -> None:
+        s = self.first_turn("write-a-spec")
+        path = str(s.project / "docs" / "specs" / "x.md")
+        self.assertHeldFor(s.call("Edit", edit(path, "More.")),
+                           "write-a-spec/references/spec-template.md")
+
+    def test_a_shell_write_under_the_path_is_held(self) -> None:
+        s = self.first_turn("write-a-spec")
+        self.assertHeldFor(s.call("Bash", {"command": "echo '# X' > docs/specs/x.md"}),
+                           "write-a-spec/references/spec-template.md")
+        self.assertPasses(s.call("Bash", {"command": "echo '# X' > docs/plans/x.md"}))
+
+    def test_without_the_skill_loaded_it_is_not_held(self) -> None:
+        s = self.first_turn("tdd")
+        self.assertPasses(s.call("Write", {"file_path": "docs/specs/x.md", "content": "# X\n"}))
+
+
+class TicketTemplates(ReferenceReadsTestCase):
+    """AC (Ticket 068): with `spec-to-tickets` loaded, a write under `tickets/`
+    is held until the templates are read; a file outside the project named
+    `tickets/x` is not."""
+
+    def test_a_write_under_tickets_is_held_until_the_templates_are_read(self) -> None:
+        s = self.first_turn("spec-to-tickets")
+        held = s.call("Write", {"file_path": "tickets/080-export.md", "content": "# T\n"})
+        self.assertHeldFor(held, "spec-to-tickets/references/ticket-slicing-templates.md")
+        s.read(TICKET_TEMPLATES)
+        self.assertPasses(s.call("Write", {"file_path": "tickets/080-export.md", "content": "# T\n"}))
+
+    def test_the_hold_names_the_write(self) -> None:
+        s = self.first_turn("spec-to-tickets")
+        held = s.call("Write", {"file_path": "tickets/080-export.md", "content": "# T\n"})
+        self.assertIn('This write to "080-export.md" needs', reason(held))
+        self.assertIn("This write was not applied.", reason(held))
+
+    def test_a_shell_write_from_an_unknown_folder_is_not_judged(self) -> None:
+        s = self.first_turn("spec-to-tickets")
+        self.assertPasses(s.call("Bash", {"command": "cd $DIR && echo x > tickets/a.md"}))
+
+    def test_a_session_below_the_checkout_judges_from_each_project_root(self) -> None:
+        (self.root / "s1").mkdir()
+        s = Session(self.root / "s1", session_id="session-below")
+        s.project.mkdir(parents=True)
+        (s.project / ".git").mkdir()
+        s.cwd = s.project / "web"
+        s.cwd.mkdir()
+        s.config.registry_path = REGISTRY
+        s.prompt("Slice the spec.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        s.load("spec-to-tickets")
+        # The checkout's own tickets folder, reached from the session's folder.
+        self.assertHeldFor(s.call("Write", {"file_path": str(s.project / "tickets" / "x.md"),
+                                            "content": "# T\n"}),
+                           "spec-to-tickets/references/ticket-slicing-templates.md")
+        # The session's folder is a project root too, so its own `tickets/` counts.
+        self.assertHeldFor(s.call("Write", {"file_path": "tickets/y.md", "content": "# T\n"}),
+                           "spec-to-tickets/references/ticket-slicing-templates.md")
+        self.assertPasses(s.call("Write", {"file_path": "docs/tickets/z.md", "content": "# T\n"}))
+
+    def test_a_tickets_folder_outside_the_project_is_not_held(self) -> None:
+        s = self.first_turn("spec-to-tickets")
+        outside = self.root / "elsewhere" / "tickets" / "x.md"
+        self.assertPasses(s.call("Write", {"file_path": str(outside), "content": "# T\n"}))
+        self.assertPasses(s.call("Bash", {"command": f"echo T > '{outside.as_posix()}'"}))
+
+
+CHECK = "uv run python -m unittest discover -s tests"
+
+
+class RootCauseTracing(ReferenceReadsTestCase):
+    """AC (Ticket 068): with `diagnose` loaded, the first write after one check
+    failed twice is held until `root-cause-tracing.md` is read; after one
+    failure it is not."""
+
+    def test_a_write_after_two_failures_is_held_until_the_reference_is_read(self) -> None:
+        s = self.first_turn("diagnose")
+        s.run(CHECK, success=False)
+        self.assertPasses(s.call("Edit", edit(CODE_FILE, "total = 1")))
+        s.run(CHECK, success=False)
+        held = s.call("Edit", edit(CODE_FILE, "total = 2"))
+        self.assertHeldFor(held, "diagnose/references/root-cause-tracing.md")
+        self.assertIn("repeated-failure", reason(held))
+        s.read(ROOT_CAUSE)
+        self.assertPasses(s.call("Edit", edit(CODE_FILE, "total = 2")))
+
+    def test_a_document_or_shell_write_is_held_too(self) -> None:
+        s = self.first_turn("diagnose")
+        s.run(CHECK, success=False)
+        s.run(CHECK, success=False)
+        self.assertHeldFor(s.call("Edit", edit("docs/notes.md", "Cause unknown.")),
+                           "diagnose/references/root-cause-tracing.md")
+        self.assertHeldFor(s.call("Bash", {"command": "echo x > src/notes.txt"}),
+                           "diagnose/references/root-cause-tracing.md")
+
+    def test_rerunning_the_check_is_not_held(self) -> None:
+        s = self.first_turn("diagnose")
+        s.run(CHECK, success=False)
+        s.run(CHECK, success=False)
+        self.assertPasses(s.run(f"{CHECK} > test-output.txt", success=False))
+
+    def test_a_write_naming_no_file_or_outside_the_project_is_held_too(self) -> None:
+        # The same writes the repeated-failure gate holds, wherever they land.
+        for call in (("Bash", {"command": "git apply fix.patch"}),
+                     ("Bash", {"command": "patch -p1 < fix.patch"}),
+                     ("Edit", edit(str(self.root / "scratch" / "export.py"), "total = 2"))):
+            with self.subTest(call=call):
+                s = self.first_turn("diagnose")
+                s.run(CHECK, success=False)
+                s.run(CHECK, success=False)
+                held = s.call(*call)
+                self.assertHeldFor(held, "diagnose/references/root-cause-tracing.md")
+                if call[0] == "Bash":
+                    self.assertTrue(reason(held).split("\n")[1].startswith("This write needs"),
+                                    reason(held))
+
+    def test_one_failure_or_a_pass_between_is_not_held(self) -> None:
+        s = self.first_turn("diagnose")
+        s.run(CHECK, success=False)
+        self.assertPasses(s.call("Edit", edit(CODE_FILE, "total = 1")))
+        s.run(CHECK)
+        s.run(CHECK, success=False)
+        self.assertPasses(s.call("Edit", edit(CODE_FILE, "total = 2")))
+
+    def test_without_diagnose_the_repeated_failure_gate_holds_instead(self) -> None:
+        s = self.first_turn("tdd")
+        s.run(CHECK, success=False)
+        s.run(CHECK, success=False)
+        self.assertEqual(hold_line(s.call("Edit", edit(CODE_FILE, "total = 2"))),
+                         "goated-hold: repeated-failure | justified-skip")
+
+
+class SecurityChecklist(ReferenceReadsTestCase):
+    """AC (Ticket 068): with `code-security-review` loaded, a sensitive write
+    when the turn's changes span two categories is held until the checklist
+    is read; with one category it is not."""
+
+    def test_a_second_category_is_held_until_the_checklist_is_read(self) -> None:
+        s = self.first_turn("code-security-review")
+        self.assertPasses(s.call("Edit", edit("src/auth/login.py", "check()")))
+        held = s.call("Edit", edit("package.json", '"left-pad": "1.0.0"'))
+        self.assertHeldFor(held, "code-security-review/references/security-review-checklist.md")
+        self.assertIn("2 categories (auth, dependencies)", reason(held))
+        s.read(CHECKLIST)
+        self.assertPasses(s.call("Edit", edit("package.json", '"left-pad": "1.0.0"')))
+
+    def test_writes_in_one_category_are_not_held(self) -> None:
+        s = self.first_turn("code-security-review")
+        self.assertPasses(s.call("Edit", edit("src/auth/login.py", "check()")))
+        self.assertPasses(s.call("Edit", edit("src/auth/session.py", "renew()")))
+
+    def test_a_write_to_a_file_that_is_not_sensitive_is_not_held(self) -> None:
+        s = self.first_turn("code-security-review")
+        s.call("Edit", edit("src/auth/login.py", "check()"))
+        s.call("Bash", {"command": "echo x > .env"})
+        self.assertPasses(s.call("Edit", edit(CODE_FILE, "total = 1")))
+
+    def test_a_subagents_sensitive_write_counts_as_a_category(self) -> None:
+        s = self.first_turn("code-security-review", "handoff")
+        s.read(f"{SKILLS}/handoff/references/spawn-brief.md")
+        agent = s.subagent("c1")
+        agent.prompt("Update the lockfile.", hook=False)
+        agent.load("code-security-review")
+        agent.call("Edit", edit("package.json", '"a": "1"'), agent_id="c1",
+                   agent_type="general-purpose")
+        self.assertPasses(s.spawn("c1", BRIEF))
+        held = s.call("Edit", edit("src/auth/login.py", "check()"))
+        self.assertHeldFor(held, "code-security-review/references/security-review-checklist.md")
+        self.assertIn("(auth, dependencies)", reason(held))
+
+    def test_a_shell_write_counts_as_a_category(self) -> None:
+        s = self.first_turn("code-security-review")
+        self.assertPasses(s.call("Bash", {"command": "echo KEY=1 > .env"}))
+        self.assertHeldFor(s.call("Edit", edit("src/auth/login.py", "check()")),
+                           "code-security-review/references/security-review-checklist.md")
+
+
+class TurnSignalSkipLines(ReferenceReadsTestCase):
+    """AC (Ticket 068): each hold clears on a skip line naming its skill."""
+
+    def test_a_skip_line_naming_the_skill_clears_each_hold(self) -> None:
+        cases = (
+            ("write-a-spec", lambda s: None,
+             lambda s: s.call("Write", {"file_path": "docs/specs/x.md", "content": "# X\n"})),
+            ("spec-to-tickets", lambda s: None,
+             lambda s: s.call("Write", {"file_path": "tickets/x.md", "content": "# T\n"})),
+            ("diagnose", lambda s: (s.run(CHECK, success=False), s.run(CHECK, success=False)),
+             lambda s: s.call("Edit", edit(CODE_FILE, "total = 2"))),
+            ("code-security-review", lambda s: s.call("Edit", edit("src/auth/login.py", "x()")),
+             lambda s: s.call("Edit", edit("package.json", '"a": "1"'))),
+        )
+        for skill, before, write in cases:
+            with self.subTest(skill=skill):
+                s = self.first_turn(skill)
+                before(s)
+                held = write(s)
+                self.assertEqual(hold_line(held), GATE_LINE, reason(held))
+                self.assertIn(f"skip {skill}", reason(held))
+                s.say("goated-skip: tdd: not this skill")
+                self.assertEqual(hold_line(write(s)), GATE_LINE)
+                s.say(f"goated-skip: {skill}: the reference does not apply here")
+                self.assertPasses(write(s))
 
 
 class NoRegistry(ReferenceReadsTestCase):

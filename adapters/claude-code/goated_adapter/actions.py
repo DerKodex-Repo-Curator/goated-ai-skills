@@ -31,7 +31,7 @@ and Verification items ask git for only when nothing else met them; which
 brief templates the turn's spawns followed, which the hooks record when the
 `spawn` gate lets one through; the design skill's section ids, which the
 closeout reads from the installed skill only when it checks citations; and
-the registry's reference declarations, read only for an edit of a project
+the registry's reference declarations, read only for a write to a project
 file.
 
 Strict holds clear only on proof or a user override. Justified-skip holds also
@@ -381,8 +381,11 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     own hold is met is held while the turn has unmet closeout items (Ticket 059);
     without it, as for a subagent, which has no closeout, it is not.
     `references` returns the registry's declared references
-    (`reference_reads.load`), called only for an edit of a project file;
-    without it, as for a subagent, the `reference-reads` gate holds nothing.
+    (`reference_reads.load`), called only for a write; without it, as for a
+    subagent, the `reference-reads` gate holds nothing.
+    `subagents` is also called for a write to a security-sensitive file when a
+    loaded skill declares references, since the turn's sensitive categories
+    include its subagents' changes.
     """
 
     proof = _Proof(turn, overrides, namespaces, earlier=earlier)
@@ -403,10 +406,24 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         if hold is None and command.opens_pr:
             hold = _pr_hold(proof, changes) or _pr_review_hold(
                 lambda: changed_lines(cwd, command.pr_base, command.pr_head), proof, changes)
+        judged = False  # Whether a project file the command writes met reference-reads.
         for target in command.write_targets:
-            if _in_project(target, project, target not in command.unplaced_targets):
+            placed = target not in command.unplaced_targets
+            if _in_project(target, project, placed):
                 hold = hold or _security_hold(_norm(target), proof)
+                # As for the repeated-failure gate, a check's own output is not a write
+                # the turn makes; a target written from an unknown folder has no place.
+                if placed and command.non_check_writes:
+                    judged = True
+                    hold = hold or _reference_reads_hold(
+                        _norm(target), None, proof, project, references, changes)
         if command.non_check_writes:
+            if not judged:
+                # A write naming no project file (`git apply`, a scratch file, an
+                # unknown folder) still meets the turn's gate signals, as the
+                # repeated-failure gate holds it.
+                hold = hold or _reference_reads_hold(None, None, proof, project, references,
+                                                     changes)
             hold = hold or _repeated_failure_hold(proof)
         return hold
     if PR_TOOL_RE.match(tool_name):
@@ -430,7 +447,11 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         if hold is None and _in_project(path, project):
             # A scratch file elsewhere is not the project's design or security.
             hold = (_security_hold(path, proof) or _design_hold(path, tool_input, proof, project)
-                    or _reference_reads_hold(path, tool_input, proof, project, references))
+                    or _reference_reads_hold(path, tool_input, proof, project, references,
+                                             changes))
+        elif hold is None:
+            # Only the turn's gate signals reach it, as the repeated-failure gate does.
+            hold = _reference_reads_hold(None, None, proof, project, references, changes)
         return hold or _repeated_failure_hold(proof)
     return None
 
@@ -966,26 +987,44 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
     )
 
 
-def _reference_reads_hold(path: str, tool_input: dict, proof: _Proof, project: Project | None,
-                          references: Callable[[], tuple] | None) -> Hold | None:
-    """Hold a project file edit until the skill references its signals select
-    are read (registry reference reads spec, R5).
+def _reference_reads_hold(path: str | None, tool_input: dict | None, proof: _Proof,
+                          project: Project | None, references: Callable[[], tuple] | None,
+                          changes: Callable[[], "_Changes"]) -> Hold | None:
+    """Hold a write until the skill references its signals select are read
+    (registry reference reads spec, R5). `path` is the project file written,
+    or None for a write naming no project file, which only the turn's gate
+    signals reach.
 
     Only references of a skill that counts as loaded and has no skip line or
-    typed skip this turn are judged, and only by the signal kinds judged on
-    one edit (`reference_reads.selected`). A reference counts as read after a
-    finished Read of it since the last compaction. With no `references`, or a
-    registry that declares none, nothing is held.
+    typed skip this turn are judged (`reference_reads.selected`), on what this
+    write and the turn before it show: the code the write adds, read from
+    `tool_input` (None for a shell write, which adds no code the gate can
+    read), where the file is in the project, whether the repeated-failure
+    gate's condition holds, and, for a sensitive file, the security
+    categories of the turn's `changes` with this one's. A reference counts as
+    read after a finished Read of it since the last compaction. With no
+    `references`, or a registry that declares none, nothing is held.
     """
 
     declared = [r for r in references() if proof.loaded(r.skill) and not proof.skipped(r.skill)] \
         if references else []
     if not declared:
         return None
-    edit = reference_reads.Edit(
-        is_code=is_code(path), is_test=is_test(path, project),
-        added_code=design_reads.added_code(path, tool_input, project.cwd if project else None),
-    )
+    # `repeated-failure` is the one gate in `reference_reads.OBSERVED_GATES`.
+    gates = frozenset({"repeated-failure"} if _repeated_check(proof.turn) else ())
+    if path is None:
+        edit = reference_reads.Edit(is_code=False, is_test=False, added_code=[], gates=gates)
+    else:
+        category = security_category(path)
+        edit = reference_reads.Edit(
+            is_code=is_code(path), is_test=is_test(path, project),
+            added_code=design_reads.added_code(path, tool_input, project.cwd if project else None)
+            if tool_input is not None else [],
+            project_paths=tuple(_paths_in_project(path, project)),
+            gates=gates,
+            categories=frozenset({category, *(c for _, c in changes().sensitive)})
+            if category else frozenset(),
+        )
     unread = [(r, why) for r, why in reference_reads.selected(declared, edit)
               if r.path not in proof.skill_references_read]
     if not unread:
@@ -994,13 +1033,14 @@ def _reference_reads_hold(path: str, tool_input: dict, proof: _Proof, project: P
     listing = ", ".join(f"`{r.path}` ({why})" for r, why in unread)
     skip_lines = " or ".join(f"`goated-skip: {skill}: <reason>`" for skill in skills)
     way_out = f"skip {skills[0]}" if len(skills) == 1 else "skip <skill>"
+    target = f" to \"{path.rsplit('/', 1)[-1]}\"" if path else ""
     return Hold(
         "reference-reads", JUSTIFIED_SKIP,
-        f"This edit of \"{path.rsplit('/', 1)[-1]}\" needs skill references not yet read since "
-        "the last compaction; the GOATED registry declares when each is required. Read each "
-        f"with the Read tool before the edit, and apply it: {listing}. If one does not apply "
-        f"to this edit, write {skip_lines} on its own line instead, naming its skill. This edit "
-        "was not applied. " + unseen_line_advice("skip line", way_out),
+        f"This write{target} needs skill references not yet read since the last compaction; "
+        "the GOATED registry declares when each is required. Read each with the Read tool "
+        f"before the write, and apply it: {listing}. If one does not apply to this write, "
+        f"write {skip_lines} on its own line instead, naming its skill. This write was not "
+        "applied. " + unseen_line_advice("skip line", way_out),
     )
 
 
@@ -1060,7 +1100,30 @@ def _project_code_writes(turn: Turn, project: Project | None) -> list[tuple[str,
 
 
 def _repeated_failure_hold(proof: _Proof) -> Hold | None:
-    """Hold a write once one check command has failed twice in a row in the turn.
+    """Hold a write once one check command has failed twice in a row in the
+    turn (`_repeated_check`), until `diagnose` loads or is skipped."""
+
+    if proof.loaded_or_skipped(DIAGNOSE_SKILL):
+        return None
+    repeated = _repeated_check(proof.turn)
+    if repeated is None:
+        return None
+    shown = repeated if len(repeated) <= 80 else repeated[:77] + "..."
+    return Hold(
+        "repeated-failure", JUSTIFIED_SKIP,
+        # The command is quoted, not backticked: backticks name a skill to load.
+        f"The check \"{shown.replace('`', chr(39))}\" has failed {REPEATED_FAILURES} times in "
+        f"a row in this turn. Load `{DIAGNOSE_SKILL}` with the Skill tool{proof.within} and "
+        "find the root cause before changing more. If the cause is already known, write "
+        f"`goated-skip: {DIAGNOSE_SKILL}: <reason>` on its own line instead. This write was "
+        "not applied. Rerunning the check is not held, and a pass of it resets the count. "
+        + unseen_line_advice("skip line", f"skip {DIAGNOSE_SKILL}"),
+    )
+
+
+def _repeated_check(turn: Turn) -> str | None:
+    """The check command that has failed `REPEATED_FAILURES` times in a row in
+    `turn` with no pass since, whitespace aside, or None.
 
     "The same check" is the same command text, whitespace aside (spec G2),
     without a trailing pipe into output filters (`| tail -20`): a narrowed
@@ -1072,11 +1135,9 @@ def _repeated_failure_hold(proof: _Proof) -> Hold | None:
     cut the failure signs from its output.
     """
 
-    if proof.loaded_or_skipped(DIAGNOSE_SKILL):
-        return None
     in_a_row: dict[str, int] = {}
     is_check: dict[str, bool] = {}
-    for call in proof.turn.calls:
+    for call in turn.calls:
         if call.name not in COMMAND_TOOLS or call.held or NOT_RUN_RE.match(call.output):
             continue
         command = str(call.input.get("command") or "")
@@ -1094,20 +1155,7 @@ def _repeated_failure_hold(proof: _Proof) -> Hold | None:
             is_check[key] = shell.analyze(command).is_check
         if is_check[key]:
             in_a_row[key] = in_a_row.get(key, 0) + 1 if failed else 0
-    repeated = next((k for k, n in in_a_row.items() if n >= REPEATED_FAILURES), None)
-    if repeated is None:
-        return None
-    shown = repeated if len(repeated) <= 80 else repeated[:77] + "..."
-    return Hold(
-        "repeated-failure", JUSTIFIED_SKIP,
-        # The command is quoted, not backticked: backticks name a skill to load.
-        f"The check \"{shown.replace('`', chr(39))}\" has failed {REPEATED_FAILURES} times in "
-        f"a row in this turn. Load `{DIAGNOSE_SKILL}` with the Skill tool{proof.within} and "
-        "find the root cause before changing more. If the cause is already known, write "
-        f"`goated-skip: {DIAGNOSE_SKILL}: <reason>` on its own line instead. This write was "
-        "not applied. Rerunning the check is not held, and a pass of it resets the count. "
-        + unseen_line_advice("skip line", f"skip {DIAGNOSE_SKILL}"),
-    )
+    return next((k for k, n in in_a_row.items() if n >= REPEATED_FAILURES), None)
 
 
 def _load_errors(output: str) -> str | None:
@@ -1696,13 +1744,21 @@ def _path_in_project(path: str, project: Project | None) -> str | None:
     and in comparable form, or None: no project, no certain reading, or
     outside every root. A path reached only through a link is outside."""
 
+    inside = _paths_in_project(path, project)
+    return max(inside, key=len) if inside else None
+
+
+def _paths_in_project(path: str, project: Project | None) -> list[str]:
+    """`path` below each project root holding it, with `/` separators and in
+    comparable form; empty for no project, no certain reading, or outside
+    every root. A path reached only through a link is outside."""
+
     readings = _project_readings(path, project) if project else None
-    inside = [
-        full[len(root.rstrip(os.sep)) + 1:]
+    return [
+        full[len(root.rstrip(os.sep)) + 1:].replace(os.sep, "/")
         for full in readings or () for root in project.roots
         if full.startswith(root.rstrip(os.sep) + os.sep)
     ]
-    return max(inside, key=len).replace(os.sep, "/") if inside else None
 
 
 def _project_readings(path: str, project: Project) -> list[str] | None:
