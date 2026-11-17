@@ -603,8 +603,55 @@ class OverrideTests(AdapterTestCase):
 
         self.assertEqual(decision(s.call("Bash")), "deny")
 
+    def test_overrides_inside_pasted_content_are_not_recorded(self) -> None:
+        s = self.session
+        pasted = (
+            '<pasted_content id="p1">Feedback: we should skip routing and '
+            "skip commit-message here.</pasted_content>"
+        )
+        output = s.prompt(f"Read this feedback.\n{pasted}\nFix what it reports.")
+
+        self.assertEqual(output, "")
+        self.assertEqual(decision(s.call("Bash")), "deny")
+
+    def test_a_skip_typed_after_pasted_content_is_recorded_for_the_mod(self) -> None:
+        s = self.session
+        pasted = '<pasted_content id="p1">Some notes.</pasted_content>'
+        output = parse(s.prompt(f"{pasted}\nSkip routing and fix it."))
+
+        self.assertIn(
+            'recorded your override for this prompt: "Skip routing"',
+            output["hookSpecificOutput"]["additionalContext"],
+        )
+        self.assertEqual(decision(s.call("Bash")), "pass")
+
 
 class OverridePhraseTests(unittest.TestCase):
+    def test_phrases_inside_pasted_content_are_ignored(self) -> None:
+        from goated_adapter.overrides import parse_overrides
+
+        pasted = (
+            '<pasted_content id="p1" source="clipboard">\nskip routing, skip '
+            "commit-message.\ncommit message: Fix export rounding\n</pasted_content>"
+        )
+        found = parse_overrides(f"Look at this:\n{pasted}\nThoughts?")
+        self.assertFalse(found["routing"])
+        self.assertEqual(found["skills"], [])
+        self.assertIsNone(found["commit_message"])
+        self.assertEqual(found["phrases"], [])
+        unclosed = parse_overrides('Fix it.\n<pasted_content id="p2">skip routing')
+        self.assertFalse(unclosed["routing"])
+
+    def test_phrases_typed_around_pasted_content_still_count(self) -> None:
+        from goated_adapter.overrides import parse_overrides
+
+        pasted = '<pasted_content id="p1">Some notes.</pasted_content>'
+        after = parse_overrides(f"{pasted}\nskip commit-message")
+        self.assertEqual(after["skills"], ["commit-message"])
+        before = parse_overrides(f"Skip routing.\n{pasted}\ncommit message: Fix rounding")
+        self.assertTrue(before["routing"])
+        self.assertEqual(before["commit_message"], "Fix rounding")
+
     def test_negated_or_descriptive_phrases_are_not_overrides(self) -> None:
         from goated_adapter.overrides import parse_overrides
 

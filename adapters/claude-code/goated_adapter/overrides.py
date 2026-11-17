@@ -33,7 +33,14 @@ QUOTED_RES = (
     re.compile(r"`([^`\n]+)`"),
     re.compile(r"'([^'\n]+)'"),
 )
-HARNESS_BLOCK_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
+# Text the user did not type: harness `<system-reminder>` blocks, and text the
+# user pasted, which Claude Code wraps in `<pasted_content …>` (a pasted agent
+# report may quote an override). An unclosed paste runs to the end.
+NOT_TYPED_RE = re.compile(
+    r"<system-reminder>.*?</system-reminder>"
+    r"|<pasted_content\b[^>]*>.*?(?:</pasted_content>|\Z)",
+    re.DOTALL,
+)
 NOT_SKILLS = frozenset({"routing", "router"})
 # The GOATED registry's skill names (`stack/goated-stack.yaml`), used when no
 # installed skill can be found. A test keeps this list equal to the registry.
@@ -63,11 +70,12 @@ def parse_overrides(prompt: str, known_skills: frozenset[str] = GOATED_SKILLS) -
     commit message the user supplied, or None), and `phrases` (the matched
     text, for the record). `skip <name>` counts only when `<name>` is in
     `known_skills`, so "skip line" or "skip the first two lines" is not an
-    override. Harness-injected `<system-reminder>` blocks are not typed by
-    the user and are ignored, as are negated phrases.
+    override. Harness-injected `<system-reminder>` blocks and pasted
+    `<pasted_content>` blocks are not typed by the user and are ignored, as
+    are negated phrases.
     """
 
-    text = HARNESS_BLOCK_RE.sub(" ", prompt or "")
+    text = NOT_TYPED_RE.sub(" ", prompt or "")
     routing = [m.group(0) for m in ROUTING_RE.finditer(text) if not _negated(text, m.start())]
     phrases = list(routing)
     skills: list[str] = []

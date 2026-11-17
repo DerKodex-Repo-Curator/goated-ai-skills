@@ -315,6 +315,8 @@ def _commit_hold(message: str | None, proof: _Proof, changes: Callable[[], "_Cha
         _subject(message) == _subject(supplied)
     ):
         return None  # The user typed this message (spec R8).
+    if COMMIT_SKILL in proof.user_skips:
+        return None  # A typed skip stands the whole hold down.
     if not proof.loaded(COMMIT_SKILL):
         return Hold(
             "commit", STRICT,
@@ -324,8 +326,6 @@ def _commit_hold(message: str | None, proof: _Proof, changes: Callable[[], "_Cha
             "goated-skip line does not clear it. A commit message the user typed in "
             "their prompt stands it down when the commit uses that message.",
         )
-    if COMMIT_SKILL in proof.user_skips:
-        return None
     problems = contracts.commit_message_problems(message) if message is not None else []
     if problems:
         return Hold(

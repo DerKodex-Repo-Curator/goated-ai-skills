@@ -566,9 +566,12 @@ override recorded for the turn.
 Overrides come only from prompts a person typed. The user-prompt hook records
 the phrases below, and the gates apply them only to the turn that prompt
 opened, after checking the transcript's record of who wrote it. Text an agent
-writes never counts. Matching ignores case and harness `<system-reminder>`
-blocks, and a phrase negated just before it, such as "don't skip routing",
-"never skip tdd", or "no need to skip doc-sync", is not an override.
+writes never counts. Matching ignores case, harness `<system-reminder>`
+blocks, and text you pasted, which Claude Code wraps in a
+`<pasted_content …>` block: a phrase inside a pasted report is not an
+override, while one you type before or after the block is. A phrase negated
+just before it, such as "don't skip routing", "never skip tdd", or "no need to
+skip doc-sync", is not an override.
 
 | Typed phrase | Effect for that turn |
 | --- | --- |
