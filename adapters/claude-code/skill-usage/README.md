@@ -17,7 +17,7 @@ without it.
 | Skill loads and why each loaded: your `/command`, your prompt naming it, a hook, the router's route, the agent, or a subagent | Skill tool calls and slash commands |
 | Route lines, counted by form (`direct`, `continue`, routed) | `goated-route:` lines in replies, and in the `description` of a `Bash`, `PowerShell`, `Agent` or `Task` call or the `args` of a `Skill` call, as the adapter reads them |
 | Turns that write, by whether a route line came before the first write, only after it, or not at all | The main agent's edits and spawns, the calls the adapter holds like writes; a call whose result is an error, such as a held one, did not write |
-| Justified skips, with their reasons; a skip declines a justified-skip hold naming that skill in the same turn. The reason of each skip that declined a hold is kept by skill and gate, cut to 160 characters, with no path or project name beside it | `goated-skip:` lines in replies, and in the same call fields as route lines |
+| Justified skips, with their reasons; a skip declines a justified-skip hold naming that skill in the same turn. The reason of each skip that declined a hold is kept by skill and gate: each path-like word in it (one starting with a drive such as `C:/`, a slash, or `~/`, or holding a backslash) replaced by `<path>`, then cut to 160 characters. Nothing else is stored beside it, and other words, a project name among them, are kept as written | `goated-skip:` lines in replies, and in the same call fields as route lines |
 | The adapter's holds by gate and kind, and each held skill's outcome: loaded, files read, declined, overridden by you, ended by a new prompt, unanswered, or waiting | Denied calls whose reason starts `goated-hold: <gate> \| <kind>`, and the blocked `Stop` that carries the closeout hold |
 | Closeout items: each item a closeout hold lists, such as Proof, Unfinished, Docs, Design, Security, Setup, or one added later, with its own outcome | The item lines of the closeout hold's text, `- <Label>: …`, at a commit or a `Stop`; the item's skill is the first it backticks, else the skill of the skip line it offers |
 | Your overrides, by phrase | The adapter's sentence `recorded your override for this prompt` in its hook context |
@@ -65,10 +65,13 @@ as followed when the agent then loads it (or reads its files). A hold that no
 load, read, or skip line answered counts as one of three kinds:
 
 - **Overridden by you**: the prompt after its turn records an override that
-  stands it down, as the adapter's override table says: `skip routing` for
-  the `router-first`, `route-line`, and `pipeline` holds, `skip <skill>` for
-  any hold asking for that skill, or a typed commit message for the `commit`
-  hold. The override counts only until the agent starts replying.
+  stands it down, as the adapter's override table says: `skip routing` (or
+  `skip router`, `skip the routing`, `skip the router`) for the
+  `router-first`, `route-line`, and `pipeline` holds, `skip <skill>` (or
+  `skip the <skill> skill`, the name backticked or not) for any hold asking
+  for that skill, or a typed commit message for the `commit` hold, with any
+  spacing the adapter accepts. The override counts only for the turn right
+  before its prompt, and only until the agent starts replying.
 - **Ended by a new prompt**: your next prompt arrived while it waited, or you
   interrupted the turn.
 - **Unanswered**: the turn ended without an answer to it, or the session did.
@@ -143,8 +146,9 @@ it. In particular:
 - Each closeout hold counts once for each item it lists, with that item's
   outcome, which is the outcome of the skill the item names. The labels are
   read from the hold's text, which the adapter keeps stable for this. The
-  design red-flags item and the design citations item share the label
-  `Design` and the skill, so a hold listing both counts `Design` once.
+  design red-flags item and the design citations item, which Ticket 075
+  names as two items, share the label `Design` and the skill, so the mod
+  cannot tell them apart and a hold listing both counts `Design` once.
 
 These rules live in `hooks/holds.ts`, the hold settlement: `hooks/classify.ts`
 reads the events and feeds them to it in order, and keeps the rest of a

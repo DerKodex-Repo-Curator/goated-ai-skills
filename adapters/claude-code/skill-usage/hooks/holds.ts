@@ -37,26 +37,36 @@ export function bump<K extends string>(table: Record<string, Counts<K>>, row: st
 
 /** The gates `skip routing` stands down, as the adapter's override table says. */
 const ROUTING_GATES = new Set(['router-first', 'route-line', PIPELINE_GATE])
-const SKIP_SKILL = /^skip (?:the )?([a-z0-9:-]+?)(?: skill)?$/
-const COMMIT_MESSAGE = /^commit (?:message\b|with the message\b)/
+// The phrases the adapter records (`ROUTING_RE`, `SKILL_SKIP_RE` and `COMMIT_MESSAGE_RE` in goated_adapter/overrides.py),
+// each whole: any run of spaces between words, and a skill name backticked or not. A typed commit message is recorded
+// as the bare words `commit message`.
+const ROUTING_PHRASE = /^skip\s+(?:the\s+)?(?:routing|router)$/
+const SKIP_SKILL = /^skip\s+(?:the\s+)?`?([a-z0-9]+(?:-[a-z0-9]+)*)`?(?:\s+skill)?$/
+const COMMIT_MESSAGE = /^commit\b.*\bmessage\b/
 /**
- * Whether an override phrase you typed, lowercased, stands down an ask, as the adapter's override table says:
- * `skip routing` the routing gates, `skip <skill>` every ask for that skill (and `router-first` for the router), and a
- * typed commit message the `commit` hold.
+ * Whether an override phrase you typed, as the adapter recorded it, stands down an ask, as the adapter's override
+ * table says: `skip routing` the routing gates, `skip <skill>` every ask for that skill (and `router-first` for the
+ * router), and a typed commit message the `commit` hold.
  */
 function standsDown(phrase: string, n: { hook: string; anyOf: readonly string[] }): boolean {
-  const p = phrase.trim()
-  if (p === 'skip routing' || p === 'skip the router') return ROUTING_GATES.has(n.hook)
+  const p = phrase.trim().toLowerCase()
+  if (ROUTING_PHRASE.test(p)) return ROUTING_GATES.has(n.hook)
   if (COMMIT_MESSAGE.test(p)) return n.hook === 'commit'
-  const skill = SKIP_SKILL.exec(p)?.[1]?.split(':').pop()
+  const skill = SKIP_SKILL.exec(p)?.[1]
   if (!skill) return false
   return n.anyOf.includes(skill) || (n.hook === 'router-first' && skill === 'using-goated-ai-skills')
 }
 
 /** The longest skip reason kept: a longer one is cut to this many characters, its last an ellipsis. */
 export const REASON_LIMIT = 160
-/** A skip reason as it is kept: whole up to `REASON_LIMIT` characters, else cut. */
-export const cutReason = (reason: string) => (reason.length <= REASON_LIMIT ? reason : `${reason.slice(0, REASON_LIMIT - 1)}…`)
+// A path-like word: one starting with a drive (`C:/`, `C:\`), a slash, `~/` or `~\`, or holding a backslash anywhere
+// (`\\server\share`, `src\x.ts`). A slash inside a word, as in `and/or`, and a bare `~`, as in `~5`, are not paths.
+const PATH_WORD = /(?<!\S)(?:[A-Za-z]:[\\/]|[\\/]|~[\\/]|\S*\\)\S*/g
+/** A skip reason as it is kept: each path-like word masked as `<path>`, then whole up to `REASON_LIMIT` characters, else cut. */
+export function storedReason(reason: string): string {
+  const masked = reason.replace(PATH_WORD, '<path>')
+  return masked.length <= REASON_LIMIT ? masked : `${masked.slice(0, REASON_LIMIT - 1)}…`
+}
 
 /** Takes one from `key` in `row` of a count table, dropping a count, then a row, that reaches zero. */
 function unbump<K extends string>(table: Record<string, Counts<K>>, row: string, key: K) {
@@ -152,8 +162,10 @@ export function holdSettlement(): HoldSettlement {
   let isInResults = false
   // Whether the main agent replied since the last blocked `Stop`: a turn that then ends got past that hold.
   let hasRepliedSinceStop = false
-  // The main agent's asks the last turn's close left unanswered, until the agent replies in the next turn: an override
-  // the next prompt records for one of them stood it down.
+  // The main agent's asks the running turn's closes left unanswered (`closedInTurn`); a prompt hands them on as the asks
+  // its own overrides can stand down (`lastClosed`), until the agent replies. A prompt that follows a turn no reply
+  // began hands on only that turn's, so an override never reaches back past one prompt.
+  let closedInTurn: Open[] = []
   let lastClosed: Open[] = []
   // Whether the session has a task a `continue` route line can continue, as the adapter's route-line hold checks.
   let hasTask = false
@@ -180,7 +192,7 @@ export function holdSettlement(): HoldSettlement {
     if (was === 'declined') n.isSkipRejected = true
     if (n.skip) {
       const reasons = skipReasons[n.skip.skill]
-      if (reasons) unbump(reasons, n.hook, cutReason(n.skip.reason))
+      if (reasons) unbump(reasons, n.hook, storedReason(n.skip.reason))
       if (reasons && Object.keys(reasons).length === 0) delete skipReasons[n.skip.skill]
       delete n.skip
     }
@@ -192,7 +204,7 @@ export function holdSettlement(): HoldSettlement {
   /**
    * A loop's turn is over: what it left open can no longer be followed, so each is declined (a skip line said why) or
    * went unanswered: ended by a new prompt when the next prompt or your interruption closed it, else unanswered. The
-   * main agent's unanswered asks wait in `lastClosed` for the next prompt's overrides. A closeout item, asked by a
+   * main agent's unanswered asks wait in `closedInTurn` for the next prompt's overrides. A closeout item, asked by a
    * blocked `Stop` or a held commit, is the exception. The adapter judges every `Stop` it is given against every
    * closeout item, so a main turn that ended
    * as an answer (not interrupted, nor ended by an error) after the agent replied to the last block got past it: what
@@ -214,7 +226,7 @@ export function holdSettlement(): HoldSettlement {
       else if (isMet) settle(m => m === n, 'followed', by)
       else {
         settle(m => m === n, isCutOff ? 'new prompt' : 'unanswered', by)
-        if (!n.agent) lastClosed.push(n)
+        if (!n.agent) closedInTurn.push(n)
       }
     }
   }
@@ -230,7 +242,7 @@ export function holdSettlement(): HoldSettlement {
   const decline = (n: Open, skip: Skip, by: UsageEvent) => {
     n.mark.reason = skip.reason
     n.skip = skip
-    bump((skipReasons[skip.skill] ??= {}), n.hook, cutReason(skip.reason))
+    bump((skipReasons[skip.skill] ??= {}), n.hook, storedReason(skip.reason))
     settle(m => m === n, 'declined', by)
   }
   /** A new ask on a gate's row, open until something answers it. A closeout hold has judged every skip line before it. */
@@ -329,6 +341,8 @@ export function holdSettlement(): HoldSettlement {
       case 'prompt':
         // Anything still open belongs to a turn that is over, a turn end the mod did not see included.
         closeTurn(() => true, e)
+        lastClosed = closedInTurn
+        closedInTurn = []
         skipped.clear()
         turnHolds.clear()
         stopBlocks = 0

@@ -724,7 +724,10 @@ goated-hold: <gate> | <kind>
   the registry's skill names.
 - The closeout hold lists each unmet item on its own line, starting
   `- <Label>: `, with `Proof`, `Unfinished`, `Docs`, `Design`, `Security`,
-  or `Setup` as the label; the two design items share `Design`. These labels
+  or `Setup` as the label; the two design items share `Design`. Each item
+  names the skill it asks for, backticked or as the skill of the skip line
+  it offers: the mod counts an item through that skill, so an item that
+  names none is not counted. These labels
   are stable: the skill-usage mod counts each closeout hold per item by them,
   so a release keeps them, and a new item takes a label of its own. The
   wording after the label may change.

@@ -126,6 +126,24 @@ test('a 500-character reason is stored cut to a fixed length', async () => {
   expect(Object.keys(kept.skipReasons?.['software-design-principles']?.design ?? {})).toEqual([fits])
 })
 
+test('a path in a skip reason is masked before it is stored, whatever form it takes', async () => {
+  const kept = (reason: string) => {
+    const s = summarize([prompt(), response(1), ...preHold('Write', ADAPTER_TEXTS.design, 2), results(2), ...markerEvents(`goated-skip: software-design-principles: ${reason}`, 3), turnEnd(4)])
+    return Object.keys(s.skipReasons?.['software-design-principles']?.design ?? {})
+  }
+  expect(kept('only edited C:/Users/someone/client/app/x.ts here')).toEqual(['only edited <path> here'])
+  expect(kept('only edited C:\\Users\\someone\\x.ts here')).toEqual(['only edited <path> here'])
+  expect(kept('only edited /home/someone/client/x.ts here')).toEqual(['only edited <path> here'])
+  expect(kept('only edited ~/client/x.ts here')).toEqual(['only edited <path> here'])
+  expect(kept('only edited \\\\server\\share\\x.ts here')).toEqual(['only edited <path> here'])
+  expect(kept('only edited src\\client\\x.ts here')).toEqual(['only edited <path> here'])
+  // The skip event keeps only the masked reason too, so the activity log never shows the path.
+  expect(markerEvents('goated-skip: tdd: only edited /home/someone/x.ts here', 1)).toEqual([{ kind: 'skip', t: 1, skill: 'tdd', reason: 'only edited <path> here' }])
+  // Near misses: an ordinary reason, a word pair with a slash, and a tilde for about, stay as written.
+  expect(kept('renames one local variable only')).toEqual(['renames one local variable only'])
+  expect(kept('a read and/or write of ~5 lines in tests')).toEqual(['a read and/or write of ~5 lines in tests'])
+})
+
 // ---------- unanswered holds ------------------------------------------------------
 
 const override = (t: number, ...phrases: string[]): UsageEvent => ({ kind: 'override', t, phrases })
@@ -158,6 +176,27 @@ test("a hold the next prompt's override stands down counts as overridden by you"
   // Near misses: an override of another skill, and one typed after the agent has begun the new turn.
   expect(summarize([...leftOpen, turnEnd(4), prompt(5), override(5, 'skip tdd')]).nudges).toEqual({ design: { unanswered: 1 } })
   expect(summarize([...leftOpen, prompt(4), response(5), override(6, 'skip software-design-principles')]).nudges).toEqual({ design: { 'new prompt': 1 } })
+})
+
+test('every override form the adapter accepts stands its hold down', async () => {
+  const routeLine = [prompt(), response(1), ...preHold('Write', ADAPTER_TEXTS.routeLine, 2), results(2), turnEnd(3), prompt(4)]
+  for (const phrase of ['skip routing', 'skip the routing', 'skip router', 'skip the router', 'skip   the\trouter']) {
+    expect(summarize([...routeLine, override(4, phrase)]).nudges).toEqual({ 'route-line': { overridden: 1 } })
+  }
+  for (const phrase of ['skip software-design-principles', 'skip  the  software-design-principles  skill', 'skip `software-design-principles`', 'skip `software-design-principles']) {
+    expect(summarize([...leftOpen, turnEnd(4), prompt(5), override(5, phrase)]).nudges).toEqual({ design: { overridden: 1 } })
+  }
+  // Near misses: a routing override does not stand down a design hold, nor a skip of a longer skill name.
+  expect(summarize([...leftOpen, turnEnd(4), prompt(5), override(5, 'skip routing')]).nudges).toEqual({ design: { unanswered: 1 } })
+  expect(summarize([...leftOpen, turnEnd(4), prompt(5), override(5, 'skip software-design-principles-extra')]).nudges).toEqual({ design: { unanswered: 1 } })
+})
+
+test('an override counts only against the turn its prompt follows, not an older one', async () => {
+  // A prompt interrupted before any reply, then another: its override belongs to the interrupted turn, which held nothing.
+  const s = summarize([...leftOpen, turnEnd(4), prompt(5), turnEnd(6, 'aborted'), prompt(7), override(7, 'skip software-design-principles')])
+  expect(s.nudges).toEqual({ design: { unanswered: 1 } })
+  // Near miss: the override in the prompt right after the hold's turn stands it down.
+  expect(summarize([...leftOpen, turnEnd(4), prompt(5), override(5, 'skip software-design-principles')]).nudges).toEqual({ design: { overridden: 1 } })
 })
 
 test('a closeout item left unanswered shows its kind as its outcome', async () => {
@@ -200,7 +239,8 @@ test('a summary stored before this change still displays: its holds not answered
   const { total } = allTimeOf([['s:earlier', { t: 1, summary: earlier }]], null, 300, 's:now')
   if (!total) throw new Error('no total')
   const report = reportText(total, null)
-  expect(report).toContain('- closeout hold: 1 of 4 handled (25%) · loaded 1 · not loaded 3')
+  // The report says it in the pane's words.
+  expect(report).toContain('- closeout hold: 1 of 4 handled (25%) · loaded 1 · not answered 3')
   expect(report).toContain('## Closeout items\n\n(none recorded)')
   expect(report).toContain('## Skip reasons\n\n(none given yet)')
   // A session resumed across the update adds its new counts to the earlier ones, which keep their meaning.

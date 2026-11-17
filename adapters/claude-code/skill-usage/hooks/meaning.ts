@@ -68,7 +68,8 @@ export const RESULT: Record<Outcome, string> = {
   overridden: 'overridden by you',
   'new prompt': 'ended by a new prompt',
   unanswered: 'unanswered',
-  ignored: 'not loaded',
+  // The three kinds above together, as summaries stored before they were told apart counted them.
+  ignored: 'not answered',
   pending: 'waiting',
 }
 /** The outcomes of a hold that nothing answered, in the pane's order; `ignored` is all three, in earlier summaries. */

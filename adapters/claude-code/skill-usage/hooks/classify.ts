@@ -27,7 +27,7 @@ import type {
   UsageEvent,
   WritingTurns,
 } from '../types'
-import { bump, cutReason, holdSettlement, ROUTE_LINE, stamp } from './holds'
+import { bump, holdSettlement, ROUTE_LINE, stamp, storedReason } from './holds'
 
 export const ROUTER = 'using-goated-ai-skills'
 export { ROUTE_LINE }
@@ -425,8 +425,8 @@ export function markerEvents(text: string, t: number, agent?: string): UsageEven
   const noneReasons = designReads.flatMap(d => (d.form === 'none' ? [d.reason] : []))
   return [
     ...(route ? [{ kind: 'route' as const, t, ...route, ...loop }] : []),
-    // A reason is kept cut, here where it enters the stored events, so no longer text is kept anywhere.
-    ...skips.map(k => ({ kind: 'skip' as const, t, skill: k.skill, reason: cutReason(k.reason), ...loop })),
+    // A reason is kept masked and cut, here where it enters the stored events, so no fuller text is kept anywhere.
+    ...skips.map(k => ({ kind: 'skip' as const, t, skill: k.skill, reason: storedReason(k.reason), ...loop })),
     ...(designReads.length > 0 ? [{ kind: 'design-reads' as const, t, files, noneReasons, ...loop }] : []),
   ]
 }
