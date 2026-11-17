@@ -95,7 +95,7 @@ load, read, or skip line answered counts as one of three kinds:
 
 A Skill call whose result is an error
 loaded nothing, so it neither counts as a load nor answers a hold. A
-`justified-skip` hold (`design`, `design-reads`, `security`,
+`justified-skip` hold (`design`, `design-reads`, `reference-reads`, `security`,
 `conflict-resolution`, `repeated-failure`, `pr-review`, `closeout`) also counts as declined when a
 skip line names the skill in the same turn, before or after the hold; a
 `strict` hold (`router-first`, `route-line`, `pipeline`, `commit`,
@@ -127,6 +127,13 @@ it. In particular:
   design-reads line if it asked for one. It counts as files read when a read
   came last, and as followed when the line did. Loading the skill again
   answers neither.
+- The adapter's `reference-reads` hold asks for the skill references the
+  GOATED registry declares for an edit, each backticked by its path under
+  the skill (`tdd/references/mocking-and-seams.md`), and names each skill
+  only in its skip line. Each skill it names is one ask, met once the agent
+  has used the Read tool on each of that skill's references it names, as
+  for the `design-reads` hold, and declined by a skip line naming that
+  skill. A read of another skill's file of the same name does not count.
 - A `spawn` hold names two ways to write the brief, `handoff` or
   `subagent-driven-development`. It counts once: its row shows "handoff or
   subagent-driven-development" until the agent loads one, then names that one.

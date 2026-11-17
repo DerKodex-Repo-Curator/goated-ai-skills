@@ -128,6 +128,15 @@ def required(path: str, tool_input: dict, *, is_code: bool, is_test: bool, small
     return {name: found[name] for name in REFERENCES if name in found}
 
 
+def added_code(path: str, tool_input: dict, cwd: str | None) -> list[str]:
+    """The code of each line an edit of `path` adds, as the design signals
+    read it: comments and docstrings removed, "" for a comment line. A Write
+    is compared with the file on disk, a relative path taken from `cwd`."""
+
+    on_disk = _disk_text(path, cwd) if "content" in tool_input else None
+    return _Added(tool_input, on_disk).code
+
+
 def section_ids(skill_folder: Path | None) -> dict[str, tuple[str, ...]]:
     """Each design reference's section ids, in file order, from the
     `<!-- id: #name -->` comments in `skill_folder`'s reference files.

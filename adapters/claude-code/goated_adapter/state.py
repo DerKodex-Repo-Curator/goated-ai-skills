@@ -3,7 +3,8 @@
 State holds only what the transcript's current turn cannot answer on its own:
 the current task's route, whether missing or reset state lost the task, what
 counts until the next compaction (whether the router loaded, which GOATED
-skills loaded, which design references and spawn-brief templates were read),
+skills loaded, which design references, skill references, and spawn-brief
+templates were read),
 the last turn seen, and the latest user overrides. Beside it, a marker names
 the turn whose hold gave the unseen-line advice in full. Apart from the short
 override phrases a user typed, it holds no prompt or reply text.
@@ -47,6 +48,7 @@ class SessionState:
     __slots__ = (
         "router_loaded", "last_turn", "task", "task_unknown", "overrides", "policy_notice_shown",
         "reference_reads", "design_edits", "brief_routed", "loads", "template_reads",
+        "skill_reference_reads",
     )
 
     def __init__(self) -> None:
@@ -66,6 +68,9 @@ class SessionState:
         self.loads: list[str] = []
         # The design references (`errors.md`) read since the last compaction.
         self.reference_reads: list[str] = []
+        # The skill references the registry can declare
+        # (`tdd/references/test-design.md`) read since the last compaction.
+        self.skill_reference_reads: list[str] = []
         # The spawn-brief templates (`contracts.BriefTemplate.reference`) read
         # since the last compaction.
         self.template_reads: list[str] = []
@@ -75,13 +80,15 @@ class SessionState:
 
     def forget_context(self) -> None:
         """Drop what counted only while its text was in the agent's context: the
-        router and other loads, the brief's route, and the design references
-        and spawn-brief templates read. Called at a compaction or `/clear`."""
+        router and other loads, the brief's route, and the design references,
+        skill references, and spawn-brief templates read. Called at a
+        compaction or `/clear`."""
 
         self.router_loaded = False
         self.brief_routed = False
         self.loads = []
         self.reference_reads = []
+        self.skill_reference_reads = []
         self.template_reads = []
 
     def record_design_edit(self, turn: str, tool_use_id: str, references: list[str]) -> None:
@@ -108,6 +115,7 @@ class SessionState:
             "policy_notice_shown": self.policy_notice_shown,
             "loads": self.loads,
             "reference_reads": self.reference_reads,
+            "skill_reference_reads": self.skill_reference_reads,
             "template_reads": self.template_reads,
             "design_edits": self.design_edits,
         }
@@ -126,6 +134,7 @@ class SessionState:
         state.task_unknown = _expect(data.get("task_unknown", False), bool)
         state.loads = _string_list(data.get("loads", []))
         state.reference_reads = _string_list(data.get("reference_reads", []))
+        state.skill_reference_reads = _string_list(data.get("skill_reference_reads", []))
         state.template_reads = _string_list(data.get("template_reads", []))
         design_edits = _expect(data.get("design_edits", {}), dict)
         if design_edits:

@@ -517,3 +517,41 @@ test('a design hold that asks for the line, and reads, is followed only when the
   // A design-reads line does not answer the design hold that asks for the load.
   expect(summarize([prompt(), ...preHold('Write', ADAPTER_TEXTS.design, 2), ...line, turnEnd(4)]).nudges).toEqual({ design: { unanswered: 1 } })
 })
+
+// ---------- the registry's skill references: the reference-reads hold (Ticket 067) ----------------------------------
+
+const SKILL_REFERENCES = '/skills/'
+
+test('the reference-reads hold names each skill only as a skip line, with the references it asks for', async () => {
+  expect(hookName('reference-reads')).toBe('reference-reads hold')
+  expect(preHold('Edit', ADAPTER_TEXTS.referenceReads, 1)).toEqual([{
+    kind: 'nudge', t: 1, hook: 'reference-reads', named: ['diagnose', 'tdd'], holdKind: 'justified-skip',
+    skipOnly: ['diagnose', 'tdd'], refs: ['diagnose/references/condition-based-waiting.md', 'tdd/references/mocking-and-seams.md'],
+  }])
+})
+
+test('the reference-reads hold counts as read files only by a Read of each skill\'s own reference', async () => {
+  const held = preHold('Edit', ADAPTER_TEXTS.referenceReads, 2)
+  const mocking = readTool(`${SKILL_REFERENCES}tdd/references/mocking-and-seams.md`, 3)
+  const waiting = readTool(`${SKILL_REFERENCES}diagnose/references/condition-based-waiting.md`, 4)
+  expect(summarize([prompt(), ...held, ...mocking, ...waiting, turnEnd(5)]).nudges).toEqual({ 'reference-reads': { 'read files': 2 } })
+  expect(summarize([prompt(), ...held, ...mocking, turnEnd(5)]).nudges).toEqual({ 'reference-reads': { 'read files': 1, unanswered: 1 } })
+  // A shell read, another skill's file of the same name, another reference, the skill's body, or a load is not the read.
+  for (const other of [
+    shellRead(`${SKILL_REFERENCES}tdd/references/mocking-and-seams.md`, 3),
+    readTool(`${SKILL_REFERENCES}diagnose/references/mocking-and-seams.md`, 3),
+    readTool(`${SKILL_REFERENCES}tdd/references/test-design.md`, 3),
+    readTool(`${SKILL_REFERENCES}tdd/SKILL.md`, 3),
+    [load('tdd', 3)],
+  ]) {
+    expect(summarize([prompt(), ...held, ...other, turnEnd(5)]).nudges?.['reference-reads']?.['read files']).toBeUndefined()
+  }
+})
+
+test('a skip line naming one skill declines only that skill\'s ask', async () => {
+  const held = preHold('Edit', ADAPTER_TEXTS.referenceReads, 2)
+  const reason = 'the mock is an existing shared fixture'
+  const s = summarize([prompt(), ...held, ...markerEvents(`goated-skip: tdd: ${reason}`, 3), turnEnd(4)])
+  expect(s.nudges).toEqual({ 'reference-reads': { declined: 1, unanswered: 1 } })
+  expect(s.skipReasons?.tdd?.['reference-reads']).toBeDefined()
+})

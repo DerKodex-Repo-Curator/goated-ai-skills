@@ -10,20 +10,24 @@ with `handoff`'s spawn brief or `subagent-driven-development`, design with
 `resolving-merge-conflicts`, investigate a check that keeps failing with
 `diagnose`, close a code-changing turn with proof, `doc-sync`, `handoff`,
 the design red flags, and citations of the design references it required,
-and close a turn that changed setup with `setup-scribe`.
+and close a turn that changed setup with `setup-scribe`. The
+`reference-reads` gate enforces the reads the installed registry declares
+for a loaded skill's references (`reference_reads`).
 
 Every decision is a pure function of the current turn as the transcript
 records it, the user's typed overrides for that turn, and what counts from
 earlier turns until the next compaction (`SinceCompaction`): skill loads,
-design reference reads, and spawn-brief template reads, whose text is still
-in the agent's context. So an unchanged retry always gets the same answer
+design and skill reference reads, and spawn-brief template reads, whose text
+is still in the agent's context. So an unchanged retry always gets the same answer
 (spec R6), and a hold stops firing as soon as the turn shows compliance.
 Everything else counts only within the current turn: skip lines, overrides,
 change reads, and checks. Inside a subagent nothing carries over from its
 earlier turns. The inputs from outside the transcript include a pull
 request's size, which the `pr-review` gate asks git for, and only when its
 hold would otherwise fire, and the design skill's section ids, which the
-closeout reads from the installed skill only when it checks citations.
+closeout reads from the installed skill only when it checks citations, and
+the registry's reference declarations, read only for an edit of a project
+file.
 
 Strict holds clear only on proof or a user override. Justified-skip holds also
 clear on a `goated-skip: <skill>: <reason>` line in the current turn.
@@ -46,7 +50,7 @@ import re
 import subprocess
 import time
 
-from . import contracts, design_reads, shell
+from . import contracts, design_reads, reference_reads, shell
 from .gates import (
     COMMAND_TOOLS, STRICT, Hold, goated_skill_name, spawns_a_reader, unseen_line_advice,
 )
@@ -254,8 +258,9 @@ SETUP_FILE_RE = re.compile(
 class SinceCompaction(NamedTuple):
     """What counts from earlier turns until the next compaction (spec R3, R4):
     the GOATED skills loaded (`tdd`), the design references read
-    (`errors.md`), and the spawn-brief templates read
-    (`contracts.BriefTemplate.reference`). `spans_turns` is False for a
+    (`errors.md`), the spawn-brief templates read
+    (`contracts.BriefTemplate.reference`), and the skill references read
+    (`reference_reads.Reference.path`). `spans_turns` is False for a
     subagent, where only its current turn counts, so its holds ask for a
     load or read in this turn; the sets are then empty."""
 
@@ -263,6 +268,7 @@ class SinceCompaction(NamedTuple):
     references_read: frozenset[str] = frozenset()
     templates_read: frozenset[str] = frozenset()
     spans_turns: bool = False
+    skill_references_read: frozenset[str] = frozenset()
 
 
 class _Proof:
@@ -282,6 +288,8 @@ class _Proof:
         self.loads = self.turn_loads | earlier.loads
         self.references_read = earlier.references_read | set(design_reads.reads_in(turn.calls))
         self.templates_read = earlier.templates_read | set(contracts.templates_read(turn.calls))
+        self.skill_references_read = (earlier.skill_references_read
+                                      | set(reference_reads.reads_in(turn.calls)))
         self.within = "" if earlier.spans_turns else " in this turn"
         self.skips = {skip["skill"] for skip in turn.skips}
         if extra_text:
@@ -344,7 +352,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
                  namespaces: tuple[str, ...] = (), project: Project | None = None,
                  subagents: Callable[[], dict] | None = None,
                  earlier: SinceCompaction = SinceCompaction(),
-                 closeout: Closeout | None = None) -> Hold | None:
+                 closeout: Closeout | None = None,
+                 references: Callable[[], tuple] | None = None) -> Hold | None:
     """Return the action hold for this call, if any; the call's own entry is not yet proof.
 
     `project` says which files are the project's (see `find_project`): only files
@@ -357,6 +366,9 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     earlier turns until the next compaction. With `closeout`, a commit whose
     own hold is met is held while the turn has unmet closeout items (Ticket 059);
     without it, as for a subagent, which has no closeout, it is not.
+    `references` returns the registry's declared references
+    (`reference_reads.load`), called only for an edit of a project file;
+    without it, as for a subagent, the `reference-reads` gate holds nothing.
     """
 
     proof = _Proof(turn, overrides, namespaces, earlier=earlier)
@@ -402,7 +414,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         hold = _conflict_hold([path], tool_input, proof)
         if hold is None and _in_project(path, project):
             # A scratch file elsewhere is not the project's design or security.
-            hold = _security_hold(path, proof) or _design_hold(path, tool_input, proof, project)
+            hold = (_security_hold(path, proof) or _design_hold(path, tool_input, proof, project)
+                    or _reference_reads_hold(path, tool_input, proof, project, references))
         return hold or _repeated_failure_hold(proof)
     return None
 
@@ -803,6 +816,44 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
         f"{misnamed} If the edit is mechanical, with no design in it, write "
         f"`goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. This edit was not "
         "applied. " + unseen_line_advice("design-reads or skip line", f"skip {DESIGN_SKILL}"),
+    )
+
+
+def _reference_reads_hold(path: str, tool_input: dict, proof: _Proof, project: Project | None,
+                          references: Callable[[], tuple] | None) -> Hold | None:
+    """Hold a project file edit until the skill references its signals select
+    are read (registry reference reads spec, R5).
+
+    Only references of a skill that counts as loaded and has no skip line or
+    typed skip this turn are judged, and only by the signal kinds judged on
+    one edit (`reference_reads.selected`). A reference counts as read after a
+    finished Read of it since the last compaction. With no `references`, or a
+    registry that declares none, nothing is held.
+    """
+
+    declared = [r for r in references() if proof.loaded(r.skill) and not proof.skipped(r.skill)] \
+        if references else []
+    if not declared:
+        return None
+    edit = reference_reads.Edit(
+        is_code=is_code(path), is_test=is_test(path, project),
+        added_code=design_reads.added_code(path, tool_input, project.cwd if project else None),
+    )
+    unread = [(r, why) for r, why in reference_reads.selected(declared, edit)
+              if r.path not in proof.skill_references_read]
+    if not unread:
+        return None
+    skills = list(dict.fromkeys(r.skill for r, _ in unread))
+    listing = ", ".join(f"`{r.path}` ({why})" for r, why in unread)
+    skip_lines = " or ".join(f"`goated-skip: {skill}: <reason>`" for skill in skills)
+    way_out = f"skip {skills[0]}" if len(skills) == 1 else "skip <skill>"
+    return Hold(
+        "reference-reads", JUSTIFIED_SKIP,
+        f"This edit of \"{path.rsplit('/', 1)[-1]}\" needs skill references not yet read since "
+        "the last compaction; the GOATED registry declares when each is required. Read each "
+        f"with the Read tool before the edit, and apply it: {listing}. If one does not apply "
+        f"to this edit, write {skip_lines} on its own line instead, naming its skill. This edit "
+        "was not applied. " + unseen_line_advice("skip line", way_out),
     )
 
 

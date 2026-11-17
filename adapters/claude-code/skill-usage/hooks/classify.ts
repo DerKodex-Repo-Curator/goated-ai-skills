@@ -123,6 +123,8 @@ const BACKTICKED_SKILL = /`([a-z0-9]+(?:-[a-z0-9]+)*)`/g
 // The design references a design hold asks to read, each backticked by its path, and the design-reads line it asks for.
 const DESIGN_REFERENCE = /`software-design-principles\/references\/([a-z0-9]+(?:-[a-z0-9]+)*\.md)`/g
 const ASKS_DESIGN_LINE = /`goated-design-reads: /
+// The skill references a reference-reads hold asks to read, each backticked by its path under the skill.
+const SKILL_REFERENCE = /`([a-z0-9]+(?:-[a-z0-9]+)*\/references\/[a-z0-9]+(?:-[a-z0-9]+)*\.md)`/g
 // The skip line a justified-skip hold offers, backticked whole: its skill is asked for too, as for the closeout's proof item.
 const OFFERED_SKIP = /`goated-skip: ([a-z0-9]+(?:-[a-z0-9]+)*): /g
 // A closeout item's line, `- <Label>: <what it asks>`, whose label the adapter keeps stable (adapters/claude-code/README.md).
@@ -165,8 +167,10 @@ function itemsListed(body: string): CloseoutItem[] {
 
 /** What a hold's text asks for by the skills it backticks, alone or in an offered skip line, and the design reads. */
 function namedIn(gate: string, body: string): { named: string[]; skipOnly: string[]; refs?: string[]; needsLine?: true } {
-  // Only the design gates ask for reference reads; the closeout's red-flags path is another kind of ask.
-  const refs = gate !== 'design' && gate !== 'design-reads' ? [] : [...body.matchAll(DESIGN_REFERENCE)].flatMap(m => (m[1] ? [m[1]] : []))
+  // Only the design gates, by file name, and the reference-reads gate, by path under the skill, ask for reference
+  // reads; the closeout's red-flags path is another kind of ask.
+  const asked = gate === 'reference-reads' ? SKILL_REFERENCE : gate === 'design' || gate === 'design-reads' ? DESIGN_REFERENCE : null
+  const refs = asked ? [...body.matchAll(asked)].flatMap(m => (m[1] ? [m[1]] : [])) : []
   const design = { ...(refs.length > 0 ? { refs } : {}), ...(ASKS_DESIGN_LINE.test(body) ? { needsLine: true as const } : {}) }
   const names = (re: RegExp) => [...body.matchAll(re)].flatMap(m => (m[1] && !MARKER_WORDS.has(m[1]) ? [{ skill: m[1], at: m.index ?? 0 }] : []))
   const loads = names(BACKTICKED_SKILL)
@@ -199,7 +203,8 @@ function adapterHold(text: string, isErrorResult: boolean): { gate: string; kind
  * names; none when the output carries no hold. Its `hook` is its gate;
  * `isStop`: it held a `Stop`, not a call; `skipOnly`: the named skills it
  * offers only as a skip line, which no load answers; `refs` and `needsLine`:
- * the design references and design-reads line a design hold asks for.
+ * the design references and design-reads line a design hold asks for, or the
+ * skill references a reference-reads hold asks for, by path under the skill.
  * `holdsOnly`: the text is an errored tool result.
  */
 export function hookNudges(text: string, holdsOnly = false): { hook: string; named: string[]; holdKind: HoldKind; isStop?: true; skipOnly?: string[]; refs?: string[]; needsLine?: true; items?: CloseoutItem[] }[] {
