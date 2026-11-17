@@ -2,15 +2,15 @@
 
 A write call whose path is a name the same script binds once, at its top
 level and before the call, to one string literal writes that literal's
-file. An unnamed write, after a leading `cd` to a folder certainly outside
-the project (outside any git checkout and `~/.claude`), is placed in that
-folder rather than inside the project. Like the other adapter tests, these
+file. Any other unnamed write is inside the project wherever the command
+runs. Like the other adapter tests, these
 drive the hook entry point (see `claude_code_adapter_support.py`), with a
 direct look at `shell.analyze` for the reading itself.
 """
 
 from __future__ import annotations
 
+import time
 import unittest
 
 from claude_code_adapter_support import decision, reason
@@ -150,44 +150,100 @@ class OnceBoundHoldTests(ScriptTestCase):
         self.assertIn("\"app.py\"", reason(s.call("Bash", {"command": code})))
 
 
-class OutsideFolderTests(ScriptTestCase):
-    """An unnamed write after a leading `cd` to a folder certainly outside is placed there."""
+class UnnamedWriteAfterACdTests(ScriptTestCase):
+    """An unnamed write is inside the project wherever the command runs: a
+    script reaches project files from any folder (Ticket 097 review)."""
 
-    def test_an_unnamed_write_in_a_temp_folder_meets_no_hold_and_no_closeout(self) -> None:
-        scratch = self.root / "scratch"
-        scratch.mkdir()
-        s = self.routed()
-        command = f"cd {scratch.as_posix()} && {UNNAMED}"
-        self.assertEqual(decision(s.run(command)), "pass")
-        self.assertEqual(stop(s), {})
-        # Near miss: the same script with no leading `cd` is inside the project.
-        t = self.routed()
-        self.assertEqual(hold_line(t.call("Bash", {"command": UNNAMED})), SCRIPTED)
-
-    def test_an_unnamed_write_anywhere_else_is_inside_the_project(self) -> None:
-        checkout = self.root / "other-checkout"
-        (checkout / ".git").mkdir(parents=True)
-        scratch = self.root / "scratch"
-        scratch.mkdir()
-        for start in (
-            f"cd {checkout.as_posix()} && ",
-            f"cd {(checkout / 'sub').as_posix()} && ",
-            "cd ~/.claude/goated-notes && ",
-            "cd $SCRATCH && ",
-            f"cd {scratch.as_posix()}; ",  # A `cd` that may have failed is not followed.
-            "",
+    def test_an_unnamed_write_after_a_cd_outside_is_still_held(self) -> None:
+        scratch = (self.root / "scratch").as_posix()
+        for script in (
+            UNNAMED,
+            heredoc("import os", "ROOT = '{project}'",
+                    "open(os.path.join(ROOT, 'src/app.py'), 'w').write('x')"),
+            "python -c \"import sys; open(sys.argv[1], 'w')\" {project}/src/app.py",
+            heredoc("from pathlib import Path", "(Path('{project}') / 'src/app.py').write_text('x')"),
+            heredoc("import os", "open(os.environ['PROJ'] + '/src/app.py', 'w')"),
+            heredoc("import os", "os.chdir('{project}')", "open(name, 'w')"),
+            "node -e \"require('fs').writeFileSync(require('path').join('{project}', "
+            "'src/app.py'), 'x')\"",
         ):
-            with self.subTest(start=start):
+            with self.subTest(script=script):
                 s = self.routed()
-                self.assertEqual(hold_line(s.call("Bash", {"command": start + UNNAMED})), SCRIPTED)
+                command = f"cd {scratch} && " + script.replace("{project}", s.project.as_posix())
+                self.assertEqual(hold_line(s.call("Bash", {"command": command})), SCRIPTED)
 
-    def test_a_shell_write_with_no_name_stays_inside_after_a_cd(self) -> None:
-        # Only an inline script's unnamed write is placed; `git apply` and the like are not.
-        scratch = self.root / "scratch"
-        scratch.mkdir()
+    def test_a_run_unnamed_write_after_a_cd_outside_counts_as_changed_code(self) -> None:
         s = self.routed()
-        s.run(f"cd {scratch.as_posix()} && git apply fix.patch")
+        s.say("goated-skip: software-design-principles: a probe rewrite across scratch files")
+        s.run(f"cd {(self.root / 'scratch').as_posix()} && {UNNAMED}")
         self.assertIn("- Proof:", stop(s).get("reason", ""))
+        # Near miss: a named markdown file written there is no code change.
+        t = self.routed()
+        t.run(f"cd {(self.root / 'scratch').as_posix()} && " + heredoc("open('n.md', 'w')"))
+        self.assertEqual(stop(t), {})
+
+
+class UnseenRebindingTests(unittest.TestCase):
+    """Code that may bind a name the text does not show reads no name (review)."""
+
+    def test_a_javascript_statement_going_on_past_its_line_is_not_read(self) -> None:
+        for code in (
+            "const p = 'notes.md'\n  .replace('notes.md', 'src/app.py')\nfs.writeFileSync(p, 'x')",
+            "const p = 'src/app'\n  + '.py'\nfs.writeFileSync(p, 'x')",
+            "const p = 'notes.md'\n  ? 'src/app.py' : ''\nfs.writeFileSync(p, 'x')",
+        ):
+            with self.subTest(code=code):
+                self.assertEqual(read(f"node - <<'EOF'\n{code}\nEOF"), ([], True))
+        # Near miss: a next line that starts a new statement ends the binding.
+        ended = "const p = 'notes.md'\n\nfs.writeFileSync(p, 'x')"
+        self.assertEqual(read(f"node - <<'EOF'\n{ended}\nEOF"), (["notes.md"], False))
+
+    def test_code_the_shell_may_expand_reads_no_name_when_it_holds_an_expansion(self) -> None:
+        for command in (
+            "X=\"var p='src/app.py'\"; node -e \"var p='notes.md'; $X; "
+            "require('fs').writeFileSync(p,'x')\"",
+            "X='p = \"src/app.py\"'; python - <<EOF\np = \"notes.md\"\n$X\nopen(p, 'w')\nEOF",
+            "python - <<EOF\np = \"notes.md\"\n# `date`\nopen(p, 'w')\nEOF",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(read(command), ([], True))
+        # Near misses: no expansion in the code, or a quoted heredoc, which expands nothing.
+        self.assertEqual(read("node -e \"var p='notes.md'; require('fs').writeFileSync(p,'x')\""),
+                         (["notes.md"], False))
+        self.assertEqual(read(heredoc("p = \"notes.md\"", "# $X", "open(p, 'w')")),
+                         (["notes.md"], False))
+
+    def test_code_that_binds_names_dynamically_reads_no_name(self) -> None:
+        for lines in (("exec(\"p = 'src/app.py'\")",), ("eval('1')",),
+                      ("globals()['p'] = 'src/app.py'",), ("vars()['p'] = 'src/app.py'",),
+                      ("import sys", "sys.modules[__name__].p = 'src/app.py'"),
+                      ("from helpers import *",),
+                      ("import __main__", "__main__.p = 'src/app.py'")):
+            with self.subTest(lines=lines):
+                self.assertEqual(read(heredoc("p = \"notes.md\"", *lines, "open(p, 'w')")),
+                                 ([], True))
+        for code in ("var p = 'notes.md'; eval(\"p = 'src/app.py'\"); fs.writeFileSync(p, 'x')",
+                     "var p = 'notes.md'; globalThis.p = 'src/app.py'; fs.writeFileSync(p, 'x')",
+                     "var p = 'notes.md'\nwith ({p: 'src/app.py'}) { fs.writeFileSync(p, 'x') }"):
+            with self.subTest(code=code):
+                self.assertEqual(read(f"node - <<'EOF'\n{code}\nEOF"), ([], True))
+        # Near miss: a plain import, or a JavaScript namespace import, binds no hidden name.
+        self.assertEqual(read(heredoc("import sys", "p = \"notes.md\"", "open(p, 'w')")),
+                         (["notes.md"], False))
+        namespaced = "import * as fs from 'fs'\nconst p = 'notes.md'\nfs.writeFileSync(p, 'x')"
+        self.assertEqual(read(f"node - <<'EOF'\n{namespaced}\nEOF"), (["notes.md"], False))
+
+
+class ReadingTimeTests(unittest.TestCase):
+    def test_many_declarations_are_read_in_linear_time(self) -> None:
+        declarations = 5000
+        js = "\n".join(f"const v{i} = 'file{i}.md';" for i in range(declarations))
+        py = "\n".join(f'v{i} = "file{i}.md"' for i in range(declarations))
+        started = time.perf_counter()
+        self.assertEqual(read(f"node - <<'EOF'\n{js}\nfs.writeFileSync(v1, 'x')\nEOF"),
+                         (["file1.md"], False))
+        self.assertEqual(read(heredoc(py, "open(v1, 'w')")), (["file1.md"], False))
+        self.assertLess(time.perf_counter() - started, 1.0)
 
 
 if __name__ == "__main__":

@@ -157,10 +157,13 @@ def writes(language: str, code: str, expanded: bool = False) -> tuple[list[str],
     `expanded` says the shell may have expanded the code before the
     interpreter got it (an argument, an unquoted heredoc), so a literal
     holding `$` or a backtick (`'$F'`, `'$(ls)'`) names a file only the
-    shell knows: it is an unnamed write."""
+    shell knows: it is an unnamed write. In such code no name is read as
+    its literal (see `_bindings`) when `$` or a backtick appears anywhere,
+    since the shell may put a rebinding there that the text does not show."""
 
     code = _resolve_aliases(language, code)
-    bindings = _bindings(language, code)
+    shell_may_rebind = expanded and _SHELL_EXPANDS_RE.search(code)
+    bindings = {} if shell_may_rebind or _DYNAMIC_NAMES_RE.search(code) else _bindings(language, code)
     found: list[tuple[int, list[str], bool]] = []
     for call in WRITE_CALLS.get(language, ()):
         for match in call.pattern.finditer(code):
@@ -336,6 +339,16 @@ def _bound(text: str, bindings: dict[str, tuple[int, str]], start: int) -> str |
     return binding[1] if binding and binding[0] <= start else None
 
 
+# Code that can bind a name without spelling the binding (`exec("p = …")`,
+# `globals()["p"] = …`, `globalThis.p = …`, `from m import *`, a JS `with`
+# block), so no name in it is read as its literal.
+_DYNAMIC_NAMES_RE = re.compile(
+    r"(?<![\w$.])(?:exec|eval|globals|vars|locals)\s*\(|\bsys\s*\.\s*modules\b|\b__main__\b"
+    r"|\b__dict__\b"
+    r"|(?<![\w$])globalThis(?![\w$])|\bimport\s*\*(?!\s*as\b)|(?<![\w$.])with\s*\("
+)
+
+
 def _bindings(language: str, code: str) -> dict[str, tuple[int, str]]:
     """Each name `code` binds exactly once, at its top level, to one string
     literal with no run-time part, with the offset where that binding ends
@@ -396,7 +409,10 @@ def _python_bindings(code: str) -> dict[str, tuple[int, str]]:
 
 
 _JS_BINDING_RE = re.compile(r"(?<![\w$.])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=(?![=>])")
+_JS_NAME_RE = re.compile(r"(?<![\w$])[A-Za-z_$][\w$]*")
 _JS_STATEMENT_END_RE = re.compile(r"[;\n]")
+# What a line may open with to go on with the statement before it (`'a'\n  .replace(…)`).
+_JS_CONTINUES = frozenset(".?+-*/%[(`,&|=<>")
 # Words before `(` that open no call, so a name inside is no argument.
 _JS_NOT_CALLS = frozenset({"if", "for", "while", "switch", "catch", "with", "function",
                            "return", "typeof", "void", "delete", "in", "of", "await"})
@@ -408,6 +424,9 @@ def _js_bindings(code: str) -> dict[str, tuple[int, str]]:
     argument of a call or before a `.` (`_js_read_only`)."""
 
     layout = _JsLayout.of(code)
+    uses: dict[str, list[int]] = {}  # Where each name appears, from one pass.
+    for match in _JS_NAME_RE.finditer(code):
+        uses.setdefault(match.group(), []).append(match.start())
     declared = Counter(m.group(1) for m in _JS_BINDING_RE.finditer(code))
     found = {}
     for match in _JS_BINDING_RE.finditer(code):
@@ -416,9 +435,12 @@ def _js_bindings(code: str) -> dict[str, tuple[int, str]]:
                 or not layout.code[match.start()]):
             continue
         value = _balanced(code, match.end(), "", stop=_JS_STATEMENT_END_RE)[0]
+        end, following = match.end() + len(value), _nonspace(code, match.end() + len(value), 1)
+        if code[end:end + 1] == "\n" and code[following:following + 1] in _JS_CONTINUES:
+            continue  # The statement goes on past the line: `'a.md'\n  + '.py'`.
         literal = _literal(value, "js")
-        if literal and _js_read_only(code, layout, name, match.start(1)):
-            found[name] = (match.end() + len(value), literal)
+        if literal and _js_read_only(code, layout, name, uses[name], match.start(1)):
+            found[name] = (end, literal)
     return found
 
 
@@ -459,14 +481,16 @@ class _JsLayout(NamedTuple):
         return cls(inner, is_code, close)
 
 
-def _js_read_only(code: str, layout: _JsLayout, name: str, binding: int) -> bool:
-    """Whether every use of `name` in `code` but the one at `binding` plainly
-    reads it: a whole argument of a call, `f(a, p)`, or the object of a
-    property, `p.length`. Any other use might rebind it (`p = …`, `p++`,
-    `function f(p)`, `({p} = o)`, `for (p of …)`), so it does not count."""
+def _js_read_only(code: str, layout: _JsLayout, name: str, uses: list[int],
+                  binding: int) -> bool:
+    """Whether every use of `name` in `code`, at the offsets `uses`, but the
+    one at `binding` plainly reads it: a whole argument of a call, `f(a, p)`,
+    or the object of a property, `p.length`. Any other use might rebind it
+    (`p = …`, `p++`, `function f(p)`, `({p} = o)`, `for (p of …)`), so it
+    does not count."""
 
-    for match in re.finditer(rf"(?<![\w$]){re.escape(name)}(?![\w$])", code):
-        i, j = match.start(), match.end()
+    for i in uses:
+        j = i + len(name)
         if i == binding or not layout.code[i]:
             continue
         before, after = _nonspace(code, i - 1, -1), _nonspace(code, j, 1)

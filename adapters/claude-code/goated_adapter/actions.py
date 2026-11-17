@@ -447,8 +447,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
                     judged = True
                     hold = hold or _reference_reads_hold(
                         _norm(target), None, proof, project, references, changes)
-        if _unnamed_inside(command.script_unknown_folders, project):
-            # A script's write to a path built at run time is code (UNNAMED_FILES).
+        if command.script_unknown_writes:
+            # A script's write to a path built at run time is inside, and code (UNNAMED_FILES).
             hold = hold or _scripted_edit_hold(None, proof)
         if command.non_check_writes:
             if not judged:
@@ -1806,8 +1806,8 @@ def _changed_paths(call, project: Project | None) -> list[str]:
         unnamed, unplaced = False, []
     elif call.name in COMMAND_TOOLS:
         command = shell.analyze(str(call.input.get("command") or ""), call.name)
-        targets, unplaced = command.write_targets, command.unplaced_targets
-        unnamed = _unnamed_inside(command.unnamed_folders, project)
+        targets, unnamed = command.write_targets, command.unknown_writes
+        unplaced = command.unplaced_targets
     else:
         return []
     paths = [_norm(t) for t in targets if t and _in_project(t, project, t not in unplaced)]
@@ -1901,38 +1901,13 @@ def writes_only_scratch(tool_name: str, tool_input: dict, project: Project | Non
         targets, unplaced = command.write_targets, command.unplaced_targets
     else:
         return False
-    claude = _claude_folders(home)
-    if claude is None:
-        return False
-    return bool(targets) and all(
-        target and _scratch(target, project, target not in unplaced, claude) for target in targets
-    )
-
-
-def _claude_folders(home: str | None = None) -> list[str] | None:
-    """The Claude folder (`~/.claude`, and `home`'s) in every reading, or
-    None when `~` has no certain reading."""
-
     claude = _readings("~/.claude", ())
     if claude is None:
-        return None
-    if home is not None:
-        claude += [_comparable(os.path.join(home, ".claude"))]
-    return claude + _resolved(claude)
-
-
-def _unnamed_inside(folders: list[str | None], project: Project | None) -> bool:
-    """Whether some write a shell command does not name, placed in one of
-    `folders` (`shell.ShellCommand.unnamed_folders`), counts as inside the
-    project. Only one placed in a folder a leading `cd` reached, certainly
-    outside as a scratch file is (`writes_only_scratch`), does not: the
-    command's starting folder, or one it cannot name, may be the project."""
-
-    claude = _claude_folders() if any(folders) and project is not None else None
-    return any(
-        not (folder and project is not None and claude is not None
-             and _scratch(folder, project, True, claude))
-        for folder in folders
+        return False
+    claude += [_comparable(os.path.join(home, ".claude"))]
+    claude += _resolved(claude)
+    return bool(targets) and all(
+        target and _scratch(target, project, target not in unplaced, claude) for target in targets
     )
 
 

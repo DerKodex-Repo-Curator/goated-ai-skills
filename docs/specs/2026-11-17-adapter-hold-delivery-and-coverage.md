@@ -5,7 +5,9 @@
 Decisions approved by the maintainer on 2026-11-17 in a grill-with-docs
 session, and this text on the same day. R5 and R6 were amended at the
 maintainer's request after Ticket 093 merged, for a false hold met in
-use (Ticket 097). Ticket ready. Builds on
+use (Ticket 097). Ticket 097's review then dropped a rule placing an
+unnamed write in a known folder outside the project, since a script
+reaches project files from any folder. Ticket ready. Builds on
 [the written-line holds spec](2026-11-17-adapter-written-line-holds.md),
 [the skill placement spec](2026-11-17-skill-placement-gates.md) and
 [ADR 0003](../adr/0003-opt-in-framework-enforcement-adapters.md). Its
@@ -109,13 +111,14 @@ show problems that are not about any one trigger:
     leaves the path unread: a name bound twice or changed, a binding
     inside a loop, branch or function, an f-string or other built string,
     a concatenation, input, an environment variable, a command's output,
-    or a literal the shell may have expanded;
+    or a literal the shell may have expanded. No name is read in code
+    that may bind one unseen: code the shell may expand that holds `$` or
+    a backtick, or code using `exec`, `eval`, `globals`, `vars`,
+    `sys.modules`, `globalThis`, a star import or a JavaScript `with`;
   - a write whose path cannot be read this way is an unnamed write. It is
-    inside the project, unless the command's starting folder is known
-    from a leading `cd` to a literal path and that folder is certainly
-    outside: not in the project, in no git checkout and not under the
-    user's `~/.claude` folder, the rule the routing holds use. Then the
-    unnamed write is placed in that folder;
+    inside the project wherever the command runs: a script can reach
+    project files from any folder (`os.path.join`, `sys.argv`,
+    `os.chdir`);
   - it meets the routing holds, the path gates and the closeout as any
     shell write does;
   - a script in which no such call is found is not a write, as today.
@@ -126,9 +129,8 @@ show problems that are not about any one trigger:
   line naming `software-design-principles` with a reason, such as a
   mechanical rewrite across many files, clears it for the turn.
   `software-design-principles` states the rule in one sentence. An
-  unnamed write counts as a code file inside the project only where R5
-  places it there; a path R5 reads through a once-bound name is judged
-  as the file it names.
+  unnamed write counts as a code file inside the project; a path R5
+  reads through a once-bound name is judged as the file it names.
 - **R7, own subagent reports.** A prompt that is the report of a subagent
   this session started continues the current turn: the route line, skip
   lines, overrides, checks, change reads and the brief's route all stand,
@@ -206,10 +208,11 @@ show problems that are not about any one trigger:
       `scripted-edit` hold. The same script with `p = "src/app.py"` is
       held by `scripted-edit`. `const p = 'notes.md'` and `let` behave
       the same in JavaScript.
-- [ ] AC17: An unnamed write in a command that opens with a `cd` to a
-      temp folder outside the project, any git checkout and `~/.claude`
-      is placed there and meets no hold. After a `cd` into another git
-      checkout, or with no leading `cd`, it is inside the project.
+- [ ] AC17: An unnamed write is inside the project and held by
+      `scripted-edit` wherever the command runs, after a leading `cd` to
+      a temp folder outside the project too: `open(os.path.join(ROOT,
+      'src/app.py'), 'w')`, `open(sys.argv[1], 'w')`, `os.chdir` then a
+      write, and Node's `path.join` are held.
 
 ## Proof Surface
 
@@ -229,7 +232,7 @@ one real session confirms R1, R7 and R8.
 - Every change fails toward holding when the adapter cannot tell: a
   script it cannot read for certain is judged as today's Known Limits
   say, a write path it cannot read as a literal is inside the project
-  unless the command's folder is certainly outside, a name it cannot
+  wherever the command runs, a name it cannot
   show was bound once to one literal is not a literal, and a prompt it
   cannot tie to an own spawn opens a turn.
 - Judging every gate must not change which calls pass. A call no gate
