@@ -4,7 +4,8 @@ State holds only what the transcript's current turn cannot answer on its own:
 the current task's route, whether missing or reset state lost the task, what
 counts until the next compaction (whether the router loaded, which GOATED
 skills loaded, which design references and spawn-brief templates were read),
-the last turn seen, and the latest user overrides. Beside it, a marker names
+what the current turn's design edits required and which template each of its
+spawns' briefs followed, the last turn seen, and the latest user overrides. Beside it, a marker names
 the turn whose hold gave the unseen-line advice in full. Apart from the short
 override phrases a user typed, it holds no prompt or reply text.
 """
@@ -47,6 +48,7 @@ class SessionState:
     __slots__ = (
         "router_loaded", "last_turn", "task", "task_unknown", "overrides", "policy_notice_shown",
         "reference_reads", "design_edits", "brief_routed", "loads", "template_reads",
+        "spawn_templates",
     )
 
     def __init__(self) -> None:
@@ -72,6 +74,9 @@ class SessionState:
         # The design references each edit of one turn required when the
         # design gates judged it: {"turn": <turn key>, "edits": {<tool_use_id>: [<file>]}}.
         self.design_edits: dict = {}
+        # The brief templates (`contracts.BriefTemplate.reference`) each spawn of
+        # one turn followed when the spawn gate let it through, in the same shape.
+        self.spawn_templates: dict = {}
 
     def forget_context(self) -> None:
         """Drop what counted only while its text was in the agent's context: the
@@ -88,14 +93,23 @@ class SessionState:
         """Keep what an edit the design gates let through required, for the
         turn's closeout; an earlier turn's edits are dropped."""
 
-        if self.design_edits.get("turn") != turn:
-            self.design_edits = {"turn": turn, "edits": {}}
-        self.design_edits["edits"][tool_use_id] = list(references)
+        self.design_edits = _with_call(self.design_edits, turn, tool_use_id, references)
 
     def design_edits_of(self, turn: str) -> dict[str, list[str]]:
         """What `record_design_edit` kept for `turn`'s edits, by tool_use_id."""
 
-        return dict(self.design_edits["edits"]) if self.design_edits.get("turn") == turn else {}
+        return _calls_of(self.design_edits, turn)
+
+    def record_spawn_templates(self, turn: str, tool_use_id: str, templates: list[str]) -> None:
+        """Keep which brief templates a spawn the spawn gate let through
+        followed, for the turn's closeout; an earlier turn's spawns are dropped."""
+
+        self.spawn_templates = _with_call(self.spawn_templates, turn, tool_use_id, templates)
+
+    def spawn_templates_of(self, turn: str) -> dict[str, list[str]]:
+        """What `record_spawn_templates` kept for `turn`'s spawns, by tool_use_id."""
+
+        return _calls_of(self.spawn_templates, turn)
 
     def to_json(self) -> dict:
         return {
@@ -110,6 +124,7 @@ class SessionState:
             "reference_reads": self.reference_reads,
             "template_reads": self.template_reads,
             "design_edits": self.design_edits,
+            "spawn_templates": self.spawn_templates,
         }
 
     @classmethod
@@ -127,13 +142,8 @@ class SessionState:
         state.loads = _string_list(data.get("loads", []))
         state.reference_reads = _string_list(data.get("reference_reads", []))
         state.template_reads = _string_list(data.get("template_reads", []))
-        design_edits = _expect(data.get("design_edits", {}), dict)
-        if design_edits:
-            edits = _expect(design_edits.get("edits"), dict)
-            state.design_edits = {
-                "turn": _expect(design_edits.get("turn"), str),
-                "edits": {_expect(k, str): _string_list(v) for k, v in edits.items()},
-            }
+        state.design_edits = _valid_calls(data.get("design_edits", {}))
+        state.spawn_templates = _valid_calls(data.get("spawn_templates", {}))
         task = _expect(data.get("task"), (dict, type(None)))
         if task is not None:
             state.task = Task(
@@ -150,6 +160,36 @@ class SessionState:
                 "phrases": _string_list(overrides.get("phrases", [])),
             }
         return state
+
+
+def _with_call(record: dict, turn: str, tool_use_id: str, values: list[str]) -> dict:
+    """`record`, a per-turn record of calls ({"turn": <turn key>, "edits":
+    {<tool_use_id>: [<value>]}}), with this call's values kept; a record of an
+    earlier turn is replaced."""
+
+    if record.get("turn") != turn:
+        record = {"turn": turn, "edits": {}}
+    record["edits"][tool_use_id] = list(values)
+    return record
+
+
+def _calls_of(record: dict, turn: str) -> dict[str, list[str]]:
+    """The values `_with_call` kept for `turn`'s calls, by tool_use_id."""
+
+    return dict(record["edits"]) if record.get("turn") == turn else {}
+
+
+def _valid_calls(data) -> dict:
+    """A per-turn record of calls as `to_json` saved it; ValueError on any other shape."""
+
+    record = _expect(data, dict)
+    if not record:
+        return {}
+    edits = _expect(record.get("edits"), dict)
+    return {
+        "turn": _expect(record.get("turn"), str),
+        "edits": {_expect(k, str): _string_list(v) for k, v in edits.items()},
+    }
 
 
 def _expect(value, kinds):

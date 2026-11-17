@@ -437,6 +437,7 @@ class SecurityCloseoutTests(LoadsTestCase):
         s = self.first_turn("code-security-review")
         self.later_turn(s)
         s.say(SKIP_DOCS)
+        s.load("verification-before-completion")  # A sensitive file needs verification (Ticket 069).
         self.assertEqual(decision(s.call("Edit", code_edit("src/auth.py", 2))), "pass")
         s.run("pytest -q")
 
@@ -449,6 +450,7 @@ class SecurityCloseoutTests(LoadsTestCase):
         self.later_turn(s)
         s.say(SKIP_DOCS)
         s.say("goated-skip: code-security-review: renames a local constant only")
+        s.load("verification-before-completion")  # A sensitive file needs verification (Ticket 069).
         s.call("Edit", code_edit("src/auth.py", 2))
         s.run("pytest -q")
 
