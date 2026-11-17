@@ -357,6 +357,17 @@ sees only the whole command's result.
   held call unchanged gives the same answer until the proof or skip line
   appears. A held call is recorded as an error, so it never counts as a change
   or a check.
+- **Every hold at once.** A call is judged by every gate, and one message
+  carries every hold it meets (see [Hold messages](#hold-messages)), so
+  meeting them all clears it in one retry. `router-first` and `route-line`
+  come together. Two holds may still follow on the retry, because they can
+  be judged only once another clears: `pipeline`, which reads the route, is
+  judged once the router counts as loaded and the turn has a route line;
+  and the [closeout at a commit](#closeout-at-commit) is judged once the
+  `commit` gate passes the commit. When one shell command writes several
+  files, each gate judges them all at once, and its one hold asks for
+  everything they need: every sensitive file, every code file a script
+  writes, and every reference any of them selects.
 
 ### Large pull requests
 
@@ -376,8 +387,8 @@ router.
 The transcript does not hold a branch's size, so this gate and the
 closeout's [large-branch](#large-branches) measure are the only places the
 adapter runs commands. When a pull-request call would otherwise be held
-by `pr-review` (the `pull-request` gate passed, and no load, change read, or
-skip line has cleared `pr-review`), the adapter asks git, in the hook's
+by `pr-review` (no load, change read, or skip line has cleared `pr-review`;
+it is judged together with the `pull-request` gate), the adapter asks git, in the hook's
 working folder, which of the candidate refs below exist (`git for-each-ref`),
 then measures the first base and head found:
 
@@ -815,7 +826,10 @@ look around before it routes. Each simple command must be one of:
 
 - `cat`, `head`, `tail`, `ls`, `dir`, `grep`, `rg` (without `--pre` or
   `--hostname-bin`), or `wc`;
-- `pwd`, `echo`, `cut`, `tr`, `stat`, `which`, `true`, or `:`;
+- `pwd`, `echo`, `cut`, `tr`, `stat`, `which`, `true`, or `:`, and, as a
+  whole PowerShell command, `$null`, which does nothing, as `true` does in
+  Bash; a hold names either as the carrier for a line (see
+  [Hold messages](#hold-messages));
 - `sort` without `-o`, `-T`, `--output`, `--temporary-directory`, or
   `--compress-program`, which write files or run a program;
 - `uniq` with at most one file, since it writes its second, and no `*`,
@@ -1085,6 +1099,13 @@ goated-hold: <gate> | <kind>
 - `<kind>` is `strict` or `justified-skip`.
 - The first line matches
   `^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-skip)$`.
+- When a call meets several holds, one message carries them all, in the
+  order the gates fire: the first hold as it would be alone, then, after a
+  blank line, each further hold opening with its own `goated-hold:` line,
+  alone on its line and matching the same pattern, followed by its text.
+  Each keeps its kind and its own way to clear. The hook's decision belongs
+  to the first; the skill-usage mod reads every hold line and counts each
+  hold as if shown alone.
 - The lines after it are guidance for the agent and may change between
   releases; do not parse their wording. They backtick each skill they ask
   for by its bare name, which the skill-usage mod reads from them,
@@ -1130,6 +1151,33 @@ goated-hold: <gate> | <kind>
   in full again. The first line, and every hold that never carried the
   advice, stay the same. A subagent's turns claim their own marker, so each
   subagent gives the full advice once per turn, apart from its parent.
+- Such a hold on a call with no field a line can go in, such as an `Edit`
+  or `Write`, ends its message by naming a carrier in the session's shell:
+  a Bash call with the command true, or, in a session whose last shell call
+  was PowerShell, a PowerShell call with the command $null (true is no
+  command there), with the line in its description. Both are
+  [plain reads](#plain-reads), so they pass every hold, before and after the
+  router loads. Before the session's first shell call the carrier is Bash.
+- A paragraph several holds or closeout items share appears once in a
+  message: the [change read](#change-reads) explanation (a later copy says
+  to print the diff or Read a changed file, as above), the sentence about
+  rerunning steps chained before a held command, the sentence that a read
+  made in parallel does not count, and the closeout's rule for skip lines.
+- A hold that repeats an ask the turn already showed in full is short: it
+  opens `Still unmet:`, names what is still missing and every constraint
+  needed to clear it, such as what does not count as a change read, the
+  lines that broke the route grammar, or a typed message that stands a
+  commit down, and keeps every skill, reference, and skip line the full
+  text names, so the mod reads the same asks. An ask is the gate and what
+  is unmet, so a gate's new ask, such as a change read after a load, comes
+  in full the first time. The closeout judges each item apart: an item the
+  turn has not yet shown, at a commit or a `Stop`, comes in full under the
+  full opening (`Before finishing this turn, which changed code:`); when
+  every item it lists was shown before, it opens `Still unmet before
+  finishing this turn:` (or `committing in`) and lists them short, keeping
+  a commit's rules about chained steps and checks. Each ask claims its own
+  turn marker, apart from the advice's; when a marker cannot be made or
+  read, the full text is given. The next turn starts full again.
 - A hold or closeout item that asks for a [change read](#change-reads) once
   its skill has loaded names that skill without backticks, or only in its
   skip line, since no load answers it: the commit, pull-request, and
@@ -1364,11 +1412,15 @@ names, and how much of its turn came before it, the gates that held in the lates
 holds were declined or left unanswered, and whether the notice was shown. It
 holds no prompt or reply
 text beyond the short override phrases and a commit message the user typed.
-Beside the state files, a `turn-markers/` folder holds one empty file per
-session, and one per subagent of it, named for the turn whose hold gave the
-[unseen-line advice](#hold-messages) in full. A new turn's claim replaces it,
-and a `SessionStart` after compaction or `/clear` deletes the session's and
-its subagents'. An `onboarding-notices/` folder holds one file per project,
+Beside the state files, a `turn-markers/` folder holds empty files for the
+session, and for each subagent of it, named for the current turn and a
+purpose: the [unseen-line advice](#hold-messages), or an ask (a gate and
+what it found unmet, or one closeout item) whose full text a hold of that
+turn gave. Claims for different purposes in one turn never
+meet. A claim in a new turn drops its owner's markers of other turns, and a
+`SessionStart` after compaction or `/clear` deletes the session's and its
+subagents'. The state also keeps the shell tool the session last called,
+which names the carrier a hold offers for a line. An `onboarding-notices/` folder holds one file per project,
 named by a digest of the project's path, listing the skills its onboarding
 notice last named.
 The action and closeout gates keep no state of their own: they read the
@@ -1400,8 +1452,8 @@ the changes its change read must follow; other calls never read them. That
 case was not measured.
 
 The `pr-review` gate's size check (see [Large pull requests](#large-pull-requests))
-runs only on a pull-request call that has passed the `pull-request` gate and
-that no load or skip line has cleared of `pr-review`. Measured on 2026-11-16
+runs only on a pull-request call that no load or skip line has cleared of
+`pr-review`, judged together with the `pull-request` gate. Measured on 2026-11-16
 on the same machine with git 2.55, in-process through `run_hook`, 30 runs each:
 
 | Case | Median | p90 |
@@ -1427,6 +1479,13 @@ same way, a `Stop` with only that measure left to run:
 | A branch of 20,000 changed lines | 58 ms | 63 ms |
 
 Every other call costs nothing more.
+
+Judging every gate (Ticket 095) adds no measurable cost: on 2026-11-17, on
+the same machine with the uv-managed Python 3.14, whose start-up is slower,
+30 runs each in exec form, a test edit that meets three gates took a median
+of 165 ms before and after the change, and a passing `ls` 156 and 158 ms.
+Each gate still asks git or reads a subagent's transcript only when its own
+hold would otherwise fire.
 
 The hook never waits for the call it judges, which it takes from its input:
 in an interactive session (Claude Code 2.1.325) the assistant message holding
@@ -1654,9 +1713,9 @@ of the call's prompt, which is normally already there.
   on a network (UNC) path.
 - Hooks for parallel tool calls can race on the state file. Each call
   re-derives its turn from the transcript, so a lost update can cause a repeat
-  hold, never a pass. The turn marker that shares the full unseen-line advice
-  is claimed atomically, apart from the state file, so this race never
-  repeats that advice.
+  hold, never a pass. The turn markers that share the full unseen-line advice
+  and each ask's full text are claimed atomically, apart from the state
+  file, so this race never repeats either.
 - The Verification item's sensitive-file trigger uses the `security` gate's
   paths, so any change to one, such as an edit of a lockfile or a `.env`
   value, asks for `verification-before-completion` too; its skip line

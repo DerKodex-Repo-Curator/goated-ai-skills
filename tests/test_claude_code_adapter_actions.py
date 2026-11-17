@@ -3988,6 +3988,7 @@ class DesignRedFlagsItemTests(AdapterTestCase):
         )
         self.assertNotIn("file#id", held["reason"])
         s.read(RED_FLAGS)
+        # The item's second ask is new to the turn, so it comes in full (Ticket 095).
         self.assertIn("- Design: after reading the red flags and after your last code change, "
                       "read the change itself", stop(s)["reason"])
         s.run(DIFF)

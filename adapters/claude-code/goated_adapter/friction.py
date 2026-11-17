@@ -69,20 +69,26 @@ def action_of(tool_name: str, tool_input: dict) -> str:
     return "tool:" + tool_name
 
 
-def observe(state, turn: Turn, action: str, hold) -> None:
-    """Take one judged action of `turn` (already folded): `hold` is what held
-    it, or None when it went through. Each open hold whose gate let the action
-    through is answered; then `hold`, if any, opens for settling, unless its
-    gate already held in the turn, whose open hold then follows this action."""
+def observe(state, turn: Turn, action: str, holds: list) -> None:
+    """Take one judged action of `turn` (already folded): `holds` are what
+    held it, each as if shown alone (Ticket 095), or [] when it went through.
+    Each open hold whose gate let the action through is answered; then each
+    of `holds` opens for settling, unless its gate already held in the turn,
+    whose open hold then follows this action."""
 
-    held_gate = hold.gate if hold is not None else None
+    held_gates = {hold.gate for hold in holds}
     state.open_holds = [
         h for h in state.open_holds
-        if not ((_repeats(h, action) and h["gate"] != held_gate)
-                or (hold is None and _rewrites(h, action)))
+        if not ((_repeats(h, action) and h["gate"] not in held_gates)
+                or (not holds and _rewrites(h, action)))
     ]
-    if hold is None:
-        return
+    for hold in holds:
+        _open(state, turn, action, hold)
+
+
+def _open(state, turn: Turn, action: str, hold) -> None:
+    """Open `hold` for settling, or move its gate's open hold in the turn to `action`."""
+
     if state.held_gates.get("turn") != turn.key:
         state.held_gates = {"turn": turn.key, "gates": []}
     if hold.gate in state.held_gates["gates"]:

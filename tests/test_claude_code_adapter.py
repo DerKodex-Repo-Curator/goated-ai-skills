@@ -501,9 +501,10 @@ class UnseenLineAdviceTests(AdapterTestCase):
         s = self.session
         s.prompt("Harden the login check.")
         # Near miss: an earlier hold in the turn that carries no advice does not
-        # count as having shown it.
-        first = s.call("Edit")
+        # count as having shown it. A command meets router-first alone.
+        first = s.call("Bash")
         self.assertTrue(reason(first).startswith("goated-hold: router-first"))
+        self.assertNotIn(self.FULL, reason(first))
         s.load(ROUTER)
 
         held = s.call("Edit")
@@ -674,7 +675,8 @@ class UnseenLineAdviceTests(AdapterTestCase):
         self.route_line_hold()
         self.subagent_holds("a1", count=1)
         markers = s.config.state_dir / "turn-markers"
-        self.assertEqual(len(list(markers.iterdir())), 2)
+        # The advice and the holding gate claim apart, for the session and its subagent (Ticket 095).
+        self.assertEqual(len(list(markers.iterdir())), 4)
         s.hook("SessionStart", source="clear")
         self.assertEqual(list(markers.iterdir()), [])
 

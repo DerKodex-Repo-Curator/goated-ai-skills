@@ -71,7 +71,7 @@ def render_registry_fixture() -> str:
 
 
 def _write(path: str, lines: int = 6) -> dict:
-    """A write tool's input adding enough lines to count as a substantial change."""
+    """A write tool's input adding `lines` lines: six count as a substantial change."""
 
     return {"file_path": path, "content": "\n".join(f"line {n}" for n in range(lines))}
 
@@ -121,7 +121,8 @@ def _adapter_texts() -> dict[str, str]:
 
         first = session("router-first")
         first.prompt("Add CSV export.")
-        texts["routerFirst"] = reason(first.call("Edit"))
+        # A command meets router-first alone; an edit meets route-line with it (Ticket 095).
+        texts["routerFirst"] = reason(first.call("Bash"))
 
         unrouted = session("route-line")
         unrouted.prompt("Add CSV export.")
@@ -179,7 +180,7 @@ def _adapter_texts() -> dict[str, str]:
         intake.subagent("r1").prompt("Review the change.", hook=False)
         intake.spawn("r1", REVIEWER_BRIEF)
         texts["reviewIntake"] = reason(intake.call("Edit", _edit("src/export.py", "rate = 2")))
-        texts["security"] = reason(routed("security").call("Write", _write("src/auth.py")))
+        texts["security"] = reason(routed("security").call("Write", _write("src/auth.py", lines=2)))
         # A shell write is held like a write tool's: here, to a dependency manifest.
         texts["shellWrite"] = reason(
             routed("shell-write").call("Bash", {"command": "echo requests >> requirements.txt"})
@@ -196,10 +197,26 @@ def _adapter_texts() -> dict[str, str]:
             failing.call("Edit", {"file_path": "src/export.py", "old_string": "a", "new_string": "b"})
         )
 
+        # One test edit that meets three gates: one message carries the three holds (Ticket 095).
+        joint = routed("joint")
+        joint.config.registry_path = REPO_ROOT / "stack" / "goated-stack.yaml"
+        joint.load("software-design-principles")
+        joint.load("tdd")
+        joint.run("pytest -q", success=False)
+        joint.run("pytest -q", success=False)
+        texts["jointTestEdit"] = reason(joint.call("Edit", _edit(
+            "tests/test_export.py", "client = MagicMock()\n" + "\n".join(
+                f"assert total_{n} == {n}" for n in range(30)))))
+        # A gate's second hold in a turn is short (Ticket 095).
+        repeated = routed("security-short")
+        repeated.call("Write", _write("src/auth.py", lines=2))
+        texts["securityShort"] = reason(repeated.call("Write", _write("src/auth.py", lines=2)))
+
         closing = routed("closeout")
         closing.say("goated-skip: software-design-principles: one mechanical constant change")
         closing.call("Write", _write("src/export.py"))
         texts["closeout"] = _stop_reason(closing)
+        texts["closeoutShort"] = _stop_reason(closing)
 
         # The other closeout items: a failed last check (Unfinished) and the design skill's red flags.
         unfinished = routed("closeout-unfinished")
@@ -339,7 +356,15 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "spawnHeadings": "spawn | strict",
             "securityNoExtension": "security | justified-skip",
             "conflictResolution": "conflict-resolution | justified-skip",
+            "jointTestEdit": "design-reads | justified-skip",
+            "securityShort": "security | justified-skip",
+            "closeoutShort": "closeout | justified-skip",
         }
+        # A joint message keeps each hold's own line, in the order the gates fire (Ticket 095).
+        self.assertEqual(re.findall(r"^goated-hold: (\S+) \|", texts["jointTestEdit"], re.MULTILINE),
+                         ["design-reads", "reference-reads", "repeated-failure"])
+        self.assertIn("Still unmet", texts["securityShort"])
+        self.assertIn("Still unmet", texts["closeoutShort"])
         for key, line in gates.items():
             with self.subTest(key=key):
                 self.assertTrue(texts[key].startswith(f"goated-hold: {line}\n"), texts[key])
@@ -366,7 +391,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
         # The full hint comes once per turn; a later such hold in the turn gives one sentence that
         # keeps the way out. The generator drives these keys as later holds in their turn.
         texts = _adapter_texts()
-        later_in_turn = {"designReads", "prReviewRead"}
+        later_in_turn = {"designReads", "prReviewRead", "securityShort"}
         ways_out = {
             "routeLine": "skip routing",
             "pipeline": "skip routing",
@@ -384,6 +409,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "scriptedEdit": "skip software-design-principles",
             "prReview": "skip standards-and-spec-review",
             "prReviewRead": "skip standards-and-spec-review",
+            "securityShort": "skip code-security-review",
         }
         for key, way_out in ways_out.items():
             with self.subTest(key=key):

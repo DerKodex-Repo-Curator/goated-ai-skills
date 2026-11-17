@@ -6,8 +6,8 @@ counts until the next compaction (whether the router loaded, which GOATED
 skills loaded, which design references, skill references, and spawn-brief
 templates were read, and digests of the first distinct files read), which
 template each of the current turn's spawns' briefs followed, the last turn
-seen, the latest user overrides, and the friction count (`friction.py`). Beside it, a
-marker names the turn whose hold gave the unseen-line advice in full, and a
+seen, the latest user overrides, and the friction count (`friction.py`). Beside it,
+markers name what the current turn's holds already gave in full, and a
 record per project names what its onboarding notice last named. Apart from
 the short override phrases a user typed, it holds no prompt or reply text.
 """
@@ -55,7 +55,7 @@ class SessionState:
         "router_loaded", "last_turn", "task", "task_unknown", "overrides", "policy_notice_shown",
         "reference_reads", "brief_routed", "briefed", "loads", "template_reads",
         "skill_reference_reads", "spawn_templates", "open_holds", "held_gates", "friction",
-        "retrospective_notice_shown", "files_read",
+        "retrospective_notice_shown", "files_read", "shell",
     )
 
     def __init__(self) -> None:
@@ -101,6 +101,9 @@ class SessionState:
         self.held_gates: dict = {}
         self.friction = 0
         self.retrospective_notice_shown = False
+        # The shell tool ("Bash" or "PowerShell") the session last called, or
+        # None before its first shell call: the carrier a hold names (Ticket 095).
+        self.shell: str | None = None
 
     def forget_context(self) -> None:
         """Drop what counted only while its text was in the agent's context: the
@@ -147,6 +150,7 @@ class SessionState:
             "held_gates": self.held_gates,
             "friction": self.friction,
             "retrospective_notice_shown": self.retrospective_notice_shown,
+            "shell": self.shell,
         }
 
     @classmethod
@@ -173,6 +177,7 @@ class SessionState:
         state.friction = _expect(data.get("friction", 0), int)
         state.retrospective_notice_shown = _expect(
             data.get("retrospective_notice_shown", False), bool)
+        state.shell = _expect(data.get("shell"), (str, type(None)))
         task = _expect(data.get("task"), (dict, type(None)))
         if task is not None:
             state.task = Task(
@@ -337,15 +342,19 @@ class StateStore:
         self._ensure_private_directory(path.parent)
         _write_json(path, {"skills": list(skills)})
 
-    def claim_turn(self, session_id: str, turn_key: str, agent_id: str | None = None) -> bool:
-        """Claim the marker for `turn_key`; True for the first claim.
+    def claim_turn(self, session_id: str, turn_key: str, purpose: str,
+                   agent_id: str | None = None) -> bool:
+        """Claim the marker for `purpose` in `turn_key`; True for the first claim.
 
-        The marker belongs to the session, or to its subagent `agent_id`, so
-        each subagent's turns claim apart from the parent's. The claim is one
-        exclusive file create, so of several hooks claiming at once exactly
-        one gets True. A successful claim drops the same owner's markers of
-        earlier turns. Raises OSError, or StateUnsafe, when the marker cannot
-        be made or read.
+        `purpose` names what the claim gives once per turn, such as the
+        unseen-line advice or one gate's full text (Ticket 095); claims for
+        different purposes in one turn never meet. The marker belongs to the
+        session, or to its subagent `agent_id`, so each subagent's turns claim
+        apart from the parent's. The claim is one exclusive file create, so of
+        several hooks claiming at once exactly one gets True. A successful
+        claim drops the same owner's markers of other turns, whatever their
+        purpose. Raises OSError, or StateUnsafe, when the marker cannot be
+        made or read.
         """
 
         folder = self.directory / TURN_MARKERS_DIR
@@ -354,13 +363,14 @@ class StateStore:
         if agent_id is not None:
             owner += AGENT_SEPARATOR + _safe_name(agent_id)
         prefix = f"{owner}."
-        marker = folder / f"{prefix}{_safe_name(turn_key)}"
+        turn = f"{prefix}{_safe_name(turn_key)}."
+        marker = folder / f"{turn}{_safe_name(purpose)}"
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
         try:
             os.close(os.open(marker, flags, 0o600))
         except FileExistsError:
             return False
-        self._drop_markers(folder, prefix, keep=marker.name)
+        self._drop_markers(folder, prefix, keep=turn)
         return True
 
     def clear_turn_markers(self, session_id: str) -> None:
@@ -374,10 +384,13 @@ class StateStore:
 
     @staticmethod
     def _drop_markers(folder: Path, prefix: str, keep: str | None = None) -> None:
+        """Drop the markers whose names start with `prefix`, but those that
+        start with `keep`, best effort."""
+
         # Safe names hold no ".", separator, or glob character, so the prefix
-        # matches only its owner's markers.
+        # matches only its owner's markers, and `keep` only one turn's.
         for old in folder.glob(f"{prefix}*"):
-            if old.name != keep:
+            if keep is None or not old.name.startswith(keep):
                 try:
                     old.unlink(missing_ok=True)
                 except OSError:
