@@ -113,7 +113,6 @@ class RouteLineFromCallTests(CallLineTestCase):
 
     def test_a_call_line_after_a_write_starts_a_new_task(self) -> None:
         s = self.started()
-        s.load("doc-sync")  # Before the first task's line, so not the next task's.
         s.load("tdd", args="goated-route: standard | requires: tdd")
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 

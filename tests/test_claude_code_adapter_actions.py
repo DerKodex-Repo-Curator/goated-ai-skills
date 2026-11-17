@@ -158,7 +158,7 @@ class CommitHoldTests(AdapterTestCase):
 
         self.assertEqual(decision(s.call("Bash", commit("Add CSV export"))), "deny")
 
-    def test_a_load_in_an_earlier_turn_does_not_satisfy_a_later_commit(self) -> None:
+    def test_a_load_in_an_earlier_turn_still_needs_this_turns_change_read(self) -> None:
         s = self.routed()
         s.load("commit-message")
         s.run("git diff")
@@ -166,7 +166,10 @@ class CommitHoldTests(AdapterTestCase):
 
         s.prompt("Commit the follow-up too.")
         s.say("goated-route: continue")
-        self.assertEqual(decision(s.call("Bash", commit("Fix export rounding"))), "deny")
+        held = s.call("Bash", commit("Fix export rounding"))
+        self.assertIn("Read the change before committing it", reason(held))
+        s.run("git diff")
+        self.assertEqual(decision(s.call("Bash", commit("Fix export rounding"))), "pass")
 
     def test_the_hold_does_not_refire_after_compliance(self) -> None:
         s = self.routed()
@@ -882,7 +885,7 @@ class DesignHoldTests(AdapterTestCase):
         s.read(REFERENCES + "coding.md")
         self.assertEqual(decision(s.call("Edit", edit("tests/test_export.py", TEST_CODE))), "pass")
 
-    def test_a_load_in_an_earlier_turn_does_not_count(self) -> None:
+    def test_a_load_in_an_earlier_turn_counts_but_the_line_does_not(self) -> None:
         s = self.routed()
         s.load("software-design-principles")
         s.say(NONE_LINE)
@@ -890,8 +893,9 @@ class DesignHoldTests(AdapterTestCase):
 
         s.prompt("Now the importer.")
         s.say("goated-route: continue")
-        s.say(NONE_LINE)
         self.assertEqual(decision(s.call("Edit", edit("src/import.py", PLAIN))), "deny")
+        s.say(NONE_LINE)
+        self.assertEqual(decision(s.call("Edit", edit("src/import.py", PLAIN))), "pass")
 
 
 class DesignReferenceReadTests(AdapterTestCase):

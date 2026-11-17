@@ -172,12 +172,12 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
         unread.extend(missed)
         return found
 
+    earlier = _since_compaction(state)
     hold = gates.check_routing(state, tool_name, tool_input, current, overrides)
     if hold is None:
         hold = actions.check_action(
             tool_name, tool_input, current, overrides, config.skill_namespaces,
-            _project(payload, config), spawned,
-            references_read=frozenset(state.reference_reads),
+            _project(payload, config), spawned, earlier,
             closeout=actions.Closeout(state.design_edits_of(current.key),
                                       _design_ids(payload, config)),
         )
@@ -186,12 +186,20 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
         # What the design gates required of an edit they let through, for the closeout.
         references = actions.design_references(
             tool_name, tool_input, current, overrides, config.skill_namespaces,
-            _project(payload, config))
+            _project(payload, config), earlier)
         if references:
             state.record_design_edit(current.key, tool_use_id, references)
     hold = gates.advice_once(hold, lambda: _claim_turn(store, session_id, current.key))
     warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread)]
     return _with_warnings(_deny(hold), warnings)
+
+
+def _since_compaction(state) -> actions.SinceCompaction:
+    """What the main agent's saved state says counts until the next compaction."""
+
+    return actions.SinceCompaction(
+        frozenset(state.loads), frozenset(state.reference_reads), frozenset(state.template_reads),
+        spans_turns=True)
 
 
 def _claim_turn(
@@ -300,6 +308,7 @@ def _stop(payload: dict, config: Config) -> str:
         _project(payload, config),
         state.design_edits_of(current.key),
         _design_ids(payload, config),
+        earlier=_since_compaction(state),
     )
     warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread)]
     output = {"decision": "block", "reason": hold.message()} if hold else {}
@@ -344,10 +353,10 @@ def _deny(hold) -> dict:
 def _session_start(payload: dict, config: Config) -> str:
     """Reset skill proof after compaction; note a missing policy or router once.
 
-    After compaction the router and the task's required skills must load
-    again, and the design references be read again, because their text was
-    summarized away; the route itself carries
-    over (spec R5). Turns from before the boundary are never folded back in.
+    After compaction or `/clear` every skill must load again, and the design
+    references and spawn-brief templates be read again, because their text
+    was summarized away; the route itself carries over (spec R5). Turns from
+    before the boundary are never folded back in.
     A new session (`startup`) has no task yet, so `continue` may start one.
     """
 
@@ -359,12 +368,8 @@ def _session_start(payload: dict, config: Config) -> str:
     if payload.get("source") == "startup" and state.task is None:
         state.task_unknown = False
     if payload.get("source") in {"compact", "clear"}:
-        state.router_loaded = False
-        state.brief_routed = False
-        state.reference_reads = []
+        state.forget_context()
         state.last_turn = None
-        if state.task is not None:
-            state.task.loads = []
         store.clear_turn_markers(session_id)
 
     output: dict = {}

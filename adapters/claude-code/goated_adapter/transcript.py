@@ -17,7 +17,6 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import NamedTuple
 
 from .markers import ReplyMarkers, parse_reply
 
@@ -170,23 +169,14 @@ class Call:
         self.tool_id = tool_id
 
 
-class RouteMark(NamedTuple):
-    """A valid route line and where it fell in its turn: how many loads and
-    finished calls the turn held when it was written."""
-
-    route: dict
-    loads_before: int
-    calls_before: int
-
-
 class Turn:
     """What one turn contains that the adapter's gates care about.
 
     `typed` says a person typed the prompt that opened the turn, so it may
     carry overrides; `prompt_id` is that prompt's id. `loads` lists raw names
-    of skills loaded successfully, in order, and `invoked_load` is the skill
-    the prompt itself invoked as `/<skill>`, once its body loaded. `route` is
-    the winning route line, `route_marks` every valid route line in order, and
+    of skills loaded successfully, in order, the skill the prompt itself
+    invoked as `/<skill>` included once its body loaded. `route` is
+    the winning route line, `routes` every valid route line in order, and
     `malformed` the route-like lines that failed the grammar. `skips` are the
     valid `goated-skip` lines, `design_reads` the valid `goated-design-reads`
     lines and `malformed_design_reads` those that failed the grammar, and
@@ -198,12 +188,12 @@ class Turn:
     turn read when reading reached the start of the transcript, so no earlier
     turn exists. `brief_route` is the route line of the brief that opened the
     session, set only on the session's first turn when another session
-    started it (see `_brief_route`); it is also the turn's first route mark.
+    started it (see `_brief_route`); it is also the turn's first route line.
     """
 
     __slots__ = (
-        "key", "is_compaction", "typed", "prompt_id", "loads", "invoked_load",
-        "route", "route_marks", "malformed", "skips", "calls", "prompt_ids",
+        "key", "is_compaction", "typed", "prompt_id", "loads",
+        "route", "routes", "malformed", "skips", "calls", "prompt_ids",
         "opens_transcript", "design_reads", "malformed_design_reads", "call_ids",
         "unfinished", "texts", "call_texts", "brief_route", "_brief_candidate",
     )
@@ -214,9 +204,8 @@ class Turn:
         self.typed = False
         self.prompt_id: str | None = None
         self.loads: list[str] = []
-        self.invoked_load: str | None = None
         self.route: dict | None = None
-        self.route_marks: list[RouteMark] = []
+        self.routes: list[dict] = []
         self.opens_transcript = False
         self.malformed: list[str] = []
         self.skips: list[dict] = []
@@ -242,7 +231,7 @@ class Turn:
         if route is None:
             return
         self.brief_route = route
-        self.route_marks.insert(0, RouteMark(route, 0, 0))
+        self.routes.insert(0, route)
         if self.route is None:
             self.route = route
 
@@ -251,7 +240,7 @@ class Turn:
 
         if markers.route is not None:
             self.route = markers.route
-            self.route_marks.append(RouteMark(markers.route, len(self.loads), len(self.calls)))
+            self.routes.append(markers.route)
         self.malformed.extend(markers.malformed)
         self.skips.extend(markers.skips)
         self.design_reads.extend(markers.design_reads)
@@ -530,7 +519,6 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                 # The prompt invoked a skill as `/<skill>`; Claude Code adds
                 # its body as a meta entry, which proves the load.
                 turn.loads.append(invoked)
-                turn.invoked_load = invoked
                 continue
             for block in content:
                 if not isinstance(block, dict) or block.get("type") != "tool_result":

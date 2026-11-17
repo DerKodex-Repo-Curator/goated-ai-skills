@@ -294,17 +294,20 @@ class PipelineTests(AdapterTestCase):
         s.say("goated-route: continue")
         self.assertEqual(decision(s.call("Edit")), "pass")
 
-    def test_a_load_from_an_earlier_task_does_not_satisfy_a_new_one(self) -> None:
+    def test_a_load_from_an_earlier_task_counts_for_a_new_one(self) -> None:
+        # A load counts until the next compaction (Ticket 065).
         s = self.start("goated-route: lightweight | requires: tdd")
         s.load("tdd")
         self.assertEqual(decision(s.call("Edit")), "pass")
 
         s.prompt("Separately, fix the date parser.")
         s.say("goated-route: lightweight | requires: tdd")
-        self.assertEqual(decision(s.call("Edit")), "deny")
-
-        s.load("tdd")
         self.assertEqual(decision(s.call("Edit")), "pass")
+
+        s.compact()
+        s.load(ROUTER)
+        s.say("goated-route: lightweight | requires: tdd")
+        self.assertEqual(decision(s.call("Edit")), "deny")
 
     def test_a_load_that_ends_a_turn_still_counts_for_the_task(self) -> None:
         s = self.start("goated-route: lightweight | requires: tdd")
@@ -367,7 +370,7 @@ class PipelineTests(AdapterTestCase):
 
         self.assertEqual(decision(s.call("Edit")), "pass")
 
-    def test_a_load_in_an_earlier_turn_does_not_count(self) -> None:
+    def test_a_load_in_an_earlier_turn_counts(self) -> None:
         s = self.session
         s.prompt("Read up on the exporter first.")
         s.load(ROUTER)
@@ -376,11 +379,9 @@ class PipelineTests(AdapterTestCase):
 
         s.prompt("Now add CSV export.")
         s.say("goated-route: lightweight | requires: tdd")
-        held = s.call("Edit")
-        self.assertEqual(decision(held), "deny")
-        self.assertIn("earlier turn", reason(held))
+        self.assertEqual(decision(s.call("Edit")), "pass")
 
-    def test_a_load_before_an_earlier_tasks_route_line_does_not_count(self) -> None:
+    def test_a_load_before_an_earlier_tasks_route_line_counts(self) -> None:
         s = self.session
         s.prompt("Add CSV export.")
         s.load(ROUTER)
@@ -389,10 +390,6 @@ class PipelineTests(AdapterTestCase):
         self.assertEqual(decision(s.call("Edit")), "pass")
 
         s.say("A separate change now.\n\ngoated-route: lightweight | requires: tdd")
-        held = s.call("Edit")
-        self.assertEqual(decision(held), "deny")
-        self.assertIn("another task's route line", reason(held))
-        s.load("tdd")
         self.assertEqual(decision(s.call("Edit")), "pass")
 
     def test_a_load_after_an_earlier_tasks_route_line_counts_for_the_next(self) -> None:
@@ -413,33 +410,20 @@ class PipelineTests(AdapterTestCase):
 
         self.assertEqual(decision(s.call("Edit")), "pass")
 
-    def test_a_shell_write_between_route_lines_starts_another_task(self) -> None:
+    def test_a_shell_write_between_route_lines_keeps_the_load(self) -> None:
         s = self.session
         s.prompt("Add CSV export.")
         s.load(ROUTER)
         s.load("tdd")
         s.say("goated-route: direct")
         s.run("echo done > notes.txt")
-        s.say("Next, the importer.\n\ngoated-route: lightweight | requires: tdd")
+        s.say("Next, the importer.\n\ngoated-route: lightweight | requires: tdd, doc-sync")
 
+        # The new task's route applies, and only its unloaded skill is asked for.
         held = s.call("Edit")
         self.assertEqual(decision(held), "deny")
-        self.assertIn("`tdd`", reason(held))
-
-    def test_a_failed_shell_write_between_route_lines_still_starts_another_task(
-        self,
-    ) -> None:
-        s = self.session
-        s.prompt("Add CSV export.")
-        s.load(ROUTER)
-        s.load("tdd")
-        s.say("goated-route: direct")
-        s.run("echo done > notes.txt && false", success=False)
-        s.say("Next, the importer.\n\ngoated-route: lightweight | requires: tdd")
-
-        held = s.call("Edit")
-        self.assertEqual(decision(held), "deny")
-        self.assertIn("`tdd`", reason(held))
+        self.assertIn("`doc-sync`", reason(held))
+        self.assertNotIn("`tdd`", reason(held))
 
     def test_a_held_shell_write_between_route_lines_does_not_split_the_task(self) -> None:
         s = self.session
@@ -452,7 +436,7 @@ class PipelineTests(AdapterTestCase):
 
         self.assertEqual(decision(s.call("Edit")), "pass")
 
-    def test_a_load_before_another_tasks_correction_does_not_count(self) -> None:
+    def test_a_load_before_another_tasks_correction_counts(self) -> None:
         s = self.session
         s.prompt("Add CSV export.")
         s.load(ROUTER)
@@ -462,9 +446,7 @@ class PipelineTests(AdapterTestCase):
         self.assertEqual(decision(s.call("Edit")), "pass")
 
         s.say("Now the importer.\n\ngoated-route: lightweight | requires: tdd")
-        held = s.call("Edit")
-        self.assertEqual(decision(held), "deny")
-        self.assertIn("`tdd`", reason(held))
+        self.assertEqual(decision(s.call("Edit")), "pass")
 
     def test_a_load_after_another_tasks_last_route_line_counts(self) -> None:
         s = self.start("goated-route: direct")
@@ -814,29 +796,6 @@ class SessionCardTests(AdapterTestCase):
         # Near miss: the same fields on start_session make a card.
         card = {**hand_off, "prompt": BRIEF}
         self.assertFalse(reason(s.call(self.START, card)).startswith("goated-hold: router-first"))
-
-    def test_a_card_between_route_lines_does_not_start_a_new_task(self) -> None:
-        s = self.session
-        s.prompt("Fix the flaky export test.")
-        s.load(ROUTER)
-        s.load("tdd")
-        s.say("goated-route: standard | requires: tdd")
-        s.call(self.START, self.OFFER)
-        s.say("goated-route: standard | requires: tdd")
-        # The card ran nothing, so the second line corrects the first and tdd still counts.
-        self.assertEqual(decision(s.call("Edit")), "pass")
-
-        (self.root / "near").mkdir()
-        near = Session(self.root / "near", session_id="card-near-miss")
-        near.prompt("Fix the flaky export test.")
-        near.load(ROUTER)
-        near.load("tdd")
-        near.brief_with_handoff()
-        near.say("goated-route: standard | requires: tdd")
-        near.call("Agent", {"prompt": BRIEF})
-        near.say("goated-route: standard | requires: tdd")
-        # Near miss: a spawn that ran is work, so the second line is a new task.
-        self.assertTrue(reason(near.call("Edit")).startswith("goated-hold: pipeline"))
 
 
 class OverrideTests(AdapterTestCase):

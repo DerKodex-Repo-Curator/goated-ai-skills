@@ -1,11 +1,12 @@
 """Per-session adapter state, one small JSON file per Claude Code session.
 
 State holds only what the transcript's current turn cannot answer on its own:
-the current task and its proof, whether missing or reset state lost the task,
-whether the router loaded since the last compaction, which design references
-were read since it, the last turn seen, and the latest user overrides. Beside
-it, a marker names the turn whose hold gave the unseen-line advice in full. Apart from the short override phrases a user typed,
-it holds no prompt or reply text.
+the current task's route, whether missing or reset state lost the task, what
+counts until the next compaction (whether the router loaded, which GOATED
+skills loaded, which design references and spawn-brief templates were read),
+the last turn seen, and the latest user overrides. Beside it, a marker names
+the turn whose hold gave the unseen-line advice in full. Apart from the short
+override phrases a user typed, it holds no prompt or reply text.
 """
 
 from __future__ import annotations
@@ -28,17 +29,16 @@ AGENT_SEPARATOR = "~"
 
 
 class Task:
-    """The current task: its route and the GOATED skills loaded for it so far."""
+    """The current task: its route, and the turn whose route line started it."""
 
-    __slots__ = ("route", "started_turn", "loads")
+    __slots__ = ("route", "started_turn")
 
-    def __init__(self, route: dict, started_turn: str, loads=None) -> None:
+    def __init__(self, route: dict, started_turn: str) -> None:
         self.route = route
         self.started_turn = started_turn
-        self.loads: list[str] = list(loads or [])
 
     def to_json(self) -> dict:
-        return {"route": self.route, "started_turn": self.started_turn, "loads": self.loads}
+        return {"route": self.route, "started_turn": self.started_turn}
 
 
 class SessionState:
@@ -46,7 +46,7 @@ class SessionState:
 
     __slots__ = (
         "router_loaded", "last_turn", "task", "task_unknown", "overrides", "policy_notice_shown",
-        "reference_reads", "design_edits", "brief_routed",
+        "reference_reads", "design_edits", "brief_routed", "loads", "template_reads",
     )
 
     def __init__(self) -> None:
@@ -62,11 +62,27 @@ class SessionState:
         self.task_unknown = False
         self.overrides: dict = {}
         self.policy_notice_shown = False
+        # The GOATED skills (`tdd`) loaded since the last compaction.
+        self.loads: list[str] = []
         # The design references (`errors.md`) read since the last compaction.
         self.reference_reads: list[str] = []
+        # The spawn-brief templates (`contracts.BriefTemplate.reference`) read
+        # since the last compaction.
+        self.template_reads: list[str] = []
         # The design references each edit of one turn required when the
         # design gates judged it: {"turn": <turn key>, "edits": {<tool_use_id>: [<file>]}}.
         self.design_edits: dict = {}
+
+    def forget_context(self) -> None:
+        """Drop what counted only while its text was in the agent's context: the
+        router and other loads, the brief's route, and the design references
+        and spawn-brief templates read. Called at a compaction or `/clear`."""
+
+        self.router_loaded = False
+        self.brief_routed = False
+        self.loads = []
+        self.reference_reads = []
+        self.template_reads = []
 
     def record_design_edit(self, turn: str, tool_use_id: str, references: list[str]) -> None:
         """Keep what an edit the design gates let through required, for the
@@ -90,7 +106,9 @@ class SessionState:
             "task_unknown": self.task_unknown,
             "overrides": self.overrides,
             "policy_notice_shown": self.policy_notice_shown,
+            "loads": self.loads,
             "reference_reads": self.reference_reads,
+            "template_reads": self.template_reads,
             "design_edits": self.design_edits,
         }
 
@@ -106,7 +124,9 @@ class SessionState:
         state.policy_notice_shown = _expect(data.get("policy_notice_shown", False), bool)
         state.last_turn = _expect(data.get("last_turn"), (str, type(None)))
         state.task_unknown = _expect(data.get("task_unknown", False), bool)
+        state.loads = _string_list(data.get("loads", []))
         state.reference_reads = _string_list(data.get("reference_reads", []))
+        state.template_reads = _string_list(data.get("template_reads", []))
         design_edits = _expect(data.get("design_edits", {}), dict)
         if design_edits:
             edits = _expect(design_edits.get("edits"), dict)
@@ -119,7 +139,6 @@ class SessionState:
             state.task = Task(
                 route=_valid_route(task.get("route")),
                 started_turn=_expect(task.get("started_turn"), str),
-                loads=_string_list(task.get("loads", [])),
             )
         overrides = _expect(data.get("overrides", {}), dict)
         if overrides:
