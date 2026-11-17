@@ -1588,6 +1588,48 @@ class CloseoutTests(AdapterTestCase):
                 held = stop(s)
                 self.assertEqual("Proof" not in held.get("reason", ""), is_proof)
 
+    def test_a_check_later_in_the_same_command_proves_its_write(self) -> None:
+        for command, is_proof in (
+            ("cp a.py src/a.py && python -m pytest", True),
+            ("cp a.py src/a.py; npm test", True),
+            ("cp a.py src/a.py\npytest -q", True),
+            ("cp a.py src/a.py && pytest -q > out.txt", True),
+            ("cp a.py src/a.py && python -m pytest -p no:cacheprovider -c setup.cfg", True),
+            ("cp a.py src/a.py && pytest -q && cp b.py src/b.py", False),
+            ("python -m pytest && cp a.py src/a.py", False),
+            ("pytest -q && cp a.py src/a.py && git status", False),
+            ("cp a.py src/a.py || pytest -q", False),
+            ("cp a.py src/a.py & pytest -q", False),
+            ("cp a.py src/a.py | pytest -q", False),
+            ("cp a.py src/a.py && python -c \"print('tests pass')\"", False),
+            ("cp a.py src/a.py && node -e \"console.log('check')\"", False),
+        ):
+            with self.subTest(command=command):
+                s = self.routed()
+                s.load("doc-sync")
+                s.run(command)
+                s.run("git diff")
+                held = stop(s)
+                self.assertEqual("Proof" not in held.get("reason", ""), is_proof)
+
+    def test_a_failing_same_command_check_needs_a_handoff(self) -> None:
+        s = self.changed()
+        s.load("doc-sync")
+        s.run("cp a.py src/a.py && pytest -q", success=False)
+        s.run("git diff")
+
+        held = stop(s)
+        self.assertNotIn("Proof", held["reason"])
+        self.assertIn("handoff", held["reason"])
+
+    def test_inline_interpreter_code_is_not_a_check(self) -> None:
+        s = self.changed()
+        s.load("doc-sync")
+        s.run("python -c \"import tests; print('check passed')\"")
+        s.run("git diff")
+
+        self.assertIn("Proof", stop(s)["reason"])
+
     def test_loading_verification_alone_is_not_proof(self) -> None:
         s = self.changed()
         s.load("doc-sync")
@@ -2481,6 +2523,18 @@ class ReviewRegressionTests(AdapterTestCase):
         agent.call("Edit", {"file_path": "src/app.py", "old_string": "a", "new_string": "b"},
                    agent_id="b2", agent_type="general-purpose")
         agent.run("pytest -q")
+        s.spawn("b2", BRIEF)
+
+        held = stop(s)
+        self.assertNotIn("Proof", held["reason"])
+        self.assertIn("doc-sync", held["reason"])
+
+    def test_a_subagents_same_command_check_proved_its_change(self) -> None:
+        s = self.routed()
+        s.brief_with_handoff()
+        agent = s.subagent("b2")
+        agent.prompt("Implement it.", hook=False)
+        agent.run("cp a.py src/app.py && pytest -q")
         s.spawn("b2", BRIEF)
 
         held = stop(s)

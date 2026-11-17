@@ -137,6 +137,13 @@ INTERPRETERS = frozenset(
     {"python", "python3", "py", "node", "bash", "sh", "zsh", "pwsh", "powershell", "ruby",
      "perl", "php"}
 )
+# Interpreters that run program code, not a shell's command line, by the
+# flags that take that code inline (`python -c`, `node -e`, `php -r`).
+INLINE_CODE_FLAGS = {
+    "python": {"-c"}, "python3": {"-c"}, "py": {"-c"},
+    "node": {"-e", "-p", "--eval", "--print"}, "ruby": {"-e"}, "perl": {"-e", "-E"},
+    "php": {"-r"},
+}
 CHECK_WORD_RE = re.compile(
     r"(?<![a-z0-9])(?:test|tests|check|checks|validate|verify|lint|typecheck|build|ci)(?![a-z0-9])",
     re.IGNORECASE,
@@ -162,7 +169,11 @@ class ShellCommand:
     for glab), else None. `is_check` says it runs a
     test, lint, build, or check; `non_check_writes` says some simple command
     in it writes and is not itself a check (`sed -i … && pytest`, but not
-    `pytest > out.txt`). `prints_changes` says it prints changes'
+    `pytest > out.txt`). `checks_after_writes` says a check runs after the
+    command's last write, later in it and reached only through `&&`, `;`,
+    or a newline (`cp a.py src/a.py && pytest`), so it ran once that write
+    was done; not after `||`, `|`, or `&`, where it may run instead of or
+    beside the write. `prints_changes` says it prints changes'
     content to the agent: a git diff or show, a patch log, or patches on
     stdout; a listing of names or counts (`--stat`, `--name-only`) does not.
     Only git is read; another version control system's diff is not seen.
@@ -173,7 +184,7 @@ class ShellCommand:
     __slots__ = (
         "writes", "write_targets", "unplaced_targets", "unknown_writes", "commit",
         "commit_message", "opens_pr", "pr_base", "pr_head", "is_check",
-        "non_check_writes", "prints_changes", "installs_package",
+        "non_check_writes", "checks_after_writes", "prints_changes", "installs_package",
     )
 
     def __init__(self) -> None:
@@ -188,6 +199,7 @@ class ShellCommand:
         self.pr_head: str | None = None
         self.is_check = False
         self.non_check_writes = False
+        self.checks_after_writes = False
         self.prints_changes = False
         self.installs_package = False
 
@@ -197,8 +209,16 @@ def analyze(command: str) -> ShellCommand:
 
     result = ShellCommand()
     directory: str | None = ""
+    after_write = False  # this segment runs after the last write, in order
     for segment in _segments(command):
-        directory = _add_segment(result, segment, directory)
+        directory, writes, is_check = _add_segment(result, segment, directory)
+        if writes and not is_check:
+            result.checks_after_writes = False
+            after_write = True
+        elif is_check and after_write:
+            result.checks_after_writes = True
+        if segment.after not in IN_ORDER:
+            after_write = False
         if segment.after not in AND_THEN and directory != "":
             directory = None  # What runs next runs even if a `cd` before it failed.
     if DOTNET_WRITE_RE.search(command):
@@ -206,10 +226,11 @@ def analyze(command: str) -> ShellCommand:
     return result
 
 
-def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | None) -> str | None:
+def _add_segment(result: ShellCommand, segment: "_Segment",
+                 directory: str | None) -> tuple[str | None, bool, bool]:
     """Add one segment's facts to `result`, its write targets taken from
     `directory` (see `_change_directory`); return the directory later
-    segments run in."""
+    segments run in, whether the segment writes, and whether it is a check."""
 
     targets = [t for t in segment.redirects if t.lower() not in NULL_TARGETS]
     unknown = False
@@ -274,7 +295,7 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
             result.non_check_writes = True
     if unknown:
         result.unknown_writes = True
-    return next_directory
+    return next_directory, bool(targets) or unknown, is_check
 
 
 # Directory changes ---------------------------------------------------------------
@@ -297,6 +318,9 @@ CHANGE_DIRECTORY = FOLLOWED_CHANGE | {"pushd", "popd", "push-location", "pop-loc
 # Separators after which the next command runs only if this one succeeded ("":
 # the command's end).
 AND_THEN = ("&&", "")
+# Separators after which the next command runs only once this one has finished
+# (after `&&`, only if it succeeded): a check after them ran after the write.
+IN_ORDER = ("&&", ";", "\n")
 DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]")
 # Characters a shell expands, so a path holding one names no folder for certain.
 EXPANDED_CHARS = frozenset("$`%*?[{(")
@@ -836,6 +860,8 @@ def _is_check(name: str, original: str, args: list[str]) -> bool:
                                      "--package", "--project", "--directory", "-e", "--env"})
         return bool(rest) and _is_check(_bare(rest[0]), rest[0], rest[1:])
     if name in INTERPRETERS:
+        if _runs_inline_code(name, args):
+            return False  # Ad-hoc code can do anything; it is not a check.
         if "-m" in args:
             index = args.index("-m")
             return index + 1 < len(args) and args[index + 1] in CHECK_MODULES
@@ -846,6 +872,20 @@ def _is_check(name: str, original: str, args: list[str]) -> bool:
         return bool(scripts) and _is_check_script(scripts[0])
     if "/" in original.replace("\\", "/") or "." in name:
         return _is_check_script(original)
+    return False
+
+
+def _runs_inline_code(name: str, args: list[str]) -> bool:
+    """True when interpreter `name` is given its code inline. Only its own
+    options count, those before a module or script (`python -m pytest -c
+    setup.cfg` runs pytest)."""
+
+    flags = INLINE_CODE_FLAGS.get(name, set())
+    for arg in args:
+        if arg in flags:
+            return True
+        if arg == "-m" or not arg.startswith("-"):
+            return False
     return False
 
 

@@ -145,7 +145,7 @@ check after its own last change, that change is already proved.
 
 | Item | Needed when | Met by | Skip line names |
 | --- | --- | --- | --- |
-| Proof | A change not already proved | A check command run after the last code change: a test runner, linter, type checker, or build tool (`pytest`, `python -m unittest`, `npm test`, `cargo test`, `go vet`, `tsc`, `make check`, and the like, also through `uv run` or `npx`), or a script whose name says test, check, lint, verify, validate, or build (`scripts/validate_skills.py`) | `verification-before-completion` |
+| Proof | A change not already proved | A check command run after the last code change: a test runner, linter, type checker, or build tool (`pytest`, `python -m unittest`, `npm test`, `cargo test`, `go vet`, `tsc`, `make check`, and the like, also through `uv run` or `npx`), or a script whose name says test, check, lint, verify, validate, or build (`scripts/validate_skills.py`). The check may be a later call, or later in the same shell command as the write, reached through `&&`, `;`, or a newline (`cp a.py src/a.py && pytest`); a check before the write, or after `\|\|`, `\|`, or `&`, does not prove it. Inline interpreter code (`python -c`, `node -e`) is not a check | `verification-before-completion` |
 | Unfinished work | The last check after the change failed | `handoff` loads | `handoff` |
 | Docs | A code file outside the tests changed | `doc-sync` loads, then a [change read](#change-reads) after the load and the last code change | `doc-sync` |
 | Design red flags | `software-design-principles` loaded in the turn | `software-design-principles/references/red-flags.md` is read after the last change, then a [change read](#change-reads) after that read | `software-design-principles` |

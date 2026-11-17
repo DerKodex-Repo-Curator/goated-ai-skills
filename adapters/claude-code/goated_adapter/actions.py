@@ -690,9 +690,10 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     """Return the closeout hold for a turn about to end, if any.
 
     A turn that changed code needs, after its last code change, a check
-    command (proof). It also needs `doc-sync` when non-test code changed,
-    `handoff` when the last check after the change failed (work left
-    unfinished), and a read of the design red flags after the change when
+    command (proof), in a later call or later in the same shell command. It
+    also needs `doc-sync` when non-test code changed, `handoff` when the
+    last check after the change failed (work left unfinished), and a read
+    of the design red flags after the change when
     `software-design-principles` was loaded. A turn that loaded
     `code-security-review` and changed a security-sensitive file, code or
     not, needs a security review. The doc-sync, design, and security items
@@ -856,8 +857,8 @@ def _setup_changes(calls) -> str:
 
 class _Change:
     """A finished call that changed files: where in the turn, which project
-    files, which of them are code, and whether a subagent already proved the
-    code it changed."""
+    files, which of them are code, and whether it is already proved: by a
+    check later in the same command, or by a subagent's own check."""
 
     __slots__ = ("index", "paths", "code_paths", "proven")
 
@@ -924,12 +925,14 @@ def _changes(turn: Turn, subagents: dict, project: Project | None):
             changed = [_changed_paths(c, project) for c in calls]
             if any(changed):
                 code = [i for i, paths in enumerate(changed) if any(map(_is_code_change, paths))]
-                proven = bool(code) and bool(_checks(calls[code[-1] + 1 :]))
+                proven = bool(code) and (
+                    _proves_itself(calls[code[-1]]) or bool(_checks(calls[code[-1] + 1 :]))
+                )
                 yield _Change(index, [p for paths in changed for p in paths], proven)
             continue
         paths = _changed_paths(call, project)
         if paths:
-            yield _Change(index, paths)
+            yield _Change(index, paths, _proves_itself(call))
 
 
 def _changed_paths(call, project: Project | None) -> list[str]:
@@ -1108,6 +1111,15 @@ def _long_path(path: str) -> str:
             return path  # No part of it exists, so nothing can be expanded.
         missing.append(name)
         head = parent
+
+
+def _proves_itself(call) -> bool:
+    """True when a shell call ran a check after its own last write. Only a
+    finished call changes files, so its check passed with it."""
+
+    return call.name in COMMAND_TOOLS and shell.analyze(
+        str(call.input.get("command") or "")
+    ).checks_after_writes
 
 
 def _checks(calls) -> list:
