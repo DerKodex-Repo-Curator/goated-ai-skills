@@ -50,6 +50,12 @@ class BriefTemplate:
         found = [h.strip().lower() for h in HEADING_RE.findall(brief)]
         return [h for h in self.headings if not any(f.startswith(h.lower()) for f in found)]
 
+    def read_by(self, path: str) -> bool:
+        """Whether a Read of `path` read this template, in any install folder."""
+
+        path = path.replace("\\", "/").lower()
+        return path == self.reference or path.endswith("/" + self.reference)
+
 
 BRIEF_TEMPLATES = (
     BriefTemplate("handoff", "handoff/references/spawn-brief.md", ("Goal", "Scope", "Done Means")),
@@ -64,6 +70,16 @@ BRIEF_TEMPLATES = (
         ("Review Mode", "Review Inputs", "Required Report Format"),
     ),
 )
+
+
+def templates_read(calls) -> list[str]:
+    """The `reference` of each brief template that finished Read calls among
+    `calls` read, in order. A shell command printing one does not count."""
+
+    return [
+        template.reference for call in calls if call.name == "Read" and call.ok
+        for template in BRIEF_TEMPLATES if template.read_by(str(call.input.get("file_path") or ""))
+    ]
 
 
 SKILLS_LINE_PREFIX = "goated-skills:"

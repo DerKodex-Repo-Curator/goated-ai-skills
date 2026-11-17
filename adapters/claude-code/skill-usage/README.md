@@ -85,9 +85,10 @@ skip line names the skill in the same turn, before or after the hold; a
 `pull-request`, `spawn`) never does, because only loading the skill clears
 it. In particular:
 
-- An adapter hold asks for a load in the current turn, so a skill loaded in
-  an earlier turn shows as loaded only when the agent loads it again, never
-  as already loaded.
+- The adapter counts a load until the next compaction, so it asks for a
+  skill only when no load of it counts. A hold it shows is answered by a load
+  after it; a load from before the hold, in an earlier turn, never shows the
+  skill as already loaded.
 - A `router-first` hold asks for the router, and a `route-line` hold asks
   for a route line.
 - Claude Code records a call only after its hold returns, so the adapter does

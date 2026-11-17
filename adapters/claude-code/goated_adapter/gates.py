@@ -11,7 +11,9 @@ gates. The rules enforce contracts defined elsewhere, never new ones
   `goated-route:` line;
 - pipeline: a route's `requires:` skills "must load before the first write".
   The shared policy says to drop a skill that does not apply by writing a
-  corrected route line (the last one wins), so this hold is strict.
+  corrected route line (the last one wins), so this hold is strict. A load
+  counts from its call until the next compaction (spec R3), when its text
+  leaves the context.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ from __future__ import annotations
 import re
 from typing import Callable
 
-from . import design_reads, shell
+from . import contracts, design_reads, shell
 from .state import SessionState, Task
 from .transcript import Turn
 
@@ -171,65 +173,32 @@ def fold_turns(
             state.brief_routed = True
         elif turn.typed:
             state.brief_routed = False
-        started = _task_started_in(turn)
-        if started is not None:
-            route, task_loads = started
-            state.task = Task(
-                route=route,
-                started_turn=turn.key,
-                loads=_unique(goated_skill_name(raw, namespaces) for raw in task_loads),
-            )
+        route = _task_route_in(turn)
+        if route is not None:
+            state.task = Task(route=route, started_turn=turn.key)
             state.task_unknown = False
         elif turn.route is not None and state.task is None and not state.task_unknown:
             # Only `continue` lines, in a session with no task, such as one
             # started from another session: they start a task with no skills.
-            state.task = Task(
-                route={"form": "continue"}, started_turn=turn.key, loads=_unique(loads)
-            )
-        elif state.task is not None:
-            state.task.loads = _unique([*state.task.loads, *loads])
+            state.task = Task(route={"form": "continue"}, started_turn=turn.key)
+        state.loads = _unique([*state.loads, *loads])
         state.reference_reads = _unique(
             [*state.reference_reads, *design_reads.reads_in(turn.calls)]
+        )
+        state.template_reads = _unique(
+            [*state.template_reads, *contracts.templates_read(turn.calls)]
         )
         state.last_turn = turn.key
 
 
-def _task_started_in(turn: Turn) -> tuple[dict, list[str]] | None:
-    """Return the route and raw loads of the task `turn` starts, or None.
+def _task_route_in(turn: Turn) -> dict | None:
+    """Return the route of the task `turn` starts, or None.
 
-    Every route line that is not `continue` starts a task, but lines with no
-    write or spawn between them (see `_did_work`) are one task, corrected; the
-    last line is its route. Its loads are the skill the prompt invoked plus
-    this turn's loads since the previous task's last route line, or since the
-    turn began. A `continue` line keeps whatever task the turn already started.
+    Every route line that is not `continue` starts a task; the last one is its
+    route. A `continue` line keeps whatever task the turn already started.
     """
 
-    starts = [mark for mark in turn.route_marks if mark.route["form"] != "continue"]
-    if not starts:
-        return None
-    first = 0  # Index in `starts` of the current task's first route line.
-    for index in range(1, len(starts)):
-        between = turn.calls[starts[index - 1].calls_before:starts[index].calls_before]
-        if any(_did_work(call) for call in between):
-            first = index
-    since = starts[first - 1].loads_before if first else 0
-    loads = turn.loads[since:]
-    if turn.invoked_load:
-        loads = [turn.invoked_load, *loads]
-    return starts[-1].route, loads
-
-
-def _did_work(call) -> bool:
-    """True for a write or spawn that ran, so a later route line is a new task.
-
-    A failed edit wrote nothing, but a shell command or spawn that ended in an
-    error may still have written or handed off work. A call this adapter held
-    never ran.
-    """
-
-    if call.held or not writes_like_an_edit(call.name, call.input):
-        return False
-    return call.ok or call.name not in WRITE_TOOLS
+    return next((route for route in reversed(turn.routes) if route["form"] != "continue"), None)
 
 
 def writes_like_an_edit(tool_name: str, tool_input: dict) -> bool:
@@ -324,7 +293,7 @@ def check_routing(
     missing = [
         skill
         for skill in task.route["requires"]
-        if skill not in task.loads and skill not in user_skipped
+        if skill not in state.loads and skill not in user_skipped
     ]
     if not missing:
         return None
@@ -333,11 +302,9 @@ def check_routing(
         "pipeline",
         STRICT,
         f"The current route requires {names} before the first write or spawn. "
-        "Load each with the Skill tool and follow it. A load earlier in this turn "
-        "counts unless another task's route line came after it; route lines with "
-        "no write or spawn between them are one task, corrected. A load in an "
-        "earlier turn does not count, so load it again. If one does not apply, "
-        "write a corrected route line without it; the last route line wins. "
+        "Load each with the Skill tool and follow it. A load counts until the next "
+        "compaction, in this turn or an earlier one. If one does not apply, write a "
+        "corrected route line without it; the last route line wins. "
         + unseen_line_advice("route line", "skip routing"),
     )
 

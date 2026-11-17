@@ -1,8 +1,8 @@
 # GOATED Adapter For Claude Code
 
 An optional set of Claude Code hooks that holds writes, spawns, and commands
-until the GOATED router and the skills its route requires have loaded in the
-current task. It also holds commits, pull requests, spawns, design changes,
+until the GOATED router and the skills its route requires have loaded since
+the last compaction. It also holds commits, pull requests, spawns, design changes,
 security-sensitive edits, and writes during a merge conflict until the skill
 that owns each has loaded, and
 holds the end of a code-changing turn until it has fresh proof. It enforces
@@ -128,15 +128,15 @@ session's message never counts, and a brief never carries an override. The
 | `router-first` | strict | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction; a command made only of [plain reads](#plain-reads) passes | `using-goated-ai-skills` loads; or the session's first prompt is a brief with a route line (see above), until a typed prompt opens a turn |
 | `route-line` | strict | The first write or spawn after each user prompt until the current turn has a valid `goated-route:` line; also `goated-route: continue` when [missing or reset state](#failing-open) lost the task | A valid route line appears in the turn |
 | `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded; a spawn of a [read-only subagent](#plain-reads) passes | Each listed skill loads, or a corrected route line drops it |
-| `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` loads in the turn, and an inline message (or the tool's `message`) passes the [content check](#content-checks); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file. Once these are met, the commit meets the [closeout](#closeout-at-commit) |
-| `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` loads in the turn; then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file |
-| `pr-review` | justified-skip | A pull-request command or tool the `pull-request` gate holds, once that gate passes, when the pull request is [large](#large-pull-requests): 400 or more changed lines against its base | `standards-and-spec-review` loads in the turn; then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
-| `spawn` | strict | Starting an agent or session with a brief, except a [read-only subagent](#plain-reads) | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, all in the turn; and the brief passes the [content check](#content-checks) |
-| `design` | justified-skip | The turn's first write adding five or more lines to a non-test code file inside the project folder (or any such write while the skill has not loaded). A test file never triggers it and is not counted when finding the turn's first such write: in TDD the test comes first and the design happens in the code after it | `software-design-principles` loads in the turn, a valid [design-reads line](#design-references) is in the turn, and every [reference the edit requires](#design-references) has been read since the last compaction |
-| `design-reads` | justified-skip | Any later write to a code or configuration file inside the project folder, once `software-design-principles` has loaded in the turn, whose [signals or the turn's design-reads lines](#design-references) require a reference not read since the last compaction. The hold names each file and what selected it | Each required reference is read with the Read tool |
-| `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` loads in the turn |
-| `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an `Edit` or `MultiEdit` whose old text has a `<<<<<<<` or `>>>>>>>` marker at a line start; a write, by a write tool or a shell command such as `git checkout --theirs`, to a file a Read in the turn showed with such a marker; or any write after a git merge, rebase, cherry-pick, revert, or pull whose result in the turn reported a conflict. A finished abort, quit, continue, or skip of that operation, or a finished commit, ends the conflict and drops the Reads before it. Only the turn is read, not the repository, so a conflict opened in an earlier turn is caught only by markers the turn shows: an edit whose old text spans only `=======` and one side, in a file not read this turn, is not held, because `=======` alone is also a heading underline. A conflicting stash pop or apply is not held | `resolving-merge-conflicts` loads in the turn |
-| `repeated-failure` | justified-skip | A write, by a write tool or a shell command, once one check command (as the closeout's Proof item recognises checks) has failed twice in a row in the turn. A shell command is held when any of its simple commands writes and is not itself a check, so `sed -i … && pytest` and `pytest \| tee out.txt` are held, while `pytest > out.txt` is a rerun. "The same check" is the same command text, whitespace aside, without a trailing pipe into output filters (`tail`, `head`, `grep`, `findstr`, `more`, `less`, `tee`, `Select-Object`, `Select-String`, `Out-Host`, `Out-String`) or a `2>&1` before it; so `pytest -q \| tail -20` and `pytest -q \| tail -40` are one check, and a narrowed rerun such as one test file of a failing suite is another. A piped run fails by what it prints (`N failed`, `N errors`, `FAILED (`, `FAIL`, `npm ERR!`, `error TS…`, `test result: FAILED`, and the like), since the exit code is the filter's; any other run fails by its exit code. A run whose only failures are test modules that could not load a missing module or name neither adds to the count nor resets it, whether or not it looks failed, since in TDD the first red run often fails because the module under test does not exist yet. Only each runner's own report counts: pytest's `ERROR collecting` section showing `ImportError while importing test module` or ending in an `ImportError` or `ModuleNotFoundError`; unittest's `_FailedTest` error ending in one of those; jest's `Test suite failed to run` with `Cannot find module`. A run counts as usual when it also shows a failure in a test that ran (`1 failed, 1 error`), when a module that is there fails to load (a `SyntaxError` or `NameError`: the edit-and-crash loop the gate exists for), or when a test only prints such text. These miss, toward holding: output cut before the runner names the cause (`pytest -q \| tail -3`), ts-jest's `TS2307`, and vitest's `Failed to load url`. The table is `LOAD_ERROR_SIGNS` in `actions.py`. A pass of the check resets its count; other commands between runs do not. A call that never ran does not count: one the adapter or another hook held, one refused at a permission prompt, or one interrupted | `diagnose` loads in the turn |
+| `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` [counts as loaded](#loads), and an inline message (or the tool's `message`) passes the [content check](#content-checks); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file. Once these are met, the commit meets the [closeout](#closeout-at-commit) |
+| `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` [counts as loaded](#loads); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file |
+| `pr-review` | justified-skip | A pull-request command or tool the `pull-request` gate holds, once that gate passes, when the pull request is [large](#large-pull-requests): 400 or more changed lines against its base | `standards-and-spec-review` [counts as loaded](#loads); then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
+| `spawn` | strict | Starting an agent or session with a brief, except a [read-only subagent](#plain-reads) | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, each in this turn or an earlier one since the last compaction (see [Loads](#loads)); and the brief, on every spawn, passes the [content check](#content-checks) |
+| `design` | justified-skip | The turn's first write adding five or more lines to a non-test code file inside the project folder (or any such write while the skill does not count as loaded). A test file never triggers it and is not counted when finding the turn's first such write: in TDD the test comes first and the design happens in the code after it | `software-design-principles` [counts as loaded](#loads), a valid [design-reads line](#design-references) is in the turn, and every [reference the edit requires](#design-references) has been read since the last compaction |
+| `design-reads` | justified-skip | Any later write to a code or configuration file inside the project folder, once `software-design-principles` [counts as loaded](#loads), whose [signals or the turn's design-reads lines](#design-references) require a reference not read since the last compaction. The hold names each file and what selected it | Each required reference is read with the Read tool |
+| `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` [counts as loaded](#loads) |
+| `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an `Edit` or `MultiEdit` whose old text has a `<<<<<<<` or `>>>>>>>` marker at a line start; a write, by a write tool or a shell command such as `git checkout --theirs`, to a file a Read in the turn showed with such a marker; or any write after a git merge, rebase, cherry-pick, revert, or pull whose result in the turn reported a conflict. A finished abort, quit, continue, or skip of that operation, or a finished commit, ends the conflict and drops the Reads before it. Only the turn is read, not the repository, so a conflict opened in an earlier turn is caught only by markers the turn shows: an edit whose old text spans only `=======` and one side, in a file not read this turn, is not held, because `=======` alone is also a heading underline. A conflicting stash pop or apply is not held | `resolving-merge-conflicts` [counts as loaded](#loads) |
+| `repeated-failure` | justified-skip | A write, by a write tool or a shell command, once one check command (as the closeout's Proof item recognises checks) has failed twice in a row in the turn. A shell command is held when any of its simple commands writes and is not itself a check, so `sed -i … && pytest` and `pytest \| tee out.txt` are held, while `pytest > out.txt` is a rerun. "The same check" is the same command text, whitespace aside, without a trailing pipe into output filters (`tail`, `head`, `grep`, `findstr`, `more`, `less`, `tee`, `Select-Object`, `Select-String`, `Out-Host`, `Out-String`) or a `2>&1` before it; so `pytest -q \| tail -20` and `pytest -q \| tail -40` are one check, and a narrowed rerun such as one test file of a failing suite is another. A piped run fails by what it prints (`N failed`, `N errors`, `FAILED (`, `FAIL`, `npm ERR!`, `error TS…`, `test result: FAILED`, and the like), since the exit code is the filter's; any other run fails by its exit code. A run whose only failures are test modules that could not load a missing module or name neither adds to the count nor resets it, whether or not it looks failed, since in TDD the first red run often fails because the module under test does not exist yet. Only each runner's own report counts: pytest's `ERROR collecting` section showing `ImportError while importing test module` or ending in an `ImportError` or `ModuleNotFoundError`; unittest's `_FailedTest` error ending in one of those; jest's `Test suite failed to run` with `Cannot find module`. A run counts as usual when it also shows a failure in a test that ran (`1 failed, 1 error`), when a module that is there fails to load (a `SyntaxError` or `NameError`: the edit-and-crash loop the gate exists for), or when a test only prints such text. These miss, toward holding: output cut before the runner names the cause (`pytest -q \| tail -3`), ts-jest's `TS2307`, and vitest's `Failed to load url`. The table is `LOAD_ERROR_SIGNS` in `actions.py`. A pass of the check resets its count; other commands between runs do not. A call that never ran does not count: one the adapter or another hook held, one refused at a permission prompt, or one interrupted | `diagnose` [counts as loaded](#loads) |
 | `closeout` | justified-skip | A commit the `commit` gate lets through, or the end of the turn (a `Stop` hook), in a turn that changed code, that loaded `code-security-review` and changed a security-sensitive file, or that changed setup | Every item below is met or skipped |
 
 The closeout items, each judged against the turn's last code change. A code
@@ -186,12 +186,12 @@ check after its own last change, that change is already proved.
 | Item | Needed when | Met by | Skip line names |
 | --- | --- | --- | --- |
 | Proof | A change not already proved | A check command run after the last code change: a test runner, linter, type checker, or build tool (`pytest`, `python -m unittest`, `npm test`, `cargo test`, `go vet`, `tsc`, `make check`, and the like, also through `uv run` or `npx`), or a script whose name says test, check, lint, verify, validate, or build (`scripts/validate_skills.py`). The check may be a later call, or later in the same shell command as the write (`cp a.py src/a.py && pytest`): every command from the write to the check must be joined by `&&`, `;`, or a newline, none of them an `exit`, `return`, or the like, and neither inside a branch, loop, function, or group (`if`, `( )`, `{ }`); the check must not run in the background (`pytest &`), though a pipe or `\|\|` after it is fine (`pytest 2>&1 \| tee log.txt`). A code file written after the check, or by a .NET call (`[IO.File]::WriteAllText`) anywhere in the command, is not proved by it; another file written after it, such as a log, does not matter. Inline interpreter code (`python -c`, `python -Bc`, `node -pe`, `perl -e`) is not a check; a shell's inline command line (`bash -c`, `pwsh -Command`) is read as a command line, so `bash -c 'npm test'` is a check and `bash -c 'echo tests ok'` is not | `verification-before-completion` |
-| Unfinished work | The last check after the change failed | `handoff` loads | `handoff` |
-| Docs | A code file outside the tests changed | `doc-sync` loads, and a [change read](#change-reads) follows the last code change, before or after the load | `doc-sync` |
-| Design red flags | `software-design-principles` loaded in the turn | `software-design-principles/references/red-flags.md` is read after the last code change that is not [comment-only](#comment-only-edits), then a [change read](#change-reads) after that read. The item repeats the question `red-flags.md` ends with (name one input that would break this change, and say what happens); no answer is checked | `software-design-principles` |
-| Design citations | `software-design-principles` loaded in the turn, and the turn's edits required a [design reference](#design-references) | The turn cites a section of each required reference as `file#id`, such as `errors.md#crash-early`, in its reply text, the reply being finished included, or in a call field that carries route and skip lines: a shell or agent call's `description` or a Skill call's `args`, the commit call being judged included (see [Design references](#design-references)) | `software-design-principles` |
-| Security | `code-security-review` loaded in the turn and a security-sensitive file (the `security` gate's paths, code or not) changed | A [change read](#change-reads) after the load and the last sensitive change | `code-security-review` |
-| Setup | The turn installed or added a dependency or tool by a command that names a package, or wrote an env or settings file (see below) | `setup-scribe` loads in the turn, before or after the change | `setup-scribe` |
+| Unfinished work | The last check after the change failed | `handoff` counts as loaded | `handoff` |
+| Docs | A code file outside the tests changed | `doc-sync` counts as loaded, and a [change read](#change-reads) follows the last code change, before or after the load | `doc-sync` |
+| Design red flags | `software-design-principles` loaded in the turn, or counts as loaded and the turn made an edit the `design` gate triggers on (five or more lines added to a non-test code file), so a later turn of small edits meets no Design item | `software-design-principles/references/red-flags.md` is read after the last code change that is not [comment-only](#comment-only-edits), then a [change read](#change-reads) after that read. The item repeats the question `red-flags.md` ends with (name one input that would break this change, and say what happens); no answer is checked | `software-design-principles` |
+| Design citations | The Design red flags item applies, and the turn's edits required a [design reference](#design-references) | The turn cites a section of each required reference as `file#id`, such as `errors.md#crash-early`, in its reply text, the reply being finished included, or in a call field that carries route and skip lines: a shell or agent call's `description` or a Skill call's `args`, the commit call being judged included (see [Design references](#design-references)) | `software-design-principles` |
+| Security | `code-security-review` counts as loaded and a security-sensitive file (the `security` gate's paths, code or not) changed | A [change read](#change-reads) after the load and the last sensitive change | `code-security-review` |
+| Setup | The turn installed or added a dependency or tool by a command that names a package, or wrote an env or settings file (see below) | `setup-scribe` counts as loaded, the load before or after the change | `setup-scribe` |
 
 The Setup item is not judged against code changes. A **package install** is a
 finished `npm`, `pnpm`, or `bun` `add` or `install`, `yarn add`, `pip install`
@@ -229,8 +229,7 @@ sees only the whole command's result.
   like writes. A `start_session` call whose `initiation` is `offer` or
   `own_initiative`, with no `proposal_id` (the field that starts a saved
   proposal), only shows a card: nothing runs until the user starts it, so it
-  passes `router-first`, `route-line`, and `pipeline`, and does not end a
-  task's route lines (see below). An `own_initiative` card carries a brief,
+  passes `router-first`, `route-line`, and `pipeline`. An `own_initiative` card carries a brief,
   which runs when the user starts the card, so it still meets the `spawn`
   gate; an `offer` card carries none. Any other `initiation`, or none, a call
   with a `proposal_id`, and `hand_off_to_session` are held as spawns. A
@@ -251,35 +250,41 @@ sees only the whole command's result.
   rule is `TEST_PATH_RE` in `design_reads.py`; the `design` gate and the
   closeout's Docs item share it.
 - **A task** starts at a route line that is not `continue` and runs through
-  later `goated-route: continue` turns. Route lines in one turn with no write
-  or spawn that ran between them are one task, corrected: the last one is its
-  route. A call the adapter held never ran, and neither did an edit that
-  failed; a shell write or spawn that ended in an error counts as run. A
-  `continue` after such a line in the same turn keeps that task. In a session
+  later `goated-route: continue` turns. The last route line wins, so a
+  corrected line replaces the route at once. A `continue` after such a line
+  in the same turn keeps that task. In a session
   with no task yet, such as one started from another session to continue work
   begun there, a turn whose only route lines are `continue` starts a task that
   requires no skills.
   `goated-route: direct` exempts the task from the pipeline gate.
-- **Loads that count for a task** are the ones made earlier in the turn that
-  starts it, unless another task's route line came between the load and the
-  task's first route line, plus the loads after it. A load in an earlier turn
-  never counts.
-- **Action and closeout proof is per turn.** A skill loaded in an earlier
-  turn does not cover a commit, spawn, or edit in a later one, even within the
-  same task. Within a turn, a hold stops firing as soon as the turn shows
-  compliance: after `commit-message` loads, every later commit in that turn
-  passes its skill check.
+- <a id="loads"></a>**Loads count until the next compaction.** A
+  successful load counts from its call until the next compaction or `/clear`,
+  in this turn or a later one, for every hold that asks for a load: the
+  `pipeline` gate's required skills, the action gates, and the closeout's
+  items. That is the point where the skill's text really leaves the agent's
+  context; before it, a reload would only repeat text still there. The
+  template reads the `spawn` gate asks for count the same way, and so do
+  [design references](#design-references) read. The [state](#state) keeps
+  the loaded names and the reads; a resumed session keeps them, and missing
+  or reset state counts as not loaded.
+- **Everything else is per turn.** Route, skip, and design-reads lines, and
+  typed overrides, count only in their turn. So do the checks tied to a
+  change: [change reads](#change-reads), the red-flags read after the last
+  change, and Proof. A hold stops firing as soon as the turn shows
+  compliance: once `commit-message` counts as loaded, a commit passes its
+  skill check, and still needs this turn's change read.
 - **Dropping a required skill.** A `goated-skip` line never clears a strict
   hold. If a route names a skill that does not apply, the agent writes a
   corrected route line without it; the last route line wins, as the shared
   policy says.
-- **Compaction** clears the proof: the router and the task's required skills
-  must load again. The route itself carries over, so `goated-route: continue`
-  still works, and keeps the earlier task's `requires:` skills, which must
-  then load again. When the work after a compaction is a new task, write its
-  own route line; a `direct` or corrected line in a message before the write
+- **Compaction** clears the proof: the router and every other skill must
+  load again, and the design references and spawn-brief templates be read
+  again. The route itself carries over, so `goated-route: continue` still
+  works, and keeps the earlier task's `requires:` skills, which must then
+  load again. When the work after a compaction is a new task, write its own
+  route line; a `direct` or corrected line in a message before the write
   replaces the earlier route at once. A compaction also starts a new turn, so
-  action proof restarts.
+  the per-turn proof restarts.
 - **Proof of use** is a successful Skill-tool load read from the transcript (a
   `Skill` tool call whose result is not an error), or a skill the user invoked
   by typing `/<skill>`. Naming a skill in text is not proof. A load counts by
@@ -410,14 +415,17 @@ A reference counts as read after a finished `Read` of a path ending in
 one, until the next compaction: the [state](#state) keeps the names read, a
 resumed session keeps them, and a compaction's or `/clear`'s `SessionStart`
 clears them, so each reference is required at most once per context window.
+The skill's load counts the same way (see [Loads](#loads)), while the
+design-reads line counts only in its turn.
 A shell command printing one does not count. A skip line or a typed `skip
 software-design-principles` clears both gates for the turn.
 
 The first substantial non-test code edit of a turn meets `design`, which asks
 for what is missing: the load, the line, and the reads. A later edit, or any
-test file edit once the skill has loaded, meets `design-reads`, which asks
-only for reads; a test file edit that is not small still requires
-`coding.md`. A small edit before the skill loads is not held, as before.
+test file edit once the skill counts as loaded, meets `design-reads`, which
+asks only for reads; a test file edit that is not small still requires
+`coding.md`. A small edit while the skill does not count as loaded is not
+held, as before.
 
 At closeout, the Design citations item asks for a citation of each reference
 the turn required, whether read in this turn or an earlier one: the turn
@@ -786,8 +794,9 @@ goated-hold: <gate> | <kind>
 - Each named skill is a separate requirement, except in the `spawn` hold,
   whose two skills are alternatives: `handoff` or
   `subagent-driven-development`, either of which answers it.
-- A hold asks for a load in the current turn. A skill loaded in an earlier
-  turn does not answer it.
+- A hold asks for a load only when the skill does not [count as
+  loaded](#loads): it never loaded since the last compaction or `/clear`, or
+  the state that kept the load is missing.
 - A hold that a route or skip line can clear (`route-line`, `pipeline`,
   `design`, `design-reads`, `security`, `conflict-resolution`,
   `repeated-failure`, `pr-review`) says that a line in reply text may not be
@@ -902,7 +911,8 @@ A hook call from inside a subagent carries `agent_id`. There:
   the subagent's own transcript, which Claude Code keeps in
   `<session-id>/subagents/agent-<agent_id>.jsonl` beside the main one. A
   subagent must load the skill itself: the parent's loads do not count, and
-  only its own current turn's design references count as read;
+  only its own current turn's loads, template reads, and design references
+  count;
 - no override applies, because nobody types a subagent's prompts;
 - the closeout gate does not run when the subagent stops; the adapter
   registers no `SubagentStop` hook. Instead, code a subagent changed counts
@@ -961,9 +971,10 @@ One small JSON file per session in a `goated-claude-code-adapter/` folder:
 - on Windows, under the per-user temporary folder (`%TEMP%`);
 - anywhere you choose with `GOATED_ADAPTER_STATE_DIR`.
 
-It holds the current task's route and loads, whether missing or reset state
-lost the task, whether the router loaded, which design references were read
-since the last compaction, which references each edit of the latest turn
+It holds the current task's route, whether missing or reset state lost the
+task, whether the router loaded, which GOATED skills loaded and which design
+references and spawn-brief templates were read since the last compaction
+(see [Loads](#loads)), which references each edit of the latest turn
 required when the design gates judged it, the last turn seen, and the latest
 typed overrides. It holds no prompt or reply
 text beyond the short override phrases and a commit message the user typed.
@@ -973,9 +984,9 @@ session, and one per subagent of it, named for the turn whose hold gave the
 and a `SessionStart` after compaction or `/clear` deletes the session's and
 its subagents'.
 The action and closeout gates keep no state of their own: they read the
-current turn, the design gates also the design references read since the
-last compaction, and the closeout's citation item the references recorded
-for the turn's edits. Files are not pruned automatically;
+current turn, the loads, design references, and templates read since the
+last compaction, and, for the closeout's citation item, the references
+recorded for the turn's edits. Files are not pruned automatically;
 deleting the folder between sessions is safe.
 
 ## Latency
@@ -1132,12 +1143,19 @@ of the call's prompt, which is normally already there.
   design input outside the transcript. A design-reads line names files, never
   a reason per file, so the adapter cannot tell a reference read and applied
   from one read alone.
-- The design-reads gate holds only in a turn that loaded
-  `software-design-principles`: a turn whose edits are all small, with no
-  load, is held for no reference at all. Inside a subagent, only the
-  subagent's current turn counts: a reference it read in an earlier turn of
-  a continued subagent is required again, and the parent's reads never count
-  for it, nor its reads for the parent. The security gate judges by
+- The design-reads gate holds only while `software-design-principles`
+  counts as loaded: in a session that has not loaded it since the last
+  compaction, a turn whose edits are all small is held for no reference at
+  all. Inside a subagent, only the subagent's current turn counts: a load or
+  reference read in an earlier turn of a continued subagent is required
+  again, and the parent's never count for it, nor its for the parent.
+- A load counts until the next compaction however many turns ago it was,
+  when the agent may no longer follow the skill closely. The checks tied to
+  a change (change reads, the red-flags read, Proof) still count only in
+  their turn. A turn is folded into the state by the hooks that run in it;
+  Claude Code runs `Stop` at the end of every turn, so a turn of loads alone
+  still counts. If the state file is lost, a load from an earlier turn is
+  asked for again. The security gate judges by
   path alone. The conflict-resolution gate reads git's English messages
   (`Automatic merge failed`, `could not apply`, `could not revert`), so a git
   set to another language is not seen.

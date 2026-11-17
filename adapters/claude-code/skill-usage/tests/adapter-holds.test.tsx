@@ -140,7 +140,7 @@ for (const [gate, tool, text, skill] of [
     expect(early.nudges).toEqual({ [gate]: { unanswered: 1 } })
   })
 
-  test(`the ${gate} hold asks for a load in this turn, so ${skill} loaded in an earlier turn is not "already loaded"`, async () => {
+  test(`a ${gate} hold shown after ${skill} loaded in an earlier turn is not "already loaded"`, async () => {
     const s = summarize([prompt(1), load(skill, 2), turnEnd(3), prompt(4), ...preHold(tool, text, 5), load(skill, 6), turnEnd(7)])
     expect(s.nudges).toEqual({ [gate]: { followed: 1 } })
   })
@@ -156,7 +156,7 @@ test('the spawn hold asks once for either brief skill: loading one follows it, a
   expect(neither.nudges).toEqual({ spawn: { unanswered: 1 } })
   const waiting = neither.timeline.find(e => e.kind === 'nudge')
   expect(waiting?.kind === 'nudge' && waiting.skills).toEqual([{ skill: 'handoff or subagent-driven-development', status: 'unanswered', at: 3 }])
-  // A load in an earlier turn does not answer it.
+  // A load in an earlier turn, before the hold, does not answer it.
   const later = summarize([prompt(1), load('handoff', 2), turnEnd(3), prompt(4), ...preHold('Agent', ADAPTER_TEXTS.spawn, 5), load('handoff', 6), turnEnd(7)])
   expect(later.nudges).toEqual({ spawn: { followed: 1 } })
 })
