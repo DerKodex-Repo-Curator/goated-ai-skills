@@ -17,6 +17,7 @@ expected:
     execution: single-agent
   data_sensitivity: public
   action_reach: project-changing
+  implements_ticket: true
   route_signals:
     - documentation-impact
   proof_strategy: Use test-first regression proof, then targeted and repository validation.

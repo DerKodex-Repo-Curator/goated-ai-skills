@@ -14,6 +14,11 @@ registered skill name or one of the shared gates implemented by the integrated
 policy: `proportional-orientation`, `direct-work`, `direct-proof`, and
 `consolidated-closeout`.
 
+A fixture whose request implements a ticket sets `implements_ticket: true`.
+As the router's Writing plan gate says, such a fixture at `standard` or
+`full` intensity must require `writing-plans`, and no `lightweight` fixture
+may require it.
+
 The fixture format is checked directly by `scripts/validate_skills.py`. It
 deliberately has no JSON Schema while V2 fixture serialization is still
 maturing; the registry remains the only formally schema-validated V2 contract.

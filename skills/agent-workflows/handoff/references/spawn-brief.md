@@ -32,7 +32,9 @@ write ownership and review statuses. Use this template for everything else.
   judgement: name those your own route or work needed for this task.
 - If you already routed the task, end the brief with its route line, such as
   `goated-route: standard | requires: tdd`, on its own line outside code
-  blocks. A new session takes it as its route, and still loads those skills.
+  blocks. A new session takes it as its route, loads
+  `session-start-progressive-disclosure` first unless the route is
+  `direct`, and still loads those skills.
   A route line anywhere in the brief counts, so quote no other.
 
 ## Template

@@ -121,6 +121,17 @@ def _adapter_texts() -> dict[str, str]:
         piped = routed("pipeline", "goated-route: standard | requires: tdd, doc-sync")
         texts["pipeline"] = reason(piped.call("Edit"))
 
+        # A session started from a brief also loads the orientation skill (Ticket 072).
+        briefed = session("pipeline-brief")
+        briefed.prompt(
+            "Background (from the session that started this one):\nAdd CSV export.\n\n"
+            "goated-route: standard | requires: tdd",
+            origin=None,
+            turnOrigin="host_synthetic",
+        )
+        briefed.load("tdd")
+        texts["pipelineBrief"] = reason(briefed.call("Edit"))
+
         texts["commit"] = reason(routed("commit").call("Bash", {"command": 'git commit -m "Add export"'}))
         texts["pullRequest"] = reason(
             routed("pull-request").call("Bash", {"command": 'gh pr create --title "Add export" --body "Adds it."'})
@@ -269,6 +280,9 @@ class SkillUsageModFixtureTests(unittest.TestCase):
         self.assertTrue(texts["routerFirst"].startswith("goated-hold: router-first | strict\n"))
         self.assertTrue(texts["routeLine"].startswith("goated-hold: route-line | strict\n"))
         self.assertTrue(texts["pipeline"].startswith("goated-hold: pipeline | strict\n"))
+        self.assertTrue(texts["pipelineBrief"].startswith("goated-hold: pipeline | strict\n"))
+        self.assertIn("A session started from a brief loads `session-start-progressive-disclosure`", texts["pipelineBrief"])
+        self.assertNotIn("started from a brief", texts["pipeline"])
         self.assertIn('recorded your override for this prompt: "Skip routing"', texts["overrideContext"])
         gates = {
             "commit": "commit | strict",
@@ -315,6 +329,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
         ways_out = {
             "routeLine": "skip routing",
             "pipeline": "skip routing",
+            "pipelineBrief": "skip routing",
             "design": "skip software-design-principles",
             "designLine": "skip software-design-principles",
             "designLineReads": "skip software-design-principles",

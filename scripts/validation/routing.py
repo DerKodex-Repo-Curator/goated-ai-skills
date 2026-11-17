@@ -233,6 +233,47 @@ def validate_route(
     return errors
 
 
+def validate_plan_selection(
+    expected: dict[str, object],
+    fixture_label: str,
+) -> list[Finding]:
+    """Check `writing-plans` against the router's Writing plan gate.
+
+    The router requires it for a ticket implementation at `standard` or
+    `full` intensity, which a fixture declares with `implements_ticket: true`,
+    and lightweight work never requires it.
+    """
+
+    implements_ticket = expected.get("implements_ticket", False)
+    if not isinstance(implements_ticket, bool):
+        return [
+            Finding(
+                fixture_label,
+                "routing fixture expected.implements_ticket must be a boolean",
+            )
+        ]
+    profile = expected.get("profile")
+    route = expected.get("route")
+    if not isinstance(profile, dict) or not isinstance(route, dict):
+        return []  # Reported by the profile and route checks.
+    required = route.get("required_gates") or []
+    requires_plan = isinstance(required, list) and "writing-plans" in required
+    intensity = profile.get("workflow_intensity")
+    if implements_ticket and intensity in ("standard", "full") and not requires_plan:
+        return [
+            Finding(
+                fixture_label,
+                "a ticket implementation at standard or full intensity must "
+                "require writing-plans",
+            )
+        ]
+    if intensity == "lightweight" and requires_plan:
+        return [
+            Finding(fixture_label, "lightweight work must not require writing-plans")
+        ]
+    return []
+
+
 def validate_checkpoints(
     expected: dict[str, object],
     fixture_label: str,
@@ -521,6 +562,7 @@ def validate_route_fixtures(repo: Path) -> list[Finding]:
             continue
         errors.extend(validate_route_fixture_profile(expected, fixture_label))
         errors.extend(validate_route(expected, fixture_label, registered_gates))
+        errors.extend(validate_plan_selection(expected, fixture_label))
         errors.extend(
             validate_checkpoints(
                 expected,

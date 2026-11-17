@@ -13,7 +13,8 @@ gates. The rules enforce contracts defined elsewhere, never new ones
   The shared policy says to drop a skill that does not apply by writing a
   corrected route line (the last one wins), so this hold is strict. A load
   counts from its call until the next compaction (spec R3), when its text
-  leaves the context.
+  leaves the context. In a session routed by its brief, the router's
+  orientation skill joins every route but `direct`.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from .state import SessionState, Task
 from .transcript import Turn
 
 ROUTER_SKILL = "using-goated-ai-skills"
+ORIENTATION_SKILL = "session-start-progressive-disclosure"
 
 WRITE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
 START_SESSION = "mcp__ccd_session__start_session"
@@ -291,27 +293,46 @@ def check_routing(
             "continues. Write the route line the router selects for this task.",
         )
     task = state.task
-    if task is None or task.route["form"] != "route":
+    if task is None or task.route["form"] == "direct":
         return None  # `direct` exempts the task.
     if spawns_a_reader(tool_name, tool_input):
         return None
     missing = [
         skill
-        for skill in task.route["requires"]
+        for skill in _unique([*_orientation_for(state), *task.route.get("requires", ())])
         if skill not in state.loads and skill not in user_skipped
     ]
     if not missing:
         return None
     names = ", ".join(f"`{skill}`" for skill in missing)
+    why_orientation = (
+        f"A session started from a brief loads `{ORIENTATION_SKILL}` first, "
+        "unless its route line is goated-route: direct. "
+        if ORIENTATION_SKILL in missing and _orientation_for(state)
+        else ""
+    )
     return Hold(
         "pipeline",
         STRICT,
         f"The current route requires {names} before the first write or spawn. "
-        "Load each with the Skill tool and follow it. A load counts until the next "
+        + why_orientation
+        + "Load each with the Skill tool and follow it. A load counts until the next "
         "compaction, in this turn or an earlier one. If one does not apply, write a "
         "corrected route line without it; the last route line wins. "
         + unseen_line_advice("route line", "skip routing"),
     )
+
+
+def _orientation_for(state: SessionState) -> tuple[str, ...]:
+    """The orientation skill, when the session's route came from its brief.
+
+    The router selects it in a session started from a brief, and the
+    spawn-brief template says that session loads it first (spec R4), so it
+    joins every route but `direct`. It ends when the brief's route stops
+    meeting router-first: at a typed prompt or a compaction.
+    """
+
+    return (ORIENTATION_SKILL,) if state.brief_routed else ()
 
 
 def _route_line_instruction(turn: Turn) -> str:

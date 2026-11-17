@@ -30,6 +30,7 @@ REMINDER = (
     "</system-reminder>\n"
 )
 BACKGROUND = "Background (from the session that started this one)"
+ORIENTATION = "session-start-progressive-disclosure"
 
 
 def hold_line(output: dict) -> str:
@@ -96,6 +97,7 @@ class BriefRouteTests(BriefTestCase):
         self.assertEqual(hold_line(held), "goated-hold: pipeline | strict")
         self.assertIn("`tdd`", reason(held))
         s.load("tdd")
+        s.load(ORIENTATION)
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
     def test_a_later_route_line_corrects_the_brief_route(self) -> None:
@@ -125,6 +127,88 @@ class BriefRouteTests(BriefTestCase):
         s = self.brief("skip routing\nskip tdd\n\ngoated-route: standard | requires: tdd")
 
         self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: pipeline | strict")
+
+
+class BriefOrientationTests(BriefTestCase):
+    """A session routed by its brief orients first (Ticket 072, spec R4)."""
+
+    def test_a_routed_brief_holds_the_first_write_until_orientation_loads(self) -> None:
+        s = self.brief("goated-route: standard | requires: tdd")
+        s.load("tdd")
+
+        held = s.call("Edit", EDIT)
+        self.assertEqual(hold_line(held), "goated-hold: pipeline | strict")
+        self.assertIn(f"`{ORIENTATION}`", reason(held))
+        self.assertIn("started from a brief", reason(held))
+        self.assertNotIn("`tdd`", reason(held))
+        s.load(ORIENTATION)
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_orientation_alone_does_not_meet_the_routes_own_skills(self) -> None:
+        s = self.brief("goated-route: standard | requires: tdd")
+        s.load(ORIENTATION)
+
+        held = s.call("Edit", EDIT)
+        self.assertEqual(hold_line(held), "goated-hold: pipeline | strict")
+        self.assertIn("`tdd`", reason(held))
+        self.assertNotIn(f"`{ORIENTATION}`", reason(held))
+        self.assertNotIn("started from a brief", reason(held))
+
+    def test_a_routed_brief_that_requires_orientation_names_it_once(self) -> None:
+        s = self.brief(f"goated-route: standard | requires: {ORIENTATION}, tdd")
+
+        held = s.call("Edit", EDIT)
+        self.assertIn(f"requires `{ORIENTATION}`, `tdd` before", reason(held))
+
+    def test_a_direct_brief_is_not_held_for_orientation(self) -> None:
+        s = self.brief("goated-route: direct")
+
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_a_corrected_direct_route_line_drops_orientation(self) -> None:
+        s = self.brief("goated-route: standard | requires: tdd")
+        s.load("tdd")
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: pipeline | strict")
+
+        s.say("goated-route: direct")
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_a_later_route_line_that_is_not_direct_keeps_orientation(self) -> None:
+        s = self.brief("goated-route: direct")
+        s.say("goated-route: lightweight | requires: tdd")
+        s.load("tdd")
+
+        held = s.call("Edit", EDIT)
+        self.assertEqual(hold_line(held), "goated-hold: pipeline | strict")
+        self.assertIn(f"`{ORIENTATION}`", reason(held))
+
+    def test_a_read_only_subagent_spawn_is_not_held_for_orientation(self) -> None:
+        s = self.brief("goated-route: standard | requires: tdd")
+        s.load("tdd")
+
+        self.assertEqual(
+            decision(s.call("Agent", {"prompt": "List the files.", "subagent_type": "claude-code-guide"})),
+            "pass",
+        )
+
+    def test_a_session_not_started_from_a_brief_is_not_held_for_orientation(self) -> None:
+        s = self.session
+        s.prompt("Add the CSV exporter.")
+        s.load(ROUTER)
+        s.say("goated-route: standard | requires: tdd")
+        s.load("tdd")
+
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_a_typed_prompt_after_the_brief_ends_the_requirement(self) -> None:
+        s = self.brief("goated-route: standard | requires: tdd")
+        s.load("tdd")
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: pipeline | strict")
+        s.prompt("Now add the importer.")
+        s.load(ROUTER)
+        s.say("goated-route: standard | requires: tdd")
+
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
 
 class NotABriefTests(BriefTestCase):
@@ -210,6 +294,7 @@ class HostRetryTests(BriefTestCase):
 
         self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: pipeline | strict")
         s.load("tdd")
+        s.load(ORIENTATION)
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
     def test_a_host_retry_after_a_call_keeps_the_brief_route(self) -> None:
