@@ -2426,8 +2426,23 @@ class RepeatedFailureTests(AdapterTestCase):
                 self.assertEqual(hold_line(held),
                                  "goated-hold: repeated-failure | justified-skip")
 
-    def test_a_leading_cd_is_not_part_of_the_check(self) -> None:
-        # Spec R2: the hold shows the check's own command, not the cd.
+    def test_a_cd_to_the_session_folder_is_the_same_check(self) -> None:
+        # Spec R2: `cd <folder> && pytest -q` is `pytest -q` run from that folder.
+        for spell in (str, lambda p: p.as_posix(), lambda p: p.as_posix() + "/"):
+            with self.subTest(spell=spell(Path("x/y"))):
+                self.session = s = self.fresh()
+                folder = spell(s.cwd)
+                s.prompt("Fix the exporter.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.run(f'cd "{folder}" && pytest -q', success=False)
+                s.run("pytest -q", success=False)
+                held = s.call("Edit", FIX)
+                self.assertEqual(hold_line(held),
+                                 "goated-hold: repeated-failure | justified-skip")
+                self.assertIn('The check "pytest -q" has failed', reason(held))
+
+    def test_the_hold_shows_the_check_without_its_cd(self) -> None:
         folder = "build/" + "a-very-long-folder-name/" * 4
         for cd in (f'cd "{folder}" && ', f"cd {folder}; ", f"cd '{folder}' &&"):
             with self.subTest(cd=cd):
@@ -2436,11 +2451,55 @@ class RepeatedFailureTests(AdapterTestCase):
                 s.load(ROUTER)
                 s.say("goated-route: direct")
                 s.run(f"{cd}pytest -q", success=False)
-                s.run("pytest -q", success=False)
+                s.run(f'cd "{folder}" && pytest -q', success=False)
                 held = s.call("Edit", FIX)
                 self.assertEqual(hold_line(held),
                                  "goated-hold: repeated-failure | justified-skip")
                 self.assertIn('The check "pytest -q" has failed', reason(held))
+
+    def test_checks_run_from_different_folders_are_different_checks(self) -> None:
+        # Near miss: the cd's folder stays part of the check, and so do its counts.
+        s = self.routed()
+        s.run("cd pkg_a && pytest -q", success=False, output="5 failed in 0.1s")
+        s.run("cd pkg_b && pytest -q", success=False, output="1 failed in 0.1s")
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass", "a, then b")
+        s.run("pytest -q", success=False)
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass", "a, b, then the session folder")
+
+        s.run("cd pkg_a && pytest -q", success=False, output="5 failed in 0.1s")
+        held = s.call("Edit", FIX)
+        self.assertEqual(hold_line(held), "goated-hold: repeated-failure | justified-skip",
+                         "a failed twice with 5 failures, b's 1 between them aside")
+
+    def test_a_crash_after_failures_is_not_progress(self) -> None:
+        # A run that could not load its tests reports fewer failures, but shows no progress.
+        for before, crash in (
+            ("Tests:       3 failed, 2 passed, 5 total", sample("jest-broken")),
+            ("Tests:       3 failed, 2 passed, 5 total",
+             "Test Suites: 1 failed, 1 total\nTests:       0 total"),
+            ("5 failed, 2 passed in 0.31s", sample("pytest-syntax")),
+            ("5 failed, 2 passed in 0.31s",
+             "!!! Interrupted: 1 error during collection !!!\n1 error in 0.05s"),
+            ("Ran 9 tests in 0.004s\n\nFAILED (failures=3)", sample("unittest-syntax")),
+        ):
+            with self.subTest(crash=crash[-40:]):
+                self.session = s = self.fresh()
+                s.prompt("Fix the exporter.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.run(CHECK, success=False, output=before)
+                s.run(CHECK, success=False, output=crash)
+                held = s.call("Edit", FIX)
+                self.assertEqual(hold_line(held),
+                                 "goated-hold: repeated-failure | justified-skip")
+
+    def test_only_a_pytest_summary_line_is_read_as_one(self) -> None:
+        # Near miss: "3 files in 2 dirs" is not a second summary that makes the count unreadable.
+        s = self.routed()
+        s.run(CHECK, success=False, output="3 failed, 2 passed in 0.31s")
+        s.run(CHECK, success=False, output="3 files in 2 dirs\n1 failed, 4 passed in 0.31s")
+
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass")
 
     def test_a_cd_within_the_command_still_makes_another_check(self) -> None:
         # Near miss: only a leading cd joined by && or ; is dropped.

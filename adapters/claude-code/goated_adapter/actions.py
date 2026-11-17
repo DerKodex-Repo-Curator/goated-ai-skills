@@ -85,14 +85,20 @@ PIPE_TAIL_RE = re.compile(
 )
 STDERR_MERGE_RE = re.compile(r"\s*(?:2|\*)>&1$")
 # A leading `cd` to one folder, joined to the rest by `&&` or `;` (spec R2).
-LEADING_CD_RE = re.compile(r"""^cd\s+(?:"[^"]*"|'[^']*'|[^\s;&|"']+)\s*(?:&&|;)\s*""")
+LEADING_CD_RE = re.compile(
+    r"""^cd\s+(?:"(?P<dq>[^"]*)"|'(?P<sq>[^']*)'|(?P<bare>[^\s;&|"']+))\s*(?:&&|;)\s*"""
+)
+# pytest's line saying collection errors stopped the run before any test ran.
+COLLECTION_INTERRUPTED_RE = re.compile(r"^!+ Interrupted: \d+ errors? during collection",
+                                       re.MULTILINE)
 # Each test runner's run summary, and in it the counts of tests that failed
 # or errored (spec R1): pytest's last line, unittest's `FAILED (...)`, jest's
 # `Tests:` line, and cargo's `test result:`. Other runners the gate reads,
 # such as go test, print no count.
 FAILURE_COUNT_SIGNS = tuple(
     (re.compile(summary, re.MULTILINE), re.compile(counted)) for summary, counted in (
-        (r"^=*\s*(\d+ \w+(?:, \d+ \w+)*) in \d", r"\b(\d+) (?:failed|errors?)\b"),
+        (r"^=*\s*(\d+ (?:passed|failed|errors?|skipped|xfailed|xpassed|warnings?|deselected"
+         r"|rerun)(?:, \d+ \w+)*) in \d+(?:\.\d+)?s\b", r"\b(\d+) (?:failed|errors?)\b"),
         (r"^FAILED \((.*)\)\s*$", r"\b(?:failures|errors)=(\d+)"),
         (r"^Tests:\s+(.*\btotal)\s*$", r"\b(\d+) failed\b"),
         (r"^test result: FAILED\. (.*)$", r"\b(\d+) failed\b"),
@@ -1200,7 +1206,9 @@ def _repeated_check(turn: Turn, project: Project | None) -> str | None:
     (`_failure_count`), when both counts can be read.
     """
 
+    cwd = project.cwd if project else None
     in_a_row: dict[str, int] = {}
+    shown: dict[str, str] = {}
     is_check: dict[str, bool] = {}
     failures: dict[str, int | None] = {}  # Each check's failure count at its last run.
     test_writes = 0  # Finished writes to a test file so far in the turn.
@@ -1212,7 +1220,9 @@ def _repeated_check(turn: Turn, project: Project | None) -> str | None:
         if call.name not in COMMAND_TOOLS or call.held or NOT_RUN_RE.match(call.output):
             continue
         command = str(call.input.get("command") or "")
-        key, piped = _check_key(command)
+        check = _check_key(command, cwd)
+        key, piped = check.key, check.piped
+        shown[key] = check.shown
         red_run = test_writes_seen.get(key, 0) < test_writes_before
         test_writes_seen[key] = test_writes_before
         load_errors = _load_errors(call.output)
@@ -1232,7 +1242,7 @@ def _repeated_check(turn: Turn, project: Project | None) -> str | None:
             is_check[key] = shell.analyze(command).is_check
         if is_check[key]:
             in_a_row[key] = in_a_row.get(key, 0) + 1 if failed else 0
-    return next((k for k, n in in_a_row.items() if n >= REPEATED_FAILURES), None)
+    return next((shown[k] for k, n in in_a_row.items() if n >= REPEATED_FAILURES), None)
 
 
 def _load_errors(output: str) -> str | None:
@@ -1280,30 +1290,63 @@ def _writes_a_test(call: Call, project: Project | None) -> bool:
 
 def _failure_count(output: str) -> int | None:
     """How many tests failed or errored by the run summary in `output`, or
-    None when it shows no summary `FAILURE_COUNT_SIGNS` reads, or more than
-    one, such as two runners' in one command."""
+    None when that says nothing of the tests: it shows no summary
+    `FAILURE_COUNT_SIGNS` reads, or more than one, such as two runners' in
+    one command; it shows a test module or suite that could not load, whose
+    tests are missing from the count; or it counts no failure, so the run
+    failed outside the tests."""
 
+    if (any(signs.start.search(output) for signs in LOAD_ERROR_SIGNS)
+            or COLLECTION_INTERRUPTED_RE.search(output)):
+        return None
     summaries = [(found[1], counted) for summary, counted in FAILURE_COUNT_SIGNS
                  for found in summary.finditer(output)]
     if len(summaries) != 1:
         return None
     text, counted = summaries[0]
-    return sum(int(n) for n in counted.findall(text))
+    return sum(int(n) for n in counted.findall(text)) or None
 
 
-def _check_key(command: str) -> tuple[str, bool]:
-    """A check command's identity, whitespace aside and without a leading `cd`
-    to a folder or a trailing pipe into output filters, and whether such a
-    pipe was removed."""
+class _CheckKey(NamedTuple):
+    """A check command's identity (`key`), the command as a hold shows it
+    (`shown`), and whether a trailing pipe into output filters was removed."""
 
-    key = " ".join(command.split())
-    while (shorter := LEADING_CD_RE.sub("", key, count=1)) != key:
-        key = shorter
-    bare = key
+    key: str
+    shown: str
+    piped: bool
+
+
+def _check_key(command: str, cwd: str | None) -> _CheckKey:
+    """Identify a check command run from the session folder `cwd`.
+
+    The command is compared whitespace aside, without a trailing pipe into
+    output filters or a leading `cd` to a folder (spec R2), which `shown`
+    leaves out. The folder the `cd` reaches stays in `key`, so one command
+    run in two folders is two checks, unless it is `cwd` itself: `cd <cwd>
+    && pytest -q` is `pytest -q`. With no `cwd`, the folder is kept relative.
+    """
+
+    shown = " ".join(command.split())
+    start = cwd or ""
+    folder = start
+    while found := LEADING_CD_RE.match(shown):
+        folder = os.path.join(folder, found["dq"] or found["sq"] or found["bare"] or "")
+        shown = shown[found.end():]
+    bare = shown
     while (shorter := PIPE_TAIL_RE.sub("", bare)) != bare:
         bare = shorter
-    piped = bare != key
-    return (STDERR_MERGE_RE.sub("", bare) if piped else bare), piped
+    piped = bare != shown
+    shown = STDERR_MERGE_RE.sub("", bare) if piped else bare
+    if folder == start or _folder_key(folder) == _folder_key(start):
+        return _CheckKey(shown, shown, piped)
+    return _CheckKey(f"cd {_folder_key(folder)} && {shown}", shown, piped)
+
+
+def _folder_key(folder: str) -> str:
+    """`folder` in comparable form: normalized, case-folded where the system
+    folds case, with `/` separators."""
+
+    return os.path.normcase(os.path.normpath(folder)).replace("\\", "/")
 
 
 # Closeout ---------------------------------------------------------------------
