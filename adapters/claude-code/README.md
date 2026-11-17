@@ -39,12 +39,16 @@ Skills work the same without it. Install it only if you want enforcement.
    Windows too.
 3. Use `python` as the command on Windows and `python3` on macOS and Linux, or
    give the full path to an interpreter.
-4. Merge the four entries under `hooks` into a Claude Code settings file:
+4. Merge the five entries under `hooks` into a Claude Code settings file:
    `~/.claude/settings.json` for every project, or a project's
    `.claude/settings.json` for one project. If the file already has a `hooks`
    object, add these entries next to the existing ones rather than replacing
    it.
 5. Start a new Claude Code session.
+
+An install made before the `PostToolUse` entry existed has four entries. It
+gets the [early closeout note](#early-closeout-note) only once its settings
+gain that entry, with its matcher; without it, nothing else changes.
 
 To check the install, start a session and ask the agent to run any shell
 command before it has loaded `using-goated-ai-skills`. The call should be
@@ -64,18 +68,19 @@ Without exec-form support, use a shell command per entry instead of
 ```
 
 This works the same but adds the shell's start-up to every call: about 27 ms
-per call with Git Bash on the Windows machine measured below.
+per call with Git Bash on the Windows machine measured below. Give the
+`PostToolUse` entry this form too, keeping its matcher.
 
 ## Disable
 
-Remove the four adapter entries from the settings file, or move them to a
+Remove the five adapter entries from the settings file, or move them to a
 file Claude Code does not load. Start a new session to be sure the change
 applies. Claude Code's `"disableAllHooks": true` also stops the adapter, along
 with every other hook you have.
 
 ## Remove
 
-1. Remove the four adapter entries from the settings file.
+1. Remove the five adapter entries from the settings file.
 2. Delete the copied `claude-code/` folder.
 3. Delete the state folder `goated-claude-code-adapter/` (see [State](#state)).
 
@@ -940,6 +945,10 @@ item met before the commit stays met at `Stop`; a turn that never commits
 meets the closeout only at `Stop`. A subagent's commit meets no closeout,
 since a subagent has none (see [Subagents](#subagents)).
 
+A turn that changes code by a file edit tool learns its items early, from
+the [early closeout note](#early-closeout-note), so it can meet them before
+its report instead of reporting again after the `Stop` closeout.
+
 ### Whole reads
 
 A hold that asks for a file to be read asks for all of it: a required
@@ -1359,6 +1368,40 @@ a message from another session or agent does not bring it.
 
 Neither notice blocks a call or a `Stop`.
 
+## Early Closeout Note
+
+The closeout fires at a commit or at `Stop`, and in a turn that changes code
+without committing, `Stop` comes after the agent's report. So after the main
+agent's first finished code change of a turn by a file edit tool (`Edit`,
+`Write`, `MultiEdit`, `NotebookEdit`), the `PostToolUse` hook adds one note
+to the agent's context naming the closeout items the turn will meet, each in
+its short form, and saying they can be met before the final report. For
+example, a non-test code change brings Proof and Docs; a test file alone
+brings Proof; `software-design-principles` counted as loaded with a
+substantial change adds the Design red-flags item; a `full` route adds
+Verification. An item already met or skipped is left out.
+
+- The items are the closeout's own, judged as if the turn ended at that
+  call, from the hook's payload (`tool_name`, `tool_input`,
+  `tool_response`), since the transcript may not show the call yet. The
+  transcript and state say only what the payload cannot, such as which
+  skills count as loaded. The note leaves out what it cannot tell without
+  more work: the Review item and a large branch's Verification, which need
+  git to measure the branch, and the work of spawned subagents.
+- One note per turn, claimed on the turn marker under its own purpose
+  (see [State](#state)), so it never meets the unseen-line advice's claim or
+  a hold's. A turn the closeout already held, at a commit, gets none.
+- A docs file, a file outside the project, a call that failed or was held,
+  a subagent's edit, and a code change by a shell command bring none; the
+  hook's matcher starts it only for the file edit tools, so no other call
+  starts a hook process.
+- The note holds no call and no `Stop`. The closeout is unchanged and still
+  decides. When the note's marker cannot be made or read, it is left out.
+  Any other failure follows [Failing Open](#failing-open).
+
+The skill-usage mod reads only `goated-hold:` lines in hook context, so it
+counts no note.
+
 ## Failing Open
 
 The adapter never blocks because of its own failure. It lets the call through
@@ -1414,9 +1457,9 @@ holds no prompt or reply
 text beyond the short override phrases and a commit message the user typed.
 Beside the state files, a `turn-markers/` folder holds empty files for the
 session, and for each subagent of it, named for the current turn and a
-purpose: the [unseen-line advice](#hold-messages), or an ask (a gate and
+purpose: the [unseen-line advice](#hold-messages), an ask (a gate and
 what it found unmet, or one closeout item) whose full text a hold of that
-turn gave. Claims for different purposes in one turn never
+turn gave, or the [early closeout note](#early-closeout-note). Claims for different purposes in one turn never
 meet. A claim in a new turn drops its owner's markers of other turns, and a
 `SessionStart` after compaction or `/clear` deletes the session's and its
 subagents'. The state also keeps the shell tool the session last called,
@@ -1487,6 +1530,20 @@ of 165 ms before and after the change, and a passing `ls` 156 and 158 ms.
 Each gate still asks git or reads a subagent's transcript only when its own
 hold would otherwise fire.
 
+The [early closeout note](#early-closeout-note) (Ticket 096) adds one hook
+process after each file edit tool call, and none after any other call. On
+2026-11-17, the same way, with a 16 KB transcript:
+
+| Case | Median | p90 |
+| --- | --- | --- |
+| `PreToolUse`, an edit, for comparison | 165 ms | 182 ms |
+| `PostToolUse`, the turn's first code edit, adding the note | 160 ms | 167 ms |
+| `PostToolUse`, a later code edit, the note already given | 161 ms | 165 ms |
+| `PostToolUse`, a docs edit | 160 ms | 164 ms |
+
+So an edit costs one more hook run, about as long as its `PreToolUse`; the
+note never asks git or reads a subagent's transcript.
+
 The hook never waits for the call it judges, which it takes from its input:
 in an interactive session (Claude Code 2.1.325) the assistant message holding
 the call is recorded only after `PreToolUse` returns, and in headless runs it
@@ -1495,6 +1552,12 @@ of the call's prompt, which is normally already there.
 
 ## Known Limits
 
+- The [early closeout note](#early-closeout-note) comes only after a file
+  edit tool's change. A turn that changes code only by shell commands gets
+  no note, meets its items at `Stop`, and may still report twice; the
+  closeout judges its changes as before. The note also leaves out the Review
+  item, a large branch's Verification, and items a spawned subagent's work
+  brings, so the closeout may still ask for one of those.
 - The hook sees nothing of the assistant message that makes the call it
   judges. In an interactive session Claude Code records that message only
   after the hook returns, so a route line or skip line written in the same
@@ -1756,3 +1819,5 @@ including the recorded fixtures in `tests/fixtures/claude_code_adapter/`, and
 checks the adapter's marker parser against `stack/fixtures/markers/lines.yaml`.
 `tests/test_claude_code_adapter_review.py` covers the closeout's Review and
 Verification items against scratch git repositories.
+`tests/test_claude_code_adapter_closeout_note.py` covers the early closeout
+note.

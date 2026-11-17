@@ -1494,6 +1494,9 @@ def _folder_key(folder: str) -> str:
 
 # Closeout ---------------------------------------------------------------------
 
+# The closeout hold's gate name, in its `goated-hold:` line.
+CLOSEOUT_GATE = "closeout"
+
 def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = (),
                    final_text: str = "", subagents: dict | None = None,
                    project: Project | None = None,
@@ -1544,12 +1547,35 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     """
 
     changes = _Changes(turn, subagents or {}, project)
-    proof = _Proof(turn, overrides, namespaces, final_text, earlier)
     branch_size = functools.cache(
         lambda: changed_lines(project.cwd if project else None, None, WORKING_TREE))
+    items = _closeout_items(
+        changes, _Proof(turn, overrides, namespaces, final_text, earlier), subagents or {},
+        spawn_templates or {}, intensity, briefed, branch_size)
+    if not items:
+        return None
+    what = (
+        "changed setup" if [i.label for i in items] == ["Setup"]
+        else "changed code" if changes.code else "changed a security-sensitive file"
+    )
+    when = "committing in" if at_commit else "finishing"
+    rerun = (
+        f"\n{CHAINED_STEPS} A check "
+        "chained before the commit in the same command has not run yet, so it does not count."
+    ) if at_commit and not by_tool else ""
+    return _CloseoutHold(f"Before {when} this turn, which {what}:",
+                         f"Still unmet before {when} this turn:", items, rerun)
+
+
+def _closeout_items(changes: "_Changes", proof: _Proof, subagents: dict,
+                    spawn_templates: dict[str, list[str]], intensity: str | None,
+                    briefed: bool, branch_size: Callable[[], int | None]) -> list["_Item"]:
+    """Every closeout item the turn `changes` and `proof` describe still
+    needs, in the closeout's order (see `check_closeout`)."""
+
     items = (
         _code_items(changes, proof)
-        + ([] if briefed else _review_item(changes, proof, spawn_templates or {}, branch_size))
+        + ([] if briefed else _review_item(changes, proof, spawn_templates, branch_size))
         if changes.code else []
     )
     items += _verification_item(changes, proof, intensity, branch_size)
@@ -1565,22 +1591,42 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
                 f"Or, if it crosses no trust boundary, write {skip}.",
                 f"- Security: read the change after the last sensitive change and review it, "
                 f"or write {skip}."))
-    setup_item = _setup_item(turn, subagents or {}, proof, project)
+    setup_item = _setup_item(proof.turn, subagents, proof, changes.project)
     if setup_item:
         items.append(setup_item)
+    return items
+
+
+def closeout_note(turn: Turn, call: Call, overrides: dict, namespaces: tuple[str, ...] = (),
+                  project: Project | None = None,
+                  earlier: SinceCompaction = SinceCompaction(),
+                  intensity: str | None = None) -> str:
+    """The early closeout note (Ticket 096) for `call`, a finished file edit
+    of the main agent in `turn`, or "" when it changed no project code file
+    or the turn's closeout would ask for nothing yet.
+
+    The note names, by their short forms, the items the closeout would ask
+    for were the turn to end now, so they can be met before the report. It
+    leaves out what it cannot tell cheaply: items only a git measure of the
+    branch would bring (Review, a large branch's Verification) and the work
+    of spawned subagents. `call` is added to `turn` when the transcript
+    does not show it yet.
+    """
+
+    if not any(map(_is_code_change, _changed_paths(call, project))):
+        return ""
+    if not (call.tool_id and any(c.tool_id == call.tool_id for c in turn.calls)):
+        turn.calls.append(call)
+    proof = _Proof(turn, overrides, namespaces, "", earlier)
+    items = _closeout_items(_Changes(turn, {}, project), proof, {}, {}, intensity,
+                            briefed=False, branch_size=lambda: None)
     if not items:
-        return None
-    what = (
-        "changed setup" if items == [setup_item]
-        else "changed code" if changes.code else "changed a security-sensitive file"
-    )
-    when = "committing in" if at_commit else "finishing"
-    rerun = (
-        f"\n{CHAINED_STEPS} A check "
-        "chained before the commit in the same command has not run yet, so it does not count."
-    ) if at_commit and not by_tool else ""
-    return _CloseoutHold(f"Before {when} this turn, which {what}:",
-                         f"Still unmet before {when} this turn:", items, rerun)
+        return ""
+    *rest, last = [i.label for i in items]
+    return ("this turn changed code, so its closeout will ask for "
+            + (f"{', '.join(rest)} and {last}" if rest else last)
+            + ". Each can be met now, before your final report, so you report once:\n"
+            + "\n".join(i.short for i in items))
 
 
 class _Item(NamedTuple):
@@ -1591,6 +1637,12 @@ class _Item(NamedTuple):
     text: str
     short: str
 
+    @property
+    def label(self) -> str:
+        """The item's name, such as `Proof`, as its text gives it (`- Proof: ...`)."""
+
+        return self.text[2:self.text.index(":")]
+
 
 class _CloseoutHold(Hold):
     """The closeout hold, whose items each come short once the turn has
@@ -1600,7 +1652,7 @@ class _CloseoutHold(Hold):
     __slots__ = ("heading", "short_heading", "items", "rerun")
 
     def __init__(self, heading: str, short_heading: str, items: list[_Item], rerun: str) -> None:
-        super().__init__("closeout", JUSTIFIED_SKIP, f"{heading}\n"
+        super().__init__(CLOSEOUT_GATE, JUSTIFIED_SKIP, f"{heading}\n"
                          + "\n".join(i.text for i in items) + f"\n{SKIP_LINE_RULE}" + rerun)
         self.heading, self.short_heading, self.items, self.rerun = (
             heading, short_heading, items, rerun)
