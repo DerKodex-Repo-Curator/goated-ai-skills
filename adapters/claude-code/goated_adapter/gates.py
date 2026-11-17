@@ -30,12 +30,15 @@ SPAWN_TOOLS = frozenset(
 COMMAND_TOOLS = frozenset({"Bash", "PowerShell"})
 HELD_LIKE_WRITES = WRITE_TOOLS | SPAWN_TOOLS
 GATED_TOOLS = HELD_LIKE_WRITES | COMMAND_TOOLS
-# Subagent types Claude Code ships without edit or write tools, for searching,
-# planning, and answering questions. Spawning one delegates reads, so the holds
-# that guard writes and handed-off work (`pipeline`, and `spawn` in
-# actions.py) do not apply; it still needs the router and a route line. The
-# names match exactly, so any other type, or none, is held as before.
-READ_ONLY_SUBAGENTS = frozenset({"Explore", "Plan", "claude-code-guide"})
+# Subagent types Claude Code ships with no edit, write, or shell tool, so a
+# spawn of one only delegates reads: `claude-code-guide` has Glob, Grep, Read,
+# WebFetch, and WebSearch. The holds that guard writes and handed-off work
+# (`pipeline`, and `spawn` in actions.py) do not apply to it; it still needs
+# the router and a route line. `Explore` and `Plan` are not here: they keep
+# Bash and PowerShell, and a subagent's own calls meet no routing gate. The
+# name is trusted: a project or user agent file of the same name replaces the
+# built-in. Names match exactly, so any other type, or none, is held as before.
+READ_ONLY_SUBAGENTS = frozenset({"claude-code-guide"})
 
 STRICT = "strict"
 

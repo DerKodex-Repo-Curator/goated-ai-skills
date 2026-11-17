@@ -215,7 +215,8 @@ class ShellCommand:
     `read_only` says every simple command in it is a plain read (see
     `READ_ONLY_COMMANDS`), joined only by pipes or list separators, with no
     wrapper, redirect into a file, heredoc, group, substitution, or
-    background job; when the reading is in doubt it is False.
+    background job, and with none of the text in `NOT_PLAINLY_SPELLED_RE`;
+    when the reading is in doubt it is False.
     """
 
     __slots__ = (
@@ -272,10 +273,8 @@ def analyze(command: str) -> ShellCommand:
     if DOTNET_WRITE_RE.search(command):
         # Where in the command it runs is not read, so no check proves it.
         result.writes = result.unknown_writes = result.unchecked_unknown_writes = True
-    # A backtick is a bash substitution, and in PowerShell an escape this
-    # reading does not follow, so a command holding one is not plainly a read.
     result.read_only = (
-        bool(segments) and not result.writes and "`" not in command
+        bool(segments) and not result.writes and not NOT_PLAINLY_SPELLED_RE.search(command)
         and all(_reads_only(segment) for segment in segments)
     )
     return result
@@ -378,9 +377,11 @@ READ_ONLY_REFUSED_ARGS = {
     "find": ("-exec", "-ok", "-delete", "-fprint", "-fls"),
     "rg": ("--pre",),
 }
-# git subcommands that only print the repository's state or history. Their
-# `--output` writes the printed text to a file instead, so it is refused.
+# git subcommands that only print the repository's state or history.
 GIT_READ_SUBCOMMANDS = frozenset({"status", "diff", "log", "show"})
+# Their arguments refused: `--output` writes the printed text to a file, and
+# `--ext-diff` and `--textconv` run programs the repository's config names.
+GIT_READ_REFUSED_ARGS = ("--output", "--ext-diff", "--textconv")
 # The only git options allowed before the subcommand: `-C` picks the folder,
 # and the others turn the pager off. `-c` can set a program to run, such as
 # a pager or external diff, so it and every other global option are refused.
@@ -388,6 +389,19 @@ GIT_READ_GLOBAL_OPTIONS = frozenset({"-C", "--no-pager", "-P"})
 # Separators a read may end at: pipes and the list separators. Not `&`, which
 # leaves a job running, nor an opening `(`, `{`, or `$(`, nor a closing one.
 READ_ONLY_ENDS = ("", "|", "&&", "||", ";", "\n")
+# Text this lexical reading may not follow as the shell does, so a command
+# holding any of it is never a plain read, even inside quotes:
+# - `$` expands, and runs code through `$(…)` in double quotes, `${x:=$(…)}`,
+#   or `$(( ))`, in bash and PowerShell alike;
+# - a backtick substitutes in bash and escapes in PowerShell;
+# - a backslash escapes any character in bash (`-del\ete` is `-delete`) but
+#   is a plain character in PowerShell (`a\; Remove-Item b` runs both);
+# - `<<<` feeds a word that is expanded first;
+# - `>&` with no descriptor after it writes a file;
+# - a control character other than a newline or tab, such as a lone carriage
+#   return, which PowerShell reads as a line break;
+# - a PowerShell here-string, `@"` or `@'`.
+NOT_PLAINLY_SPELLED_RE = re.compile(r"[$`\\]|<<<|>&(?![\d-])|[\x00-\x08\x0b-\x1f\x7f]|@[\"']")
 
 
 def _reads_only(segment: "_Segment") -> bool:
@@ -395,11 +409,15 @@ def _reads_only(segment: "_Segment") -> bool:
 
     A wrapper (`sudo`, `xargs`), a variable assignment, or a keyword before
     the command can run something else or change what runs, so the command
-    word must come first. Its only redirects may be into null targets.
+    word must come first. It must be the bare name, in any case, with no
+    folder or extension: `./cat` or `cat.cmd` may be any program. Its only
+    redirects may be into null targets.
     """
 
     name, original, args = _resolve(segment.words)
     if (name not in READ_ONLY_COMMANDS and name != "git") or segment.words[0] != original:
+        return False
+    if original.lower() != name:
         return False
     if segment.nested or segment.heredocs or segment.after not in READ_ONLY_ENDS:
         return False
@@ -419,7 +437,7 @@ def _git_reads_only(args: list[str]) -> bool:
         index += 2 if args[index] == "-C" else 1
     if index >= len(args) or args[index] not in GIT_READ_SUBCOMMANDS:
         return False
-    return not any(arg.startswith("--output") for arg in args[index + 1:])
+    return not any(arg.startswith(GIT_READ_REFUSED_ARGS) for arg in args[index + 1:])
 
 
 # Directory changes ---------------------------------------------------------------
@@ -520,6 +538,8 @@ def _is_absolute(path: str) -> bool:
 SHELL_KEYWORDS = frozenset(
     {"if", "then", "else", "elif", "do", "while", "until", "for", "select", "!"}
 )
+# The `&` of `>&1` or `>&-`: duplicating or closing a descriptor writes no file.
+FD_DUPLICATE_RE = re.compile(r"&[\d-]")
 # Words that open a compound command, and the words that close one.
 COMPOUND_OPEN = frozenset({"if", "while", "until", "for", "select", "case"})
 COMPOUND_CLOSE = frozenset({"fi", "done", "esac"})
@@ -672,6 +692,12 @@ def _segments(command: str) -> list[_Segment]:
             end_word()
             i = _redirect(text, i, c)
             if c == ">" and not text.startswith("&", i):
+                redirect_next = True
+                redirect_stdout = fd in ("", "1", "&", "*")
+            elif c == ">" and not FD_DUPLICATE_RE.match(text, i):
+                # `>&word`, `>& word`: a word that is no descriptor is a file,
+                # written with both streams, as `&>word` writes it.
+                i += 1
                 redirect_next = True
                 redirect_stdout = fd in ("", "1", "&", "*")
             elif text.startswith("&", i):

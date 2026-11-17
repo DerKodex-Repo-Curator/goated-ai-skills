@@ -370,7 +370,7 @@ real command word past wrappers (`sudo -u <user>`, `env`, `timeout <n>`,
 backtick in PowerShell). A `Bash` or `PowerShell` command meets the
 `route-line` and `pipeline` gates, like an edit, when one of its commands:
 
-- redirects output into a file (`>`, `>>`, `&>`, `2>`), except into a null
+- redirects output into a file (`>`, `>>`, `&>`, `>&file`, `2>`), except into a null
   device (`/dev/null`, `$null`, `NUL`) or another stream (`2>&1`);
 - runs `tee`, `Tee-Object`, `cp`, `mv`, `rm`, `rmdir`, `touch`, `truncate`,
   `ln`, `unlink`, `shred`, or `patch`;
@@ -441,26 +441,42 @@ look around before it routes. Each simple command must be one of:
 - `find` without `-exec`, `-execdir`, `-ok`, `-okdir`, `-delete`, `-fprint`,
   `-fprint0`, `-fprintf`, or `-fls`;
 - `git status`, `git diff`, `git log`, or `git show`, without `--output`,
-  and with no option before the subcommand but `-C <path>`, `--no-pager`, or
-  `-P`;
+  `--ext-diff`, or `--textconv`, and with no option before the subcommand but
+  `-C <path>`, `--no-pager`, or `-P`;
 - `Get-Content`, `Get-ChildItem`, or `Select-String`, or their aliases `gc`,
   `gci`, and `sls`.
 
-The commands may be joined by pipes, `&&`, `||`, `;`, or newlines. The call
-is held when any part of it is something else: another or unknown command, a
-wrapper such as `sudo` or `xargs` or a variable assignment before the
-command, a redirect into a file (one into a null device is fine), a heredoc,
-a subshell, group, or script block, a `$(…)` or backtick substitution, a
-process substitution, or a background `&`. When the analysis cannot tell, the
-call is held. The lists are `READ_ONLY_COMMANDS`, `READ_ONLY_REFUSED_ARGS`,
-and `GIT_READ_SUBCOMMANDS` in `shell.py`. Once the router loads, commands
-are judged as before.
+The command word must be the bare name, in any case: `./cat`, `/bin/cat`,
+or `cat.cmd` may be any program, so it is held. The commands may be joined by
+pipes, `&&`, `||`, `;`, or newlines. The call is held when any part of it is
+something else: another or unknown command, a wrapper such as `sudo` or
+`xargs` or a variable assignment before the command, a redirect into a file
+(one into a null device such as `/dev/null` is fine), a heredoc, a subshell,
+group, or script block, a process substitution, or a background `&`.
 
-A spawn of a read-only subagent type, `Explore`, `Plan`, or
-`claude-code-guide` (the `subagent_type` of an `Agent` or `Task` call, matched
-exactly), delegates reads, so it passes `pipeline` and `spawn`. It still
-meets `router-first` and needs a route line in the turn. Any other type, a
-spawn with no type, and side sessions are held as before. The list is
+The call is also held when its text holds anything the lexical reading may
+not follow as the shell does, even inside quotes: a `$` (variables,
+`$(…)` inside double quotes, `${x:=…}`, arithmetic), a backtick, a backslash
+(an escape in bash, where `-del\ete` is `-delete`, but a plain character in
+PowerShell), `<<<`, a `>&` with no descriptor after it, a control character
+other than a newline or tab (a lone carriage return), or a PowerShell
+here-string. So a Windows path with backslashes, such as
+`Get-Content src\a.py`, is held; Read or a forward-slash path passes. When
+the analysis cannot tell, the call is held. The lists are
+`READ_ONLY_COMMANDS`, `READ_ONLY_REFUSED_ARGS`, `GIT_READ_SUBCOMMANDS`,
+`GIT_READ_REFUSED_ARGS`, and `NOT_PLAINLY_SPELLED_RE` in `shell.py`. Once the
+router loads, commands are judged as before.
+
+A spawn of a read-only subagent type, `claude-code-guide` (the
+`subagent_type` of an `Agent` or `Task` call, matched exactly), delegates
+reads, so it passes `pipeline` and `spawn`: Claude Code ships it with Glob,
+Grep, Read, WebFetch, and WebSearch only. It still meets `router-first` and
+needs a route line in the turn. `Explore` and `Plan` are held like any other
+spawn: they keep Bash and PowerShell, and a subagent's own calls meet no
+routing gate (see [Subagents](#subagents)). Any other type, a spawn with no
+type, and side sessions are held as before. The exemption trusts the name: a
+project or user agent file named `claude-code-guide` replaces the built-in,
+with whatever tools it lists, and is exempt too. The list is
 `READ_ONLY_SUBAGENTS` in `gates.py`.
 
 ### Change reads
@@ -803,6 +819,11 @@ of the call's prompt, which is normally already there.
 
   An agent working around the holds this way is the case the next item
   describes.
+- A [plain read](#plain-reads) can still run a program that git config
+  names, such as `core.fsmonitor` under `git status`, or `diff.external` and
+  a `textconv` driver set for the repository; only the `--ext-diff` and
+  `--textconv` options are refused. A passing read can also hang: `tail -f`
+  never ends on its own.
 - A shell call's result stands for the whole command, not for each command
   in it. A check in the same command as a write proves that write even when
   the command hid the check's failure (`pytest || true`, `pytest; echo done`,
