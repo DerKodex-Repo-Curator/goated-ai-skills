@@ -217,6 +217,12 @@ class ShellCommand:
     inline names (`python -c`, `node -e`, a heredoc on `python -`; see
     `_inline_script`), and `script_unknown_writes` says such code writes a
     file it names only at run time; both are also in the facts above.
+    `unnamed_folders` holds, for each simple command that writes files it
+    does not name, the folder those files are placed in: for inline code,
+    the folder it runs in ("" for the command's starting folder, a path
+    after a followed `cd`); None for any other such write, or when that
+    folder cannot be named. `script_unknown_folders` holds the inline
+    code's entries alone.
     A package install is one that installs or adds a dependency or tool it
     names (`uv add httpx`), not a bare restore such as `npm install`.
     `installs_globally` says it runs a global, machine, or per-user install
@@ -245,7 +251,7 @@ class ShellCommand:
         "commit_message", "opens_pr", "pr_base", "pr_head", "is_check",
         "non_check_writes", "unchecked_targets", "unchecked_unknown_writes", "prints_changes",
         "installs_globally", "install_folders", "read_only", "only_reads_and_writes_files",
-        "script_targets", "script_unknown_writes",
+        "script_targets", "script_unknown_writes", "unnamed_folders", "script_unknown_folders",
     )
 
     def __init__(self) -> None:
@@ -268,6 +274,8 @@ class ShellCommand:
         self.read_only = False
         self.script_targets: list[str] = []
         self.script_unknown_writes = False
+        self.unnamed_folders: list[str | None] = []
+        self.script_unknown_folders: list[str | None] = []
         self.only_reads_and_writes_files = False
 
 
@@ -308,6 +316,7 @@ def analyze(command: str, tool: str = "Bash") -> ShellCommand:
     ):
         # Where in the command it runs is not read, so no check proves it.
         result.writes = result.unknown_writes = result.unchecked_unknown_writes = True
+        result.unnamed_folders.append(None)
     result.read_only = (
         bool(segments) and not result.writes
         and not NOT_PLAINLY_SPELLED_RE.search(_outside_quoted_arguments(command))
@@ -438,12 +447,16 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
             result.pr_head = branches.get("head") or result.pr_head
         if rest[:2] == [noun, "diff"] and "--name-only" not in rest:
             prints = True
+    if unknown:
+        result.unnamed_folders.append(None)  # Where `git apply` or a download writes is not read.
     scripted: list[str] = []  # The files inline interpreter code writes.
     script = _inline_script(name, args, _standard_input(segment) or piped)
     if script is not None:
         scripted, script_unknown = script_writes.writes(*script)
         if script_unknown:
             unknown = result.script_unknown_writes = True
+            result.unnamed_folders.append(directory)
+            result.script_unknown_folders.append(directory)
     # Output redirected into a file never reached the agent; a stderr redirect leaves it.
     if prints and not [t for t in segment.out_redirects if t.lower() not in NULL_TARGETS]:
         result.prints_changes = True

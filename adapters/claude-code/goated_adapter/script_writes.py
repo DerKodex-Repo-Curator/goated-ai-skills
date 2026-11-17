@@ -3,7 +3,8 @@
 `writes(language, code)` reads the code that `python -c`, `node -e`,
 `perl -e`, a heredoc on `python -`, and the like run (`shell.py` finds it)
 for the calls in `WRITE_CALLS`, that language's one table. A call's file is
-the string literal it names; a path built at run time (a variable, an
+the string literal it names, or the literal a name it names is bound to
+once (see `_bindings`); a path built at run time (any other variable, an
 f-string, a concatenation, an interpolated string) cannot be read, so the
 call is an unnamed write. Code with no such call writes nothing, as far as
 the gates care. Like `shell.py` this is a lexical reading: a call spelled in
@@ -13,7 +14,10 @@ a string or comment still counts, and a write made through another program
 
 from __future__ import annotations
 
+import ast
 import re
+import warnings
+from collections import Counter
 from typing import NamedTuple
 
 # The interpreters whose inline code is read, by command name, with its language.
@@ -156,13 +160,15 @@ def writes(language: str, code: str, expanded: bool = False) -> tuple[list[str],
     shell knows: it is an unnamed write."""
 
     code = _resolve_aliases(language, code)
+    bindings = _bindings(language, code)
     found: list[tuple[int, list[str], bool]] = []
     for call in WRITE_CALLS.get(language, ()):
         for match in call.pattern.finditer(code):
             parsed = _arguments(code, match.end(), language)
             if parsed is None:
                 continue
-            files, unnamed = _call_writes(call, language, code, match.start(), *parsed)
+            files, unnamed = _call_writes(call, language, code, match.start(), bindings,
+                                          *parsed)
             if expanded and any(map(_SHELL_EXPANDS_RE.search, files)):
                 files, unnamed = [f for f in files if not _SHELL_EXPANDS_RE.search(f)], True
             if files or unnamed:
@@ -222,9 +228,12 @@ def _imported(entries: str, separator: str) -> list[tuple[str, str]]:
     return pairs
 
 
-def _call_writes(call: _Call, language: str, code: str, start: int, positional: list[str],
+def _call_writes(call: _Call, language: str, code: str, start: int,
+                 bindings: dict[str, tuple[int, str]], positional: list[str],
                  keywords: dict[str, str]) -> tuple[list[str], bool]:
-    """The literal files one matched call writes and whether it writes an unnamed one."""
+    """The literal files one matched call at `start` writes, a name bound
+    before it (`bindings`, see `_bindings`) read as its literal, and whether
+    it writes an unnamed one."""
 
     def argument(index: int) -> str | None:
         if index < len(positional):
@@ -253,7 +262,7 @@ def _call_writes(call: _Call, language: str, code: str, start: int, positional: 
     for text in texts:
         if text is None:
             continue
-        literal = _literal(text, language)
+        literal = _literal(text, language) or _bound(text, bindings, start)
         if literal:
             files.append(literal)
         else:
@@ -318,6 +327,180 @@ def _literal(text: str, language: str) -> str | None:
     if language == "perl" and quote == '"' and "@" in body:
         return None
     return body or None
+
+
+def _bound(text: str, bindings: dict[str, tuple[int, str]], start: int) -> str | None:
+    """The literal the name `text` is bound to, when that binding ends before `start`."""
+
+    binding = bindings.get(text.strip())
+    return binding[1] if binding and binding[0] <= start else None
+
+
+def _bindings(language: str, code: str) -> dict[str, tuple[int, str]]:
+    """Each name `code` binds exactly once, at its top level, to one string
+    literal with no run-time part, with the offset where that binding ends
+    and the literal: `p = "notes.md"` in Python, `const p = 'notes.md'` (or
+    `let`, `var`) in JavaScript. A name bound anywhere else too, changed in
+    place, or used where the reading cannot tell it is not rebound, is left
+    out, so a path naming it stays unnamed. Perl and Ruby names are never
+    read: their strings can change in place (`$p =~ s/a/b/`, `p << "x"`)."""
+
+    if language == "python":
+        return _python_bindings(code)
+    if language == "js":
+        return _js_bindings(code)
+    return {}
+
+
+def _python_bindings(code: str) -> dict[str, tuple[int, str]]:
+    """`_bindings` for Python, read from its syntax tree; code that does not
+    parse binds nothing."""
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # An odd escape warns, and stderr is the hook's.
+            tree = ast.parse(code)
+    except Exception:  # SyntaxError, ValueError, RecursionError, MemoryError: read nothing.
+        return {}
+    # Every binding of each name, anywhere: an assignment, `+=`, `del`, a loop
+    # or `with` target, a parameter, an import, a def, class, `except` or match name.
+    bound: Counter[str] = Counter()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
+            bound[node.id] += 1
+        elif isinstance(node, ast.arg):
+            bound[node.arg] += 1
+        elif isinstance(node, ast.alias):
+            bound[(node.asname or node.name).split(".")[0]] += 1
+        elif isinstance(node, (ast.Global, ast.Nonlocal)):
+            bound.update(node.names)
+        else:
+            bound.update(v for v in (getattr(node, "name", None), getattr(node, "rest", None))
+                         if isinstance(v, str))
+    lines = [0] + [m.end() for m in re.finditer(r"\r\n|\r|\n", code)]
+    found = {}
+    for statement in tree.body:
+        if not (isinstance(statement, ast.Assign) and len(statement.targets) == 1
+                and isinstance(statement.targets[0], ast.Name)
+                and isinstance(statement.value, ast.Constant)
+                and isinstance(statement.value.value, str) and statement.value.value):
+            continue
+        name = statement.targets[0].id
+        if bound[name] == 1 and statement.end_lineno is not None:
+            line = lines[statement.end_lineno - 1]
+            # The column counts UTF-8 bytes, not characters.
+            column = len(code[line:].encode("utf-8")[: statement.end_col_offset or 0]
+                         .decode("utf-8", errors="ignore"))
+            found[name] = (line + column, statement.value.value)
+    return found
+
+
+_JS_BINDING_RE = re.compile(r"(?<![\w$.])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=(?![=>])")
+_JS_STATEMENT_END_RE = re.compile(r"[;\n]")
+# Words before `(` that open no call, so a name inside is no argument.
+_JS_NOT_CALLS = frozenset({"if", "for", "while", "switch", "catch", "with", "function",
+                           "return", "typeof", "void", "delete", "in", "of", "await"})
+
+
+def _js_bindings(code: str) -> dict[str, tuple[int, str]]:
+    """`_bindings` for JavaScript, read lexically: a `const`, `let` or `var`
+    outside every bracket, with the name used nowhere else but as a whole
+    argument of a call or before a `.` (`_js_read_only`)."""
+
+    layout = _JsLayout.of(code)
+    declared = Counter(m.group(1) for m in _JS_BINDING_RE.finditer(code))
+    found = {}
+    for match in _JS_BINDING_RE.finditer(code):
+        name = match.group(1)
+        if (declared[name] != 1 or layout.inner[match.start()] != -1
+                or not layout.code[match.start()]):
+            continue
+        value = _balanced(code, match.end(), "", stop=_JS_STATEMENT_END_RE)[0]
+        literal = _literal(value, "js")
+        if literal and _js_read_only(code, layout, name, match.start(1)):
+            found[name] = (match.end() + len(value), literal)
+    return found
+
+
+class _JsLayout(NamedTuple):
+    """Where each offset of JavaScript code sits, from one pass: `inner`,
+    the offset of the innermost bracket open there (-1 for none); `code`,
+    whether it is code rather than inside a string (a template with `${}`
+    counts as code, since what it interpolates runs); and `close`, the
+    offset of the bracket closing each opening one (the code's length when
+    none does)."""
+
+    inner: list[int]
+    code: list[bool]
+    close: dict[int, int]
+
+    @classmethod
+    def of(cls, code: str) -> "_JsLayout":
+        inner, is_code, close = [-1] * len(code), [True] * len(code), {}
+        stack: list[int] = []
+        j = 0
+        while j < len(code):
+            c = code[j]
+            top = stack[-1] if stack else -1
+            if c in "'\"`":
+                end = _string_end(code, j)
+                interpolates = c == "`" and "${" in code[j:end]
+                inner[j:end] = [top] * (end - j)
+                is_code[j:end] = [interpolates] * (end - j)
+                j = end
+                continue
+            inner[j] = top
+            if c in _CLOSERS:
+                stack.append(j)
+            elif c in ")]}" and stack:
+                close[stack.pop()] = j
+            j += 1
+        close.update((opening, len(code)) for opening in stack)
+        return cls(inner, is_code, close)
+
+
+def _js_read_only(code: str, layout: _JsLayout, name: str, binding: int) -> bool:
+    """Whether every use of `name` in `code` but the one at `binding` plainly
+    reads it: a whole argument of a call, `f(a, p)`, or the object of a
+    property, `p.length`. Any other use might rebind it (`p = …`, `p++`,
+    `function f(p)`, `({p} = o)`, `for (p of …)`), so it does not count."""
+
+    for match in re.finditer(rf"(?<![\w$]){re.escape(name)}(?![\w$])", code):
+        i, j = match.start(), match.end()
+        if i == binding or not layout.code[i]:
+            continue
+        before, after = _nonspace(code, i - 1, -1), _nonspace(code, j, 1)
+        if code[before - 2:before + 1] != "..." and code[before:before + 1] == ".":
+            continue  # A property of another object (`o.p`), not the name.
+        if code[after:after + 1] == "." and code[after:after + 3] != "...":
+            continue
+        opening = layout.inner[i]
+        if not (code[before:before + 1] in ("(", ",") and code[after:after + 1] in (",", ")")
+                and opening != -1 and code[opening] == "("):
+            return False
+        callee_end = _nonspace(code, opening - 1, -1)
+        word_start = callee_end + 1
+        while word_start > 0 and (code[word_start - 1].isalnum() or code[word_start - 1] in "_$"):
+            word_start -= 1
+        word = code[word_start:callee_end + 1]
+        keyword_end = _nonspace(code, word_start - 1, -1)
+        defines = code[max(keyword_end - 8, 0):keyword_end + 1] == "function"  # `function f(p)`
+        if not (code[callee_end:callee_end + 1] in (")", "]")
+                or (word and word not in _JS_NOT_CALLS and not defines)):
+            return False
+        rest = _nonspace(code, layout.close[opening] + 1, 1)
+        if code[rest:rest + 1] == "{" or code[rest:rest + 2] == "=>":
+            return False  # A function's parameters: `f(p) {`, `(p) =>`.
+    return True
+
+
+def _nonspace(code: str, i: int, step: int) -> int:
+    """The first offset from `i`, moving by `step`, that is not whitespace
+    (-1 or the code's length when none is)."""
+
+    while 0 <= i < len(code) and code[i].isspace():
+        i += step
+    return i
 
 
 def _arguments(code: str, i: int, language: str) -> tuple[list[str], dict[str, str]] | None:
