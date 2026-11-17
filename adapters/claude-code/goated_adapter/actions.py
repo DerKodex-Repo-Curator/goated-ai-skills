@@ -459,7 +459,7 @@ def _pr_review_hold(size_of: Callable[[], int | None], proof: _Proof,
         "what makes it worth reviewing, such as generated or vendored files, write "
         f"`goated-skip: {REVIEW_SKILL}: <reason>` on its own line instead. Then open the "
         "pull request again. The whole command was held, so rerun any steps chained "
-        "before it too. " + unseen_line_advice("skip line", f"skip {REVIEW_SKILL}", proof.turn),
+        "before it too. " + unseen_line_advice("skip line", f"skip {REVIEW_SKILL}"),
     )
 
 
@@ -574,7 +574,7 @@ def _change_read_hold(gate: str, skill: str, proof: _Proof, changes: "_Changes",
     # Not backticked: the skill-usage mod would read a backticked skip line as an ask
     # that only a skip line answers, and count a read that clears this hold as ignored.
     tail = (f"Or write a skip line, goated-skip: {skill}: <reason>, on its own line. "
-            + unseen_line_advice("skip line", f"skip {skill}", proof.turn) if review
+            + unseen_line_advice("skip line", f"skip {skill}") if review
             else "This hold is strict: a goated-skip line does not clear it.")
     return Hold(
         gate, JUSTIFIED_SKIP if review else STRICT,
@@ -632,7 +632,7 @@ def _security_hold(path: str, proof: _Proof) -> Hold | None:
         "it. If the change crosses no trust boundary and touches no auth, secrets, "
         "persistence, execution, dependency, or deployment behaviour, write "
         f"`goated-skip: {SECURITY_SKILL}: <reason>` on its own line instead. This edit "
-        "was not applied. " + unseen_line_advice("skip line", f"skip {SECURITY_SKILL}", proof.turn),
+        "was not applied. " + unseen_line_advice("skip line", f"skip {SECURITY_SKILL}"),
     )
 
 
@@ -662,7 +662,7 @@ def _conflict_hold(paths: list[str], tool_input: dict, proof: _Proof) -> Hold | 
         f"`{CONFLICT_SKILL}` with the Skill tool in this turn and resolve it from the "
         "intent behind both sides. If this write does not resolve the conflict, write "
         f"`goated-skip: {CONFLICT_SKILL}: <reason>` on its own line instead. This write "
-        "was not applied. " + unseen_line_advice("skip line", f"skip {CONFLICT_SKILL}", proof.turn),
+        "was not applied. " + unseen_line_advice("skip line", f"skip {CONFLICT_SKILL}"),
     )
 
 
@@ -737,7 +737,7 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
             "since the last compaction. Read each with the Read tool before the edit, and "
             f"apply it: {_reference_list(unread)}.{misnamed} If the edit has no design in it, "
             f"write `goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. This edit "
-            "was not applied. " + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}", proof.turn),
+            "was not applied. " + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
         )
     steps = [] if loaded else [
         f"load `{DESIGN_SKILL}` with the Skill tool and apply its 'Before changing code' rules"
@@ -757,7 +757,7 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
         f"This is a substantial code change. Before it, in this turn, {'; '.join(steps)}."
         f"{misnamed} If the edit is mechanical, with no design in it, write "
         f"`goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. This edit was not "
-        "applied. " + unseen_line_advice("design-reads or skip line", f"skip {DESIGN_SKILL}", proof.turn),
+        "applied. " + unseen_line_advice("design-reads or skip line", f"skip {DESIGN_SKILL}"),
     )
 
 
@@ -862,7 +862,7 @@ def _repeated_failure_hold(proof: _Proof) -> Hold | None:
         "find the root cause before changing more. If the cause is already known, write "
         f"`goated-skip: {DIAGNOSE_SKILL}: <reason>` on its own line instead. This write was "
         "not applied. Rerunning the check is not held, and a pass of it resets the count. "
-        + unseen_line_advice("skip line", f"skip {DIAGNOSE_SKILL}", proof.turn),
+        + unseen_line_advice("skip line", f"skip {DIAGNOSE_SKILL}"),
     )
 
 

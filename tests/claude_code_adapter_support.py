@@ -11,7 +11,9 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -284,16 +286,29 @@ class Session:
             self._tool_use(tool, tool_input, tool_use_id)
         return tool_use_id, output
 
-    def parallel(self, calls: list[tuple[str, dict]]) -> list[dict]:
-        """Judge calls made in one assistant message before any of it is recorded."""
+    def parallel(self, calls: list[tuple[str, dict]], *, concurrently: bool = False) -> list[dict]:
+        """Judge calls made in one assistant message before any of it is recorded.
+
+        `concurrently` runs their hooks at once, released together from one
+        barrier, as Claude Code runs the hooks of parallel calls.
+        """
 
         ids = [self._new_id() for _ in calls]
-        outputs = [
-            parse(self.hook(
+
+        def judge(tool_id: str, tool: str, tool_input: dict, start=None) -> dict:
+            if start is not None:
+                start.wait()
+            return parse(self.hook(
                 "PreToolUse", tool_name=tool, tool_input=tool_input, tool_use_id=tool_id
             ))
-            for tool_id, (tool, tool_input) in zip(ids, calls)
-        ]
+
+        if concurrently:
+            start = threading.Barrier(len(calls))
+            with ThreadPoolExecutor(max_workers=len(calls)) as pool:
+                outputs = list(pool.map(
+                    lambda job: judge(job[0], *job[1], start=start), zip(ids, calls)))
+        else:
+            outputs = [judge(tool_id, *call) for tool_id, call in zip(ids, calls)]
         self._tool_uses([(i, tool, tool_input) for i, (tool, tool_input) in zip(ids, calls)])
         for tool_id, output in zip(ids, outputs):
             held = reason(output)

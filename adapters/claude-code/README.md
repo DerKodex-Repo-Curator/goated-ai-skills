@@ -735,14 +735,16 @@ goated-hold: <gate> | <kind>
   in an earlier message of the turn, and make the call again. It then says
   the user can type the matching override. It names those fields without
   backticks, since the mod would read a backticked bare word as a skill.
-  That advice is given in full only on the first such hold of a turn. A
-  later one in the same turn gives one sentence instead: put the line in a
-  shell or agent call's description or a Skill call's args, or tell the user
-  they can type the override. Whether the turn already gave the full advice
-  is read from the turn's earlier held results, so no state is kept. A call
-  held in parallel with the first has no result yet, so it gives the full
-  advice too. The next turn's first such hold gives it in full again. The
-  first line, and every hold that never carried the advice, stay the same.
+  That advice is given in full on only one such hold of a turn, holds on
+  calls made in parallel included. Every other one in the turn gives one
+  sentence instead: put the line in a shell or agent call's description or a
+  Skill call's args, or tell the user they can type the override. The hold
+  that gives it in full is the first to claim the turn's marker (see
+  [State](#state)), one exclusive file create, so of several hooks running at
+  once only one can claim it. When the marker cannot be made or read, each
+  such hold gives the full advice. The next turn's first such hold gives it
+  in full again. The first line, and every hold that never carried the
+  advice, stay the same. Holds in a subagent always give it in full.
 - A hold or closeout item that asks for a [change read](#change-reads) once
   its skill has loaded names that skill without backticks, or only in its
   skip line, since no load answers it: the commit, pull-request, and
@@ -893,6 +895,10 @@ since the last compaction, which references each edit of the latest turn
 required when the design gates judged it, the last turn seen, and the latest
 typed overrides. It holds no prompt or reply
 text beyond the short override phrases and a commit message the user typed.
+Beside the state files, a `turn-markers/` folder holds one empty file per
+session, named for the turn whose hold gave the
+[unseen-line advice](#hold-messages) in full. A new turn's claim replaces it,
+and a `SessionStart` after compaction or `/clear` deletes it.
 The action and closeout gates keep no state of their own: they read the
 current turn, the design gates also the design references read since the
 last compaction, and the closeout's citation item the references recorded
@@ -1088,7 +1094,9 @@ of the call's prompt, which is normally already there.
   on a network (UNC) path.
 - Hooks for parallel tool calls can race on the state file. Each call
   re-derives its turn from the transcript, so a lost update can cause a repeat
-  hold, never a pass.
+  hold, never a pass. The turn marker that shares the full unseen-line advice
+  is claimed atomically, apart from the state file, so this race never
+  repeats that advice.
 
 ## Measuring It
 
