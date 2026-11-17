@@ -101,8 +101,7 @@ skill map, approval, evidence, checkpoint, and route-line rules in this file.
      discussion and for implementation whose decisions are already settled.
      Its chart requires approval covering destination, location, visible
      frontier, action reach, and initial write scope before any map write;
-     existing envelope consent may satisfy that requirement when it already
-     covers all five dimensions.
+     envelope consent that covers all five dimensions satisfies it.
    - Tiny work uses direct action and narrow proof without extra gates.
 
 5. **Apply approval once for the current reach.**
@@ -161,8 +160,9 @@ End routing with one route line, on its own line, outside code blocks:
   its route.
 
 Use lowercase keywords and installed skill names, list each skill once, and
-add no trailing text. A checkpoint that changes the required skills writes a
-new route line; the last one wins. Write it in a message before the first
+add no trailing text. A checkpoint changing the required skills writes a new
+route line; the last one wins. Write it, where the framework reads it, in
+a message or a call's description or skill arguments, at or before the first
 call it covers.
 
 ## Delegation

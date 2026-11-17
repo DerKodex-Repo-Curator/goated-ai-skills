@@ -69,6 +69,11 @@ reads  ^goated-design-reads:[ \t]+(?:none:[ \t]+(\S.*)|(FILE(?:[ \t]*,[ \t]*FILE
   examples without emitting them.
 - A marker embedded in prose, a list item, a quote, or a table cell does not
   count.
+- A framework may also read route and skip lines from a field that
+  describes a tool call, such as its description or a skill call's
+  arguments, because it may not keep reply text as written. That field's
+  text is read as a reply is, with these same rules; the framework's adapter
+  documents which fields it reads, and no other field of a call counts.
 - Keywords are lowercase and exact. A candidate line that starts with
   `goated-route:`, `goated-skip:`, or `goated-design-reads:`, compared
   case-insensitively, but fails the

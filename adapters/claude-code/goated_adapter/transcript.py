@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
-from .markers import parse_reply
+from .markers import ReplyMarkers, parse_reply
 
 BLOCK_SIZE = 256 * 1024
 MAX_BYTES = 64 * 1024 * 1024
@@ -69,6 +69,31 @@ SKILL_BODY_PREFIX = "Base directory for this skill:"
 # A call this adapter held: Claude Code 2.1.3xx records the deny reason as
 # `PreToolUse:<tool> hook error: <reason>`, and the reason opens with the hold line.
 HOLD_RESULT_RE = re.compile(r"(?:PreToolUse:\S+ hook error: )?goated-hold: ")
+# The one input field of each built-in tool that may carry route and skip
+# lines: a field that describes the call rather than holds its payload. Other
+# tools, MCP tools included, carry none, since their `description` is often
+# the payload, such as an issue or merge-request body. The skill-usage mod
+# keeps the same table (`LINE_FIELDS` in its `hooks/classify.ts`).
+LINE_FIELDS = {
+    "Bash": "description",
+    "PowerShell": "description",
+    "Agent": "description",
+    "Task": "description",
+    "Skill": "args",
+}
+
+
+def call_line_text(tool_name: str, tool_input: dict) -> str:
+    """The text of a tool call that may carry route and skip lines, or "".
+
+    Claude Code can save a message's reply text as a summary that drops the
+    lines, but it keeps a call's input as written. Only the field
+    `LINE_FIELDS` names for the tool counts, so file text, edit text,
+    commands, and tool payloads never carry a line.
+    """
+
+    value = tool_input.get(LINE_FIELDS.get(tool_name, ""))
+    return value if isinstance(value, str) else ""
 
 
 def prompt_text_kind(text: str) -> str:
@@ -139,16 +164,20 @@ class Turn:
     the winning route line, `route_marks` every valid route line in order, and
     `malformed` the route-like lines that failed the grammar. `skips` are the
     valid `goated-skip` lines, `design_reads` the valid `goated-design-reads`
-    lines and `malformed_design_reads` those that failed the grammar, and
-    `calls` the tool calls that finished in this
-    turn, oldest first. `opens_transcript` is set on the oldest turn read when
-    reading reached the start of the transcript, so no earlier turn exists.
+    lines and `malformed_design_reads` those that failed the grammar. Lines
+    count from reply text and from the field `call_line_text` reads, once per
+    call id in `call_ids`. `calls` are the tool calls that finished in this
+    turn, oldest first, and `unfinished` the `(name, input)` of recorded calls
+    with no result yet, oldest first. `opens_transcript` is set on the oldest
+    turn read when reading reached the start of the transcript, so no earlier
+    turn exists.
     """
 
     __slots__ = (
         "key", "is_compaction", "typed", "prompt_id", "loads", "invoked_load",
         "route", "route_marks", "malformed", "skips", "calls", "prompt_ids",
-        "opens_transcript", "design_reads", "malformed_design_reads",
+        "opens_transcript", "design_reads", "malformed_design_reads", "call_ids",
+        "unfinished",
     )
 
     def __init__(self, key: str) -> None:
@@ -167,6 +196,35 @@ class Turn:
         self.malformed_design_reads: list[str] = []
         self.calls: list[Call] = []
         self.prompt_ids: set[str] = set()
+        self.call_ids: set[str] = set()
+        self.unfinished: list[tuple[str, dict]] = []
+
+    def add_markers(self, markers: ReplyMarkers) -> None:
+        """Count the marker lines of one reply text or one tool call, in order."""
+
+        if markers.route is not None:
+            self.route = markers.route
+            self.route_marks.append(RouteMark(markers.route, len(self.loads), len(self.calls)))
+        self.malformed.extend(markers.malformed)
+        self.skips.extend(markers.skips)
+        self.design_reads.extend(markers.design_reads)
+        self.malformed_design_reads.extend(markers.malformed_design_reads)
+
+    def add_call(self, tool_id: str, tool_name: str, tool_input: dict) -> None:
+        """Count the marker lines a tool call carries, once per call id.
+
+        A line in a call counts from that call on, so it covers the call itself.
+        A call with no id is taken to be the newest unfinished recorded call
+        when its name and input match that call's, so it is not counted twice.
+        """
+
+        if tool_id:
+            if tool_id in self.call_ids:
+                return
+            self.call_ids.add(tool_id)
+        elif self.unfinished[-1:] == [(tool_name, tool_input)]:
+            return
+        self.add_markers(parse_reply(call_line_text(tool_name, tool_input)))
 
 
 def read_recent_turns(
@@ -176,6 +234,7 @@ def read_recent_turns(
     prompt_id: str | None = None,
     wait_seconds: float = 0.0,
     sidechain: bool = False,
+    current_call: tuple[str, str, dict] | None = None,
 ) -> list[Turn]:
     """Return recent turns, oldest first, ending with the current turn.
 
@@ -194,7 +253,9 @@ def read_recent_turns(
     call being judged. In an interactive session Claude Code records the
     assistant message holding that call, with any text and sibling calls in
     it, only after PreToolUse returns, so callers take the call from the hook
-    input instead.
+    input instead. `current_call` is that call, as `(tool_use_id, tool_name,
+    tool_input)`: the route and skip lines it carries count in the current
+    turn, once even if the transcript already shows it.
 
     `sidechain` reads a subagent's own transcript, where every entry is a
     sidechain entry and every prompt was written by the parent agent, so none
@@ -206,6 +267,8 @@ def read_recent_turns(
         turns = _read_turns_once(Path(path), since_key, sidechain)
         current = turns[-1]
         if prompt_id is None or current.is_compaction or prompt_id in current.prompt_ids:
+            if current_call is not None:
+                current.add_call(*current_call)
             return turns
         if time.monotonic() >= deadline:
             raise TranscriptUnreadable(
@@ -381,16 +444,7 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                 if not isinstance(block, dict):
                     continue
                 if block.get("type") == "text":
-                    markers = parse_reply(str(block.get("text", "")))
-                    if markers.route is not None:
-                        turn.route = markers.route
-                        turn.route_marks.append(
-                            RouteMark(markers.route, len(turn.loads), len(turn.calls))
-                        )
-                    turn.malformed.extend(markers.malformed)
-                    turn.skips.extend(markers.skips)
-                    turn.design_reads.extend(markers.design_reads)
-                    turn.malformed_design_reads.extend(markers.malformed_design_reads)
+                    turn.add_markers(parse_reply(str(block.get("text", ""))))
                 elif block.get("type") == "tool_use":
                     tool_id = str(block.get("id", ""))
                     tool_input = block.get("input")
@@ -398,6 +452,7 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                         str(block.get("name", "")),
                         tool_input if isinstance(tool_input, dict) else {},
                     )
+                    turn.add_call(tool_id, *pending[tool_id])
                     if block.get("name") == "Skill":
                         skill = skill_name((block.get("input") or {}).get("skill"))
                         if skill:
@@ -430,6 +485,7 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                 ):
                     skill = skill_calls.pop(block["tool_use_id"])
                     turn.loads.append(skill)
+    turn.unfinished = list(pending.values())
     return turn
 
 

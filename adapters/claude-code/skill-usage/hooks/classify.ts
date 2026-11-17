@@ -231,11 +231,29 @@ function isCodeFile(path: string): boolean {
 }
 
 /**
- * The events of one assistant message's tool calls: skill loads, subagent
+ * The one input field of each built-in tool that may carry route and skip
+ * lines: one that describes the call rather than holds its payload, which
+ * Claude Code keeps as written even when it saves the reply's text as a
+ * summary that drops the lines. Other tools, MCP tools included, carry none,
+ * since their `description` is often the payload, such as an issue body. The
+ * adapter keeps the same table (`LINE_FIELDS` in goated_adapter/transcript.py).
+ */
+const LINE_FIELDS: Readonly<Record<string, string>> = { Bash: 'description', PowerShell: 'description', Agent: 'description', Task: 'description', Skill: 'args' }
+
+/** The text of a tool call that may carry route and skip lines, or ''. */
+function callLineText(name: string, input: Record<string, unknown>): string {
+  const field = Object.hasOwn(LINE_FIELDS, name) ? LINE_FIELDS[name] : undefined
+  const value = field ? input[field] : undefined
+  return typeof value === 'string' ? value : ''
+}
+
+/**
+ * The events of one assistant message's tool calls: the route and skip lines
+ * each call carries, before that call's own events; skill loads, subagent
  * spawns, writes, code changes, reads into a skill's folder, reads of a
- * skill's supporting files. A subagent's calls count only as skill loads,
- * spawns, code changes, supporting-file reads and reads of a SKILL.md
- * (`body`); `agent` names that subagent.
+ * skill's supporting files. A subagent's calls count only as its own lines,
+ * skill loads, spawns, code changes, supporting-file reads and reads of a
+ * SKILL.md (`body`); `agent` names that subagent.
  */
 export function toolUseEvents(
   uses: readonly { id?: string; name: string; input: Record<string, unknown> }[],
@@ -247,6 +265,7 @@ export function toolUseEvents(
   const ofAgent = isSubagent && agent ? { agent } : {}
   for (const { id, name, input } of uses) {
     const ofCall = id ? { id } : {}
+    events.push(...markerEvents(callLineText(name, input), t, isSubagent ? agent : undefined))
     if (name === 'Skill') {
       events.push({ kind: 'load', t, ...ofCall, skill: skillArgument(input.skill), via: 'tool', isSubagent })
       continue

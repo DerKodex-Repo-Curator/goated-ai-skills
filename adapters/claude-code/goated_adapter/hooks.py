@@ -154,6 +154,7 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
             since_key=state.last_turn,
             prompt_id=_prompt_id(payload),
             wait_seconds=config.lag_wait_seconds,
+            current_call=_current_call(payload, tool_name, tool_input),
         )
     except TranscriptUnreadable as exc:
         raise _FailOpen(str(exc)) from exc
@@ -194,6 +195,7 @@ def _subagent_pre_tool_use(
             since_key=None,
             wait_seconds=0.0,
             sidechain=True,
+            current_call=_current_call(payload, tool_name, tool_input),
         )
     except TranscriptUnreadable as exc:
         raise _FailOpen(f"in a subagent, {exc}") from exc
@@ -202,6 +204,12 @@ def _subagent_pre_tool_use(
         _project(payload, config),
     )
     return _with_warnings(_deny(hold), [])
+
+
+def _current_call(payload: dict, tool_name: str, tool_input: dict) -> tuple[str, str, dict]:
+    """The call being judged, whose own route and skip lines count for it."""
+
+    return str(payload.get("tool_use_id") or ""), tool_name, tool_input
 
 
 def _subagent_transcript(transcript_path: str, agent_id: str) -> Path:
