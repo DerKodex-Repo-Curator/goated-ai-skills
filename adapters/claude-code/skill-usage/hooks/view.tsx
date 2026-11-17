@@ -10,8 +10,8 @@
 // nudge not followed. Text colours are theme keys, so the rows read on a light
 // theme too.
 
-import type { AllTime, Available, Counts, Measures, Origin, Outcome, RefMoment, RefMoments, Refs, RouteForm, SessionSummary, SkipReasons, TimelineEntry, WritingTurns } from '../types'
-import { NO_SUBAGENTS, NO_WRITING_TURNS, ORIGINS, OUTCOMES, total } from './classify'
+import type { AllTime, Available, Counts, EarlierHolds, Measures, Origin, Outcome, RefMoment, RefMoments, Refs, RouteForm, SessionSummary, SideSessionKind, SkipReasons, TimelineEntry, WritingTurns } from '../types'
+import { forProject, NO_SUBAGENTS, NO_WRITING_TURNS, ORIGINS, OUTCOMES, total } from './classify'
 import { BECAUSE, COLOR, followCounts, hookName, OUTCOME_TONE, plural, rateTone, REF_MOMENT, RESULT, ROUTE_FORM, skillName, STATION, UNANSWERED, UNANSWERED_SHORT, unansweredCount, UNTIMED } from './meaning'
 import type { Tone, View } from './meaning'
 import { badgeWords, picture, PREVIEW_MS, previewTimeline } from './picture'
@@ -274,9 +274,43 @@ function designReadWords(m: Measures): string {
   return [...files.map(([file, n]) => `${file} ${n}`), ...(none ? [`${none} none`] : [])].join(', ')
 }
 
+/** Rows of counts, most counted first, equal ones A to Z, so the order holds between redraws. */
+const byMostThenName = ([leftName, leftCounts]: [string, Counts<string>], [rightName, rightCounts]: [string, Counts<string>]) =>
+  total(rightCounts) - total(leftCounts) || leftName.localeCompare(rightName)
+
+/** Each skill a routed line required, most required first, as `<skill> <n>`; with `detail`, each followed by its intensities. */
+function routedSkillWords(measures: Measures, detail = false): string {
+  return Object.entries(measures.routeSkills ?? {})
+    .sort(byMostThenName)
+    .map(([skill, byIntensity]) => {
+      const intensities = Object.entries(byIntensity).flatMap(([intensity, count]) => (count ? [`${intensity} ${count}`] : []))
+      return `${skill} ${total(byIntensity)}${detail ? ` (${intensities.join(', ')})` : ''}`
+    })
+    .join(detail ? ' · ' : ', ')
+}
+
+/** What a session tool's call did, in words for a count of them. */
+const sideSessionCount = (count: number, kind: SideSessionKind) => (kind === 'card' ? plural(count, 'card') : `${count} started`)
+const SESSION_TOOL_PREFIX = 'mcp__ccd_session__'
+/** Side sessions across tools, cards then starts, as `1 card, 2 started`. */
+function sideSessionWords(measures: Measures): string {
+  const sum = (kind: SideSessionKind) => Object.values(measures.sideSessions ?? {}).reduce((sumSoFar, byKind) => sumSoFar + (byKind[kind] ?? 0), 0)
+  return (['card', 'start'] as const).flatMap(kind => (sum(kind) ? [sideSessionCount(sum(kind), kind)] : [])).join(', ')
+}
+/** Side sessions by tool, most used first, each tool by its short name, as `start_session 1 card, 1 started`. */
+function sideSessionToolWords(measures: Measures): string {
+  return Object.entries(measures.sideSessions ?? {})
+    .sort(byMostThenName)
+    .map(([tool, byKind]) => {
+      const kinds = (['card', 'start'] as const).flatMap(kind => (byKind[kind] ? [sideSessionCount(byKind[kind] ?? 0, kind)] : []))
+      return `${tool.replace(SESSION_TOOL_PREFIX, '')} ${kinds.join(', ')}`
+    })
+    .join(' · ')
+}
+
 /**
- * Route lines, adapter holds, overrides, subagents and design-reads lines in one line of words,
- * each part only when it has a count; undefined when none has.
+ * Route lines, routed skills, side sessions, adapter holds, overrides, subagents and design-reads lines in one line of
+ * words, each part only when it has a count; undefined when none has.
  */
 function measuresText(m: Measures): string | undefined {
   const sub = m.subagents ?? NO_SUBAGENTS
@@ -288,6 +322,8 @@ function measuresText(m: Measures): string | undefined {
   const overrides = total(m.overrides)
   const parts = [
     ['Routes', routeWords(m)],
+    ['Routed skills', routedSkillWords(m)],
+    ['Side sessions', sideSessionWords(m)],
     ['Writing turns', writingWords(m)],
     ['Adapter holds', holdWords(m)],
     ['Overrides', overrides ? String(overrides) : ''],
@@ -486,9 +522,66 @@ function skipReasonRows(reasons: SkipReasons | undefined): { skill: string; gate
     )
 }
 
-/** Totals across sessions: the still picture, each hook's follow rate as a bar, and what makes each skill load. */
-export function allTimeTab(v: View, all: AllTime, rows: number) {
+const EARLIER_TITLE = 'Hooks from earlier versions of the mod'
+const EARLIER_NOTE = (earlier: EarlierHolds) => `${plural(earlier.sessions, 'session')} stored before summaries carried a version`
+/**
+ * What earlier versions' summaries held, one line each, in the words of the current tables: each gate's holds, then
+ * each closeout item, then each skill and gate a skip line declined with its reasons, most given first.
+ */
+function earlierLines(earlier: EarlierHolds): string[] {
+  const reasonWords = (reasons: [string, number][]) => reasons.map(([reason, count]) => `"${reason}" ×${count}`).join(' · ')
+  return [
+    ...Object.entries(earlier.nudges).sort(byMostThenName).map(([hook, outcomes]) => `${hookName(hook)}: ${outcomeWords(outcomes)}`),
+    ...Object.entries(earlier.closeoutItems ?? {}).sort(byMostThenName).map(([label, outcomes]) => `${label}: ${outcomeWords(outcomes)}`),
+    ...skipReasonRows(earlier.skipReasons).map(row => `${row.skill} › ${hookName(row.gate)}: ${reasonWords(row.reasons)}`),
+  ]
+}
+
+/** How the sessions stored with no project key, by versions before keys were recorded, are named. */
+const NOT_RECORDED = 'not recorded'
+
+/** Each project with its sessions, most first, equal ones A to Z, then the sessions stored with no project key (`key` absent). */
+function projectRows(all: AllTime): { key?: string; sessions: number }[] {
+  const keyed = Object.entries(all.byProject ?? {})
+    .map(([key, project]) => ({ key, sessions: project.sessions }))
+    .sort((left, right) => right.sessions - left.sessions || left.key.localeCompare(right.key))
+  const unkeyed = all.sessions - keyed.reduce((sumSoFar, project) => sumSoFar + project.sessions, 0)
+  return [...keyed, ...(unkeyed > 0 ? [{ sessions: unkeyed }] : [])]
+}
+
+/**
+ * The All time tab's project filter: the project key shown, null for every project; this session's key, if read; and
+ * what choosing another does.
+ */
+export type ProjectFilter = { shown: string | null; own?: string; choose: (key: string | null) => unknown }
+
+/** The projects All time can be filtered to, each with a button that shows it alone, and one that shows them all. */
+function projectChooser(view: View, all: AllTime, filter: ProjectFilter) {
+  const { Box, Button } = view.ui
+  const choice = (id: string, key: string | null, text: string) => (
+    <Box key={`project-${id}`} flexDirection="row" gap={1}>
+      <Button label={filter.shown === key ? 'Shown' : 'Show'} variant={filter.shown === key ? 'primary' : 'secondary'} onPress={() => filter.choose(key)} />
+      {line(view, text, filter.shown === key ? 'plain' : 'dim')}
+    </Box>
+  )
+  return [
+    title(view, 'Projects', 'show one project alone; each key stands for a folder, which is not stored'),
+    choice('all', null, `every project · ${plural(all.sessions, 'session')}`),
+    ...projectRows(all).map(project =>
+      project.key === undefined
+        ? line(view, `${NOT_RECORDED} · ${plural(project.sessions, 'session')}, stored before projects were`, 'dim')
+        : choice(project.key, project.key, `${project.key}${project.key === filter.own ? ' · this project' : ''} · ${plural(project.sessions, 'session')}`),
+    ),
+  ]
+}
+
+/**
+ * Totals across sessions: the still picture, each hook's follow rate as a bar, and what makes each skill load; with
+ * `filter`, for the project it shows, and a chooser of projects once any session carries a project key.
+ */
+export function allTimeTab(v: View, everything: AllTime, rows: number, filter?: ProjectFilter) {
   const { Box } = v.ui
+  const all = forProject(everything, filter?.shown ?? null)
   const outcomes = sumOutcomes(all.nudges)
   const loads = byOrigin(all.loads)
   const loadCount = Object.values(loads).reduce((a, b) => a + b, 0)
@@ -505,7 +598,12 @@ export function allTimeTab(v: View, all: AllTime, rows: number) {
       {words(v, [{ text: `${plural(all.sessions, 'session')} · ` }, ...standing(loadCount, outcomes)], 'plain', true)}
       {ruled > 0 && line(v, `GOATED router rule: router loaded first in ${first} of ${plural(ruled, 'session')}`, rateTone(first, ruled))}
       {measuresText(all) && line(v, measuresText(all) ?? '', 'plain')}
+      {filter && everything.byProject && projectChooser(v, everything, filter)}
       {usageTables(v, all, rows, '')}
+      {all.earlier && [
+        title(v, EARLIER_TITLE, `${EARLIER_NOTE(all.earlier)}; their holds, closeout items and skip reasons add to no count here`),
+        ...earlierLines(all.earlier).map(text => line(v, text, 'dim')),
+      ]}
       {title(v, 'Skip reasons', 'why a skip line declined a hold, by skill and hold')}
       {skipReasonRows(all.skipReasons).length === 0
         ? line(v, 'No skip line has declined a hold yet.', 'dim')
@@ -586,9 +684,6 @@ export function unusedTab(v: View, all: AllTime, avail: Available | null) {
 
 // ---------- report ----------------------------------------------------------------
 
-/** Rows of counts, most counted first, equal ones A to Z, so the order holds between redraws. */
-const byMostThenName = ([a, x]: [string, Counts<string>], [b, y]: [string, Counts<string>]) => total(y) - total(x) || a.localeCompare(b)
-
 /** What became of a hold or closeout item, in the report's words: how many were handled, then each outcome. */
 function outcomeWords(c: Counts<Outcome>): string {
   const f = followCounts(c)
@@ -604,6 +699,15 @@ export function reportText(all: AllTime, avail: Available | null): string {
   const items = Object.entries(all.closeoutItems ?? {}).sort(byMostThenName)
   if (items.length === 0) out.push('(none recorded)')
   for (const [label, c] of items) out.push(`- ${label}: ${outcomeWords(c)}`)
+  if (all.earlier) {
+    out.push('', `## ${EARLIER_TITLE}`, '', `${EARLIER_NOTE(all.earlier)}.`, '')
+    for (const text of earlierLines(all.earlier)) out.push(`- ${text}`)
+  }
+  const projects = projectRows(all)
+  if (projects.length > 0) {
+    out.push('', '## Projects', '')
+    for (const project of projects) out.push(`- ${project.key ?? NOT_RECORDED}: ${plural(project.sessions, 'session')}`)
+  }
   const ruled = (all.router.first ?? 0) + (all.router.late ?? 0) + (all.router.never ?? 0)
   if (ruled > 0) out.push('', `GOATED router rule: router loaded first in ${all.router.first ?? 0} of ${plural(ruled, 'session')}.`)
   out.push('', '## Skills', '')
@@ -615,6 +719,8 @@ export function reportText(all: AllTime, avail: Available | null): string {
   const writes = all.writingTurns ?? NO_WRITING_TURNS
   out.push('', '## Routes and adapter holds', '')
   out.push(`- Route lines: ${routeWords(all) || 'none'}`)
+  out.push(`- Routed skills: ${routedSkillWords(all, true) || 'none'}`)
+  out.push(`- Side sessions: ${sideSessionToolWords(all) || 'none'}`)
   out.push(`- Writing turns: ${writes.routed} routed before the first write · ${writes.late} routed only after it · ${writes.none} with no route line`)
   out.push(`- Adapter holds: ${holdWords(all) || 'none'}`)
   out.push(`- Overrides: ${overrides.join(' · ') || 'none'}`)

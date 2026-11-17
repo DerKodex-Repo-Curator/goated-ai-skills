@@ -25,6 +25,8 @@ function world(on: On, store: Map<string, unknown>, log: string[]) {
   on('session.id', () => ({ value: 'running' }))
   on('session.usage', () => ({ value: { context: { breakdown: { skills: { skillFrontmatter: [], totalSkills: 0, includedSkills: 0 } } } } }))
   on('session.messages', () => ({ value: [] }))
+  on('session.repo', () => ({ value: null }))
+  on('session.root', () => ({ value: '/project' }))
   on('command.register', () => ({ value: { isRegistered: true } }))
   on('ui.open', () => ({ value: { isPlaced: false } }))
   on('ui.status', () => ({ value: undefined }))

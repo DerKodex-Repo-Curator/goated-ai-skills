@@ -49,6 +49,11 @@ export type UsageEvent = Stamp &
     /** A main-agent call the adapter holds like a write: an edit, or a spawn that hands work on. */
     | { kind: 'write'; id?: string }
     /**
+     * A main-agent call to a session tool, by tool name: one that only shows a card the user may start, or one that starts
+     * a session. `id`: the call's tool_use id, so a refused or failed call (`refused`) is not counted.
+     */
+    | { kind: 'side-session'; id?: string; tool: string; shows: SideSessionKind }
+    /**
      * A code change, as the adapter counts one where the mod can see it: an edit tool's call on a code file, by the
      * main agent or a subagent. `id`: the call's tool_use id, so a refused call changed nothing.
      */
@@ -72,8 +77,14 @@ export type UsageEvent = Stamp &
  */
 export type WritingTurns = { routed: number; late: number; none: number }
 
+/** What a session tool's call did: showed a card the user may start, or started a session. */
+export type SideSessionKind = 'card' | 'start'
+
+/** A routed line's intensity. */
+export type Intensity = 'lightweight' | 'standard' | 'full'
+
 /** A route line as the marker grammar reads it (stack/fixtures/markers/README.md in the GOATED repo). */
-export type Route = { form: 'direct' | 'continue' } | { form: 'route'; intensity: 'lightweight' | 'standard' | 'full'; requires: string[] }
+export type Route = { form: 'direct' | 'continue' } | { form: 'route'; intensity: Intensity; requires: string[] }
 export type RouteForm = Route['form']
 
 /** A design-reads line as the marker grammar reads it: the reference files it declares, or `none` with a reason. */
@@ -122,6 +133,13 @@ export type SessionSummary = {
   refsUnloaded?: number
   /** The same reads by their moment in the turn; absent in summaries stored before moments were recorded, whose reads have none. */
   refMoments?: RefMoments
+  /**
+   * The mod's data version when the summary was stored (`DATA_VERSION` in hooks/classify.ts); absent in summaries stored
+   * before it was recorded, whose holds may carry retired gate names. A summary resumed from one of those keeps none.
+   */
+  version?: number
+  /** A key for the session's project folder that does not reveal its path (hooks/project.ts); absent before it was recorded. */
+  project?: string
 } & Measures
 
 /**
@@ -131,6 +149,10 @@ export type SessionSummary = {
 export type Measures = {
   /** Winning route lines, by form. */
   routes?: Counts<RouteForm>
+  /** Each skill a routed line required, by the route's intensity. */
+  routeSkills?: Record<string, Counts<Intensity>>
+  /** Session tool calls that ran, by tool, then whether each showed a card or started a session. */
+  sideSessions?: Record<string, Counts<SideSessionKind>>
   writingTurns?: WritingTurns
   /** Adapter holds, by kind; what became of them is in `nudges`, by gate. */
   holds?: Counts<HoldKind>
@@ -200,7 +222,23 @@ export type AllTime = {
   refs?: Refs
   refsUnloaded?: number
   refMoments?: RefMoments
+  /** The same totals for each project, by project key; summaries with no key count in none. Absent inside one project's totals. */
+  byProject?: Record<string, AllTime>
+  /** Holds from summaries stored before versions were recorded, kept apart so their retired gate names add to no current count. */
+  earlier?: EarlierHolds
 } & Measures
+
+/**
+ * What summaries stored by earlier versions of the mod held that is keyed by gate or tied to one: holds by gate and by
+ * kind, closeout items and skip reasons; and how many such sessions there were.
+ */
+export type EarlierHolds = {
+  sessions: number
+  nudges: Record<string, Counts<Outcome>>
+  holds?: Counts<HoldKind>
+  closeoutItems?: Record<string, Counts<Outcome>>
+  skipReasons?: SkipReasons
+}
 
 /**
  * The skills the session lists for the model, and whether the listing was cut
@@ -223,6 +261,10 @@ declare module 'claude-code' {
       baseline: Shaped<SessionSummary | null>
       available: Shaped<Available | null>
       allTime: Shaped<AllTime | null>
+      /** This session's project key, worked out once (hooks/project.ts); `''` when no project folder could be read. */
+      project: string | null
+      /** The project key All time is filtered to; null for every project. */
+      allProject: string | null
       tab: Tab
       /** When `/skill-usage preview` started; the picture plays its script until it has run. */
       preview: number | null

@@ -65,7 +65,7 @@ test('the pane and the report show each closeout item with its outcomes', async 
   expect(report).toContain('## Closeout items\n\n- Docs: 1 of 1 handled (100%) · declined 1\n- Proof: 1 of 1 handled (100%) · loaded 1')
   // Near miss: with no closeout hold, or none recorded by an earlier version, the report says so.
   expect(reportText(addSession(null, summarize([prompt()])), null)).toContain('## Closeout items\n\n(none recorded)')
-  const stored: Record<string, unknown> = { tab: 'session', events: { shape: 'events-3', value: events } }
+  const stored: Record<string, unknown> = { tab: 'session', events: { shape: 'events-4', value: events } }
   on('clock.now', () => ({ value: 50_000 }))
   on('state.get', (_, e) => {
     const key = (e as { key: string }).key
@@ -91,7 +91,7 @@ test("a skip line's reason is stored under its skill and gate, and All time list
   expect(all.skipReasons).toEqual({ 'software-design-principles': { design: { 'renames one local variable only': 2 } } })
   expect(reportText(all, null)).toContain('- software-design-principles › design hold: "renames one local variable only" ×2')
   // The All time tab lists it under its skill and gate.
-  const stored: Record<string, unknown> = { tab: 'all', events: { shape: 'events-3', value: events } }
+  const stored: Record<string, unknown> = { tab: 'all', events: { shape: 'events-4', value: events } }
   on('clock.now', () => ({ value: 500 }))
   on('state.get', (_, e) => {
     const key = (e as { key: string }).key
@@ -214,7 +214,7 @@ test('the pane shows the three kinds apart where it showed holds not followed', 
   const s = summarize(events)
   expect(s.nudges).toEqual({ design: { overridden: 1 }, security: { 'new prompt': 1 }, commit: { unanswered: 1 } })
   expect(statusText(s)).toBe('skills 0 · hooks: 0 followed · 1 overridden · 1 new prompt · 1 unanswered')
-  const stored: Record<string, unknown> = { tab: 'session', events: { shape: 'events-3', value: events } }
+  const stored: Record<string, unknown> = { tab: 'session', events: { shape: 'events-4', value: events } }
   on('clock.now', () => ({ value: 50_000 }))
   on('state.get', (_, e) => {
     const key = (e as { key: string }).key
@@ -246,7 +246,7 @@ test('a summary stored before this change still displays: its holds not answered
   // A session resumed across the update adds its new counts to the earlier ones, which keep their meaning.
   const later = summarize([prompt(), response(1), ...preHold('Write', ADAPTER_TEXTS.design, 2), results(2), turnEnd(3)])
   expect(mergeSummaries(earlier, later).nudges).toEqual({ closeout: { followed: 1, ignored: 3 }, design: { unanswered: 1 } })
-  const stored: Record<string, unknown> = { tab: 'all', events: { shape: 'events-3', value: [] }, allTime: { shape: 'all-time-1', value: total } }
+  const stored: Record<string, unknown> = { tab: 'all', events: { shape: 'events-4', value: [] }, allTime: { shape: 'all-time-2', value: total } }
   on('clock.now', () => ({ value: 100_000 }))
   on('state.get', (_, e) => {
     const key = (e as { key: string }).key
@@ -308,7 +308,7 @@ test('a session running across the update reads its history again instead of mis
 
 test('a session already on this version keeps its events: its history is not read again', async ($, on) => {
   // Near miss: the same events stored under the current tag stay as they are, items or not.
-  const events = await startAcrossUpdate($, on, { owner: 'running', backfilled: { shape: 'events-3', value: 'running' }, events: { shape: 'events-3', value: OLD_EVENTS } })
+  const events = await startAcrossUpdate($, on, { owner: 'running', backfilled: { shape: 'events-4', value: 'running' }, events: { shape: 'events-4', value: OLD_EVENTS } })
   expect(events).toEqual(OLD_EVENTS)
   expect(summarize(events).closeoutItems).toEqual({})
 })

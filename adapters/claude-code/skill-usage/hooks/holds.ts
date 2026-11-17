@@ -62,10 +62,17 @@ export const REASON_LIMIT = 160
 // A path-like word: one starting with a drive (`C:/`, `C:\`), a slash, `~/` or `~\`, or holding a backslash anywhere
 // (`\\server\share`, `src\x.ts`). A slash inside a word, as in `and/or`, and a bare `~`, as in `~5`, are not paths.
 const PATH_WORD = /(?<!\S)(?:[A-Za-z]:[\\/]|[\\/]|~[\\/]|\S*\\)\S*/g
+const maskPaths = (text: string) => text.replace(PATH_WORD, '<path>')
+
 /** A skip reason as it is kept: each path-like word masked as `<path>`, then whole up to `REASON_LIMIT` characters, else cut. */
 export function storedReason(reason: string): string {
-  const masked = reason.replace(PATH_WORD, '<path>')
+  const masked = maskPaths(reason)
   return masked.length <= REASON_LIMIT ? masked : `${masked.slice(0, REASON_LIMIT - 1)}…`
+}
+
+/** An error as the mod keeps it to show in the pane: its text with each path-like word masked, as a skip reason's is, but whole. */
+export function errorText(error: unknown): string {
+  return maskPaths(String(error))
 }
 
 /** Takes one from `key` in `row` of a count table, dropping a count, then a row, that reaches zero. */

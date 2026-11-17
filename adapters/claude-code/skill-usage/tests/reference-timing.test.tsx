@@ -213,7 +213,7 @@ const SESSION_EVENTS: UsageEvent[] = [
 ]
 
 test('the Session tab shows each reference by moment, and logs and counts design-reads lines', async ($, on) => {
-  const text = await paneText($, on, { tab: 'session', events: { shape: 'events-3', value: SESSION_EVENTS } })
+  const text = await paneText($, on, { tab: 'session', events: { shape: 'events-4', value: SESSION_EVENTS } })
   expect(text).toContain('1 before code · 1 between changes')
   expect(text).toContain('1 after code')
   expect(text).toContain('process.md, errors.md')
@@ -224,9 +224,9 @@ test('the Session tab shows each reference by moment, and logs and counts design
 test('the All time tab shows moments across sessions, and reads stored before moments were recorded as not timed', async ($, on) => {
   const text = await paneText($, on, {
     tab: 'all',
-    events: { shape: 'events-3', value: SESSION_EVENTS },
+    events: { shape: 'events-4', value: SESSION_EVENTS },
     // Stored by an earlier version: four reads of red-flags.md with no moment, and no design-reads counts.
-    allTime: { shape: 'all-time-1', value: { sessions: 1, loads: {}, nudges: {}, router: {}, lastUsed: {}, refs: { [SDP]: { 'references/red-flags.md': 4 } } } },
+    allTime: { shape: 'all-time-2', value: { sessions: 1, loads: {}, nudges: {}, router: {}, lastUsed: {}, refs: { [SDP]: { 'references/red-flags.md': 4 } } } },
   })
   expect(text).toContain('1 after code · 4 not timed')
   expect(text).toContain('1 before code · 1 between changes')

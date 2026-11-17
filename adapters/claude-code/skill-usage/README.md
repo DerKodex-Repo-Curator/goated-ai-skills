@@ -16,6 +16,10 @@ without it.
 | --- | --- |
 | Skill loads and why each loaded: your `/command`, your prompt naming it, a hook, the router's route, the agent, or a subagent | Skill tool calls and slash commands |
 | Route lines, counted by form (`direct`, `continue`, routed) | `goated-route:` lines in replies, and in the `description` of a `Bash`, `PowerShell`, `Agent` or `Task` call or the `args` of a `Skill` call, as the adapter reads them |
+| Routed skills: each skill a routed line requires, counted once per line, by the route's intensity (`lightweight`, `standard`, `full`) | The `requires:` list of the winning route line of each reply, in the same places as route lines |
+| Side sessions, by tool (`start_session`, `hand_off_to_session`) and by whether the call only showed a card (an `offer` or `own_initiative` with no `proposal_id`, as the adapter judges it) or started a session | The main agent's session tool calls that ran; a held or failed call, whose result is an error, is not counted |
+| The session's project, as a key: the first ten hex digits of the SHA-256 digest of the install's salt and the project folder's path, which the key does not reveal. The folder is the repository's root, the main working tree's for a worktree, so a repository's worktrees count as one project; outside a repository, or when that lookup fails, the session's project root. When neither can be read, the session is stored with no project key. Neither the folder's path nor its name is stored | The session's repository or project root, read once per session |
+| The mod's data version, on each summary: 4 for this version; summaries stored before it carry none | The mod itself |
 | Turns that write, by whether a route line came before the first write, only after it, or not at all | The main agent's edits and spawns, the calls the adapter holds like writes; a call whose result is an error, such as a held one, did not write |
 | Justified skips, with their reasons; a skip declines a justified-skip hold naming that skill in the same turn. The reason of each skip that declined a hold is kept by skill and gate: each path-like word in it (one starting with a drive such as `C:/`, a slash, or `~/`, or holding a backslash) replaced by `<path>`, then cut to 160 characters. Nothing else is stored beside it, and other words, a project name among them, are kept as written | `goated-skip:` lines in replies, and in the same call fields as route lines |
 | The adapter's holds by gate and kind, and each held skill's outcome: loaded, files read, declined, overridden by you, ended by a new prompt, unanswered, or waiting | Denied calls whose reason starts `goated-hold: <gate> \| <kind>`, and the blocked `Stop` that carries the closeout hold |
@@ -56,6 +60,19 @@ router rule line, start messages, or already loaded counts in All time. Those
 stored before the three kinds of unanswered hold were told apart count them
 together, as not answered in the pane and not loaded in the report, and have
 no closeout items or skip reasons.
+
+Summaries stored before the data version was recorded carry no version and
+no project key. All time keeps everything in them that is keyed by a gate,
+or tied to one, under **Hooks from earlier versions of the mod**: their holds
+by gate and by kind, their closeout items, and their skip reasons. So retired
+gate names such as `design-hold` (shown as "design check") and `commit-hold`
+add to no current count, the Skip reasons table included. Their other
+counts, such as skill loads and reference reads, still add to All time. They
+count under every project and under none in particular, and the project list
+shows them as not recorded. A session resumed from such a summary stays
+marked as earlier, since part of its counts were recorded by the earlier
+version, but it takes this version's project key: it counts under that
+project, its gate-keyed data under that project's earlier versions.
 
 Holds reach a session as denied tool calls, and the closeout hold as a
 blocked `Stop` or a denied commit. The mod reads each hold's gate and kind from its first line,
@@ -159,13 +176,18 @@ session's summary.
 ## The Pane
 
 - **Session**: a picture of where skill loads came from, then lines on how
-  the holds went, and route lines, writing turns, adapter
-  holds, overrides, and subagents. Below them is an activity log, newest first, with per-hold
-  and per-skill tables.
+  the holds went, and route lines, routed skills, side sessions, writing
+  turns, adapter holds, overrides, and subagents. Below them is an activity
+  log, newest first, with per-hold and per-skill tables.
 - **All time**: the same totals across every stored session, reread after
-  each turn, so sessions running beside this one count as they go. It also
-  lists the reasons of the skip lines that declined holds, by skill and hold,
-  most given first.
+  each turn, so sessions running beside this one count as they go. Once a
+  session carries a project key, a **Projects** list shows each key with its
+  sessions, marks this session's as this project, and has a button per
+  project that shows its totals alone; this session counts only under its
+  own. Below the tables are the holds from earlier versions, under their own
+  heading, and the reasons of the skip lines that declined holds, by skill
+  and hold, most given first. `/skill-usage report` lists the projects and
+  the earlier versions' holds too, always for every project.
 - **Unused**: your own skills by how often they loaded, and those that never
   have.
 
@@ -259,8 +281,16 @@ a new session to be sure the change applies.
 
 The mod keeps one summary per session in its own plugin store: counts,
 skill names, hold gates, override phrases, reference file paths within
-skills, and skip reasons. It keeps no prompt or reply text beyond those
-phrases and reasons. It keeps the 300 most recent sessions one by one and
+skills, skip reasons, the data version, and the project key. It keeps no
+prompt or reply text beyond those phrases and reasons, and no folder path or
+name. The project key is a digest of the folder's path salted with 16
+random bytes the mod makes once per store and keeps beside the summaries
+under the key `project-salt`. A key shown in the pane or the report, or
+copied from it, cannot be checked against a guessed path without the salt;
+anyone who has the store file has the salt too, and can check a guess. While
+a session runs, its key is also kept in session state. An observer error
+shown in the pane is kept with each path-like word in it masked as `<path>`,
+as a skip reason is. It keeps the 300 most recent sessions one by one and
 folds older ones into a single total under the key `older`, so All time
 still counts them. Within a session, the event list lives in session state
 and is capped at 5,000 events.
@@ -316,16 +346,30 @@ This has not been tested end to end. Keep a backup of both files.
 - A `start_session` call that only shows a card (an `offer` or
   `own_initiative` with no `proposal_id`) still counts as a write here,
   though the adapter no longer holds it like one: a turn whose only write is
-  such a card counts as a writing turn.
+  such a card counts as a writing turn. As a side session it counts as a
+  card, whether or not you later start it; starting a card later is a new
+  call with its `proposal_id`, which counts as a start.
+- A project key follows the folder's path: moving or renaming a project
+  folder starts a new key, and the same folder reached by two spellings that
+  differ by more than slashes (or, without a drive letter, by case), such as
+  through a link, gets two keys. A session that changes project root
+  mid-session keeps the key read first. Keys follow the store's salt: a
+  store started afresh, such as by installing under another marketplace,
+  gives every project a new key. Two sessions making the salt at the same
+  moment may each key their project with their own; the store keeps one
+  salt, so the other session's project shows under a second key.
+- The `older` total folded by a version before 076 counts its holds as
+  current and has no projects. Folding happens only past 300 sessions.
 - A hold still waiting when the session ends counts as unanswered. That
   includes a session you resume later: the turn it waited in is over.
 - A mod reloaded mid-session, such as by a plugin update, keeps the
   session's events, unless the update changes their shape tag (the events
   atom in `hooks/register.tsx`). Then the events recorded before the reload are
   dropped and the session is rebuilt from its history, with that history's
-  limits above. A resumed session is not rebuilt: its summary covers only
-  what came after the reload, on top of its stored summary, and a hold
-  waiting at that moment is dropped with the events.
+  limits above. A resumed session is not rebuilt: it takes what the store
+  holds for it, which covers its turns up to the last one that ended, and
+  adds what comes after the reload. The rest of a turn running at the reload,
+  and a hold waiting then, are dropped with the events.
 - Two sessions folding the same old sessions into the `older` total at the
   same moment can count them twice. Folding happens only past 300 sessions.
 - A session already folded into `older` and then resumed counts twice: its
