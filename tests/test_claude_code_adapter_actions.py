@@ -2878,6 +2878,14 @@ class SetupCloseoutTests(AdapterTestCase):
             ("Bash", "uv tool install ruff"),
             ("Bash", "npm install -g pnpm"),
             ("Bash", "npm i --global pnpm"),
+            ("Bash", "npm i -g typescript"),
+            ("Bash", "npm install --location=global typescript"),
+            ("Bash", "bun add -g typescript"),
+            ("Bash", "bun add --global typescript"),
+            ("Bash", "pip install --user requests"),
+            ("Bash", "python -m pip install --user requests"),
+            ("Bash", "sudo pip install requests"),
+            ("Bash", "sudo npm install lodash"),
             ("Bash", "pnpm add -g zx"),
             ("Bash", "yarn global add pnpm"),
             ("Bash", "pipx install black"),
@@ -2894,6 +2902,24 @@ class SetupCloseoutTests(AdapterTestCase):
             with self.subTest(command=command):
                 change = "Set-Location" if tool == "PowerShell" else "cd"
                 self.assertTrue(self.setup_raised(tool, f'{change} "{outside}" && {command}'))
+
+    def test_a_folder_option_decides_where_an_install_runs(self) -> None:
+        outside = str(self.root / "scratch")
+        for command, raised in (
+            (f'cd "{outside}" && npm install --prefix "{{project}}" left-pad', True),
+            (f'cd "{outside}" && npm --prefix "{{project}}" install left-pad', True),
+            (f'cd "{outside}" && npm install --prefix="{{project}}" left-pad', True),
+            (f'cd "{outside}" && uv add --project "{{project}}" httpx', True),
+            (f'cd "{outside}" && pnpm --dir "{{project}}" add left-pad', True),
+            (f'cd "{outside}" && yarn --cwd "{{project}}" add left-pad', True),
+            # Near misses: the option points outside, from inside the project.
+            (f'npm install --prefix "{outside}" left-pad', False),
+            (f'uv add --project "{outside}" httpx', False),
+            # A relative value after a cd outside stays outside.
+            (f'cd "{outside}" && npm install --prefix ./tool left-pad', False),
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.setup_raised("Bash", command), raised)
 
     def test_an_install_in_the_project_or_an_unknown_folder_counts(self) -> None:
         outside = str(self.root / "scratch")

@@ -135,7 +135,7 @@ class ReviewItemSizeTests(ReviewTestCase):
                 if large:
                     self.assertEqual(reason(held).split("\n", 1)[0], CLOSEOUT_HOLD)
                     self.assertIn("- Review:", reason(held))
-                    self.assertIn("400 lines", reason(held))
+                    self.assertIn("400 changed lines of non-test code", reason(held))
                     self.assertIn("- Review:", stop(s)["reason"])
                 else:
                     self.assertEqual(decision(held), "pass")
@@ -184,7 +184,7 @@ class ReviewItemSizeTests(ReviewTestCase):
         self.meet_the_rest(s)
         held = commit_call(s)
         self.assertIn("- Review:", reason(held))
-        self.assertIn("600 lines", reason(held))
+        self.assertIn("600 changed lines of non-test code", reason(held))
 
     def test_on_the_base_branch_or_unmeasurable_no_review_and_the_rest_unchanged(self) -> None:
         def items(s: Session) -> str:
@@ -296,7 +296,8 @@ class CodeOnlySizeTests(ReviewTestCase):
                 self.assertEqual("- Review:" in held, large)
                 self.assertEqual("- Verification:" in held, large)
                 if large:
-                    self.assertIn("400 lines", held)
+                    self.assertIn("- Review: this branch's work is 400 changed lines of non-test code", held)
+                    self.assertIn("- Verification: this branch's work is 400 changed lines of non-test code", held)
 
     def test_pr_review_counts_only_non_test_code(self) -> None:
         for code, held in ((300, False), (400, True)):
@@ -309,7 +310,7 @@ class CodeOnlySizeTests(ReviewTestCase):
                 output = s.call("Bash", OPEN_PR)
                 self.assertEqual(reason(output).startswith("goated-hold: pr-review"), held)
                 if held:
-                    self.assertIn("changes 400 lines", reason(output))
+                    self.assertIn("has 400 changed lines of non-test code against its base", reason(output))
 
     def test_an_untracked_non_code_folder_adds_nothing(self) -> None:
         for name, large in (("notes.md", False), ("gen.py", True)):
@@ -492,6 +493,14 @@ class BriefedSessionReviewTests(ReviewTestCase):
         s.compact()
         self.turn(s)
         self.assertNotIn("- Review:", self.large_turn(s, "src/third.py"))
+
+    def test_a_brief_with_no_route_line_still_meets_it(self) -> None:
+        # Only a brief the adapter recognizes, by its route line, marks the session.
+        s = self.briefed(route="")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        self.branch(s, 0)
+        self.assertIn("- Review:", self.large_turn(s))
 
     def test_the_same_branch_in_a_typed_session_meets_it(self) -> None:
         s = self.session()

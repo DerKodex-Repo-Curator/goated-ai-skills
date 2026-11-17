@@ -548,9 +548,10 @@ def _pr_review_hold(size_of: Callable[[], int | None], proof: _Proof,
         return None
     return hold or Hold(
         "pr-review", JUSTIFIED_SKIP,
-        f"This pull request changes {size} lines against its base, {REVIEW_MIN_LINES} or "
-        f"more, so it is large enough to review before it lands. Load `{REVIEW_SKILL}` "
-        f"with the Skill tool{proof.within} and review the change with it. If size is not "
+        f"This pull request has {size} changed lines of non-test code against its base, "
+        f"{REVIEW_MIN_LINES} or more, so it is large enough to review before it lands. "
+        f"Load `{REVIEW_SKILL}` with the Skill tool{proof.within} and review the change with "
+        "it. If size is not "
         "what makes it worth reviewing, such as generated or vendored files, write "
         f"`goated-skip: {REVIEW_SKILL}: <reason>` on its own line instead. Then open the "
         "pull request again. The whole command was held, so rerun any steps chained "
@@ -1490,9 +1491,9 @@ def _review_item(changes: "_Changes", proof: _Proof, spawn_templates: dict[str, 
         "other template is not a review."
     )
     size_text = (
-        f"this branch's work is {size} lines against its base, {REVIEW_MIN_LINES} or more, "
-        "counting changed lines in code files outside test paths, committed, staged, unstaged, "
-        "and untracked, that git does not ignore"
+        f"this branch's work is {size} changed lines of non-test code against its base, "
+        f"{REVIEW_MIN_LINES} or more, counting committed, staged, unstaged, and untracked files "
+        "that git does not ignore"
     )
     skip = (f"Or, if size is not what makes it worth reviewing, such as generated or vendored "
             f"files, write `goated-skip: {REVIEW_SKILL}: <reason>`.")
@@ -1525,7 +1526,8 @@ def _verification_item(changes: "_Changes", proof: _Proof, intensity: str | None
         size = branch_size()
         if size is None or size < REVIEW_MIN_LINES:
             return []
-        triggers.append(f"this branch's work is {size} lines against its base")
+        triggers.append(
+            f"this branch's work is {size} changed lines of non-test code against its base")
     return [
         f"- Verification: {', and '.join(triggers)}, so verify the work before claiming it "
         f"is done. Load `{PROOF_SKILL}` and follow it. Or write "

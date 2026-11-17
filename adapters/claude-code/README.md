@@ -137,7 +137,7 @@ any `<system-reminder>` blocks, with `turnOrigin` `host_synthetic` and no
 `origin`. A route line in a typed prompt, a later prompt, or another
 session's message never counts, and a brief never carries an override. The
 `handoff` skill's spawn-brief template says where the parent puts the line.
-Such a brief also marks the session as briefed, for good: typed prompts and
+A brief with a route line also marks the session as briefed, for good (one with none does not): typed prompts and
 compactions do not end that, and a briefed session meets no closeout Review
 item (see the closeout table below).
 
@@ -148,7 +148,7 @@ item (see the closeout table below).
 | `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded, or, in a session routed by its brief, on a `standard` or `full` route, an installed `session-start-progressive-disclosure` has not loaded (see above); a spawn of a [read-only subagent](#plain-reads) passes | Each listed skill loads, or a corrected route line drops it; the brief's orientation skill loads, or a corrected `goated-route: direct` or `lightweight` route line drops it |
 | `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` [counts as loaded](#loads), and an inline message (or the tool's `message`) passes the [content check](#content-checks); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file. Once these are met, the commit meets the [closeout](#closeout-at-commit) |
 | `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` [counts as loaded](#loads); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file |
-| `pr-review` | justified-skip | A pull-request command or tool the `pull-request` gate holds, once that gate passes, when the pull request is [large](#large-pull-requests): 400 or more changed lines against its base | `standards-and-spec-review` [counts as loaded](#loads); then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
+| `pr-review` | justified-skip | A pull-request command or tool the `pull-request` gate holds, once that gate passes, when the pull request is [large](#large-pull-requests): 400 or more changed lines of non-test code against its base | `standards-and-spec-review` [counts as loaded](#loads); then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
 | `spawn` | strict | Starting an agent or session with a brief, except a [read-only subagent](#plain-reads) | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, each in this turn or an earlier one since the last compaction (see [Loads](#loads)); and the brief, on every spawn, passes the [content check](#content-checks) |
 | `design` | justified-skip | The turn's first write adding five or more lines to a non-test code file inside the project folder (or any such write while the skill does not count as loaded). A test file never triggers it and is not counted when finding the turn's first such write: in TDD the test comes first and the design happens in the code after it | `software-design-principles` [counts as loaded](#loads), a valid [design-reads line](#design-references) is in the turn, and every [reference the edit requires](#design-references) has been read since the last compaction |
 | `design-reads` | justified-skip | Any later write to a code or configuration file inside the project folder, once `software-design-principles` [counts as loaded](#loads), whose [signals or the turn's design-reads lines](#design-references) require a reference not read since the last compaction. The hold names each file and what selected it | Each required reference is read with the Read tool |
@@ -211,7 +211,7 @@ check after its own last change, that change is already proved.
 | Docs | A code file outside the tests changed | `doc-sync` counts as loaded, and a [change read](#change-reads) follows the last code change, before or after the load | `doc-sync` |
 | Design red flags | `software-design-principles` loaded in the turn, or counts as loaded and the turn made an edit the `design` gate triggers on (five or more lines added to a non-test code file), so a later turn of small edits meets no Design item | `software-design-principles/references/red-flags.md` is read after the last code change that is not [comment-only](#comment-only-edits), then a [change read](#change-reads) after that read. The item repeats the question `red-flags.md` ends with (name one input that would break this change, and say what happens); no answer is checked | `software-design-principles` |
 | Design citations | The Design red flags item applies, and the turn's edits required a [design reference](#design-references) | The turn cites a section of each required reference as `file#id`, such as `errors.md#crash-early`, in its reply text, the reply being finished included, or in a call field that carries route and skip lines: a shell or agent call's `description` or a Skill call's `args`, the commit call being judged included (see [Design references](#design-references)) | `software-design-principles` |
-| Review | The turn changed code, the session was not started from a brief, and the branch's work is [large](#large-branches): 400 or more changed lines against its base in code files outside test paths, counting committed, staged, unstaged, and untracked files that git does not ignore. A session whose first prompt was a brief from the session that started it meets no Review item for the whole session, typed prompts and compactions included: the starting session reviews the work when it inspects the report and the changed paths (`handoff`'s spawn-brief template). Missing state counts as not briefed | A [reviewer subagent](#reviewer-subagents) that finished after the last code change; or `standards-and-spec-review` counts as loaded and a [change read](#change-reads) follows the load and the last code change | `standards-and-spec-review` |
+| Review | The turn changed code, the session was not started from a brief, and the branch's work is [large](#large-branches): 400 or more changed lines against its base in code files outside test paths, counting committed, staged, unstaged, and untracked files that git does not ignore. A session whose first prompt was a brief with a route line from the session that started it meets no Review item for the whole session, typed prompts and compactions included: the starting session reviews the work when it inspects the report and the changed paths (`handoff`'s spawn-brief template). Missing state counts as not briefed | A [reviewer subagent](#reviewer-subagents) that finished after the last code change; or `standards-and-spec-review` counts as loaded and a [change read](#change-reads) follows the load and the last code change | `standards-and-spec-review` |
 | Verification | The turn changed code or a security-sensitive file, and one of these holds: the task's route is `full`; a subagent the turn spawned changed code; a security-sensitive file changed; or the branch's work is [large](#large-branches) | `verification-before-completion` counts as loaded | `verification-before-completion`, the Proof item's skip line, so one line answers both |
 | Security | `code-security-review` counts as loaded and a security-sensitive file (the `security` gate's paths, code or not) changed | A [change read](#change-reads) after the load and the last sensitive change | `code-security-review` |
 | Setup | The turn installed or added a dependency or tool by a command that names a package, in the project or globally, or wrote an env or settings file (see below) | `setup-scribe` counts as loaded, the load before or after the change | `setup-scribe` |
@@ -231,15 +231,22 @@ manager's options that take a value (`--filter`, `--workspace`, `--python`,
 `pnpm install --filter web` names no package. An **env or settings file** is
 `.env` or `.env.*` (`.env.example` included), or a `settings*.json` under
 `.claude/` or `.vscode/`, written by a write tool or a shell command. A
-**global or machine install** (`npm` or `pnpm` with `-g` or `--global`,
+**global, machine, or per-user install** (`npm`, `pnpm`, or `bun` with `-g`
+or `--global`, `npm --location=global`, `pip install --user`,
 `yarn global add`, `uv tool install`, `pipx install`, `cargo install`,
-`go install`, `gem install`, and every `brew`, `apt`, `apt-get`, `winget`,
-`choco`, or `scoop` install; `GLOBAL_INSTALLS` in `shell.py`) counts
-wherever it runs. Any other package install counts unless it runs in a folder
-certainly outside the project: one a `cd` in the same command moved to, as a
-write's folder is followed (see [Writes](#what-it-holds)), so
-`cd /tmp/x && pip install requests` does not count, and one after a `cd` the
-adapter cannot follow (`cd "$TMPDIR" && …`, `cd sub && …`) does. An env or
+`go install`, `gem install`, every `brew`, `apt`, `apt-get`, `winget`,
+`choco`, or `scoop` install, and any install run under `sudo`;
+`GLOBAL_INSTALLS` and `GLOBAL_OPTIONS` in `shell.py`) counts wherever it
+runs. Any other package install counts unless it goes into a folder
+certainly outside the project. That folder is the one a folder option names
+(`npm --prefix`, `pnpm --dir` or `-C`, `yarn` or `bun --cwd`,
+`uv --project` or `--directory`, `poetry -C` or `--directory`, `go -C`;
+`FOLDER_OPTIONS` in `shell.py`), else the one it runs in: one a `cd` in the
+same command moved to, as a write's folder is followed (see
+[Writes](#what-it-holds)). So `cd /tmp/x && pip install requests` does not
+count, `cd /tmp/x && npm install --prefix <project> lodash` does, and so does
+one after a `cd` the adapter cannot follow (`cd "$TMPDIR" && …`,
+`cd sub && …`). An env or
 settings file counts only
 inside the project, by the same rule as code changes, so a scratch folder's
 `.claude/settings.json` does not, and neither do global settings such as
@@ -1485,6 +1492,10 @@ of the call's prompt, which is normally already there.
   docs, or configuration meets no Review item. Test paths are judged from the
   top of the checkout, so in a project below that top a top-level `spec/`
   folder of the project is not a test path.
+- A plain `pip install` or `conda install` is judged by the folder it runs
+  in, but it installs into the active environment, which may be the
+  project's virtual environment though the command ran elsewhere; such an
+  install from a scratch folder raises no Setup item.
 - A session started from a brief meets no Review item, trusting the
   starting session to review: a brief sent with no review planned leaves a
   large branch unreviewed. Only a brief the adapter recognizes, with a route
