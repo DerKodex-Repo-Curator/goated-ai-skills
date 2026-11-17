@@ -101,7 +101,10 @@ def fold_turns(
         state.task_unknown = False
     for turn in turns:
         loads = [n for n in (goated_skill_name(raw, namespaces) for raw in turn.loads) if n]
-        if ROUTER_SKILL in loads:
+        if ROUTER_SKILL in loads or turn.brief_route is not None:
+            # A route line in the brief that opened the session means the
+            # session that started this one routed the work, as a subagent's
+            # parent does; its required skills must still load here.
             state.router_loaded = True
         started = _task_started_in(turn)
         if started is not None:

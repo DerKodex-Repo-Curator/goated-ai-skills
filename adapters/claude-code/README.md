@@ -104,9 +104,23 @@ task, and a line counts only in its own turn and agent. No other field counts,
 so file text, edit text, and commands never carry a line, and no typed
 [override](#user-overrides) is ever read from a call.
 
+A session started from another session gets that session's brief as its
+first prompt. A valid route line on its own line in that brief, outside
+fenced blocks, is the first turn's route, as if the new session had written
+it first, and it meets `router-first`, as a subagent's parent brief does.
+The route's `requires:` skills must still load in the new session before its
+first write (`pipeline`), and a later route line in the turn corrects it as
+usual. Only the session's first prompt counts, and only in the shape the
+desktop app records a brief: text opening `Background (from the session that
+started this one)` or `Task (from the session that started this one)` after
+any `<system-reminder>` blocks, with `turnOrigin` `host_synthetic` and no
+`origin`. A route line in a typed prompt, a later prompt, or another
+session's message never counts, and a brief never carries an override. The
+`handoff` skill's spawn-brief template says where the parent puts the line.
+
 | Gate | Kind | Holds | Clears when |
 | --- | --- | --- | --- |
-| `router-first` | strict | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction | `using-goated-ai-skills` loads |
+| `router-first` | strict | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction | `using-goated-ai-skills` loads, or the session's first prompt is a brief with a route line (see above) |
 | `route-line` | strict | The first write or spawn after each user prompt until the current turn has a valid `goated-route:` line; also `goated-route: continue` when [missing or reset state](#failing-open) lost the task | A valid route line appears in the turn |
 | `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded | Each listed skill loads, or a corrected route line drops it |
 | `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` loads in the turn, and an inline message (or the tool's `message`) passes the [content check](#content-checks); then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
@@ -586,7 +600,8 @@ Claude Code also submits prompts nobody typed in this session:
   from another Claude session, a brief from the session that started this
   one, or any prompt whose recorded origin is not a person. They start a new
   turn, which needs its own route line (`goated-route: continue` when it
-  continues the current task), and never carry overrides: not ones they quote,
+  continues the current task; a session's first brief may carry it, see
+  [What It Holds](#what-it-holds)), and never carry overrides: not ones they quote,
   and not ones you typed earlier, which covered only the turn your prompt
   opened. The adapter neither records nor announces an override for them.
   The user-prompt hook's input does not say where a prompt came from, so the
@@ -751,6 +766,13 @@ of the call's prompt, which is normally already there.
   in a call made in an earlier message of the turn, such as the Skill call
   that loads a required skill. If the line is still not seen, the holds
   point the user to the typed override: `skip routing`, or `skip <skill>` for a skip line.
+- A brief's route line is recognized only in the shape the desktop app
+  records (see [What It Holds](#what-it-holds)); a brief passed to
+  `claude -p`, or in any other shape, is a prompt like any other, so its
+  session loads the router and writes its own route line. After a compaction
+  the brief is gone, so `router-first` needs the router again. Harness
+  nudges such as "The user hasn't heard from you in a while" are recorded as
+  `attachment` entries and never open a turn.
 
 - Shell analysis is lexical, not a shell. These forms are not seen, so a
   write in them meets only `router-first` and a commit or pull request in
