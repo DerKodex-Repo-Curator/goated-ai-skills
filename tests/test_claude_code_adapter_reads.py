@@ -43,6 +43,13 @@ READS = [
     ("Bash", "tail -n 5 a.py"),
     ("PowerShell", "Get-Content a|Select-String x"),
     ("PowerShell", 'Get-Content "a.py"'),
+    # Near misses of the second-round probes in HELD.
+    ("Bash", "cat a # a note"),
+    ("Bash", "cat a >&1"),
+    ("Bash", "cat a >&2 | wc -l"),
+    ("Bash", "cat a 2>&1|wc -l"),
+    ("Bash", "cat a 2>&1>/dev/null"),
+    ("PowerShell", "Get-Content 'a' ; Get-Content b"),
 ]
 
 # Each is held before the router loads: the near misses of a read.
@@ -112,6 +119,25 @@ HELD = [
     ("PowerShell", "Get-Content a\rRemove-Item b"),
     ("PowerShell", "Get-Content a\x00"),
     ("PowerShell", r"Get-Content src\a.py"),
+    # Second-round probes. PowerShell reads curly quotes as quotes.
+    ("PowerShell", 'Get-Content “a" ; Remove-Item b ; "”'),
+    ("PowerShell", "Get-Content ‘a' ; Remove-Item b ; '’"),
+    ("PowerShell", 'Get-Content "a” ; Remove-Item b ; “"'),
+    ("PowerShell", "Get-Content 'a’ ; Remove-Item b ; ‘'"),
+    ("PowerShell", 'Get-Content „a" ; Remove-Item b'),
+    ("PowerShell", "Get-Content a Remove-Item b"),
+    ("Bash", "cat café.txt"),
+    # PowerShell ends a block comment at `#>`, not at the line's end.
+    ("PowerShell", "Get-Content a <# x #> ; Remove-Item b"),
+    ("PowerShell", "Get-Content a <# #>;Remove-Item b"),
+    ("PowerShell", "Get-Content a <# x\n#> ; Remove-Item b"),
+    ("PowerShell", "ls <# x #> | Remove-Item"),
+    ("PowerShell", "cat a <# x #> ; rm b"),
+    # `>&` and a word that only starts with a digit writes that file.
+    ("Bash", "cat a >&1x"),
+    ("Bash", "cat a >&2x"),
+    ("Bash", "cat a >&9x"),
+    ("Bash", "cat a >&-x"),
 ]
 
 
@@ -176,7 +202,8 @@ class ShellReadsBeforeTheRouterTests(ReadsTestCase):
 
     def test_a_redirect_to_a_named_descriptor_writes_after_the_router_too(self) -> None:
         # `>&word` with a word that is not a number writes that file, as `&>` does.
-        for command in ("cat a >&out.txt", "cat a >& out.txt", "cat a 1>&out.txt"):
+        for command in ("cat a >&out.txt", "cat a >& out.txt", "cat a 1>&out.txt",
+                        "cat a >&1x", "cat a >&2x"):
             with self.subTest(command=command):
                 s = self.fresh()
                 s.load(ROUTER)

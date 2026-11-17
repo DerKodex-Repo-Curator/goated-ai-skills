@@ -458,11 +458,14 @@ The call is also held when its text holds anything the lexical reading may
 not follow as the shell does, even inside quotes: a `$` (variables,
 `$(…)` inside double quotes, `${x:=…}`, arithmetic), a backtick, a backslash
 (an escape in bash, where `-del\ete` is `-delete`, but a plain character in
-PowerShell), `<<<`, a `>&` with no descriptor after it, a control character
-other than a newline or tab (a lone carriage return), or a PowerShell
-here-string. So a Windows path with backslashes, such as
-`Get-Content src\a.py`, is held; Read or a forward-slash path passes. When
-the analysis cannot tell, the call is held. The lists are
+PowerShell), `<<<`, a `>&` not followed by a whole descriptor (`>&2` is
+fine, `>&2x` writes the file `2x`), any character but printable ASCII, a
+newline, or a tab (curly quotes, which PowerShell reads as quotes; a lone
+carriage return or U+2028, which it reads as a line break), a PowerShell
+block comment `<#`, or a PowerShell here-string. So a Windows path with
+backslashes, such as `Get-Content src\a.py`, is held; Read or a
+forward-slash path passes. When the analysis cannot tell, the call is held.
+The lists are
 `READ_ONLY_COMMANDS`, `READ_ONLY_REFUSED_ARGS`, `GIT_READ_SUBCOMMANDS`,
 `GIT_READ_REFUSED_ARGS`, and `NOT_PLAINLY_SPELLED_RE` in `shell.py`. Once the
 router loads, commands are judged as before.
@@ -821,9 +824,10 @@ of the call's prompt, which is normally already there.
   describes.
 - A [plain read](#plain-reads) can still run a program that git config
   names, such as `core.fsmonitor` under `git status`, or `diff.external` and
-  a `textconv` driver set for the repository; only the `--ext-diff` and
-  `--textconv` options are refused. A passing read can also hang: `tail -f`
-  never ends on its own.
+  a `textconv` driver set for the repository, which a plain `git diff`,
+  `git show`, or `git log -p` runs too. Refusing the `--ext-diff` and
+  `--textconv` options does not stop them. A passing read can also hang:
+  `tail -f` never ends on its own.
 - A shell call's result stands for the whole command, not for each command
   in it. A check in the same command as a write proves that write even when
   the command hid the check's failure (`pytest || true`, `pytest; echo done`,

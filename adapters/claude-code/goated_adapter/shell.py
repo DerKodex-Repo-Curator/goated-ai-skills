@@ -380,7 +380,10 @@ READ_ONLY_REFUSED_ARGS = {
 # git subcommands that only print the repository's state or history.
 GIT_READ_SUBCOMMANDS = frozenset({"status", "diff", "log", "show"})
 # Their arguments refused: `--output` writes the printed text to a file, and
-# `--ext-diff` and `--textconv` run programs the repository's config names.
+# `--ext-diff` and `--textconv` ask for programs the repository's config
+# names. Refusing them does not stop those programs: a plain `git diff`,
+# `git show`, or `git log -p` runs `diff.external` and textconv drivers too
+# (README "Known Limits").
 GIT_READ_REFUSED_ARGS = ("--output", "--ext-diff", "--textconv")
 # The only git options allowed before the subcommand: `-C` picks the folder,
 # and the others turn the pager off. `-c` can set a program to run, such as
@@ -389,6 +392,10 @@ GIT_READ_GLOBAL_OPTIONS = frozenset({"-C", "--no-pager", "-P"})
 # Separators a read may end at: pipes and the list separators. Not `&`, which
 # leaves a job running, nor an opening `(`, `{`, or `$(`, nor a closing one.
 READ_ONLY_ENDS = ("", "|", "&&", "||", ";", "\n")
+# The `&` of `>&1` or `>&-`: duplicating or closing a descriptor writes no
+# file. The number or `-` must end the word: `>&1x` writes the file `1x`.
+FD_DUPLICATE = r"&(?:\d+|-)(?=[\s|;&<>()]|$)"
+FD_DUPLICATE_RE = re.compile(FD_DUPLICATE)
 # Text this lexical reading may not follow as the shell does, so a command
 # holding any of it is never a plain read, even inside quotes:
 # - `$` expands, and runs code through `$(…)` in double quotes, `${x:=$(…)}`,
@@ -397,11 +404,15 @@ READ_ONLY_ENDS = ("", "|", "&&", "||", ";", "\n")
 # - a backslash escapes any character in bash (`-del\ete` is `-delete`) but
 #   is a plain character in PowerShell (`a\; Remove-Item b` runs both);
 # - `<<<` feeds a word that is expanded first;
-# - `>&` with no descriptor after it writes a file;
-# - a control character other than a newline or tab, such as a lone carriage
-#   return, which PowerShell reads as a line break;
+# - `>&` with no whole descriptor after it writes a file;
+# - any character but printable ASCII, a newline, or a tab: PowerShell reads
+#   curly quotes as quotes and a lone carriage return or U+2028 as a line
+#   break, which this reading does not;
+# - a PowerShell block comment, `<#`, which ends at `#>`, not at the line's end;
 # - a PowerShell here-string, `@"` or `@'`.
-NOT_PLAINLY_SPELLED_RE = re.compile(r"[$`\\]|<<<|>&(?![\d-])|[\x00-\x08\x0b-\x1f\x7f]|@[\"']")
+NOT_PLAINLY_SPELLED_RE = re.compile(
+    rf"[$`\\]|<<<|>(?=&)(?!{FD_DUPLICATE})|[^\t\n\x20-\x7e]|<#|@[\"']"
+)
 
 
 def _reads_only(segment: "_Segment") -> bool:
@@ -421,6 +432,8 @@ def _reads_only(segment: "_Segment") -> bool:
         return False
     if segment.nested or segment.heredocs or segment.after not in READ_ONLY_ENDS:
         return False
+    # `$null` never gets here, since a read holds no `$`; it stays a null
+    # target for the write analysis, where `2>$null` writes nothing.
     if any(target.lower() not in NULL_TARGETS for target in segment.redirects):
         return False
     if name == "git":
@@ -538,8 +551,6 @@ def _is_absolute(path: str) -> bool:
 SHELL_KEYWORDS = frozenset(
     {"if", "then", "else", "elif", "do", "while", "until", "for", "select", "!"}
 )
-# The `&` of `>&1` or `>&-`: duplicating or closing a descriptor writes no file.
-FD_DUPLICATE_RE = re.compile(r"&[\d-]")
 # Words that open a compound command, and the words that close one.
 COMPOUND_OPEN = frozenset({"if", "while", "until", "for", "select", "case"})
 COMPOUND_CLOSE = frozenset({"fi", "done", "esac"})
