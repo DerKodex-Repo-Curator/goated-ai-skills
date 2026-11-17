@@ -2,6 +2,9 @@
 
 Source spec: `docs/specs/2026-11-17-portable-enforcement-core.md`
 
+Parallel waves across all five order files:
+[hook-friction-round-2-waves.md](hook-friction-round-2-waves.md)
+
 1. `tickets/079-enforcement-contract-and-event-model.md`
    - Blocked by: 065, 068, 069, 070, 072 and 073
    - Enables: a harness-neutral statement of the rules, and scenarios any

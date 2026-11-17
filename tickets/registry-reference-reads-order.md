@@ -2,6 +2,9 @@
 
 Source spec: `docs/specs/2026-11-17-registry-reference-reads.md`
 
+Parallel waves across all five order files:
+[hook-friction-round-2-waves.md](hook-friction-round-2-waves.md)
+
 1. `tickets/066-registry-declares-every-reference.md`
    - Blocked by: None
    - Enables: a complete, checked record of when each reference is read.

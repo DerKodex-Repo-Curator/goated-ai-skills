@@ -2,6 +2,9 @@
 
 Source spec: `docs/specs/2026-11-17-adapter-written-line-holds.md`
 
+Parallel waves across all five order files:
+[hook-friction-round-2-waves.md](hook-friction-round-2-waves.md)
+
 1. `tickets/061-adapter-design-closeout-citations-and-question.md`
    - Blocked by: None
    - Enables: citations that clear at commit, a concrete question at the

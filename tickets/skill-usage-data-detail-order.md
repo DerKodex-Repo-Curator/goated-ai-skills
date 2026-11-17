@@ -2,6 +2,9 @@
 
 Source spec: `docs/specs/2026-11-17-skill-usage-data-detail.md`
 
+Parallel waves across all five order files:
+[hook-friction-round-2-waves.md](hook-friction-round-2-waves.md)
+
 1. `tickets/075-skill-usage-hold-detail.md`
    - Blocked by: None
    - Enables: closeout items, skip reasons and kinds of unanswered hold in

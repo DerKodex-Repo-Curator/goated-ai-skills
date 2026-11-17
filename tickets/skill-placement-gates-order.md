@@ -2,6 +2,9 @@
 
 Source spec: `docs/specs/2026-11-17-skill-placement-gates.md`
 
+Parallel waves across all five order files:
+[hook-friction-round-2-waves.md](hook-friction-round-2-waves.md)
+
 1. `tickets/069-adapter-closeout-review-and-verification.md`
    - Blocked by: `tickets/065-adapter-loads-count-until-compaction.md`
    - Enables: review and verification before a large or risky commit.
