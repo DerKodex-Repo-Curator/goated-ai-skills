@@ -19,7 +19,8 @@ the source, then act or respond with evidence.
 ## Activation
 
 Load this skill when feedback from a person, tool, PR, issue, or reviewer agent
-needs technical classification. Do not load it for a general standards/spec or
+needs technical classification. After a reviewer subagent reports, load it
+before the first code edit. Do not load it for a general standards/spec or
 security review when no feedback is being received.
 
 Reuse fresh work-envelope evidence and existing review scope. Refresh only

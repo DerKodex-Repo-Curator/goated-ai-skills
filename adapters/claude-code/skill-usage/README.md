@@ -95,7 +95,7 @@ load, read, or skip line answered counts as one of three kinds:
 
 A Skill call whose result is an error
 loaded nothing, so it neither counts as a load nor answers a hold. A
-`justified-skip` hold (`design`, `design-reads`, `reference-reads`, `security`,
+`justified-skip` hold (`design`, `design-reads`, `reference-reads`, `review-intake`, `security`,
 `conflict-resolution`, `repeated-failure`, `pr-review`, `closeout`) also counts as declined when a
 skip line names the skill in the same turn, before or after the hold; a
 `strict` hold (`router-first`, `route-line`, `pipeline`, `commit`,

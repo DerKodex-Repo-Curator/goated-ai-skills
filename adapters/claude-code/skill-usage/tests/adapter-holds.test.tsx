@@ -48,12 +48,15 @@ test('each action hold reads as its gate and kind and names the skills it asks f
     // A shell write is held like a write tool's.
     ['security', 'Bash', ADAPTER_TEXTS.shellWrite, 'justified-skip', ['code-security-review']],
     ['conflict-resolution', 'Edit', ADAPTER_TEXTS.conflictResolution, 'justified-skip', ['resolving-merge-conflicts']],
+    // After a reviewer subagent reports, fixes start with the intake skill (Ticket 070).
+    ['review-intake', 'Edit', ADAPTER_TEXTS.reviewIntake, 'justified-skip', ['receiving-code-review']],
     // The quoted check command it names is no skill.
     ['repeated-failure', 'Edit', ADAPTER_TEXTS.repeatedFailure, 'justified-skip', ['diagnose']],
   ]
   for (const [gate, tool, text, kind, named] of cases) {
     expect(preHold(tool, text, 1)).toEqual([expect.objectContaining({ kind: 'nudge', hook: gate, holdKind: kind, named })])
   }
+  expect(hookName('review-intake')).toBe('review-intake hold')
 })
 
 test('holds that ask for a read, missing headings or a message fix name no skill, so they count by gate and kind alone', async () => {
@@ -252,6 +255,7 @@ for (const [gate, tool, text, skill] of [
   ['conflict-resolution', 'Edit', ADAPTER_TEXTS.conflictResolution, 'resolving-merge-conflicts'],
   ['repeated-failure', 'Edit', ADAPTER_TEXTS.repeatedFailure, 'diagnose'],
   ['pr-review', 'Bash', ADAPTER_TEXTS.prReview, 'standards-and-spec-review'],
+  ['review-intake', 'Edit', ADAPTER_TEXTS.reviewIntake, 'receiving-code-review'],
 ] as const) {
   const reason = 'the edit changes one constant and nothing else'
   test(`the ${gate} hold on ${tool} is followed by loading ${skill}, declined by a skip line with its reason, and otherwise ignored`, async () => {

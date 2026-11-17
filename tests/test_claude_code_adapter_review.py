@@ -299,7 +299,8 @@ class ReviewItemMetTests(ReviewTestCase):
         s.load("subagent-driven-development")
         s.read(REVIEWER_PROMPT)
         self.reviewer(s, "r2")
-        self.write(s, "src/export.py", 21)
+        s.load("receiving-code-review")  # The review-intake gate holds a fix until it loads.
+        self.assertEqual(decision(self.write(s, "src/export.py", 21)), "pass")
         s.run("pytest -q")
         s.run("git diff")
 

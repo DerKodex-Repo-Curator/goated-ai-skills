@@ -14,7 +14,8 @@ review when the branch is large, and `verification-before-completion` when
 the work is large, delegated, sensitive, or on a `full` route, and close a
 turn that changed setup with `setup-scribe`. The `reference-reads` gate
 enforces the reads the installed registry declares for a loaded skill's
-references (`reference_reads`).
+references (`reference_reads`). The `review-intake` gate starts the fixes
+after a reviewer subagent's report with `receiving-code-review`.
 
 Every decision is a pure function of the current turn as the transcript
 records it, the user's typed overrides for that turn, and what counts from
@@ -72,6 +73,7 @@ SECURITY_SKILL = "code-security-review"
 DOC_SYNC_SKILL = "doc-sync"
 HANDOFF_SKILL = "handoff"
 PROOF_SKILL = "verification-before-completion"
+INTAKE_SKILL = "receiving-code-review"
 DIAGNOSE_SKILL = "diagnose"
 # How many failures in a row of one check command, in one turn, make the repeated-failure hold.
 REPEATED_FAILURES = 2
@@ -167,6 +169,9 @@ SPAWN_BRIEF_FIELDS = {
     "mcp__ccd_session__start_session": "prompt",
     "mcp__ccd_session__hand_off_to_session": "remaining_plan",
 }
+# The spawn tools that start a subagent, whose report comes back into this
+# turn; the others start a side session, which reports elsewhere.
+SUBAGENT_TOOLS = frozenset({"Agent", "Task"})
 # MCP tools that open a pull or merge request, such as a GitHub server's.
 PR_TOOL_RE = re.compile(r"^mcp__.+__create_(?:pull|merge)_request$")
 # MCP tools that record a commit, such as a GitHub server's file tools or a git
@@ -386,6 +391,7 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     """
 
     proof = _Proof(turn, overrides, namespaces, earlier=earlier)
+    reviewed = lambda path: _review_intake_hold(path, proof, closeout)
     spawned = functools.cache(subagents) if subagents else dict
     changes = lambda: _Changes(turn, spawned(), project)
     at_commit = lambda by_tool=False: closeout and check_closeout(
@@ -405,7 +411,7 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
                 lambda: changed_lines(cwd, command.pr_base, command.pr_head), proof, changes)
         for target in command.write_targets:
             if _in_project(target, project, target not in command.unplaced_targets):
-                hold = hold or _security_hold(_norm(target), proof)
+                hold = hold or _security_hold(_norm(target), proof) or reviewed(_norm(target))
         if command.non_check_writes:
             hold = hold or _repeated_failure_hold(proof)
         return hold
@@ -429,7 +435,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         hold = _conflict_hold([path], tool_input, proof)
         if hold is None and _in_project(path, project):
             # A scratch file elsewhere is not the project's design or security.
-            hold = (_security_hold(path, proof) or _design_hold(path, tool_input, proof, project)
+            hold = (_security_hold(path, proof) or reviewed(path)
+                    or _design_hold(path, tool_input, proof, project)
                     or _reference_reads_hold(path, tool_input, proof, project, references))
         return hold or _repeated_failure_hold(proof)
     return None
@@ -823,6 +830,43 @@ def brief_templates(tool_name: str, tool_input: dict, turn: Turn, overrides: dic
     brief = str(tool_input.get(SPAWN_BRIEF_FIELDS[tool_name]) or "")
     proof = _Proof(turn, overrides, namespaces, earlier=earlier)
     return [t.reference for t in _matched_templates(brief, proof)]
+
+
+def _review_intake_hold(path: str, proof: _Proof, closeout: Closeout | None) -> Hold | None:
+    """Hold a write to a project code file once a reviewer subagent's report
+    has arrived in the turn, until `receiving-code-review` counts as loaded
+    (Ticket 070), as the skill's Activation states. A skip line naming the
+    skill clears it for the turn. Without `closeout`, as in a subagent, which
+    records no spawn templates, nothing is held."""
+
+    if not closeout or not is_code(path) or proof.loaded_or_skipped(INTAKE_SKILL):
+        return None
+    templates = closeout.spawn_templates or {}
+    if not any(call.name in SUBAGENT_TOOLS and _reviewer_returned(call, proof, templates)
+               for call in proof.turn.calls):
+        return None
+    return Hold(
+        "review-intake", JUSTIFIED_SKIP,
+        f"A reviewer subagent reported in this turn. Before the first code edit, load "
+        f"`{INTAKE_SKILL}` with the Skill tool and classify each finding as accepted, "
+        "rejected, unclear, or a user decision; then fix only the accepted ones. If the "
+        f"report has nothing to act on, write `goated-skip: {INTAKE_SKILL}: <reason>` on its "
+        "own line instead. This edit was not applied. "
+        + unseen_line_advice("skip line", f"skip {INTAKE_SKILL}"),
+    )
+
+
+def _reviewer_returned(call, proof: _Proof, spawn_templates: dict[str, list[str]]) -> bool:
+    """True for a finished spawn whose brief followed the reviewer prompt
+    (`spawn_templates`, by tool_use_id) and whose report has arrived: at once,
+    or for one started in the background, once its completion arrived in the
+    turn. A held or failed spawn reported nothing."""
+
+    return (
+        call.ok and call.name in SPAWN_BRIEF_FIELDS
+        and contracts.REVIEWER_TEMPLATE.reference in spawn_templates.get(call.tool_id, ())
+        and (not call.launched_async or call.agent_id in proof.turn.finished_agents)
+    )
 
 
 def _security_hold(path: str, proof: _Proof) -> Hold | None:
@@ -1348,12 +1392,8 @@ def _review_item(changes: "_Changes", proof: _Proof, spawn_templates: dict[str, 
     if proof.skipped(REVIEW_SKILL):
         return []
     last = changes.code[-1].index
-    if any(
-        index > last and call.ok and call.name in SPAWN_BRIEF_FIELDS
-        and contracts.REVIEWER_TEMPLATE.reference in spawn_templates.get(call.tool_id, ())
-        and (not call.launched_async or call.agent_id in proof.turn.finished_agents)
-        for index, call in enumerate(proof.turn.calls)
-    ):
+    if any(index > last and _reviewer_returned(call, proof, spawn_templates)
+           for index, call in enumerate(proof.turn.calls)):
         return []
     loaded = proof.load_index(REVIEW_SKILL)
     if loaded is not None and changes.read_after(max(loaded, last)):
