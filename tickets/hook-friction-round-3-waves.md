@@ -16,7 +16,7 @@ to 4 there are merged.
 
 | Wave | Ticket | Round | Area | Type | Blocked by |
 | --- | --- | --- | --- | --- | --- |
-| 5 (ready now) | [078](078-skill-usage-reference-counts.md) | 2 | mod | AFK | 068, 076 (merged) |
+| 5 | [078](078-skill-usage-reference-counts.md) | 2 | mod | AFK | 068, 076 (merged) |
 | 5 | [086](086-adapter-repeated-failure-red-runs.md) | 3 | adapter | AFK | None |
 | 5 | [087](087-adapter-routing-orientation-by-reads-and-outside-writes.md) | 3 | adapter and skills | AFK | None |
 | 5 | [088](088-adapter-wider-plain-reads.md) | 3 | adapter | AFK | None |
@@ -28,7 +28,7 @@ to 4 there are merged.
 | 6 | [092](092-adapter-whole-reads-and-read-order.md) | 3 | adapter and mod | AFK | 078, 089, 091 |
 | 6 | [097](097-adapter-script-write-paths-by-name-and-folder.md) | 3 | adapter | AFK | 093 |
 | 7 | [095](095-adapter-joint-holds-in-one-message.md) | 3 | adapter and mod | AFK | 086 to 094, 097 |
-| 8 | [096](096-adapter-early-closeout-note.md) | 3 | adapter | AFK | 095 |
+| 8 (ready now) | [096](096-adapter-early-closeout-note.md) | 3 | adapter | AFK | 095 |
 | 9 | [079](079-enforcement-contract-and-event-model.md) | 2 | core | HITL (maintainer accepts the ADR and event model) | its round 2 blockers (merged), and 086 to 096 |
 | 10 | [080](080-adapter-rules-read-the-event-model.md) | 2 | adapter | AFK | 079 |
 | 11 | [081](081-shared-enforcement-core.md) | 2 | core | AFK | 080 |
