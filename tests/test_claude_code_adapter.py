@@ -633,6 +633,103 @@ class SpawnTests(AdapterTestCase):
             self.assertEqual(entries[0]["hooks"][0]["args"], ["<adapter-dir>/goated_hook.py"])
 
 
+class SessionCardTests(AdapterTestCase):
+    """A start_session card runs nothing until the user starts it (spec R7)."""
+
+    START = "mcp__ccd_session__start_session"
+    CARD = {"title": "Audit the exporter", "initiation": "own_initiative", "prompt": BRIEF}
+    OFFER = {"title": "Audit the exporter", "initiation": "offer"}
+
+    def test_a_proposal_card_passes_routing_and_meets_the_spawn_hold(self) -> None:
+        s = self.session
+        s.prompt("Fix the flaky export test.")
+
+        held = s.call(self.START, self.CARD)
+        self.assertTrue(reason(held).startswith("goated-hold: spawn | strict"), reason(held))
+        s.brief_with_handoff()
+        self.assertEqual(decision(s.call(self.START, self.CARD)), "pass")
+        # Near miss: the same brief started now is a spawn, held by router-first.
+        started = s.call(self.START, {**self.CARD, "initiation": "user_asked"})
+        self.assertTrue(reason(started).startswith("goated-hold: router-first"))
+
+    def test_a_proposal_card_passes_route_line_and_pipeline(self) -> None:
+        s = self.session
+        s.prompt("Fix the flaky export test.")
+        s.load(ROUTER)
+        s.brief_with_handoff()
+
+        self.assertEqual(decision(s.call(self.START, self.CARD)), "pass")
+        # Near miss: an Agent spawn with the same brief needs the route line.
+        self.assertTrue(reason(s.call("Agent", {"prompt": BRIEF})).startswith("goated-hold: route-line"))
+
+        s.say("goated-route: standard | requires: tdd")
+        self.assertEqual(decision(s.call(self.START, self.CARD)), "pass")
+        # Near miss: the Agent spawn is held by pipeline.
+        self.assertTrue(reason(s.call("Agent", {"prompt": BRIEF})).startswith("goated-hold: pipeline"))
+
+    def test_an_offer_card_passes_every_hold(self) -> None:
+        s = self.session
+        s.prompt("Fix the flaky export test.")
+
+        self.assertEqual(decision(s.call(self.START, self.OFFER)), "pass")
+        # Near miss: an offer that starts a saved proposal starts a session.
+        held = s.call(self.START, {**self.OFFER, "proposal_id": "p-1"})
+        self.assertTrue(reason(held).startswith("goated-hold: router-first"))
+
+    def test_starts_and_unknown_initiations_are_held_as_spawns(self) -> None:
+        cases = {
+            "user_asked": {**self.CARD, "initiation": "user_asked"},
+            "no initiation": {"title": "Audit", "prompt": BRIEF},
+            "unknown initiation": {**self.CARD, "initiation": "later"},
+            "saved proposal": {"proposal_id": "p-1", "initiation": "own_initiative"},
+            "saved proposal, empty id": {**self.CARD, "proposal_id": ""},
+            # Not a string, so not a card: it meets the gates rather than failing open.
+            "list initiation": {**self.CARD, "initiation": ["offer"]},
+            "dict initiation": {**self.CARD, "initiation": {"kind": "offer"}},
+        }
+        for name, tool_input in cases.items():
+            with self.subTest(case=name):
+                (self.root / name).mkdir()
+                s = Session(self.root / name, session_id=f"card-{name}")
+                s.prompt("Fix the flaky export test.")
+                held = s.call(self.START, tool_input)
+                self.assertTrue(reason(held).startswith("goated-hold: router-first"), name)
+
+    def test_hand_off_to_session_is_unchanged(self) -> None:
+        s = self.session
+        s.prompt("Fix the flaky export test.")
+        hand_off = {"title": "Audit", "initiation": "own_initiative", "remaining_plan": BRIEF}
+
+        held = s.call("mcp__ccd_session__hand_off_to_session", hand_off)
+        self.assertTrue(reason(held).startswith("goated-hold: router-first"))
+        # Near miss: the same fields on start_session make a card.
+        card = {**hand_off, "prompt": BRIEF}
+        self.assertFalse(reason(s.call(self.START, card)).startswith("goated-hold: router-first"))
+
+    def test_a_card_between_route_lines_does_not_start_a_new_task(self) -> None:
+        s = self.session
+        s.prompt("Fix the flaky export test.")
+        s.load(ROUTER)
+        s.load("tdd")
+        s.say("goated-route: standard | requires: tdd")
+        s.call(self.START, self.OFFER)
+        s.say("goated-route: standard | requires: tdd")
+        # The card ran nothing, so the second line corrects the first and tdd still counts.
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+        (self.root / "near").mkdir()
+        near = Session(self.root / "near", session_id="card-near-miss")
+        near.prompt("Fix the flaky export test.")
+        near.load(ROUTER)
+        near.load("tdd")
+        near.brief_with_handoff()
+        near.say("goated-route: standard | requires: tdd")
+        near.call("Agent", {"prompt": BRIEF})
+        near.say("goated-route: standard | requires: tdd")
+        # Near miss: a spawn that ran is work, so the second line is a new task.
+        self.assertTrue(reason(near.call("Edit")).startswith("goated-hold: pipeline"))
+
+
 class OverrideTests(AdapterTestCase):
     def test_user_typed_skip_routing_stands_routing_holds_down_for_that_turn(self) -> None:
         s = self.session

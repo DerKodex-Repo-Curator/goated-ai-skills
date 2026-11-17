@@ -226,8 +226,16 @@ sees only the whole command's result.
   [Shell writes](#shell-writes)). **Spawns** are `Agent` (or `Task`, its name
   in older Claude Code versions), `mcp__ccd_session__start_session`, and
   `mcp__ccd_session__hand_off_to_session`; they hand work on, so they are held
-  like writes. A session tool call with no brief, such as an offer card, is not
-  a spawn for the `spawn` gate. **Commands** are `Bash` and `PowerShell`.
+  like writes. A `start_session` call whose `initiation` is `offer` or
+  `own_initiative`, with no `proposal_id` (the field that starts a saved
+  proposal), only shows a card: nothing runs until the user starts it, so it
+  passes `router-first`, `route-line`, and `pipeline`, and does not end a
+  task's route lines (see below). An `own_initiative` card carries a brief,
+  which runs when the user starts the card, so it still meets the `spawn`
+  gate; an `offer` card carries none. Any other `initiation`, or none, a call
+  with a `proposal_id`, and `hand_off_to_session` are held as spawns. A
+  session tool call with no brief, such as an offer card, is not a spawn for
+  the `spawn` gate. **Commands** are `Bash` and `PowerShell`.
   Every other tool, including reads and the Skill tool, is never held.
 - **Code** is a file with a programming-language extension such as `.py`,
   `.ts`, `.go`, `.ps1`, or `.sh`; the list is `CODE_EXTENSIONS` in

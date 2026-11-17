@@ -23,10 +23,14 @@ from .transcript import Turn
 ROUTER_SKILL = "using-goated-ai-skills"
 
 WRITE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
+START_SESSION = "mcp__ccd_session__start_session"
 # Spawning hands work to another agent or session, so it is held like a write.
-SPAWN_TOOLS = frozenset(
-    {"Agent", "Task", "mcp__ccd_session__start_session", "mcp__ccd_session__hand_off_to_session"}
-)
+SPAWN_TOOLS = frozenset({"Agent", "Task", START_SESSION, "mcp__ccd_session__hand_off_to_session"})
+# A `start_session` call with one of these `initiation` values, and no
+# `proposal_id` (the field that starts a saved proposal), only shows a card:
+# nothing runs until the user starts it, so it is not a spawn (spec R7). Any
+# other value, or none, starts a session and is held.
+CARD_INITIATIONS = frozenset({"offer", "own_initiative"})
 COMMAND_TOOLS = frozenset({"Bash", "PowerShell"})
 HELD_LIKE_WRITES = WRITE_TOOLS | SPAWN_TOOLS
 GATED_TOOLS = HELD_LIKE_WRITES | COMMAND_TOOLS
@@ -197,13 +201,34 @@ def _did_work(call) -> bool:
 
 
 def writes_like_an_edit(tool_name: str, tool_input: dict) -> bool:
-    """True for a write or spawn tool, or a shell command that writes files."""
+    """True for a write or spawn tool, or a shell command that writes files.
+
+    A session card (`shows_a_card`) is not a spawn: it runs nothing.
+    """
 
     if tool_name in HELD_LIKE_WRITES:
-        return True
+        return not shows_a_card(tool_name, tool_input)
     if tool_name in COMMAND_TOOLS:
         return shell.analyze(str(tool_input.get("command") or ""), tool_name).writes
     return False
+
+
+def shows_a_card(tool_name: str, tool_input: dict) -> bool:
+    """True for a `start_session` call that only shows a card (`CARD_INITIATIONS`).
+
+    An `own_initiative` card's brief still meets the `spawn` gate in
+    actions.py, since it runs when the user starts the card. Only a string
+    `initiation` can name a card: any other value is held as a spawn, since
+    an unhashable one would raise and fail the hook open.
+    """
+
+    initiation = tool_input.get("initiation")
+    return (
+        tool_name == START_SESSION
+        and isinstance(initiation, str)
+        and initiation in CARD_INITIATIONS
+        and tool_input.get("proposal_id") is None
+    )
 
 
 def spawns_a_reader(tool_name: str, tool_input: dict) -> bool:
@@ -224,10 +249,11 @@ def check_routing(
     the ones the user typed for this turn (see `overrides.parse_overrides`).
     Commands meet only router-first unless they write files, and a command
     made only of plain reads (`shell.ShellCommand.read_only`) passes it too.
-    A spawn of a read-only subagent type passes pipeline.
+    A spawn of a read-only subagent type passes pipeline, and a session card
+    (`shows_a_card`) passes every routing gate.
     """
 
-    if tool_name not in GATED_TOOLS or overrides.get("routing"):
+    if tool_name not in GATED_TOOLS or overrides.get("routing") or shows_a_card(tool_name, tool_input):
         return None
     user_skipped = set(overrides.get("skills") or ())
     routed = state.router_loaded or state.brief_routed
