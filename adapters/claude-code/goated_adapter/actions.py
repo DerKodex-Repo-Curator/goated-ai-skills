@@ -803,7 +803,7 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
                 f"change itself and review it: {CHANGE_READ}. Or, if it crosses no trust "
                 f"boundary, write `goated-skip: {SECURITY_SKILL}: <reason>`."
             )
-    setup_item = _setup_item(turn, subagents or {}, proof)
+    setup_item = _setup_item(turn, subagents or {}, proof, project)
     if setup_item:
         items.append(setup_item)
     if not items:
@@ -876,7 +876,7 @@ def _code_items(changes: "_Changes", proof: _Proof) -> list[str]:
     return items
 
 
-def _setup_item(turn: Turn, subagents: dict, proof: _Proof) -> str:
+def _setup_item(turn: Turn, subagents: dict, proof: _Proof, project: Project | None) -> str:
     """The Setup item, or "" when the turn changed no setup or met it.
 
     The turn's own `setup-scribe` load or skip line meets every setup change,
@@ -890,7 +890,7 @@ def _setup_item(turn: Turn, subagents: dict, proof: _Proof) -> str:
         call for sub_turns in subagents.values() if not _setup_met(sub_turns, proof.namespaces)
         for sub_turn in sub_turns for call in sub_turn.calls
     ]
-    setup = _setup_changes(calls)
+    setup = _setup_changes(calls, project)
     if not setup:
         return ""
     return (
@@ -908,9 +908,13 @@ def _setup_met(sub_turns: list[Turn], namespaces: tuple[str, ...]) -> bool:
     ) or any(skip["skill"] == SETUP_SKILL for t in sub_turns for skip in t.skips)
 
 
-def _setup_changes(calls) -> str:
+def _setup_changes(calls, project: Project | None) -> str:
     """What setup the finished `calls` changed, as a phrase for the Setup item
-    ('installed a package', 'wrote ".env"'), or ""."""
+    ('installed a package', 'wrote ".env"'), or "".
+
+    A package install counts wherever it ran; a setup file counts only inside
+    `project` (see `_in_project`), so a scratch folder's settings do not.
+    """
 
     installed, files = False, []
     for call in calls:
@@ -918,15 +922,17 @@ def _setup_changes(calls) -> str:
             continue
         if call.name in FILE_WRITE_TOOLS:
             targets = [str(call.input.get(FILE_WRITE_TOOLS[call.name]) or "")]
+            unplaced = []
         elif call.name in COMMAND_TOOLS:
             command = shell.analyze(str(call.input.get("command") or ""))
             installed = installed or command.installs_package
-            targets = command.write_targets
+            targets, unplaced = command.write_targets, command.unplaced_targets
         else:
             continue
         for target in targets:
             name = _norm(target).rsplit("/", 1)[-1]
-            if SETUP_FILE_RE.search(_norm(target)) and name not in files:
+            if (SETUP_FILE_RE.search(_norm(target)) and name not in files
+                    and _in_project(target, project, target not in unplaced)):
                 files.append(name)
     # Names are quoted, not backticked: the skill-usage mod reads a backticked name as a skill.
     done = (["installed a package"] if installed else []) + (
@@ -1113,6 +1119,7 @@ def _resolved(paths) -> list[str]:
 
 
 DRIVE_RE = re.compile(r"^[A-Za-z]:")
+ABSOLUTE_WINDOWS_RE = re.compile(r"^[A-Za-z]:[\\/]")
 # Git Bash names a Windows drive as a one-letter top folder: `/c/Users` is `C:/Users`.
 GIT_BASH_DRIVE_RE = re.compile(r"^/([A-Za-z])(?=/|$)")
 # Characters a shell or Windows expands, so a path holding one names no file for certain.
@@ -1129,12 +1136,9 @@ def _readings(path: str, drives) -> list[str] | None:
     drive-relative `C:x`, and a name ending in a dot or space. A leading `~`
     is the user's home, read as both the profile folder and `HOME`.
 
-    On Windows, a path rooted with no drive is None unless its top folder is
-    one letter naming a drive that exists, Git Bash's form for it (`/c/x` is
-    `C:/x`). Git Bash mounts other folders, such as `/tmp` as the temp folder
-    and `/` as its install folder, and a user may add mounts, so no other
-    rooted path is certain. Such a path may also be a folder on any of
-    `drives` or the process's own drive, so those are readings too.
+    On Windows, a path rooted with no drive is None unless Git Bash reads it
+    for certain (see `_git_bash_mounts`). Such a path may also be a folder on
+    any of `drives` or the process's own drive, so those are readings too.
     """
 
     if any(ch in EXPANDED_CHARS for ch in path):
@@ -1160,14 +1164,37 @@ def _readings(path: str, drives) -> list[str] | None:
                for part in slashed.split("/")):
             return None  # Windows drops a name's trailing dots and spaces, not always alike.
         if slashed.startswith("/"):
-            git_bash = GIT_BASH_DRIVE_RE.match(slashed)
-            drive = git_bash.group(1).upper() + ":" if git_bash else ""
-            if not drive or not os.path.exists(drive + "/"):
+            mounted = _git_bash_mounts(slashed)
+            if not mounted:
                 return None
             on_drives = set(drives) | {os.path.splitdrive(os.getcwd())[0]}
-            readings = [d + slashed for d in sorted(on_drives)]
-            readings.append(drive + (slashed[2:] or "/"))
+            readings = [d + slashed for d in sorted(on_drives)] + mounted
     return [_comparable(reading) for reading in readings]
+
+
+def _git_bash_mounts(slashed: str) -> list[str]:
+    """The Windows paths Git Bash may read rooted `slashed` as, or [] when
+    that is not certain.
+
+    `/c/x` is `C:/x` when drive C exists. `/tmp/x` is `x` in the user's temp
+    folder, which Git Bash mounts on `/tmp`; Windows takes that folder from
+    `TMP` or else `TEMP`, so each that is set is a reading, and both must
+    be absolute Windows paths. Git Bash also mounts `/` on its install folder,
+    and a user may add mounts, so no other rooted path is certain.
+    """
+
+    drive = GIT_BASH_DRIVE_RE.match(slashed)
+    if drive:
+        root = drive.group(1).upper() + ":"
+        return [root + (slashed[2:] or "/")] if os.path.exists(root + "/") else []
+    if slashed != "/tmp" and not slashed.startswith("/tmp/"):
+        return []
+    temps = [value for value in map(os.environ.get, ("TMP", "TEMP")) if value]
+    if not temps or not all(
+        ABSOLUTE_WINDOWS_RE.match(t) and not any(ch in EXPANDED_CHARS for ch in t) for t in temps
+    ):
+        return []
+    return [t.rstrip("/\\") + slashed[len("/tmp"):] for t in temps]
 
 
 def _comparable(path: str) -> str:

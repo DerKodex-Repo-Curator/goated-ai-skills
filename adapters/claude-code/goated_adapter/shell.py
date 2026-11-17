@@ -247,7 +247,8 @@ def analyze(command: str) -> ShellCommand:
     # Writes a check may still prove: each later command so far runs after them, in order.
     awaiting: list[str] = []
     awaiting_unknown = False
-    for segment in _segments(command):
+    segments = _segments(command)
+    for segment in segments:
         start = len(result.write_targets)
         directory, unknown, is_check = _add_segment(result, segment, directory)
         if is_check and not segment.nested and segment.after in CHECK_ENDS:
@@ -263,10 +264,51 @@ def analyze(command: str) -> ShellCommand:
             directory = None  # What runs next runs even if a `cd` before it failed.
     result.unchecked_targets += awaiting
     result.unchecked_unknown_writes |= awaiting_unknown
-    if DOTNET_WRITE_RE.search(command):
+    if any(_runs_dotnet_write(segments, index) for index in range(len(segments))):
         # Where in the command it runs is not read, so no check proves it.
         result.writes = result.unknown_writes = result.unchecked_unknown_writes = True
     return result
+
+
+# Programs that never run their arguments or input as PowerShell, so `.NET`
+# call text handed to them is data: other languages and text tools.
+NO_POWERSHELL = frozenset(
+    {"python", "python3", "py", "node", "ruby", "perl", "php",
+     "cat", "echo", "printf", "grep", "rg", "git", "head", "tail", "sort", "uniq", "wc",
+     "cut", "tr", "tee", "less", "more", "write-output", "write-host", "select-object",
+     "select-string", "measure-object", "out-string", "out-host"}
+)
+
+
+def _runs_dotnet_write(segments: list["_Segment"], index: int) -> bool:
+    """True when segment `index` of `segments` may run a `.NET` file write,
+    such as `[IO.File]::WriteAllText(...)`, which names its file only in code.
+
+    Text a program in `NO_POWERSHELL` is given is data, such as a
+    `python -c` string or a heredoc fed to `cat`, unless it can still run
+    code here (`$(`, a backtick, outside a quoted-delimiter heredoc) or the
+    segment pipes into a program outside `NO_POWERSHELL`. Text anywhere else
+    counts: PowerShell may run it, or a shell may pass it on.
+    """
+
+    segment = segments[index]
+    if not any(DOTNET_WRITE_RE.search(t) for t in segment.words + segment.heredocs):
+        return False
+    expanded = segment.words + [
+        h for h, quoted in zip(segment.heredocs, segment.quoted_heredocs) if not quoted
+    ]
+    if any(("$(" in t or "`" in t) and DOTNET_WRITE_RE.search(t) for t in expanded):
+        return True
+    # The segment's output may carry the text on, through each pipe after it.
+    for later in segments[index:]:
+        name, _, args = _resolve(later.words)
+        if name in COMMAND_RUNNERS:
+            name = _runner_command(name, args)[0]
+        if name not in NO_POWERSHELL:
+            return True
+        if later.after != "|":
+            return False
+    return False
 
 
 def _add_segment(result: ShellCommand, segment: "_Segment",
@@ -456,15 +498,19 @@ class _Segment:
     script block (`if`, a loop, `case`, `( )`, `{ }`, `$( )`) opened before
     or at it. `nested` says it runs inside a compound command or group that
     is still open (a branch, a loop or function body, a subshell), or starts
-    with a keyword (`then`, `!`), so whether and when it runs is not certain."""
+    with a keyword (`then`, `!`), so whether and when it runs is not certain.
+    `quoted_heredocs` says, for each heredoc, whether its delimiter is quoted
+    (`<<'EOF'`), so the shell expands nothing in its body."""
 
-    __slots__ = ("words", "redirects", "out_redirects", "heredocs", "after", "chained", "nested")
+    __slots__ = ("words", "redirects", "out_redirects", "heredocs", "quoted_heredocs",
+                 "after", "chained", "nested")
 
     def __init__(self) -> None:
         self.words: list[str] = []
         self.redirects: list[str] = []
         self.out_redirects: list[str] = []
         self.heredocs: list[str] = []
+        self.quoted_heredocs: list[bool] = []
         self.after = ""
         self.chained = False
         self.nested = False
@@ -478,7 +524,8 @@ def _segments(command: str) -> list[_Segment]:
     redirect_next = False  # the next word is a redirect target
     redirect_stdout = False  # that redirect takes standard output
     in_test = False  # inside [[ ]], where < and > compare
-    pending: list[tuple[str, bool, _Segment]] = []  # heredocs waiting for their body
+    # Heredocs waiting for their body: delimiter, strip tabs, quoted, owner.
+    pending: list[tuple[str, bool, bool, _Segment]] = []
     chain = True  # every separator so far is `&&`
     open_groups: list[str] = []  # what closes each open group or compound command
     i, n = 0, len(text)
@@ -540,9 +587,10 @@ def _segments(command: str) -> list[_Segment]:
         elif c == "\n":
             end_word()
             i += 1
-            for delimiter, strip_tabs, owner in pending:
+            for delimiter, strip_tabs, quoted, owner in pending:
                 body, i = _heredoc_body(text, i, delimiter, strip_tabs)
                 owner.heredocs.append(body)
+                owner.quoted_heredocs.append(quoted)
             pending = []
             end_segment("\n")
         elif c == "#" and word is None:
@@ -580,7 +628,8 @@ def _segments(command: str) -> list[_Segment]:
             end_word()
             match = re.match(r"<<(-?)[ \t]*(['\"]?)([A-Za-z_][\w.-]*)\2", text[i:])
             if match:
-                pending.append((match.group(3), bool(match.group(1)), current))
+                pending.append((match.group(3), bool(match.group(1)), bool(match.group(2)),
+                                current))
                 i += match.end()
             else:
                 i += 2
@@ -905,6 +954,21 @@ def _drop_values(args: list[str], takes_value: set[str]) -> list[str]:
 # Checks -------------------------------------------------------------------------
 
 
+def _runner_command(name: str, args: list[str]) -> tuple[str, str, list[str]]:
+    """The command runner `name` (`uv run`, `npx`) runs with `args`, as
+    `_resolve` returns one, or ("", "", []) when it runs none."""
+
+    sub = COMMAND_RUNNERS[name]
+    rest = args
+    if sub:
+        if not args or args[0] != sub:
+            return "", "", []
+        rest = args[1:]
+    rest = _skip_options(rest, {"--with", "--python", "-p", "--extra", "--group",
+                                 "--package", "--project", "--directory", "-e", "--env"})
+    return (_bare(rest[0]), rest[0], rest[1:]) if rest else ("", "", [])
+
+
 def _is_check(name: str, original: str, args: list[str]) -> bool:
     if not name:
         return False
@@ -918,15 +982,8 @@ def _is_check(name: str, original: str, args: list[str]) -> bool:
     if name in TARGET_RUNNERS:
         return any(CHECK_WORD_RE.fullmatch(a) for a in args if not a.startswith("-"))
     if name in COMMAND_RUNNERS:
-        sub = COMMAND_RUNNERS[name]
-        rest = args
-        if sub:
-            if not args or args[0] != sub:
-                return False
-            rest = args[1:]
-        rest = _skip_options(rest, {"--with", "--python", "-p", "--extra", "--group",
-                                     "--package", "--project", "--directory", "-e", "--env"})
-        return bool(rest) and _is_check(_bare(rest[0]), rest[0], rest[1:])
+        inner, inner_original, inner_args = _runner_command(name, args)
+        return _is_check(inner, inner_original, inner_args)
     if name in INTERPRETERS:
         code = _inline_code(name, args)
         if code is not None:

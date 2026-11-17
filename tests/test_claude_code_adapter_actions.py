@@ -1003,16 +1003,73 @@ class OutOfProjectTests(AdapterTestCase):
         self.assertEqual(hold_line(s.call("Edit", edit)), "goated-hold: security | justified-skip")
 
     def test_a_rooted_path_with_no_drive_is_outside_only_off_windows(self) -> None:
-        """On Windows, `/tmp/x` may be Git Bash's mount of the temp folder, or
-        a folder on any drive, so it is not certainly outside."""
+        """On Windows, `/etc/x` may be under Git Bash's install folder, a user's
+        mount, or a folder on any drive, so it is not certainly outside."""
 
         s = self.routed()
-        edit = {"file_path": "/tmp/scratch/auth/login.py", "old_string": "a", "new_string": "b"}
+        edit = {"file_path": "/etc/scratch/auth/login.py", "old_string": "a", "new_string": "b"}
         if os.name == "nt":
             self.assertEqual(hold_line(s.call("Edit", edit)),
                              "goated-hold: security | justified-skip")
         else:
             self.assertEqual(decision(s.call("Edit", edit)), "pass")
+
+    def test_a_git_bash_tmp_write_is_not_a_project_change(self) -> None:
+        """Ticket 058 (spec R10): Git Bash mounts `/tmp` on the temp folder, so a
+        scratch write there raises no Proof or Docs item. The near miss, the
+        project's own file named in Git Bash form, still does."""
+
+        for command in (
+            "echo 'print(1)' > /tmp/x.py",
+            "cat > /tmp/claude/scratchpad/probe.py <<'EOF'\nprint(1)\nEOF",
+            "cd /tmp/claude/scratchpad && echo 'print(1)' > probe.py",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.changed_by(command), {})
+        inside = "echo 'print(1)' > {inside}/x.py"
+        if os.name == "nt":
+            inside = "echo 'print(1)' > {git_bash}/x.py"
+        s = self.fresh()
+        s.prompt("Tidy it.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        s.run(inside.replace("{inside}", str(s.project))
+              .replace("{git_bash}", git_bash(str(s.project))))
+        held = stop(s)
+        self.assertIn("- Proof:", held.get("reason", ""))
+        self.assertIn("- Docs:", held.get("reason", ""))
+
+    @unittest.skipUnless(os.name == "nt", "Git Bash mounts exist only on Windows")
+    def test_tmp_is_inside_when_the_temp_folder_is_not_certain(self) -> None:
+        """`/tmp` is read through `TMP` and `TEMP`; when neither is set, or
+        either is not an absolute Windows path, where `/tmp` is cannot be
+        said, so it is inside."""
+
+        from unittest import mock
+
+        good = tempfile.gettempdir()
+        for tmp, temp in ((None, None), ("/tmp", None), (None, "relative\\temp"),
+                          ("%LOCALAPPDATA%\\Temp", good), (good, "/tmp")):
+            with self.subTest(tmp=tmp, temp=temp):
+                environment = {k: v for k, v in os.environ.items() if k not in ("TMP", "TEMP")}
+                environment.update({k: v for k, v in (("TMP", tmp), ("TEMP", temp)) if v})
+                with mock.patch.dict(os.environ, environment, clear=True):
+                    held = self.changed_by("echo 'print(1)' > /tmp/x.py")
+                self.assertIn("- Proof:", held.get("reason", ""))
+
+    @unittest.skipUnless(os.name == "nt", "8.3 short names exist only on Windows")
+    def test_tmp_matches_a_temp_folder_named_by_its_short_name(self) -> None:
+        """The session's scratchpad sits under a `TEMP` such as
+        `C:\\Users\\LONGNA~1\\AppData\\Local\\Temp`; `/tmp` reads the same folder."""
+
+        import ctypes
+        from unittest import mock
+
+        buffer = ctypes.create_unicode_buffer(32768)
+        if not ctypes.windll.kernel32.GetShortPathNameW(tempfile.gettempdir(), buffer, 32768):
+            self.skipTest("no short name for the temp folder")
+        with mock.patch.dict(os.environ, {"TMP": buffer.value, "TEMP": buffer.value}):
+            self.assertEqual(self.changed_by("echo 'print(1)' > /tmp/x.py"), {})
 
     def test_a_shell_write_after_a_cd_outside_skips_the_security_gate(self) -> None:
         s = self.routed()
@@ -1031,7 +1088,8 @@ class OutOfProjectTests(AdapterTestCase):
             ("Bash", f'cd "{self.outside}" && cd ../elsewhere && mv a.py b.py'),
             ("PowerShell", f"Set-Location -Path '{self.outside}' && Move-Item a.py b.py"),
             ("PowerShell", f"Set-Location '{self.outside}' && Move-Item a.py b.py"),
-        ) + ((("Bash", "cd /tmp/scratch && mv a.py b.py"),) if os.name != "nt" else ()):
+            ("Bash", "cd /tmp/scratch && mv a.py b.py"),
+        ):
             with self.subTest(command=command):
                 self.assertEqual(self.changed_by(command, tool), {})
 
@@ -1953,6 +2011,60 @@ class CloseoutTests(AdapterTestCase):
                 held = stop(s)
                 self.assertEqual("Proof" not in held.get("reason", ""), is_proof)
 
+    def test_dotnet_write_text_held_as_data_is_not_a_change(self) -> None:
+        """Ticket 058's scratch-file closeout, reproduced from the maintainer's
+        session: probe commands for the adapter held `.NET` write text as data,
+        in a `python -c` string and in a heredoc written to a scratch file. Each
+        read as an unnamed write, which counts as project code wherever it runs,
+        so the turn got Proof and Docs items. Only code PowerShell can run counts."""
+
+        scratch = (self.root / "scratch").as_posix()
+        if os.name == "nt":
+            scratch = git_bash(scratch)
+        dotnet = "[System.IO.File]::WriteAllText('src/b.py','x')"
+        for tool, command, changes in (
+            ("Bash", f"cd {scratch}/merge27/adapters/claude-code && uv run --project ../.. "
+                     f"python -c \"\ncases = {{\n \\\"cp a.py src/a.py; pytest; {dotnet}\\\": "
+                     f"False,\n}}\nprint(cases)\n\"", False),
+            ("Bash", f"cat > {scratch}/probe.py <<'EOF'\ncases = [\"{dotnet}\"]\nEOF", False),
+            # A quoted delimiter: the shell expands nothing in the body.
+            ("Bash", f"cat > {scratch}/probe.py <<'EOF'\ncases = [\"x=$(pwd); {dotnet}\"]\nEOF",
+             False),
+            ("Bash", f"cat > {scratch}/probe.py <<EOF\ncases = [\"x=$(pwd); {dotnet}\"]\nEOF",
+             True),
+            ("Bash", f"python3 -c \"text = '{dotnet}'\"", False),
+            ("Bash", f"echo \"{dotnet}\" | grep -c IO", False),
+            ("Bash", f"python -c \"text = '{dotnet}'\" 2>&1 | tail -20 | sort | head -3", False),
+            ("PowerShell", f"Write-Output \"{dotnet}\" | Select-Object -First 1", False),
+            ("Bash", f"git commit -m \"Read {dotnet} as a write\"", False),
+            ("PowerShell", f"Write-Output \"{dotnet}\"", False),
+            # Near misses: PowerShell runs each of these.
+            ("Bash", f"cp a.py b.py; {dotnet}", True),
+            ("Bash", f"pwsh -NoProfile -Command \"{dotnet}\"", True),
+            ("Bash", f"bash -c \"pwsh -c '{dotnet}'\"", True),
+            ("Bash", f"echo \"$(pwsh -c '{dotnet}')\"", True),
+            ("Bash", f"cat <<EOF\n`pwsh -c \"{dotnet}\"`\nEOF", True),
+            # Data piped on into a program that may run it.
+            ("Bash", f"cat <<'EOF' | pwsh -NoProfile -Command -\n{dotnet}\nEOF", True),
+            ("Bash", f"echo \"{dotnet}\" | grep IO | pwsh -Command -", True),
+            ("PowerShell", f"Write-Output \"{dotnet}\" | Invoke-Expression", True),
+            ("PowerShell", dotnet, True),
+            ("PowerShell", f"$null = {dotnet}", True),
+            ("PowerShell", f"Write-Output ({dotnet})", True),
+            ("PowerShell", f"Write-Output \"$({dotnet})\"", True),
+            ("PowerShell", f"if ($true) {{ {dotnet} }}", True),
+        ):
+            with self.subTest(command=command):
+                s = self.fresh()
+                s.prompt("Probe it.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.say("goated-skip: commit-message: probe commit in a scratch clone")
+                s.run(command, tool=tool)
+                reason_text = stop(s).get("reason", "")
+                self.assertEqual("- Proof:" in reason_text, changes)
+                self.assertEqual("- Docs:" in reason_text, changes)
+
     def test_a_failing_same_command_check_needs_a_handoff(self) -> None:
         s = self.changed()
         s.load("doc-sync")
@@ -2131,9 +2243,9 @@ class SetupCloseoutTests(AdapterTestCase):
             ("Edit", "web/.env.example"),
             ("Write", ".claude/settings.local.json"),
             ("Write", ".vscode/settings.json"),
-            ("Write", "~/.claude/settings.json"),
-            ("Write", "..\\shared\\.claude\\settings.json"),
             ("Bash", "echo API_URL=http://localhost >> .env.local"),
+            # Unplaced: `cd sub` may go anywhere through CDPATH, so it counts as inside.
+            ("Bash", "cd sub && echo '{}' > .claude/settings.json"),
         ):
             with self.subTest(target=target):
                 s = self.fresh()
@@ -2150,12 +2262,48 @@ class SetupCloseoutTests(AdapterTestCase):
                 self.assertEqual(closeout_line(held), "goated-hold: closeout | justified-skip")
                 self.assertIn("- Setup:", held["reason"])
 
-    def test_a_settings_file_outside_the_project_counts(self) -> None:
-        outside = self.root.parent / f"{self.root.name}-home" / ".claude" / "settings.json"
-        s = self.routed()
-        s.call("Write", {"file_path": str(outside), "content": "{}"})
+    def test_a_settings_file_outside_the_project_does_not_count(self) -> None:
+        """Ticket 058 (spec R9): a scratch live-check folder's settings are not
+        the project's setup. The near miss, the same file in the project, counts."""
 
-        self.assertIn("- Setup:", stop(s)["reason"])
+        scratch = self.root / "scratch" / ".claude" / "settings.json"
+        for tool, target, counts in (
+            ("Write", str(scratch), False),
+            ("Write", scratch.as_posix(), False),
+            ("Write", "..\\shared\\.claude\\settings.json", False),
+            ("Bash", f"echo '{{}}' > '{scratch}'", False),
+            ("Bash", f"cd '{scratch.parent}' && echo '{{}}' > settings.json", False),
+            ("Write", ".claude/settings.json", True),
+            ("Write", "{inside}/.claude/settings.json", True),
+            ("Bash", "cd ./.claude && echo '{}' > settings.json", True),
+        ):
+            with self.subTest(target=target):
+                s = self.fresh()
+                s.prompt("Configure it.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.say(SECURITY_SKIP)
+                target = target.replace("{inside}", str(s.project))
+                if tool == "Bash":
+                    s.run(target)
+                else:
+                    s.call(tool, {"file_path": target, "content": "{}"})
+                reason_text = stop(s).get("reason", "")
+                if counts:
+                    self.assertIn("- Setup:", reason_text)
+                else:
+                    self.assertNotIn("Setup", reason_text)
+
+    def test_a_package_install_outside_the_project_still_counts(self) -> None:
+        outside = self.root / "scratch"
+        for command in (f"cd '{outside}' && npm install lodash", "npm install lodash"):
+            with self.subTest(command=command):
+                s = self.fresh()
+                s.prompt("Add the dependency.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.run(command)
+                self.assertIn("- Setup:", stop(s).get("reason", ""))
 
     def test_near_misses_end_freely(self) -> None:
         for tool, command in (
