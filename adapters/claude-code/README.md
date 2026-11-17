@@ -1099,6 +1099,24 @@ A hook call from inside a subagent carries `agent_id`. There:
 If the subagent's transcript cannot be found, the call fails open with a
 warning; at closeout, its changes are left out, with a warning.
 
+A background subagent's final report can reach the parent in two ways: as a
+queued attachment inside the turn, or as a prompt that Claude Code records as
+a message from another session (an `isMeta` entry with `turnOrigin: peer`, an
+`origin` of kind `peer` whose `from` is the agent's id, and text opening
+`Another Claude session sent a message:` then `<agent-message from="<id>">`).
+Either way the report continues the turn when the adapter can tie it to a
+spawn of this session: the prompt's `origin.from` and its tag name the same
+agent, and an earlier spawn result in the main transcript, after the last
+compaction and within the read limit, records that agent as its `agentId`.
+Then the turn's route line, skip lines, overrides, checks and change reads
+all stand, a brief's route does not end, the closeout judges the whole turn,
+and the user-prompt hook announces no override and resets nothing.
+`review-intake` sees a reviewer's report either way. A report carries no
+override of its own. A prompt the adapter cannot tie to one of its spawns,
+such as another session's message, a scheduler's prompt, a report naming an
+agent this session never spawned, or a shape the adapter does not know,
+opens a new turn as before.
+
 ## Session Start Notices
 
 At the first session start the adapter says once, in a notice you see and in
@@ -1444,7 +1462,13 @@ of the call's prompt, which is normally already there.
   machine-written prompt with no `origin` and an unknown wrapper would be
   treated as typed. A new wrapper alone, on a prompt the transcript marks with
   a non-person origin, still applies no override, but the user-prompt hook
-  would announce one.
+  would announce one. A subagent's report continues the turn only in the shape
+  Subagents describes; a new shape, or a report whose spawn lies before a
+  compaction or beyond the read limit, opens a turn, as any machine-written
+  prompt does. Until it finds the spawn, the reader goes on reading back for
+  it, so a report naming an agent this session never spawned makes each hook
+  call of the turns it opens read back to the last compaction or the read
+  limit.
 - Shared-policy detection looks for the policy's title in the instruction
   files Claude Code reads and in their one-level `@` imports. It does not model
   the setting under which a `CLAUDE.md` stops `AGENTS.md` from loading, it

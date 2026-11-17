@@ -25,6 +25,7 @@ from .transcript import (
     TYPED,
     TranscriptUnreadable,
     is_host_retry,
+    is_own_report,
     prompt_text_kind,
     read_recent_turns,
 )
@@ -514,10 +515,12 @@ def _user_prompt_submit(payload: dict, config: Config) -> str:
 
     The hook sees only the prompt text: its input names no source, and the
     prompt's transcript entry is not yet written. Text that continues the turn,
-    such as a task notification, leaves the typed prompt's overrides in place;
-    text a subagent, another session, or the app wrote starts a turn with none.
-    The gates check again against the transcript, which shows who wrote the
-    prompt, so a message this text check misses still applies no override.
+    such as a task notification or the report of a subagent this session
+    spawned (`is_own_report`), leaves the typed prompt's overrides in place;
+    text another subagent, another session, or the app wrote starts a turn
+    with none. The gates check again against the transcript, which shows who
+    wrote the prompt, so a message this text check misses still applies no
+    override.
     """
 
     session_id = payload.get("session_id")
@@ -528,6 +531,8 @@ def _user_prompt_submit(payload: dict, config: Config) -> str:
     if kind in (CONTINUATION, NOT_PROMPT) or is_host_retry(prompt):
         # An app retry continues the turn. A typed "Try again" opens a new
         # turn, whose prompt id never matches the overrides kept here.
+        return ""
+    if kind != TYPED and is_own_report(str(payload.get("transcript_path") or ""), prompt):
         return ""
     store = StateStore(config.state_dir)
     state, state_warning = store.load(session_id)
