@@ -781,7 +781,7 @@ skip doc-sync", is not an override.
 | Typed phrase | Effect for that turn |
 | --- | --- |
 | `skip routing`, `skip the router` | Stands down `router-first`, `route-line`, and `pipeline` |
-| `skip <skill>`, `skip the <skill> skill` | Stands down every requirement for that skill: in `pipeline`, in an action gate, or in a closeout item. `skip using-goated-ai-skills` also stands down `router-first`. `<skill>` must be a skill Claude Code can find (user, project, or plugin skills); when none can be found, a GOATED registry skill name. So "skip line" or "skip the first two lines" is not an override |
+| `skip <skill>`, `skip the <skill> skill` | Stands down every requirement for that skill: in `pipeline`, in an action gate, or in a closeout item. `skip using-goated-ai-skills` also stands down `router-first`. `<skill>` must be a skill Claude Code can find (user, project, or plugin skills); when none can be found, a GOATED registry skill name. So "skip line" or "skip the first two lines" is not an override. The name may be wrapped in backticks, as in ``skip `tdd` ``, or carry a backtick on one side only |
 | `commit message: <text>`, `commit with the message "<text>"`, or a fenced block right after such a phrase | Stands down the `commit` hold for a commit whose inline message has the same subject line (whitespace aside); a commit with another message, or with none inline, is still held. The skill name `commit-message` is not such a phrase |
 
 Claude Code also submits prompts nobody typed in this session:
