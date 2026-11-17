@@ -621,8 +621,9 @@ def _spawn_hold(brief: str, proof: _Proof) -> Hold | None:
     if line_problem:
         # The line's form is defined in handoff's references/spawn-brief.md (Ticket 071).
         problems.append(
-            f"The brief {line_problem}. On a line of its own, outside code blocks, name "
-            "the skills the new agent should read before it starts: "
+            f"The brief {line_problem}. On a line of its own or as a list item, outside "
+            "code blocks and not in bold, name the skills the new agent should read "
+            "before it starts, by their installed names, bare or with a plugin namespace: "
             "`goated-skills: <skill>, <skill>`, or `goated-skills: none: <reason>` when "
             "none applies. The agent loads each with its skill tool, or reads its SKILL.md "
             "file when it has none."

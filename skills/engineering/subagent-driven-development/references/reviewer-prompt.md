@@ -38,6 +38,11 @@ Mode: <spec | quality | final>
 - `Important`: missed acceptance, meaningful unrequested scope, weak behavior proof, poor integration, maintainability risk, or standards drift.
 - `Minor`: polish, naming, small clarity issue, or low-risk follow-up.
 
+Read each skill below before you start: load it with your skill tool, or
+read its SKILL.md file if you have no skill tool.
+
+goated-skills: <skill>, <skill>
+
 ## Required Report Format
 
 - `Status`: `DONE` | `DONE_WITH_CONCERNS` | `NEEDS_CONTEXT` | `BLOCKED`
@@ -58,9 +63,4 @@ Mode: <spec | quality | final>
 - Assumptions:
 - Residual risk:
 - Recommended next step:
-
-Read each skill below before you start: load it with your skill tool, or
-read its SKILL.md file if you have no skill tool.
-
-goated-skills: <skill>, <skill>
 ```

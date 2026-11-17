@@ -22,10 +22,11 @@ write ownership and review statuses. Use this template for everything else.
   agent does not have.
 - Leave out credentials, private data, and content the agent should not see.
 - Name the skills the agent should read before it starts, on a skills line of
-  its own outside code blocks, in lowercase, bare or in one pair of
-  backticks. Name skills by their installed names, such as
-  `goated-skills: tdd, software-design-principles`. When no skill applies,
-  write none with a reason of three words or more, such as
+  its own or as a list item, outside code blocks, in lowercase, bare or in
+  one pair of backticks. Name skills by their installed names, with any
+  plugin namespace, such as `goated-skills: tdd, software-design-principles`
+  or `goated-skills: goated:tdd`. When no skill applies, write none alone
+  with a reason of three words or more, such as
   `goated-skills: none: the agent only lists files`. This file defines the
   line; other brief templates follow it. Picking the skills stays your
   judgement: name those your own route or work needed for this task.
@@ -81,8 +82,8 @@ goated-skills: <skill>, <skill>
 <Route line, when you routed the task.>
 ```
 
-Drop sections that carry nothing for this task, but keep the skills line. Keep the brief short enough
-that the agent reads all of it before acting.
+Drop sections that carry nothing for this task, but keep the skills line.
+Keep the brief short enough that the agent reads all of it before acting.
 
 ## After Sending
 

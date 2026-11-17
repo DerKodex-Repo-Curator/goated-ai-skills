@@ -50,6 +50,11 @@ Report `BLOCKED` when the task is too broad, the plan appears wrong, required to
 
 Report `DONE_WITH_CONCERNS` when the task is implemented but you have doubts about correctness, coverage, integration, maintainability, or skipped evidence.
 
+Read each skill below before you start: load it with your skill tool, or
+read its SKILL.md file if you have no skill tool.
+
+goated-skills: <skill>, <skill>
+
 ## Required Report Format
 
 - `Status`: `DONE` | `DONE_WITH_CONCERNS` | `NEEDS_CONTEXT` | `BLOCKED`
@@ -64,9 +69,4 @@ Report `DONE_WITH_CONCERNS` when the task is implemented but you have doubts abo
 - Skipped checks or unavailable evidence:
 - Self-review notes:
 - Recommended next step:
-
-Read each skill below before you start: load it with your skill tool, or
-read its SKILL.md file if you have no skill tool.
-
-goated-skills: <skill>, <skill>
 ```

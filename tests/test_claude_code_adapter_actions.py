@@ -649,6 +649,46 @@ class SpawnSkillsLineTests(AdapterTestCase):
             with self.subTest(line=line):
                 self.assertEqual(decision(self.spawn(f"{BRIEF_BODY}\n{line}\n")), "pass")
 
+    def test_namespaced_installed_names_pass(self) -> None:
+        # A plugin install names its skills `namespace:skill` (GOATED_ADAPTER_SKILL_NAMESPACES).
+        for line in ("goated-skills: goated:tdd", "goated-skills: anthropic-skills:pdf, tdd"):
+            with self.subTest(line=line):
+                self.assertEqual(decision(self.spawn(f"{BRIEF_BODY}\n{line}\n")), "pass")
+        for line in ("goated-skills: goated:", "goated-skills: :tdd", "goated-skills: a:b:tdd"):
+            with self.subTest(line=line):
+                self.assertEqual(hold_line(self.spawn(f"{BRIEF_BODY}\n{line}\n")),
+                                 "goated-hold: spawn | strict")
+
+    def test_a_skills_line_written_as_a_list_item_passes(self) -> None:
+        for line in ("- goated-skills: tdd", "* goated-skills: none: the agent only lists files"):
+            with self.subTest(line=line):
+                self.assertEqual(decision(self.spawn(f"{BRIEF_BODY}\n{line}\n")), "pass")
+        for line in ("-goated-skills: tdd", "+ goated-skills: tdd", "**goated-skills: tdd**"):
+            with self.subTest(line=line):
+                held = self.spawn(f"{BRIEF_BODY}\n{line}\n")
+                self.assertIn("lacks a skills line", reason(held))
+                self.assertIn("not in bold", reason(held))
+
+    def test_the_hold_names_each_problem(self) -> None:
+        cases = {
+            "goated-skills:": "names no skill",
+            "goated-skills: none": "says none without a reason",
+            "goated-skills: none: lookup only": "says none without a reason",
+            "goated-skills: tdd.": 'names "tdd." in its skills line',
+            "goated-skills: TDD": 'names "TDD" in its skills line',
+            "goated-skills: tdd,": "an empty name",
+            "Goated-Skills: tdd": "in lowercase",
+            "goated-skills:tdd": "no space after",
+            "goated-skills: none, tdd": "mixes none with skill names",
+            "goated-skills: tdd, none": "mixes none with skill names",
+        }
+        for line, problem in cases.items():
+            with self.subTest(line=line):
+                held = self.spawn(f"{BRIEF_BODY}\n{line}\n")
+                self.assertEqual(hold_line(held), "goated-hold: spawn | strict")
+                self.assertIn(problem, reason(held))
+                self.assertNotIn("lacks a skills line", reason(held))
+
     def test_a_line_naming_no_skill_is_held(self) -> None:
         for line in ("goated-skills:", "goated-skills: ", "goated-skills: TDD",
                      "goated-skills: tdd,"):
