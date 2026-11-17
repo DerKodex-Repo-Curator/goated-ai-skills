@@ -359,14 +359,15 @@ sees only the whole command's result.
   or a check.
 - **Every hold at once.** A call is judged by every gate, and one message
   carries every hold it meets (see [Hold messages](#hold-messages)), so
-  meeting them all clears it in one retry. Two kinds of hold may still
-  follow on the retry, because they can be judged only once another clears:
-  the routing gates come one at a time, `router-first`, then `route-line`,
-  then `pipeline`, since the route line is the router's output and
-  `pipeline` reads its route; and the [closeout at a
-  commit](#closeout-at-commit) is judged once the `commit` gate passes the
-  commit. A gate that would hold several write targets of one command holds
-  once, for the first.
+  meeting them all clears it in one retry. `router-first` and `route-line`
+  come together. Two holds may still follow on the retry, because they can
+  be judged only once another clears: `pipeline`, which reads the route, is
+  judged once the router counts as loaded and the turn has a route line;
+  and the [closeout at a commit](#closeout-at-commit) is judged once the
+  `commit` gate passes the commit. When one shell command writes several
+  files, each gate judges them all at once, and its one hold asks for
+  everything they need: every sensitive file, every code file a script
+  writes, and every reference any of them selects.
 
 ### Large pull requests
 
@@ -386,8 +387,8 @@ router.
 The transcript does not hold a branch's size, so this gate and the
 closeout's [large-branch](#large-branches) measure are the only places the
 adapter runs commands. When a pull-request call would otherwise be held
-by `pr-review` (the `pull-request` gate passed, and no load, change read, or
-skip line has cleared `pr-review`), the adapter asks git, in the hook's
+by `pr-review` (no load, change read, or skip line has cleared `pr-review`;
+it is judged together with the `pull-request` gate), the adapter asks git, in the hook's
 working folder, which of the candidate refs below exist (`git for-each-ref`),
 then measures the first base and head found:
 
@@ -1162,13 +1163,21 @@ goated-hold: <gate> | <kind>
   to print the diff or Read a changed file, as above), the sentence about
   rerunning steps chained before a held command, the sentence that a read
   made in parallel does not count, and the closeout's rule for skip lines.
-- A gate's second or later hold in a turn is short: it opens `Still unmet:`,
-  names what is still missing and how to clear it, and keeps every skill,
-  reference, and skip line the full text names, so the mod reads the same
-  asks. A later closeout in the turn lists only its unmet items, each in
-  short form under its stable label. Each gate claims its own turn marker,
-  apart from the advice's, as the advice does; when a marker cannot be made
-  or read, the full text is given. The next turn starts full again.
+- A hold that repeats an ask the turn already showed in full is short: it
+  opens `Still unmet:`, names what is still missing and every constraint
+  needed to clear it, such as what does not count as a change read, the
+  lines that broke the route grammar, or a typed message that stands a
+  commit down, and keeps every skill, reference, and skip line the full
+  text names, so the mod reads the same asks. An ask is the gate and what
+  is unmet, so a gate's new ask, such as a change read after a load, comes
+  in full the first time. The closeout judges each item apart: an item the
+  turn has not yet shown, at a commit or a `Stop`, comes in full under the
+  full opening (`Before finishing this turn, which changed code:`); when
+  every item it lists was shown before, it opens `Still unmet before
+  finishing this turn:` (or `committing in`) and lists them short, keeping
+  a commit's rules about chained steps and checks. Each ask claims its own
+  turn marker, apart from the advice's; when a marker cannot be made or
+  read, the full text is given. The next turn starts full again.
 - A hold or closeout item that asks for a [change read](#change-reads) once
   its skill has loaded names that skill without backticks, or only in its
   skip line, since no load answers it: the commit, pull-request, and
@@ -1405,8 +1414,9 @@ holds no prompt or reply
 text beyond the short override phrases and a commit message the user typed.
 Beside the state files, a `turn-markers/` folder holds empty files for the
 session, and for each subagent of it, named for the current turn and a
-purpose: the [unseen-line advice](#hold-messages), or a gate whose full text
-a hold of that turn gave. Claims for different purposes in one turn never
+purpose: the [unseen-line advice](#hold-messages), or an ask (a gate and
+what it found unmet, or one closeout item) whose full text a hold of that
+turn gave. Claims for different purposes in one turn never
 meet. A claim in a new turn drops its owner's markers of other turns, and a
 `SessionStart` after compaction or `/clear` deletes the session's and its
 subagents'. The state also keeps the shell tool the session last called,
@@ -1442,8 +1452,8 @@ the changes its change read must follow; other calls never read them. That
 case was not measured.
 
 The `pr-review` gate's size check (see [Large pull requests](#large-pull-requests))
-runs only on a pull-request call that has passed the `pull-request` gate and
-that no load or skip line has cleared of `pr-review`. Measured on 2026-11-16
+runs only on a pull-request call that no load or skip line has cleared of
+`pr-review`, judged together with the `pull-request` gate. Measured on 2026-11-16
 on the same machine with git 2.55, in-process through `run_hook`, 30 runs each:
 
 | Case | Median | p90 |
@@ -1704,7 +1714,7 @@ of the call's prompt, which is normally already there.
 - Hooks for parallel tool calls can race on the state file. Each call
   re-derives its turn from the transcript, so a lost update can cause a repeat
   hold, never a pass. The turn markers that share the full unseen-line advice
-  and each gate's full text are claimed atomically, apart from the state
+  and each ask's full text are claimed atomically, apart from the state
   file, so this race never repeats either.
 - The Verification item's sensitive-file trigger uses the `security` gate's
   paths, so any change to one, such as an edit of a lockfile or a `.env`

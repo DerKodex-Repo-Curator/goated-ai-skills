@@ -207,7 +207,7 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
         ),
     )
     # Every gate judges the call, so one message carries every hold (Ticket 095).
-    holds = ([routing] if routing else []) + actions.check_action(
+    holds = routing + actions.check_action(
         tool_name, tool_input, current, overrides, config.skill_namespaces,
         _project(payload, config), spawned, earlier,
         closeout=actions.Closeout(state.spawn_templates_of(current.key),

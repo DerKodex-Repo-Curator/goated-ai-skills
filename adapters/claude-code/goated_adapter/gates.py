@@ -29,7 +29,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-from typing import Callable
+from typing import Callable, NamedTuple
 
 from . import contracts, design_reads, reference_reads, shell
 from .state import SessionState, Task
@@ -68,26 +68,51 @@ STRICT = "strict"
 class Hold:
     """A held tool call: which gate, what kind, and what the agent must do.
 
-    `short` says the same in brief, for the gate's later holds in a turn
-    (`message`): what is still unmet and how to clear it, keeping every
-    skill, reference and skip line the full text names. None when the full
-    text is already as short.
+    `short` says the same in brief (`short_form`), for a later hold in the
+    turn that asks the same (`text`). None when the full text is already as
+    short.
     """
 
     __slots__ = ("gate", "kind", "instruction", "short")
 
-    def __init__(self, gate: str, kind: str, instruction: str, short: str | None = None) -> None:
+    def __init__(self, gate: str, kind: str, instruction: str,
+                 short: "ShortForm | None" = None) -> None:
         self.gate = gate
         self.kind = kind
         self.instruction = instruction
         self.short = short
 
+    def text(self, claim: Callable[[str], bool]) -> str:
+        """The text this hold shows: its short form once the turn has shown
+        the same ask in full, else the full text. `claim` is as `message`
+        takes it; the purpose is the gate and what is unmet (`ask_purpose`),
+        so a gate's new ask, such as a change read after a load, comes in full."""
 
-def short_form(unmet: str, clear: str) -> str:
-    """A hold's short form (`Hold.short`): `unmet`, what is still missing, and
-    `clear`, how to clear it, ending in a full stop."""
+        if self.short and not claim(ask_purpose(self.gate, self.short.unmet)):
+            return self.short.text
+        return self.instruction
 
-    return f"Still unmet: {unmet}. {clear}"
+
+def ask_purpose(gate: str, ask: str) -> str:
+    """The turn marker's purpose for one ask of `gate`, named by `ask`."""
+
+    return f"{gate}-{hashlib.sha256(ask.encode('utf-8')).hexdigest()[:16]}"
+
+
+class ShortForm(NamedTuple):
+    """A hold's short form: `unmet`, what is still missing, which names the
+    ask, and `text`, the whole short form, which also says every constraint
+    needed to clear it and keeps each skill, reference and skip line the
+    full text names."""
+
+    unmet: str
+    text: str
+
+
+def short_form(unmet: str, clear: str) -> ShortForm:
+    """The short form for `unmet` and `clear`, how to clear it, ending in a full stop."""
+
+    return ShortForm(unmet, f"Still unmet: {unmet}. {clear}")
 
 
 # Opens the full unseen-line advice.
@@ -141,7 +166,8 @@ _FULL_ADVICE_RE = re.compile(
 )
 
 
-# The turn marker's purpose for the unseen-line advice; a gate's purpose is its name.
+# The turn marker's purpose for the unseen-line advice; a hold's ask has its
+# own purpose (`ask_purpose`).
 ADVICE = "advice"
 
 # Paragraphs several holds or closeout items share (Ticket 095). How a hold
@@ -184,8 +210,9 @@ def message(holds: list[Hold], claim: Callable[[str], bool],
     `claim(purpose)` claims the turn's marker for `purpose` and returns True
     only for its first claim in the turn, so calls held in parallel, which
     see no result of each other, still share one full text. It must return
-    True when it cannot claim, so the full text is then given. A gate's first
-    hold in the turn (purpose: its name) is full, its later ones short. The
+    True when it cannot claim, so the full text is then given. Each hold
+    chooses its full or short text (`Hold.text`): an ask's first hold in the
+    turn is full, its later ones short. The
     unseen-line advice (purpose `ADVICE`) is given in full on one hold per
     turn; every other hold that carries it gets one sentence that keeps its
     typed override. Every other shared paragraph is given once per message.
@@ -200,8 +227,7 @@ def message(holds: list[Hold], claim: Callable[[str], bool],
     texts = []
     for hold in holds:
         line_clears = line_clears or _FULL_ADVICE_RE.search(hold.instruction) is not None
-        # A gate's later holds in the turn are short; claimed only when a short form exists.
-        text = hold.short if hold.short and not claim(hold.gate) else hold.instruction
+        text = hold.text(claim)
         found = _FULL_ADVICE_RE.search(text)
         if found is not None:
             if advice_given or not claim(ADVICE):
@@ -374,11 +400,14 @@ def check_routing(
     overrides: dict,
     orientation_installed: Callable[[], bool],
     writes_scratch: Callable[[], bool],
-) -> Hold | None:
-    """Return the first routing hold that applies to this main-agent call, if any.
+) -> list[Hold]:
+    """Return the routing holds that apply to this main-agent call, in order.
 
-    `turn` is the current turn, already folded into `state`. `overrides` are
-    the ones the user typed for this turn (see `overrides.parse_overrides`).
+    `router-first` and `route-line` are judged together (Ticket 095); only
+    `pipeline` waits for the route, so it is judged once the router counts
+    as loaded and the turn has a route line. `turn` is the current turn,
+    already folded into `state`. `overrides` are the ones the user typed for
+    this turn (see `overrides.parse_overrides`).
     Commands meet only router-first unless they write files, and a command
     made only of plain reads (`shell.ShellCommand.read_only`) passes it too.
     A spawn of a read-only subagent type passes pipeline, and a session card
@@ -391,15 +420,16 @@ def check_routing(
     """
 
     if tool_name not in GATED_TOOLS or overrides.get("routing") or shows_a_card(tool_name, tool_input):
-        return None
+        return []
     user_skipped = set(overrides.get("skills") or ())
-    routed = state.router_loaded or state.brief_routed
-    if not routed and ROUTER_SKILL not in user_skipped:
+    routed = state.router_loaded or state.brief_routed or ROUTER_SKILL in user_skipped
+    holds = []
+    if not routed:
         if tool_name in COMMAND_TOOLS and shell.analyze(str(tool_input.get("command") or ""), tool_name).read_only:
-            return None
+            return []
         if writes_scratch():
-            return None
-        return Hold(
+            return []
+        holds.append(Hold(
             "router-first",
             STRICT,
             f"Load the `{ROUTER_SKILL}` skill with the Skill tool before the first "
@@ -412,27 +442,26 @@ def check_routing(
             short_form(f"the `{ROUTER_SKILL}` skill has not loaded",
                        "Load it with the Skill tool, or tell the user they can type "
                        "`skip routing` in their prompt."),
-        )
+        ))
     if not writes_like_an_edit(tool_name, tool_input) or writes_scratch():
-        return None
+        return holds
     if turn.route is None:
-        return Hold("route-line", STRICT, _route_line_instruction(turn), short_form(
-            "this turn has no route line", short_advice("route line", "skip routing")))
+        return holds + [Hold("route-line", STRICT, *_route_line_texts(turn))]
     if turn.route["form"] == "continue" and state.task is None:
         # Only when saved state was missing or reset: otherwise folding the
         # turn started a task.
-        return Hold(
+        return holds + [Hold(
             "route-line",
             STRICT,
             "`goated-route: continue` was written, but the adapter's saved state for "
             "this session was missing or reset, so it cannot tell which task "
             "continues. Write the route line the router selects for this task.",
-        )
+        )]
     task = state.task
-    if task is None or task.route["form"] != "route":
-        return None  # `direct` exempts the task.
+    if not routed or task is None or task.route["form"] != "route":
+        return holds  # `direct` exempts the task; pipeline waits for the router.
     if spawns_a_reader(tool_name, tool_input):
-        return None
+        return holds
 
     def unmet(skill: str) -> bool:
         return skill not in state.loads and skill not in user_skipped
@@ -447,12 +476,12 @@ def check_routing(
         skill for skill in task.route["requires"] if unmet(skill) and not (orient and skill == ORIENTATION_SKILL)
     ]
     if not route_skills and not orient:
-        return None
-    parts, unmet = [], []
+        return []
+    parts, missing = [], []
     if route_skills:
         names = ", ".join(f"`{skill}`" for skill in route_skills)
         parts.append(f"The current route requires {names} before the first write or spawn.")
-        unmet.append(f"load {names}")
+        missing.append(f"load {names}")
     if orient:
         parts.append(
             f"A session started from a brief loads `{ORIENTATION_SKILL}` before its "
@@ -461,8 +490,8 @@ def check_routing(
             "brief names."
         )
         # The mod reads this sentence's opening for the skill the brief added.
-        unmet.append(f"A session started from a brief loads `{ORIENTATION_SKILL}` or reads "
-                     "three distinct files")
+        missing.append(f"A session started from a brief loads `{ORIENTATION_SKILL}` or "
+                       "finishes Read calls of three distinct files")
     parts.append(
         "Load each with the Skill tool and follow it. A load counts until the next "
         "compaction, in this turn or an earlier one"
@@ -473,18 +502,21 @@ def check_routing(
             ("If a route skill" if orient else "If one")
             + " does not apply, write a corrected route line without it; the last route line wins."
         )
+    drops_orientation = (
+        "Only a corrected `goated-route: direct` line or a lightweight route line "
+        "drops the orientation skill."
+    )
     if orient:
-        parts.append(
-            "Only a corrected `goated-route: direct` line or a lightweight route line "
-            "drops the orientation skill."
-        )
-    return Hold(
+        parts.append(drops_orientation)
+    return [Hold(
         "pipeline",
         STRICT,
         " ".join(parts) + " " + unseen_line_advice("route line", "skip routing"),
-        short_form("; ".join(unmet), "Or write a corrected route line. "
+        short_form("; ".join(missing), ("Or write a corrected route line without a skill "
+                                        "that does not apply. " if route_skills else "")
+                   + (drops_orientation + " " if orient else "")
                    + short_advice("route line", "skip routing")),
-    )
+    )]
 
 
 def _brief_orientation(state: SessionState, task: Task) -> bool:
@@ -500,19 +532,26 @@ def _brief_orientation(state: SessionState, task: Task) -> bool:
     return state.brief_routed and task.route.get("intensity") in ("standard", "full")
 
 
-def _route_line_instruction(turn: Turn) -> str:
+def _route_line_texts(turn: Turn) -> tuple[str, ShortForm]:
+    """The route-line hold's full text and short form; both quote the turn's
+    lines that do not match the grammar."""
+
+    forms = ("`goated-route: direct`, `goated-route: <intensity> | requires: <skills>`, "
+             "or `goated-route: continue`")
     text = (
         "Before the first write or spawn after a user prompt, end routing with a "
-        "route line on its own line, as the router's output contract defines: "
-        "`goated-route: direct`, `goated-route: <intensity> | requires: <skills>`, "
-        "or `goated-route: continue` when this prompt continues the current task "
+        f"route line on its own line, as the router's output contract defines: {forms} "
+        "when this prompt continues the current task "
         "or, in a session with no task yet, work begun elsewhere. "
         + unseen_line_advice("route line", "skip routing")
     )
+    short = f"Write one of {forms}. " + short_advice("route line", "skip routing")
     if turn.malformed:
         quoted = "; ".join(f"`{line}`" for line in turn.malformed)
-        text += f" These lines in this turn do not match the grammar: {quoted}."
-    return text
+        malformed = f" These lines in this turn do not match the grammar: {quoted}."
+        text += malformed
+        short += malformed
+    return text, short_form("this turn has no route line", short)
 
 
 def _unique(names) -> list[str]:

@@ -501,9 +501,10 @@ class UnseenLineAdviceTests(AdapterTestCase):
         s = self.session
         s.prompt("Harden the login check.")
         # Near miss: an earlier hold in the turn that carries no advice does not
-        # count as having shown it.
-        first = s.call("Edit")
+        # count as having shown it. A command meets router-first alone.
+        first = s.call("Bash")
         self.assertTrue(reason(first).startswith("goated-hold: router-first"))
+        self.assertNotIn(self.FULL, reason(first))
         s.load(ROUTER)
 
         held = s.call("Edit")

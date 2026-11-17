@@ -82,7 +82,7 @@ and the skills it asks for from the skill names its text backticks, alone or
 as the skill of a `goated-skip:` line it offers. When one call meets several
 holds, the adapter joins them in one message, each further hold opening with
 its own `goated-hold:` line; the mod counts each, with its own outcome, as if
-it had been shown alone. A gate's later hold in a turn arrives in a short
+it had been shown alone. A hold that repeats an ask the turn already showed in full arrives in a short
 form that names the same skills, references, and skip lines, so it counts the
 same way. The pane counts a held skill
 as followed when the agent then loads it (or reads its files). A hold that no

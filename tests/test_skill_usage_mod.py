@@ -121,7 +121,8 @@ def _adapter_texts() -> dict[str, str]:
 
         first = session("router-first")
         first.prompt("Add CSV export.")
-        texts["routerFirst"] = reason(first.call("Edit"))
+        # A command meets router-first alone; an edit meets route-line with it (Ticket 095).
+        texts["routerFirst"] = reason(first.call("Bash"))
 
         unrouted = session("route-line")
         unrouted.prompt("Add CSV export.")

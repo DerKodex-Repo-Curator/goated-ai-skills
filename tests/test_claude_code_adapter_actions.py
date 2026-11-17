@@ -3988,9 +3988,9 @@ class DesignRedFlagsItemTests(AdapterTestCase):
         )
         self.assertNotIn("file#id", held["reason"])
         s.read(RED_FLAGS)
-        # A later closeout in the turn gives the item's short form (Ticket 095).
-        self.assertIn("- Design: read the change after the red flags and your last code change",
-                      stop(s)["reason"])
+        # The item's second ask is new to the turn, so it comes in full (Ticket 095).
+        self.assertIn("- Design: after reading the red flags and after your last code change, "
+                      "read the change itself", stop(s)["reason"])
         s.run(DIFF)
         self.assertEqual(stop(s), {})
 
