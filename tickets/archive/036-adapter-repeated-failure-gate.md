@@ -59,3 +59,16 @@ the same command text or the same check tool.
 
 - Flaky-test detection beyond the two-failure threshold.
 - Changes to any existing gate's behaviour or to the hold format.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-17.
+
+- Merged as `d89e591` (`09907f3`, `5630501`, review fixes `5d167e6`). G2 was
+  settled as the same command text, whitespace aside.
+- The count is of failures in a row: a pass of the same check resets it.
+  Each simple command is judged, so a write chained with a check is held; a
+  check piped into output filters fails by the failure signs it prints, and
+  the pipe tail is not part of its key; refused, denied or interrupted calls
+  are not failures. The hold applies wherever the written file is.
+- Every check passed on the combined branch before the fast-forward: the validator, 473 unit tests on Python 3.14 and 3.11, the V1/V2 context comparison, `claude plugin validate`, 157 mod tests, and the TypeScript check with only the 5 known errors in `tests/register.test.tsx`.

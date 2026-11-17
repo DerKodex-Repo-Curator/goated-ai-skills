@@ -62,23 +62,26 @@ Decision record: `docs/adr/0003-opt-in-framework-enforcement-adapters.md`
    - Blocked by: `tickets/archive/047-adapter-overrides-from-other-agents.md`
    - Enables: `continue` in a session with no task, and loads earlier in the
      turn counting for the task it starts.
-13. `tickets/043-adapter-out-of-project-holds.md`
+13. `tickets/archive/043-adapter-out-of-project-holds.md`
+   - Status: Completed, merged and archived on 2026-11-17.
    - Blocked by: `tickets/archive/042-adapter-fresh-session-routing.md`
    - Enables: no design, security, or closeout holds for files outside the
      project.
 14. `tickets/044-adapter-closeout-same-command-check.md`
-   - Blocked by: `tickets/043-adapter-out-of-project-holds.md`
+   - Blocked by: `tickets/archive/043-adapter-out-of-project-holds.md`
    - Enables: a check in the same command as the write proving it.
-15. `tickets/045-route-and-skip-lines-before-the-call.md`
+15. `tickets/archive/045-route-and-skip-lines-before-the-call.md`
+   - Status: Completed, merged and archived on 2026-11-17.
    - Blocked by: None
    - Enables: route and skip lines the adapter can see on the first try.
-16. `tickets/046-adapter-pipeline-after-compaction.md`
+16. `tickets/archive/046-adapter-pipeline-after-compaction.md`
+   - Status: Completed, merged and archived on 2026-11-17.
    - Blocked by: None
    - Enables: the last route line winning after a compaction, and the
      compaction handling Ticket 051 builds on.
 17. `tickets/053-adapter-route-and-skip-lines-from-tool-input.md`
-   - Blocked by: `tickets/045-route-and-skip-lines-before-the-call.md`,
-     `tickets/046-adapter-pipeline-after-compaction.md`
+   - Blocked by: `tickets/archive/045-route-and-skip-lines-before-the-call.md`,
+     `tickets/archive/046-adapter-pipeline-after-compaction.md`
    - Enables: route and skip lines the adapter always sees, from tool input,
      after 045 found that a message's text can be saved without them.
 
@@ -103,11 +106,12 @@ Ticket 050 there edited the mod after 047.
 
 ## Ready Frontier
 
-- `tickets/043-adapter-out-of-project-holds.md` (in progress)
-- `tickets/045-route-and-skip-lines-before-the-call.md`
-- `tickets/046-adapter-pipeline-after-compaction.md`
+- `tickets/044-adapter-closeout-same-command-check.md`
+- `tickets/053-adapter-route-and-skip-lines-from-tool-input.md` (HITL: the
+  maintainer chooses where the line goes in a tool call)
 
-Ticket 044 follows 043, and 053 follows 045 and 046.
+Both edit adapter files; they can run in parallel and resolve overlaps at
+merge time.
 
 ## Coverage
 

@@ -58,3 +58,24 @@ held the turn end.
 ## Scope Exclusions
 
 - Modelling a full shell: only a `cd` in the same command is followed.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-17.
+
+- Merged as `b8c4ece` after four rounds (`672c74c`, `a00d92f`, `98af08b`,
+  `2521fb0`). Each review found ways to make a project file look outside, so
+  the final rule is: a file counts as outside the project only when the
+  adapter is certain; when in doubt it is inside. The project's folders are
+  `CLAUDE_PROJECT_DIR`, the working folder, and the git checkout above
+  either. Only a plain `cd` or `Set-Location` with one path, at the start or
+  in an `&&` chain, is followed; links and junctions are resolved; Git Bash
+  drive paths are read only when certain, and other rooted paths, device and
+  network paths count as inside.
+- The maintainer's main session reran all five review probes (about 90 cases)
+  on the final commit: every escape was held, and a `%TEMP%` scratch file,
+  `cd ~/.claude/hooks && mv`, and `cd /abs/outside && mv` still passed.
+- Every check passed: the validator, the unit tests on Python 3.14 and 3.11,
+  the V1/V2 context comparison, and the mod's tests.
+- Known limits, in the README, all fail toward holding: `CDPATH`, Git Bash
+  mounts such as `/tmp`, and unread path forms.

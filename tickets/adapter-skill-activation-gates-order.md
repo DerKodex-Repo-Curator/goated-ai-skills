@@ -2,16 +2,20 @@
 
 Source spec: `docs/specs/2026-11-16-adapter-skill-activation-gates.md`
 
-1. `tickets/035-adapter-merge-conflict-gate.md`
+1. `tickets/archive/035-adapter-merge-conflict-gate.md`
+   - Status: Completed, merged and archived on 2026-11-17.
    - Blocked by: `tickets/archive/033-adapter-real-use-trial.md`
    - Enables: `resolving-merge-conflicts` at the moment a conflict is open.
-2. `tickets/036-adapter-repeated-failure-gate.md`
+2. `tickets/archive/036-adapter-repeated-failure-gate.md`
+   - Status: Completed, merged and archived on 2026-11-17.
    - Blocked by: `tickets/archive/033-adapter-real-use-trial.md`
    - Enables: `diagnose` after a check keeps failing.
-3. `tickets/037-adapter-setup-closeout-item.md`
+3. `tickets/archive/037-adapter-setup-closeout-item.md`
+   - Status: Completed, merged and archived on 2026-11-17.
    - Blocked by: `tickets/archive/033-adapter-real-use-trial.md`
    - Enables: `setup-scribe` when a turn changed setup.
-4. `tickets/038-adapter-large-pull-request-review.md`
+4. `tickets/archive/038-adapter-large-pull-request-review.md`
+   - Status: Completed, merged and archived on 2026-11-17.
    - Blocked by: `tickets/archive/033-adapter-real-use-trial.md`,
      `tickets/archive/041-adapter-review-holds-read-the-change.md`
    - Enables: `standards-and-spec-review` before a large pull request.
@@ -27,14 +31,8 @@ adapter installed and counts as the keep decision these tickets wait for.
 
 ## Ready Frontier
 
-- `tickets/035-adapter-merge-conflict-gate.md`
-- `tickets/036-adapter-repeated-failure-gate.md`
-- `tickets/037-adapter-setup-closeout-item.md`
-- `tickets/038-adapter-large-pull-request-review.md` (HITL: the maintainer
-  decides how the adapter learns a change's size)
-
-All four can run in parallel, alongside the adapter fixes in
-`tickets/skill-enforcement-adapter-order.md`.
+- None. All four tickets are completed and archived; AC4 waits for the
+  maintainer's next stretch of real use.
 
 ## Coverage
 

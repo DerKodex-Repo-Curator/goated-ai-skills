@@ -67,3 +67,16 @@ Settled with the maintainer on 2026-11-16:
 - Recording the setup itself: that is `setup-scribe`'s work, not the gate's.
 - Changes to the hold format, or to what the closeout gate already holds
   and how its other items clear.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-17.
+
+- Merged as `f9aef03` (`22e464b`, review fixes `cb51722`).
+- The Setup item applies after a command that names a package to install, or
+  a write to an environment or settings file, wherever the file is. Each
+  package manager has its own value-taking options; a subagent's own
+  `setup-scribe` load or skip line meets the setup it changed.
+- Every check passed on the combined branch before the fast-forward: the validator, 473 unit tests on Python 3.14 and 3.11, the V1/V2 context comparison, `claude plugin validate`, 157 mod tests, and the TypeScript check with only the 5 known errors in `tests/register.test.tsx`.
+- Known limits, in the README: an install inside `bash -c` is not seen, and
+  one whose failure the command hides (`|| true`) still counts.

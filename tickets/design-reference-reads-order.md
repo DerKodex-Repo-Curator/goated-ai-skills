@@ -19,7 +19,7 @@ Source spec: `docs/specs/2026-11-16-design-reference-reads.md`
    - Enables: reference reads measured by moment, and design-reads
      declarations counted.
 4. `tickets/051-adapter-design-reference-reads.md`
-   - Blocked by: `tickets/046-adapter-pipeline-after-compaction.md`,
+   - Blocked by: `tickets/archive/046-adapter-pipeline-after-compaction.md`,
      `tickets/archive/048-design-reference-moment-triggers.md`,
      `tickets/archive/050-skill-usage-reference-read-timing.md`
    - Enables: required design references read before and during the edit,
@@ -36,9 +36,9 @@ so they run after 046 and before Ticket 035 in
 
 ## Ready Frontier
 
-None yet. `tickets/051-adapter-design-reference-reads.md` waits for
-`tickets/046-adapter-pipeline-after-compaction.md` in the adapter queue
-(`tickets/skill-enforcement-adapter-order.md`).
+- `tickets/051-adapter-design-reference-reads.md`
+
+Ticket 052 follows 051.
 
 ## Coverage
 

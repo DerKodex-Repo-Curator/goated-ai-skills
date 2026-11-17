@@ -47,7 +47,7 @@ agent had to run the check again.
 
 ## Blocked By
 
-- `tickets/043-adapter-out-of-project-holds.md` (same files)
+- `tickets/archive/043-adapter-out-of-project-holds.md` (same files)
 
 ## Scope Exclusions
 

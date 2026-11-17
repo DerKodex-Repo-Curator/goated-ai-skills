@@ -70,7 +70,7 @@ mean the instructions are followed.
 
 ## Blocked By
 
-- `tickets/046-adapter-pipeline-after-compaction.md` (same files; compaction
+- `tickets/archive/046-adapter-pipeline-after-compaction.md` (same files; compaction
   handling)
 - `tickets/archive/048-design-reference-moment-triggers.md` (the portable contract)
 - `tickets/archive/050-skill-usage-reference-read-timing.md` (same mod files)

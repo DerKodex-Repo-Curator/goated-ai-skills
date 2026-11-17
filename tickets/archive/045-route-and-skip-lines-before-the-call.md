@@ -58,3 +58,21 @@ at all.
 ## Scope Exclusions
 
 - Changing how the adapter reads the transcript; the limit is Claude Code's.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-17.
+
+- Merged as `344b127` (`997d550`), text only. The session found that Claude
+  Code can save the text of a message that makes a tool call as a rewritten
+  thinking summary that drops route and skip lines, so no retry is sure to
+  work: four route lines, beside different calls, were all lost.
+- The router and shared policy say to write the line in a message before the
+  call it covers. The route-line, pipeline, design and security holds (and,
+  at merge, the conflict-resolution, repeated-failure and pr-review holds)
+  share one piece of advice: retry once without repeating the line, then ask
+  the user to type the override. Known Limits records the case.
+- The logic fix, reading the lines from tool input, is Ticket 053.
+- Every check passed on the combined branch before the fast-forward: the validator, 473 unit tests on Python 3.14 and 3.11, the V1/V2 context comparison, `claude plugin validate`, 157 mod tests, and the TypeScript check with only the 5 known errors in `tests/register.test.tsx`.
+- The installed router and shared policy were synced from main after the
+  merge.

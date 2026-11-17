@@ -44,8 +44,8 @@ agent a place for the line that the adapter always sees.
 
 ## Recommended First Reads
 
-- Ticket 045 (`tickets/045-route-and-skip-lines-before-the-call.md`, or its
-  archived copy once closed), whose report records the evidence.
+- `tickets/archive/045-route-and-skip-lines-before-the-call.md`, whose
+  closeout records the evidence.
 - `adapters/claude-code/goated_adapter/transcript.py` (how turns and lines
   are read), `gates.py`, and `hooks.py` (PreToolUse input).
 - `stack/fixtures/markers/README.md` (Marker Line Grammar).
@@ -78,9 +78,9 @@ agent a place for the line that the adapter always sees.
 
 ## Blocked By
 
-- `tickets/045-route-and-skip-lines-before-the-call.md` (it settles the
+- `tickets/archive/045-route-and-skip-lines-before-the-call.md` (it settles the
   wording and the Known Limits entry this ticket extends)
-- `tickets/046-adapter-pipeline-after-compaction.md` (same routing files)
+- `tickets/archive/046-adapter-pipeline-after-compaction.md` (same routing files)
 
 ## Scope Exclusions
 

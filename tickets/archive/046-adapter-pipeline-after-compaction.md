@@ -54,3 +54,14 @@ the route carries over a compaction and the last route line wins, so a
 ## Scope Exclusions
 
 - Changing what a compaction clears (the router and required loads).
+
+## Closeout
+
+Completed, merged and archived on 2026-11-17.
+
+- Merged as `3a226d9` (`633d279`). Not a bug: the trial transcript shows the
+  `direct` line cleared the hold at once, and the earlier holds followed the
+  documented `continue` rule after a compaction. Two regression tests pin
+  the case and the README's Compaction rule now says `continue` keeps the
+  earlier `requires:` skills and a new task needs its own route line.
+- Every check passed on the combined branch before the fast-forward: the validator, 473 unit tests on Python 3.14 and 3.11, the V1/V2 context comparison, `claude plugin validate`, 157 mod tests, and the TypeScript check with only the 5 known errors in `tests/register.test.tsx`.

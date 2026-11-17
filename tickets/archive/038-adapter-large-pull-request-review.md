@@ -73,3 +73,18 @@ README as a documented stand-in, as the design gate's five lines are.
 
 - Reviewing the pull request itself: that is the skill's work.
 - Changes to the hold format, or to the `pull-request` gate.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-17.
+
+- Merged as `83ead73` (`d5ee2d4`, review fixes `9b84a72`). G4 was settled
+  with the maintainer: one `git diff --shortstat` of `<base>...<head>`, 400 or
+  more changed lines, recorded in the README as a documented stand-in.
+- The head comes from `gh --head`, glab `--source-branch`, or an MCP tool's
+  `head`/`source_branch`; with no base it tries `origin/HEAD`, `origin/main`,
+  `origin/master`, `main`, then `master`; git runs with `LC_ALL=C` in one 2 s
+  budget. An MCP tool aimed at another repository is not measured.
+- Every check passed on the combined branch before the fast-forward: the validator, 473 unit tests on Python 3.14 and 3.11, the V1/V2 context comparison, `claude plugin validate`, 157 mod tests, and the TypeScript check with only the 5 known errors in `tests/register.test.tsx`.
+- Known limit: a size that cannot be measured (no base, an unknown head, an
+  unplaceable project folder) fails open.

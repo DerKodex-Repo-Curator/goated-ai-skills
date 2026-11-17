@@ -66,3 +66,17 @@ gates are additive, so whichever merges later resolves the overlap.
 
 - Conflict detection from repository state on disk, unless the G1 decision adds it.
 - Changes to any existing gate's behaviour or to the hold format.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-17.
+
+- Merged as `ee47a71` (`8779920`, review fixes `89fbdc2`, `7ad9002`). G1 was
+  settled as turn-only: no read of repository state on disk.
+- The gate holds a write while a conflict is open in the turn, wherever the
+  file is; `git checkout --theirs/--ours` counts as a write; a Write over a
+  file a Read showed with markers is held; an abort, continue, skip or commit
+  ends the conflict; label-less CRLF markers count.
+- Every check passed on the combined branch before the fast-forward: the validator, 473 unit tests on Python 3.14 and 3.11, the V1/V2 context comparison, `claude plugin validate`, 157 mod tests, and the TypeScript check with only the 5 known errors in `tests/register.test.tsx`.
+- Known limit, in the README: a lone `=======` in a file not read this turn
+  is not held.
