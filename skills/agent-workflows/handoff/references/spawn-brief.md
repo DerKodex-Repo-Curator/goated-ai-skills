@@ -21,6 +21,14 @@ write ownership and review statuses. Use this template for everything else.
 - Write in your own words. "Based on the findings above" points at context the
   agent does not have.
 - Leave out credentials, private data, and content the agent should not see.
+- Name the skills the agent should read before it starts, on a skills line of
+  its own outside code blocks, in lowercase, bare or in one pair of
+  backticks. Name skills by their installed names, such as
+  `goated-skills: tdd, software-design-principles`. When no skill applies,
+  write none with a reason of three words or more, such as
+  `goated-skills: none: the agent only lists files`. This file defines the
+  line; other brief templates follow it. Picking the skills stays your
+  judgement: name those your own route or work needed for this task.
 - If you already routed the task, end the brief with its route line, such as
   `goated-route: standard | requires: tdd`, on its own line outside code
   blocks. A new session takes it as its route, and still loads those skills.
@@ -66,10 +74,14 @@ write ownership and review statuses. Use this template for everything else.
 - Commands run and their results
 - Assumptions, concerns, and checks skipped
 
+Read each skill below before you start: load it with your skill tool, or
+read its SKILL.md file if you have no skill tool.
+
+goated-skills: <skill>, <skill>
 <Route line, when you routed the task.>
 ```
 
-Drop sections that carry nothing for this task. Keep the brief short enough
+Drop sections that carry nothing for this task, but keep the skills line. Keep the brief short enough
 that the agent reads all of it before acting.
 
 ## After Sending

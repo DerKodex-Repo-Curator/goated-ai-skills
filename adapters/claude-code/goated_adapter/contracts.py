@@ -12,15 +12,19 @@ contract states plainly enough to test without judgement:
   the scope, and what done looks like", so Goal, Scope, and Done Means stay.
   `subagent-driven-development`'s implementer and reviewer prompts require the
   task or review mode, the write ownership or review inputs, and the report
-  format.
+  format. Every brief also carries the skills line that `handoff`'s spawn
+  brief defines (Ticket 071): `goated-skills: <skill>, <skill>` naming the
+  skills the new agent reads first, or `goated-skills: none: <reason>`.
 
 Whether a message or brief is *good* stays the skill's judgement, not this
-module's.
+module's, and so does whether the named skills are the right ones.
 """
 
 from __future__ import annotations
 
 import re
+
+from .markers import FENCE_PREFIXES, MIN_REASON_WORDS, SKILL, candidate_line
 
 SUBJECT_LIMIT = 72
 # Well-known credential shapes. A match is reported by kind, never echoed.
@@ -60,6 +64,40 @@ BRIEF_TEMPLATES = (
         ("Review Mode", "Review Inputs", "Required Report Format"),
     ),
 )
+
+
+SKILLS_LINE_PREFIX = "goated-skills:"
+SKILLS_LINE_RE = re.compile(
+    rf"^goated-skills:[ \t]+(?:none:[ \t]+(\S.*)|((?!none$){SKILL}(?:[ \t]*,[ \t]*{SKILL})*))$"
+)
+
+
+def skills_line_problem(brief: str) -> str | None:
+    """Say what is wrong with the brief's skills line, as a predicate for "The
+    brief ..."; None when it has a valid one. Like a route line, the line counts
+    only on its own line outside code blocks, bare or in one pair of backticks;
+    one valid line is enough."""
+
+    malformed = False
+    in_fence = False
+    for raw in brief.splitlines():
+        if raw.strip().startswith(FENCE_PREFIXES):
+            in_fence = not in_fence
+            continue
+        line = candidate_line(raw)
+        if in_fence or not line.lower().startswith(SKILLS_LINE_PREFIX):
+            continue
+        match = SKILLS_LINE_RE.match(line)
+        reason = match and match.group(1)
+        if match and (reason is None or len(reason.split()) >= MIN_REASON_WORDS):
+            return None
+        malformed = True
+    if malformed:
+        return (
+            "has a skills line that names no skill in lowercase, or says none without "
+            f"a reason of {MIN_REASON_WORDS} words or more"
+        )
+    return "lacks a skills line"
 
 
 def commit_message_problems(message: str) -> list[str]:

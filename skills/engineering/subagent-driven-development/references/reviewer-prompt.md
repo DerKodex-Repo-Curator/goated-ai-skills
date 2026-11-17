@@ -1,6 +1,6 @@
 # Reviewer Prompt
 
-Use this template for delegated reviews. Set the mode to `spec`, `quality`, or `final` before dispatching the reviewer.
+Use this template for delegated reviews. Set the mode to `spec`, `quality`, or `final` before dispatching the reviewer. Keep its skills line: name the skills the reviewer reads first, such as `standards-and-spec-review`, or write `goated-skills: none: <reason>` with a reason of three words or more. The line stands on its own line, outside code blocks.
 
 ```markdown
 You are reviewing delegated implementation work.
@@ -58,4 +58,9 @@ Mode: <spec | quality | final>
 - Assumptions:
 - Residual risk:
 - Recommended next step:
+
+Read each skill below before you start: load it with your skill tool, or
+read its SKILL.md file if you have no skill tool.
+
+goated-skills: <skill>, <skill>
 ```

@@ -1,6 +1,6 @@
 # Implementer Prompt
 
-Use this template when dispatching a fresh implementer for one scoped task. Fill in only the context needed for the task; do not rely on hidden session history.
+Use this template when dispatching a fresh implementer for one scoped task. Fill in only the context needed for the task; do not rely on hidden session history. Keep its skills line: name the skills the implementer reads first, such as `tdd`, or write `goated-skills: none: <reason>` with a reason of three words or more. The line stands on its own line, outside code blocks.
 
 ```markdown
 You are implementing one scoped task in a target project.
@@ -64,4 +64,9 @@ Report `DONE_WITH_CONCERNS` when the task is implemented but you have doubts abo
 - Skipped checks or unavailable evidence:
 - Self-review notes:
 - Recommended next step:
+
+Read each skill below before you start: load it with your skill tool, or
+read its SKILL.md file if you have no skill tool.
+
+goated-skills: <skill>, <skill>
 ```

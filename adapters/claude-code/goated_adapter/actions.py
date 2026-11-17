@@ -594,7 +594,8 @@ def _spawn_hold(brief: str, proof: _Proof) -> Hold | None:
             "spawn", STRICT,
             f"Before starting another agent or session with a brief, load `{HANDOFF_SKILL}` "
             "with the Skill tool in this turn, read its `references/spawn-brief.md`, and "
-            "write the brief from that template (Goal, Scope, Done Means at least). For a "
+            "write the brief from that template (Goal, Scope, Done Means, and its skills line "
+            "at least). For a "
             "scoped implementation or review task, load `subagent-driven-development` "
             "and fill its implementer or reviewer prompt instead. Nothing was started. "
             "This hold is strict: a goated-skip line does not clear it.",
@@ -608,17 +609,27 @@ def _spawn_hold(brief: str, proof: _Proof) -> Hold | None:
             "The template is the point of this step, so the skill load alone does not "
             "clear the hold. Nothing was started.",
         )
-    if any(not t.missing_headings(brief) for t in read):
+    problems = []
+    if all(t.missing_headings(brief) for t in read):
+        gaps = "; ".join(
+            f"`{t.reference}` needs " + ", ".join(f"`## {h}`" for h in t.missing_headings(brief))
+            for t in read
+        )
+        problems.append(f"The brief lacks headings its template keeps: {gaps}. Add them as "
+                        "Markdown headings.")
+    line_problem = contracts.skills_line_problem(brief)
+    if line_problem:
+        # The line's form is defined in handoff's references/spawn-brief.md (Ticket 071).
+        problems.append(
+            f"The brief {line_problem}. On a line of its own, outside code blocks, name "
+            "the skills the new agent should read before it starts: "
+            "`goated-skills: <skill>, <skill>`, or `goated-skills: none: <reason>` when "
+            "none applies. The agent loads each with its skill tool, or reads its SKILL.md "
+            "file when it has none."
+        )
+    if not problems:
         return None
-    gaps = "; ".join(
-        f"`{t.reference}` needs " + ", ".join(f"`## {h}`" for h in t.missing_headings(brief))
-        for t in read
-    )
-    return Hold(
-        "spawn", STRICT,
-        f"The brief lacks headings its template keeps: {gaps}. Add them as Markdown "
-        "headings and start it again. Nothing was started.",
-    )
+    return Hold("spawn", STRICT, " ".join(problems) + " Then start it again. Nothing was started.")
 
 
 def _security_hold(path: str, proof: _Proof) -> Hold | None:

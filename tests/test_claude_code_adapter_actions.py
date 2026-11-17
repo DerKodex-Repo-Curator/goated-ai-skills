@@ -609,7 +609,7 @@ class SpawnBriefTests(AdapterTestCase):
         )
         brief = (
             "## Task\n\nAdd export.\n\n## Ownership\n\n- src/\n\n"
-            "## Required Report Format\n\n- Status\n"
+            "## Required Report Format\n\n- Status\n\ngoated-skills: tdd\n"
         )
 
         self.assertEqual(decision(s.call("Agent", {"prompt": brief})), "pass")
@@ -623,6 +623,94 @@ class SpawnBriefTests(AdapterTestCase):
         offer = {"title": "Fix it", "initiation": "offer"}
         self.assertEqual(decision(s.call(tool, offer)), "pass")
         self.assertEqual(decision(s.call(tool, {"prompt": "do it"})), "deny")
+
+
+# BRIEF without its skills line (Ticket 071).
+BRIEF_BODY = BRIEF.replace("goated-skills: code-security-review\n", "")
+SKILL_TEMPLATES = Path(__file__).resolve().parents[1] / "skills"
+TEMPLATE_FILES = (
+    "agent-workflows/handoff/references/spawn-brief.md",
+    "engineering/subagent-driven-development/references/implementer-prompt.md",
+    "engineering/subagent-driven-development/references/reviewer-prompt.md",
+)
+
+
+class SpawnSkillsLineTests(AdapterTestCase):
+    """A brief names the skills the new agent reads, or none with a reason (Ticket 071)."""
+
+    def spawn(self, brief: str, tool: str = "Agent", **extra) -> dict:
+        s = self.routed()
+        s.brief_with_handoff()
+        return s.call(tool, {"prompt": brief, **extra})
+
+    def test_a_line_naming_skills_passes(self) -> None:
+        for line in ("goated-skills: tdd", "goated-skills: tdd, software-design-principles",
+                     "`goated-skills: tdd`"):
+            with self.subTest(line=line):
+                self.assertEqual(decision(self.spawn(f"{BRIEF_BODY}\n{line}\n")), "pass")
+
+    def test_a_line_naming_no_skill_is_held(self) -> None:
+        for line in ("goated-skills:", "goated-skills: ", "goated-skills: TDD",
+                     "goated-skills: tdd,"):
+            with self.subTest(line=line):
+                held = self.spawn(f"{BRIEF_BODY}\n{line}\n")
+                self.assertEqual(hold_line(held), "goated-hold: spawn | strict")
+                self.assertIn("goated-skills: <skill>, <skill>", reason(held))
+
+    def test_none_with_a_reason_passes_and_none_alone_is_held(self) -> None:
+        passing = "goated-skills: none: the agent only lists files"
+        self.assertEqual(decision(self.spawn(f"{BRIEF_BODY}\n{passing}\n")), "pass")
+        for line in ("goated-skills: none", "goated-skills: none:", "goated-skills: none: lookup only"):
+            with self.subTest(line=line):
+                held = self.spawn(f"{BRIEF_BODY}\n{line}\n")
+                self.assertEqual(hold_line(held), "goated-hold: spawn | strict")
+                self.assertIn("goated-skills: none: <reason>", reason(held))
+
+    def test_a_brief_without_the_line_is_held_and_told_the_line(self) -> None:
+        held = self.spawn(BRIEF_BODY)
+
+        self.assertEqual(hold_line(held), "goated-hold: spawn | strict")
+        self.assertIn("lacks a skills line", reason(held))
+        self.assertIn("goated-skills: <skill>, <skill>", reason(held))
+        self.assertIn("SKILL.md", reason(held))
+
+    def test_a_line_in_a_code_block_or_inside_prose_does_not_count(self) -> None:
+        for brief in (f"{BRIEF_BODY}\n```\ngoated-skills: tdd\n```\n",
+                      f"{BRIEF_BODY}\nRead what goated-skills: tdd names.\n"):
+            with self.subTest(brief=brief):
+                self.assertIn("lacks a skills line", reason(self.spawn(brief)))
+
+    def test_missing_headings_and_line_are_named_together(self) -> None:
+        held = self.spawn("## Goal\n\nAudit the exporter.\n")
+
+        self.assertIn("`## Scope`", reason(held))
+        self.assertIn("lacks a skills line", reason(held))
+
+    def test_a_card_with_a_brief_meets_the_same_check(self) -> None:
+        tool = "mcp__ccd_session__start_session"
+        card = {"title": "Audit", "initiation": "own_initiative"}
+
+        held = self.spawn(BRIEF_BODY, tool=tool, **card)
+        self.assertEqual(hold_line(held), "goated-hold: spawn | strict")
+        self.assertIn("lacks a skills line", reason(held))
+        self.assertEqual(decision(self.spawn(BRIEF, tool=tool, **card)), "pass")
+
+    def test_each_brief_template_carries_the_line_and_the_skill_md_fallback(self) -> None:
+        for name in TEMPLATE_FILES:
+            with self.subTest(template=name):
+                text = (SKILL_TEMPLATES / name).read_text(encoding="utf-8")
+                self.assertRegex(text, r"(?m)^goated-skills: <skill>, <skill>")
+                self.assertIn("SKILL.md", text)
+
+    def test_the_spawn_brief_examples_pass_the_adapter_check(self) -> None:
+        # The form is defined in handoff's spawn brief; the adapter follows it.
+        text = (SKILL_TEMPLATES / TEMPLATE_FILES[0]).read_text(encoding="utf-8")
+        examples = re.findall(r"`(goated-skills: (?!<)[^`]+)`", text)
+
+        self.assertGreaterEqual(len(examples), 2)
+        for example in examples:
+            with self.subTest(example=example):
+                self.assertEqual(decision(self.spawn(f"{BRIEF_BODY}\n{example}\n")), "pass")
 
 
 def write(path: str, lines: int = 6) -> dict:
