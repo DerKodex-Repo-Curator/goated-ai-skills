@@ -1068,6 +1068,19 @@ class SmallEditTests(AdapterTestCase):
                 held = s.call("Edit", edit("tests/test_export.py", lines_of("    assert total_{n}", count)))
                 self.assert_requires(held, expected)
 
+    def test_size_counts_every_line_the_edit_writes(self) -> None:
+        # As the `design` gate counts: four lines and a trailing newline are five, context lines included.
+        four = lines_of("    assert total_{n}", 4)
+        for name, tool_input, expected in (
+            ("four lines", edit("tests/test_export.py", four), set()),
+            ("four lines and a trailing newline", edit("tests/test_export.py", four + "\n"), {"coding.md"}),
+            ("one new line in five written", edit("tests/test_export.py", four + "\n    assert done", old=four),
+             {"coding.md"}),
+        ):
+            with self.subTest(name):
+                s = self.designing()
+                self.assert_requires(s.call("Edit", tool_input), expected)
+
     def test_a_small_configuration_edit_requires_no_reference(self) -> None:
         for count, expected in ((2, set()), (4, set()), (5, {"decoupling.md"})):
             with self.subTest(lines=count):

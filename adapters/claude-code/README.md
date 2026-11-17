@@ -366,14 +366,16 @@ name the old text already defined, as in a signature change, is not new.
 Comments and docstrings are left out of the code the error and concurrency
 signals read, so `# try the cache, then raise` selects neither.
 
-A **small edit**, one adding fewer than five lines as the `design` gate counts
-them (every line of the text it writes; `DESIGN_MIN_LINES` in `actions.py`),
+A **small edit**, one writing fewer than five lines as the `design` gate counts
+them (every line of the text it writes, unchanged context and a trailing
+newline's empty line included; `DESIGN_MIN_LINES` in `actions.py`),
 selects no reference by the kind of file or text it touches: no `coding.md`
 for a test file, no `decoupling.md` for a configuration file or the third
 code file, and no `readability.md` for a comment or docstring.
 `software-design-principles` states this rule; the adapter enforces it.
-Signals read from the added code apply at any size: a new code file or public
-top-level definition, error handling, and concurrency. A design-reads line
+Outside test files, which get no signal read from the code, signals read from
+the added code apply at any size: a new code file or public top-level
+definition, error handling, and concurrency. A design-reads line
 still requires every reference it names. An edit whose added lines cannot be
 counted, such as a `MultiEdit` with an `edits` entry that is not an edit, is
 not small. A small edit that requires nothing adds nothing for the closeout's
