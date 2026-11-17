@@ -394,38 +394,6 @@ runs, `git status`, and `git checkout <branch>` stay free. Commit and
 pull-request commands are recognized the same way, per command, so
 `echo gh pr create` opens nothing.
 
-### Plain reads
-
-Before the router loads, `router-first` passes a `Bash` or `PowerShell`
-command made only of plain reads, as it passes Read and Grep, so an agent can
-look around before it routes. Each simple command must be one of:
-
-- `cat`, `head`, `tail`, `ls`, `dir`, `grep`, `rg` (without `--pre`), or `wc`;
-- `find` without `-exec`, `-execdir`, `-ok`, `-okdir`, `-delete`, `-fprint`,
-  `-fprint0`, `-fprintf`, or `-fls`;
-- `git status`, `git diff`, `git log`, or `git show`, without `--output`,
-  and with no option before the subcommand but `-C <path>`, `--no-pager`, or
-  `-P`;
-- `Get-Content`, `Get-ChildItem`, or `Select-String`, or their aliases `gc`,
-  `gci`, and `sls`.
-
-The commands may be joined by pipes, `&&`, `||`, `;`, or newlines. The call
-is held when any part of it is something else: another or unknown command, a
-wrapper such as `sudo` or `xargs` or a variable assignment before the
-command, a redirect into a file (one into a null device is fine), a heredoc,
-a subshell, group, or script block, a `$(…)` or backtick substitution, a
-process substitution, or a background `&`. When the analysis cannot tell, the
-call is held. The lists are `READ_ONLY_COMMANDS`, `READ_ONLY_REFUSED_ARGS`,
-and `GIT_READ_SUBCOMMANDS` in `shell.py`. Once the router loads, commands
-are judged as before.
-
-A spawn of a read-only subagent type, `Explore`, `Plan`, or
-`claude-code-guide` (the `subagent_type` of an `Agent` or `Task` call, matched
-exactly), delegates reads, so it passes `pipeline` and `spawn`. It still
-meets `router-first` and needs a route line in the turn. Any other type, a
-spawn with no type, and side sessions are held as before. The list is
-`READ_ONLY_SUBAGENTS` in `gates.py`.
-
 A write target is read from the folder its command runs in, and a `cd` moves
 that folder only when the adapter is certain it ran and where it went.
 **Only a plain `cd` in the command's leading `&&` chain is followed**: the
@@ -462,6 +430,38 @@ PowerShell 5.1 has no `&&`, and `;` is not a safe chain, so there a
 `Set-Location` before a write leaves the write's relative targets counted as
 inside; in PowerShell 7, `Set-Location <absolute path> && …` is followed. Only
 a `cd` in the same command is followed, not one in an earlier call.
+
+### Plain reads
+
+Before the router loads, `router-first` passes a `Bash` or `PowerShell`
+command made only of plain reads, as it passes Read and Grep, so an agent can
+look around before it routes. Each simple command must be one of:
+
+- `cat`, `head`, `tail`, `ls`, `dir`, `grep`, `rg` (without `--pre`), or `wc`;
+- `find` without `-exec`, `-execdir`, `-ok`, `-okdir`, `-delete`, `-fprint`,
+  `-fprint0`, `-fprintf`, or `-fls`;
+- `git status`, `git diff`, `git log`, or `git show`, without `--output`,
+  and with no option before the subcommand but `-C <path>`, `--no-pager`, or
+  `-P`;
+- `Get-Content`, `Get-ChildItem`, or `Select-String`, or their aliases `gc`,
+  `gci`, and `sls`.
+
+The commands may be joined by pipes, `&&`, `||`, `;`, or newlines. The call
+is held when any part of it is something else: another or unknown command, a
+wrapper such as `sudo` or `xargs` or a variable assignment before the
+command, a redirect into a file (one into a null device is fine), a heredoc,
+a subshell, group, or script block, a `$(…)` or backtick substitution, a
+process substitution, or a background `&`. When the analysis cannot tell, the
+call is held. The lists are `READ_ONLY_COMMANDS`, `READ_ONLY_REFUSED_ARGS`,
+and `GIT_READ_SUBCOMMANDS` in `shell.py`. Once the router loads, commands
+are judged as before.
+
+A spawn of a read-only subagent type, `Explore`, `Plan`, or
+`claude-code-guide` (the `subagent_type` of an `Agent` or `Task` call, matched
+exactly), delegates reads, so it passes `pipeline` and `spawn`. It still
+meets `router-first` and needs a route line in the turn. Any other type, a
+spawn with no type, and side sessions are held as before. The list is
+`READ_ONLY_SUBAGENTS` in `gates.py`.
 
 ### Change reads
 
