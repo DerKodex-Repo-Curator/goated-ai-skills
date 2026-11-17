@@ -22,9 +22,10 @@ NEGATION_RE = re.compile(
 )
 # "commit message: <text>", "commit it with the message "<text>"", or a fenced
 # block right after such a phrase. The words between "commit" and "message"
-# stay on one line and short, so prose that merely mentions both is not read.
+# stay on one line and short, so prose that merely mentions both is not read,
+# and neither is the skill name `commit-message`.
 COMMIT_MESSAGE_RE = re.compile(
-    r"\bcommit\b[^\n]{0,40}?\bmessage\b(?:[ \t]+(?:is|of))?[ \t]*[:=]?[ \t]*", re.IGNORECASE
+    r"\bcommit\b(?!-)[^\n]{0,40}?\bmessage\b(?:[ \t]+(?:is|of))?[ \t]*[:=]?[ \t]*", re.IGNORECASE
 )
 FENCED_RE = re.compile(r"\n?[ \t]*```[^\n]*\n(.*?)\n[ \t]*```", re.DOTALL)
 QUOTED_RES = (
@@ -33,7 +34,17 @@ QUOTED_RES = (
     re.compile(r"`([^`\n]+)`"),
     re.compile(r"'([^'\n]+)'"),
 )
-HARNESS_BLOCK_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
+# Text the user did not type: harness `<system-reminder>` blocks, and text the
+# user pasted (a pasted agent report may quote an override). Claude Code wraps a
+# paste as `<pasted_content id="X">` ... `</pasted_content id="X">`, so a paste
+# ends only at a close tag repeating its own id: a bare or other-id close tag
+# inside it, or a nested paste, cannot end it early. An unclosed paste runs to
+# the end of the prompt.
+NOT_TYPED_RE = re.compile(
+    r"<system-reminder>.*?</system-reminder>"
+    r'|<pasted_content\b[^>]*?\bid="([^"]*)"[^>]*>.*?(?:</pasted_content\s+id="\1"\s*>|\Z)',
+    re.DOTALL,
+)
 NOT_SKILLS = frozenset({"routing", "router"})
 # The GOATED registry's skill names (`stack/goated-stack.yaml`), used when no
 # installed skill can be found. A test keeps this list equal to the registry.
@@ -63,11 +74,12 @@ def parse_overrides(prompt: str, known_skills: frozenset[str] = GOATED_SKILLS) -
     commit message the user supplied, or None), and `phrases` (the matched
     text, for the record). `skip <name>` counts only when `<name>` is in
     `known_skills`, so "skip line" or "skip the first two lines" is not an
-    override. Harness-injected `<system-reminder>` blocks are not typed by
-    the user and are ignored, as are negated phrases.
+    override. Harness-injected `<system-reminder>` blocks and pasted
+    `<pasted_content>` blocks are not typed by the user and are ignored, as
+    are negated phrases.
     """
 
-    text = HARNESS_BLOCK_RE.sub(" ", prompt or "")
+    text = NOT_TYPED_RE.sub(" ", prompt or "")
     routing = [m.group(0) for m in ROUTING_RE.finditer(text) if not _negated(text, m.start())]
     phrases = list(routing)
     skills: list[str] = []
