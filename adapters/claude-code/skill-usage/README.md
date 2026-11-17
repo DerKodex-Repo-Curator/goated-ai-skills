@@ -26,6 +26,7 @@ without it.
 | Closeout items: each item a closeout hold lists, such as Proof, Unfinished, Docs, Design, Security, Setup, or one added later, with its own outcome | The item lines of the closeout hold's text, `- <Label>: …`, at a commit or a `Stop`; the item's skill is the first it backticks, else the skill of the skip line it offers |
 | Your overrides, by phrase | The adapter's sentence `recorded your override for this prompt` in its hook context; its `commit message` phrase shows as `commit message: <text>` |
 | Reads of skills' reference and other supporting files, whether the skill had loaded first, and when in the turn: before its first code change, between two, after the last, or in a turn with no code change | `Read` paths and shell commands; code changes are edit tool calls on a code file, by the main agent or a subagent, that ran |
+| Declared references: for each reference a hold asked to read (the `reference-reads`, `design` and `design-reads` holds), how often a hold fired for it, then it was read, or its skill's ask was declined by a skip line while it was unread (skipped). A hold repeated in the same turn fires once; a later turn's hold fires again | The references each hold backticks by path, `Read` tool calls, and skip lines, as the hold settlement counts them |
 | Design-reads lines: in how many replies each reference file was declared (a reply's lines add up to one set of files, each counted once), and how many lines declared `none` | `goated-design-reads:` lines in replies, and in the same call fields as route lines |
 | Subagent spawns, with type and task, including ones that load no skill | Agent tool calls that ran; a held or failed attempt shows in the log as held but is not counted |
 | A subagent's reads of a skill's `SKILL.md` | A subagent's `Read` calls |
@@ -201,6 +202,19 @@ session's summary.
 - **Unused**: your own skills by how often they loaded, and those that never
   have.
 
+When the mod can read the installed GOATED registry, All time and
+`/skill-usage report` also show **Declared references**: each skill that
+loaded, had a reference read, or was asked for one, with every reference
+the registry declares for it. An enforced reference, one the registry gives
+a signal, shows how often its hold fired, then it was read, or skipped. An
+advisory one shows its reads beside its skill's loads, so its read rate
+shows. A reference the counts hold that the registry no longer declares
+stays in the stored data and shows as retired. The mod reads the registry
+the adapter reads by default, `<goated-root>/stack/goated-stack.yaml`,
+three folders above its own, once at each session start. With no registry
+there, or a file there that is no registry, the section is left out and
+the References table shows reads as before.
+
 In the picture, each node around the core is a cause of skill loads, with its
 count beneath: **Your /cmd** (you typed a slash command), **You asked** (your
 message named the skill), **Router** (a route line required it), **Agent** (the
@@ -291,7 +305,7 @@ a new session to be sure the change applies.
 
 The mod keeps one summary per session in its own plugin store: counts,
 skill names, hold gates, override phrases, reference file paths within
-skills, skip reasons, the data version, and the project key. It keeps no
+skills, read or asked for by a hold, skip reasons, the data version, and the project key. It keeps no
 prompt or reply text beyond those phrases and reasons, and no folder path or
 name. The project key is a digest of the folder's path salted with 16
 random bytes the mod makes once per store and keeps beside the summaries
@@ -387,6 +401,18 @@ This has not been tested end to end. Keep a backup of both files.
   while `older` still holds its earlier sum, which keeps no per-session
   parts to take back. Only a session older than the 300 most recent can be
   folded.
+- The mod finds the registry only at the adapter's default place, beside
+  the mod in the same GOATED distribution; it does not read
+  `GOATED_ADAPTER_REGISTRY`. A registry edited mid-session shows from the
+  next session. Its reader reads the block-style YAML the registry is
+  written in, and `tests/test_skill_usage_mod.py` checks that it agrees with
+  a full YAML parser on the source registry; an installed registry edited
+  by hand into another YAML style may read as declaring fewer references.
+- Declared references count only the references a hold backticks by path
+  or, for the design holds, by file name. A reference enforced by another
+  gate's own rule, such as `handoff`'s `spawn-brief.md` through the `spawn`
+  hold, shows no fired count. A subagent's reads answer none of its holds,
+  so a hold that asked a subagent counts as fired only.
 - The mod judges nothing. Whether a skip reason is specific to the action is
   for you to read in the log.
 
@@ -402,9 +428,11 @@ claude plugin test .
 claude plugin validate .
 ```
 
-The tests read three generated modules: `tests/marker-fixtures.ts`, from
+The tests read four generated modules: `tests/marker-fixtures.ts`, from
 `stack/fixtures/markers/lines.yaml`; `tests/design-reads-fixtures.ts`, from
-`stack/fixtures/markers/design-reads.yaml`; and `tests/adapter-texts.ts`, the
+`stack/fixtures/markers/design-reads.yaml`; `tests/registry-fixture.ts`, the
+registry `stack/goated-stack.yaml` with the references a full YAML parser
+reads from it; and `tests/adapter-texts.ts`, the
 hold reasons and override context the adapter produces when the generator
 drives it. In the GOATED source repo, `tests/test_skill_usage_mod.py` fails
 when any copy drifts, or when the mod's list of code file extensions differs

@@ -10,11 +10,12 @@
 // nudge not followed. Text colours are theme keys, so the rows read on a light
 // theme too.
 
-import type { AllTime, Available, Counts, EarlierHolds, Measures, Origin, Outcome, RefMoment, RefMoments, Refs, RouteForm, SessionSummary, SideSessionKind, SkipReasons, TimelineEntry, WritingTurns } from '../types'
+import type { AllTime, Available, Counts, DeclaredReferences, EarlierHolds, Measures, Origin, Outcome, RefMoment, RefMoments, Refs, RouteForm, SessionSummary, SideSessionKind, SkipReasons, TimelineEntry, WritingTurns } from '../types'
 import { forProject, NO_SUBAGENTS, NO_WRITING_TURNS, ORIGINS, OUTCOMES, total } from './classify'
 import { BECAUSE, COLOR, followCounts, hookName, OUTCOME_TONE, plural, rateTone, REF_MOMENT, RESULT, ROUTE_FORM, skillName, STATION, UNANSWERED, UNANSWERED_SHORT, unansweredCount, UNTIMED } from './meaning'
 import type { Tone, View } from './meaning'
 import { badgeWords, picture, PREVIEW_MS, previewTimeline } from './picture'
+import { referenceCounts, referenceWords } from './registry'
 import type { Badges } from './picture'
 
 export { DECLINED_COLOR, followCounts, READ_COLOR } from './meaning'
@@ -575,11 +576,15 @@ function projectChooser(view: View, all: AllTime, filter: ProjectFilter) {
   ]
 }
 
+const DECLARED_TITLE = 'Declared references'
+const DECLARED_NOTE = "each reference the GOATED registry declares, by skill: an enforced one by its holds, an advisory one by its reads in its skill's loads"
+
 /**
  * Totals across sessions: the still picture, each hook's follow rate as a bar, and what makes each skill load; with
- * `filter`, for the project it shows, and a chooser of projects once any session carries a project key.
+ * `filter`, for the project it shows, and a chooser of projects once any session carries a project key; with
+ * `declared`, the installed registry's references, each declared reference's counts by skill.
  */
-export function allTimeTab(v: View, everything: AllTime, rows: number, filter?: ProjectFilter) {
+export function allTimeTab(v: View, everything: AllTime, rows: number, filter?: ProjectFilter, declared: DeclaredReferences | null = null) {
   const { Box } = v.ui
   const all = forProject(everything, filter?.shown ?? null)
   const outcomes = sumOutcomes(all.nudges)
@@ -587,6 +592,7 @@ export function allTimeTab(v: View, everything: AllTime, rows: number, filter?: 
   const loadCount = Object.values(loads).reduce((a, b) => a + b, 0)
   const ruled = (all.router.first ?? 0) + (all.router.late ?? 0) + (all.router.never ?? 0)
   const first = all.router.first ?? 0
+  const references = declared ? referenceCounts(all, declared) : []
   return (
     <Box flexDirection="column">
       {picture(
@@ -600,6 +606,21 @@ export function allTimeTab(v: View, everything: AllTime, rows: number, filter?: 
       {measuresText(all) && line(v, measuresText(all) ?? '', 'plain')}
       {filter && everything.byProject && projectChooser(v, everything, filter)}
       {usageTables(v, all, rows, '')}
+      {declared && [
+        title(v, DECLARED_TITLE, DECLARED_NOTE),
+        ...(references.length === 0
+          ? [line(v, 'No declared reference has been asked for or read yet.', 'dim')]
+          : references.map(s => (
+              <Box key={`declared-${s.skill}`} flexDirection="column">
+                {line(v, s.skill, 'plain')}
+                {s.rows.map(r => (
+                  <Box key={r.file} paddingLeft={2}>
+                    {words(v, [{ text: r.file }, { text: ` · ${referenceWords(r, s.loads)}`, tone: 'dim' }], r.status === 'retired' ? 'dim' : 'plain', true)}
+                  </Box>
+                ))}
+              </Box>
+            ))),
+      ]}
       {all.earlier && [
         title(v, EARLIER_TITLE, `${EARLIER_NOTE(all.earlier)}; their holds, closeout items and skip reasons add to no count here`),
         ...earlierLines(all.earlier).map(text => line(v, text, 'dim')),
@@ -691,8 +712,11 @@ function outcomeWords(c: Counts<Outcome>): string {
   return `${f.acted} of ${f.settled} handled (${percent(f.acted, f.settled)})${parts.length ? ` · ${parts.join(' · ')}` : ''}`
 }
 
-/** `/skill-usage report`: the All time and Unused tabs as markdown, in the pane's own words. */
-export function reportText(all: AllTime, avail: Available | null): string {
+/**
+ * `/skill-usage report`: the All time and Unused tabs as markdown, in the pane's own words. `declared`: the installed
+ * registry's references, null when none could be read, which leaves their section out.
+ */
+export function reportText(all: AllTime, avail: Available | null, declared: DeclaredReferences | null = null): string {
   const out = [`# Skill usage: ${plural(all.sessions, 'session')}`, '', '## Hooks', '']
   for (const [hook, c] of Object.entries(all.nudges).sort(([, x], [, y]) => total(y) - total(x))) out.push(`- ${hookName(hook)}: ${outcomeWords(c)}`)
   out.push('', '## Closeout items', '')
@@ -734,6 +758,12 @@ export function reportText(all: AllTime, avail: Available | null): string {
   out.push('', '## References', '')
   if (refs.length === 0) out.push('(none read yet)')
   for (const r of refs) out.push(`- ${r.skill} › ${r.file}: ${r.n} (${momentWords(r)})`)
+  if (declared) {
+    const skills = referenceCounts(all, declared)
+    out.push('', `## ${DECLARED_TITLE}`, '', `Shows ${DECLARED_NOTE}.`, '')
+    if (skills.length === 0) out.push('(none used yet)')
+    for (const s of skills) for (const r of s.rows) out.push(`- ${s.skill} › ${r.file}: ${referenceWords(r, s.loads)}`)
+  }
   const unused = (avail?.own ?? []).filter(s => !all.loads[s])
   out.push('', `## Your skills never loaded (${unused.length})`, '', unused.join(', ') || '(none)')
   if (avail && avail.included < avail.total) out.push('', `Only ${avail.included} of ${avail.total} skills fit the skill listing.`)

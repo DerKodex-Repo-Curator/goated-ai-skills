@@ -166,10 +166,28 @@ export type Measures = {
   closeoutItems?: Record<string, Counts<Outcome>>
   /** The reasons of the skip lines that declined a hold, by skill and gate, each cut to a fixed length. */
   skipReasons?: SkipReasons
+  /** What became of each skill reference a hold asked to read, by skill, then path within the skill, then outcome. */
+  refAsks?: RefAsks
 }
 
 /** How often each reason declined a hold, by the skill its skip line named, then the hold's gate, then the reason. */
 export type SkipReasons = Record<string, Record<string, Record<string, number>>>
+
+/**
+ * What became of a skill reference a hold asked to read: the hold `fired`, once per hold row whatever its repeats; then
+ * the reference was `read` with the Read tool, or its skill's ask was declined by a skip line while it was unread
+ * (`skipped`). A fired reference with neither went unanswered.
+ */
+export type RefAskOutcome = 'fired' | 'read' | 'skipped'
+
+/** The counts of `RefAskOutcome` by skill, then path within the skill, such as `references/x.md`. */
+export type RefAsks = Record<string, Record<string, Counts<RefAskOutcome>>>
+
+/**
+ * The references the installed GOATED registry declares, by skill, then file name (`mocking-and-seams.md`): `enforced`
+ * when the registry gives it a signal, which a hold enforces, else `advisory`.
+ */
+export type DeclaredReferences = Record<string, Record<string, 'enforced' | 'advisory'>>
 
 /** How often each supporting file was read, by skill then path within the skill, such as `references/x.md`. */
 export type Refs = Record<string, Record<string, number>>
@@ -261,6 +279,8 @@ declare module 'claude-code' {
       /** What was stored for this session before a resume, added to what is observed since. */
       baseline: Shaped<SessionSummary | null>
       available: Shaped<Available | null>
+      /** The installed registry's references, read once per session; null when no registry could be read. */
+      declared: Shaped<DeclaredReferences | null>
       allTime: Shaped<AllTime | null>
       /** This session's project key, worked out once (hooks/project.ts); `''` when no project folder could be read. */
       project: string | null

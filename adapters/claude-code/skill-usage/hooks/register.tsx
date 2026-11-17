@@ -12,13 +12,14 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface as Dollar, Register, SessionAppendInput } from 'claude-code'
 
-import type { AllTime, Available, SessionSummary, Tab, UsageEvent } from '../types'
+import type { AllTime, Available, DeclaredReferences, SessionSummary, Tab, UsageEvent } from '../types'
 import { addSession, allTimeOf, closeOpen, DATA_VERSION, historyEvents, isObservedRow, mergeSummaries, rowEvents, short, summarize } from './classify'
 import type { HistoryMessage } from './classify'
 import type { View } from './meaning'
 import { forgetPictures, PREVIEW_MS } from './picture'
 import { errorText } from './holds'
 import { newSalt, projectKey } from './project'
+import { declaredReferences, REGISTRY_FROM_MOD } from './registry'
 import { allTimeTab, PANE_COLUMNS, reportText, sessionTab, statusText, unusedTab } from './view'
 
 const PANE = 'skill-usage'
@@ -45,6 +46,7 @@ const owner = atom({ plugin: 'skill-usage', key: 'owner' } as const, null)
 const backfilled = atom({ plugin: 'skill-usage', key: 'backfilled' } as const, null, { shape: EVENTS_SHAPE })
 const baseline = atom({ plugin: 'skill-usage', key: 'baseline' } as const, null, { shape: 'summary-1' })
 const available = atom({ plugin: 'skill-usage', key: 'available' } as const, null, { shape: 'available-2' })
+const declared = atom({ plugin: 'skill-usage', key: 'declared' } as const, null, { shape: 'declared-1' })
 // `all-time-2`: Ticket 076 added totals by project and the earlier versions' holds.
 const allTime = atom({ plugin: 'skill-usage', key: 'allTime' } as const, null, { shape: 'all-time-2' })
 const project = atom({ plugin: 'skill-usage', key: 'project' } as const, null)
@@ -62,6 +64,7 @@ export const register: Register = on => {
     try {
       await claimSession($)
       await knownSkills($, true)
+      await readRegistry($)
       await backfill($)
       showStatus($, await liveSummary($))
     } catch (error) {
@@ -107,7 +110,7 @@ export const register: Register = on => {
 
   on('command.run', { command: 'skill-usage' }, async ($, e) => {
     const arg = e.args.trim()
-    if (arg === 'report') return { text: reportText(addSession(await read($, allTime), await liveSummary($)), await read($, available)) }
+    if (arg === 'report') return { text: reportText(addSession(await read($, allTime), await liveSummary($)), await read($, available), await read($, declared)) }
     await $.ui.open({ id: PANE, title: 'Skill usage' })
     if (arg === 'preview') {
       // The picture shows the Session tab's map, so the preview switches to it.
@@ -135,7 +138,7 @@ export const register: Register = on => {
     const now = await $.clock.now()
     const body =
       current === 'session' ? sessionTab(v, live, session.timeline, rows, now, await read($, preview))
-      : current === 'all' ? allTimeTab(v, addSession(await read($, allTime), live), rows, { shown: await read($, allProject), ...(own ? { own } : {}), choose: key => update($, allProject, () => key) })
+      : current === 'all' ? allTimeTab(v, addSession(await read($, allTime), live), rows, { shown: await read($, allProject), ...(own ? { own } : {}), choose: key => update($, allProject, () => key) }, await read($, declared))
       : unusedTab(v, addSession(await read($, allTime), live), await read($, available))
 
     return (
@@ -178,6 +181,17 @@ async function knownSkills($: Dollar, refresh = false): Promise<string[]> {
   }
   await update($, available, () => list)
   return list.names
+}
+
+/**
+ * Reads the references the installed GOATED registry declares, once per session start, so a registry edited since
+ * shows in the next session: the registry the adapter reads by default, `<goated-root>/stack/goated-stack.yaml`, three
+ * folders above the mod's own. A missing or unreadable file, an expected state for a mod installed without GOATED, or
+ * one that is no registry, leaves none, and the pane shows reads as it would without the registry.
+ */
+async function readRegistry($: Dollar) {
+  const text = await $.fs.read(`${$.plugin.root}/${REGISTRY_FROM_MOD}`).catch(() => '')
+  await update($, declared, () => declaredReferences(text))
 }
 
 /**
