@@ -172,6 +172,8 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
             # Unreadable subagent transcripts count as no changes, as at closeout.
             lambda: _spawned_subagents(current, transcript_path)[0],
             references_read=frozenset(state.reference_reads),
+            closeout=actions.Closeout(state.design_edits_of(current.key),
+                                      _design_ids(payload, config)),
         )
     tool_use_id = str(payload.get("tool_use_id") or "")
     if hold is None and tool_use_id:
@@ -275,8 +277,7 @@ def _stop(payload: dict, config: Config) -> str:
         subagents,
         _project(payload, config),
         state.design_edits_of(current.key),
-        lambda: design_reads.section_ids(skill_folder(
-            Path(str(payload.get("cwd") or ".")), config.home, actions.DESIGN_SKILL)),
+        _design_ids(payload, config),
     )
     warnings = [state_warning, _save(store, session_id, state)]
     if unread:
@@ -286,6 +287,14 @@ def _stop(payload: dict, config: Config) -> str:
         )
     output = {"decision": "block", "reason": hold.message()} if hold else {}
     return _with_warnings(output, warnings)
+
+
+def _design_ids(payload: dict, config: Config):
+    """Reads each design reference's section ids from the installed skill, for
+    the closeout's citation item, when called."""
+
+    return lambda: design_reads.section_ids(skill_folder(
+        Path(str(payload.get("cwd") or ".")), config.home, actions.DESIGN_SKILL))
 
 
 def _prompt_id(payload: dict) -> str | None:

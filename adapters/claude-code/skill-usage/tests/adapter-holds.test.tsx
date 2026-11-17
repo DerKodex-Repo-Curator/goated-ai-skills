@@ -331,6 +331,23 @@ test('a turn that ends after the agent answered a blocked Stop passed the closeo
   expect(summarize([prompt(), response(1), ...stopHold(2), results(2), turnEnd(3)]).nudges).toEqual({ closeout: { ignored: 2 } })
 })
 
+test('a closeout hold on a commit counts as one on a Stop: a turn that then ends as an answer met what it asked', async () => {
+  // The commit-time closeout (Ticket 059) asks for the same items; the Stop that ends the turn judges them all again.
+  expect(preHold('Bash', ADAPTER_TEXTS.closeoutCommit, 1)).toEqual([{ kind: 'nudge', t: 1, hook: 'closeout', named: ['verification-before-completion', 'doc-sync'], holdKind: 'justified-skip', skipOnly: ['verification-before-completion'] }])
+  const committed = [prompt(), response(1), ...preHold('Bash', ADAPTER_TEXTS.closeoutCommit, 2), results(2), response(3)]
+  expect(summarize([...committed, turnEnd(4)]).nudges).toEqual({ closeout: { followed: 2 } })
+  // A skip line still declines its own item, with its reason.
+  const reason = 'no test runner exists in this folder'
+  const skipped = summarize([...committed, ...markerEvents(`goated-skip: verification-before-completion: ${reason}`, 3), turnEnd(4)])
+  expect(skipped.nudges).toEqual({ closeout: { declined: 1, followed: 1 } })
+  // A turn the user stopped did not get past it.
+  expect(summarize([...committed, { kind: 'turn-end', t: 4, reason: 'aborted' }]).nudges).toEqual({ closeout: { ignored: 2 } })
+  // A blocked Stop after it joins its row; a Stop that blocks the turn's end at the limit leaves its asks unmet.
+  const stopped = summarize([...committed, ...stopHold(4), results(4), response(5), turnEnd(6)])
+  expect(stopped.nudges).toEqual({ closeout: { followed: 2 } })
+  expect(stopped.timeline.filter(e => e.kind === 'nudge')).toHaveLength(1)
+})
+
 test('closeout items that ask for a read of the change offer their skills only as skip lines, and a passed Stop meets them', async () => {
   // The skills are loaded, so each item asks for a read of the change, which no load answers.
   const named = ['doc-sync', 'software-design-principles', 'code-security-review']

@@ -234,6 +234,33 @@ class _Added:
                 self.definitions.append(name)
 
 
+def comment_only(tool_input: dict) -> bool:
+    """Whether an edit's added and removed text is only comments and docstrings:
+    each text it replaces holds the same code, line by line, as the text it
+    writes, by the comment rules `_Added` uses. Only an edit's old and new
+    text pairs can be judged so; a Write or a notebook edit replaces text this
+    cannot see, so it is never comment-only, nor is an input with no pair."""
+
+    if "content" in tool_input or "new_source" in tool_input:
+        return False
+    pairs = [(tool_input["old_string"], tool_input.get("new_string"))] if "old_string" in tool_input else []
+    edits = tool_input.get("edits")
+    if isinstance(edits, list):
+        pairs += [(e.get("old_string"), e.get("new_string")) if isinstance(e, dict) else (None, None)
+                  for e in edits]
+    return bool(pairs) and all(
+        isinstance(old, str) and isinstance(new, str) and _code_lines(old) == _code_lines(new)
+        for old, new in pairs
+    )
+
+
+def _code_lines(text: str) -> list[str]:
+    """The code of `text`, without comments, docstrings, or blank lines. Indentation
+    stays: in some languages it is code."""
+
+    return [part.rstrip() for part in _code_parts(text.split("\n")) if part.strip()]
+
+
 def _signals(path: str, added: _Added, *, new_file: bool, is_test: bool,
              code_files: int) -> dict[str, str]:
     if is_test:

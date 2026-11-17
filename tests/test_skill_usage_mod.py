@@ -213,6 +213,13 @@ def _adapter_texts() -> dict[str, str]:
         cited.read("/skills/software-design-principles/references/red-flags.md")
         cited.run("git diff")
         texts["closeoutCitation"] = _stop_reason(cited)
+        # The closeout at a commit whose own hold is met (Ticket 059).
+        committing = routed("closeout-commit")
+        committing.say("goated-skip: software-design-principles: one mechanical constant change")
+        committing.call("Write", _write("src/export.py"))
+        committing.load("commit-message")
+        committing.run("git diff")
+        texts["closeoutCommit"] = reason(committing.call("Bash", {"command": 'git commit -m "Add export"'}))
 
         headings = routed("spawn-headings")
         headings.brief_with_handoff()
@@ -281,6 +288,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "closeoutUnfinished": "closeout | justified-skip",
             "closeoutSetup": "closeout | justified-skip",
             "closeoutCitation": "closeout | justified-skip",
+            "closeoutCommit": "closeout | justified-skip",
             "commitContract": "commit | strict",
             "spawnHeadings": "spawn | strict",
             "securityNoExtension": "security | justified-skip",
@@ -293,6 +301,8 @@ class SkillUsageModFixtureTests(unittest.TestCase):
         self.assertIn("- Design:", texts["closeoutUnfinished"])
         self.assertIn("- Setup:", texts["closeoutSetup"])
         self.assertIn("Not yet cited: errors.md.", texts["closeoutCitation"])
+        self.assertIn("Before committing in this turn", texts["closeoutCommit"])
+        self.assertIn("- Proof:", texts["closeoutCommit"])
 
     def test_holds_a_line_can_clear_name_the_call_fields_and_the_user_way_out(self) -> None:
         # A route or skip line in reply text is recorded only after the hook returns, and Claude

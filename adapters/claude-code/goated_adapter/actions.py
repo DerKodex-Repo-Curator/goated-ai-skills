@@ -35,6 +35,7 @@ turn changed. It shows the agent the change; it cannot prove a review.
 
 from __future__ import annotations
 
+import functools
 import os
 from collections.abc import Callable
 from typing import NamedTuple
@@ -297,10 +298,19 @@ def is_action_tool(tool_name: str) -> bool:
     )
 
 
+class Closeout(NamedTuple):
+    """What a commit's closeout hold reads besides the turn: `edit_references`
+    and `design_ids`, as `check_closeout` takes them."""
+
+    edit_references: dict[str, list[str]]
+    design_ids: Callable[[], dict[str, tuple[str, ...]]] | None = None
+
+
 def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
                  namespaces: tuple[str, ...] = (), project: Project | None = None,
                  subagents: Callable[[], dict] | None = None,
-                 references_read: frozenset[str] = frozenset()) -> Hold | None:
+                 references_read: frozenset[str] = frozenset(),
+                 closeout: Closeout | None = None) -> Hold | None:
     """Return the action hold for this call, if any; the call's own entry is not yet proof.
 
     `project` says which files are the project's (see `find_project`): only files
@@ -311,17 +321,25 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     called only when a commit or pull request needs its change read, since
     reading their transcripts takes time. `references_read` names the design
     references (`errors.md`) read in earlier turns since the last compaction;
-    the turn's own reads count too.
+    the turn's own reads count too. With `closeout`, a commit whose own hold
+    is met is held while the turn has unmet closeout items (Ticket 059);
+    without it, as for a subagent, which has no closeout, it is not.
     """
 
     proof = _Proof(turn, overrides, namespaces)
-    changes = lambda: _Changes(turn, subagents() if subagents else {}, project)
+    spawned = functools.cache(subagents) if subagents else dict
+    changes = lambda: _Changes(turn, spawned(), project)
+    at_commit = lambda: closeout and check_closeout(
+        turn, overrides, namespaces, subagents=spawned(), project=project,
+        edit_references=closeout.edit_references, design_ids=closeout.design_ids,
+        at_commit=True,
+    )
     cwd = project.cwd if project else None  # Where git measures a pull request's size.
     if tool_name in COMMAND_TOOLS:
         command = shell.analyze(str(tool_input.get("command") or ""), tool_name)
         hold = _conflict_hold(command.write_targets, tool_input, proof) if command.writes else None
         if hold is None and command.commit:
-            hold = _commit_hold(command.commit_message, proof, changes)
+            hold = _commit_hold(command.commit_message, proof, changes) or at_commit()
         if hold is None and command.opens_pr:
             hold = _pr_hold(proof, changes) or _pr_review_hold(
                 lambda: changed_lines(cwd, command.pr_base, command.pr_head), proof, changes)
@@ -337,7 +355,7 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     if COMMIT_TOOL_RE.match(tool_name):
         message = tool_input.get("message")
         return _commit_hold(message if isinstance(message, str) else None, proof, changes,
-                            by_tool=True)
+                            by_tool=True) or at_commit()
     if tool_name in SPAWN_BRIEF_FIELDS:
         brief = str(tool_input.get(SPAWN_BRIEF_FIELDS[tool_name]) or "")
         if not brief.strip() or spawns_a_reader(tool_name, tool_input):
@@ -425,7 +443,7 @@ def _pr_review_hold(size_of: Callable[[], int | None], proof: _Proof,
     if proof.loaded(REVIEW_SKILL):
         hold = _change_read_hold(
             "pr-review", REVIEW_SKILL, proof, changes(), by_tool, "opening the pull request",
-            "review it and open the pull request again", skippable=True,
+            "review it and open the pull request again", review=True,
         )
         if hold is None:
             return None
@@ -531,10 +549,12 @@ def _names_repository(url: str, repository: str) -> bool:
 
 
 def _change_read_hold(gate: str, skill: str, proof: _Proof, changes: "_Changes", by_tool: bool,
-                      doing: str, then: str, skippable: bool = False) -> Hold | None:
+                      doing: str, then: str, review: bool = False) -> Hold | None:
     """Hold a commit or pull request, whose skill has loaded, until a change read
-    follows both that load and the turn's last change to any project file;
-    `skippable`: the hold is justified-skip, so a skip line naming `skill` clears it.
+    follows the turn's last change to any project file, before or after the
+    load (Ticket 059). `review`: the hold asks for a review done with `skill`,
+    so its read must follow the load too, and it is justified-skip, so a skip
+    line naming `skill` clears it.
 
     An MCP tool (`by_tool`) passes when the turn changed no project file: it
     carries the change in its own input, and outside a git checkout no diff
@@ -544,18 +564,20 @@ def _change_read_hold(gate: str, skill: str, proof: _Proof, changes: "_Changes",
 
     if by_tool and changes.last_change < 0:
         return None
-    if changes.read_after(max(proof.load_index(skill), changes.last_change)):
+    since = max(proof.load_index(skill), changes.last_change) if review else changes.last_change
+    if changes.read_after(since):
         return None
     how = CHANGE_READ if changes.paths else DIFF_ONLY_READ
-    after = " and after your last change" if changes.last_change >= 0 else ""
+    loaded = f", after loading the {skill} skill" if review else ""
+    after = (" and" if review else ",") + " after your last change" if changes.last_change >= 0 else ""
     # Not backticked: the skill-usage mod would read a backticked skip line as an ask
     # that only a skip line answers, and count a read that clears this hold as ignored.
     tail = (f"Or write a skip line, goated-skip: {skill}: <reason>, on its own line. "
-            + unseen_line_advice("skip line", f"skip {skill}") if skippable
+            + unseen_line_advice("skip line", f"skip {skill}") if review
             else "This hold is strict: a goated-skip line does not clear it.")
     return Hold(
-        gate, JUSTIFIED_SKIP if skippable else STRICT,
-        f"Read the change before {doing}, after loading the {skill} skill{after}: "
+        gate, JUSTIFIED_SKIP if review else STRICT,
+        f"Read the change before {doing}{loaded}{after}: "
         f"{how}. Then {then}. The whole command was held, so rerun "
         "any steps chained before it too. A read chained in the same command, or made "
         f"in parallel with this call, has not finished, so it does not count. {tail}",
@@ -888,8 +910,10 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
                    final_text: str = "", subagents: dict | None = None,
                    project: Project | None = None,
                    edit_references: dict[str, list[str]] | None = None,
-                   design_ids: Callable[[], dict[str, tuple[str, ...]]] | None = None) -> Hold | None:
-    """Return the closeout hold for a turn about to end, if any.
+                   design_ids: Callable[[], dict[str, tuple[str, ...]]] | None = None,
+                   at_commit: bool = False) -> Hold | None:
+    """Return the closeout hold for a turn about to end, if any; `at_commit`:
+    for a commit the turn is about to make, which must meet it first.
 
     A turn that changed code needs, after its last code change, a check
     command (proof), in a later call or later in the same shell command. It
@@ -900,7 +924,10 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     each design reference the turn's edits required. A turn that loaded
     `code-security-review` and changed a security-sensitive file, code or
     not, needs a security review. The doc-sync, design, and security items
-    each also need a change read after their load or red-flags read. A turn
+    each also need a change read: doc-sync's after the last code change, the
+    design item's after its red-flags read, which follows the last code change
+    that is not comment-only, and security's after its load and the last
+    sensitive change. A turn
     that installed a package it names, or wrote an env or settings file, needs
     `setup-scribe` loaded at any point in the turn (Setup). Each item accepts
     a skip line; `final_text` is the reply being finished, which
@@ -942,10 +969,15 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
         "changed setup" if items == [setup_item]
         else "changed code" if changes.code else "changed a security-sensitive file"
     )
+    when = "committing in" if at_commit else "finishing"
+    rerun = (
+        "\nThe whole command was held, so rerun any steps chained before it too. A check "
+        "chained before the commit in the same command has not run yet, so it does not count."
+    ) if at_commit else ""
     return Hold(
         "closeout", JUSTIFIED_SKIP,
-        f"Before finishing this turn, which {what}:\n" + "\n".join(items)
-        + "\nA skip line must name the skill and give a reason of three or more words.",
+        f"Before {when} this turn, which {what}:\n" + "\n".join(items)
+        + "\nA skip line must name the skill and give a reason of three or more words." + rerun,
     )
 
 
@@ -984,15 +1016,18 @@ def _code_items(changes: "_Changes", proof: _Proof, edit_references: dict[str, l
                 f"and check whether durable docs now drift: {CHANGE_READ}. Or, if behavior "
                 f"and interfaces did not change, write `goated-skip: {DOC_SYNC_SKILL}: <reason>`."
             )
-        elif not changes.read_after(max(loaded, last)):
+        elif not changes.read_after(last):
             # The skill is loaded, so it is named only in the skip line: no load answers this.
+            # A read before the load counts (Ticket 059): the load adds nothing to see.
             items.append(
-                f"- Docs: after loading the {DOC_SYNC_SKILL} skill and after your last code "
-                f"change, read the change itself and check whether durable docs now drift: "
-                f"{CHANGE_READ}. Or write `goated-skip: {DOC_SYNC_SKILL}: <reason>`."
+                f"- Docs: after your last code change, read the change itself and check "
+                f"whether durable docs now drift: {CHANGE_READ}. Or write "
+                f"`goated-skip: {DOC_SYNC_SKILL}: <reason>`."
             )
     if DESIGN_SKILL in proof.loads and not proof.skipped(DESIGN_SKILL):
-        flags = proof.read_index(RED_FLAGS_REFERENCE, after=last)
+        # Fixing a comment the red-flags scan found needs no second scan (Ticket 059).
+        designed = max((c.index for c in code if not c.comment_only), default=-1)
+        flags = proof.read_index(RED_FLAGS_REFERENCE, after=designed)
         if flags is None:
             items.append(
                 f"- Design: read `{RED_FLAGS_REFERENCE}` with the Read tool after your last "
@@ -1104,16 +1139,20 @@ def _setup_changes(calls, project: Project | None) -> str:
 
 class _Change:
     """A finished call that changed files: where in the turn, which project
-    files, which of them are code, and whether it is already proved: by a
-    check later in the same command, or by a subagent's own check."""
+    files, which of them are code, whether it is already proved: by a check
+    later in the same command, or by a subagent's own check, and whether it
+    is an edit that changed only comments and docstrings
+    (`design_reads.comment_only`)."""
 
-    __slots__ = ("index", "paths", "code_paths", "proven")
+    __slots__ = ("index", "paths", "code_paths", "proven", "comment_only")
 
-    def __init__(self, index: int, paths: list[str], proven: bool = False) -> None:
+    def __init__(self, index: int, paths: list[str], proven: bool = False,
+                 comment_only: bool = False) -> None:
         self.index = index
         self.paths = paths
         self.code_paths = [p for p in paths if _is_code_change(p)]
         self.proven = proven
+        self.comment_only = comment_only
 
 
 class _Changes:
@@ -1181,7 +1220,8 @@ def _changes(turn: Turn, subagents: dict, project: Project | None):
             continue
         paths = _changed_paths(call, project)
         if paths:
-            yield _Change(index, paths, _proves_itself(call, project))
+            yield _Change(index, paths, _proves_itself(call, project),
+                          call.name in FILE_WRITE_TOOLS and design_reads.comment_only(call.input))
 
 
 def _changed_paths(call, project: Project | None) -> list[str]:

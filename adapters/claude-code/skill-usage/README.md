@@ -54,7 +54,7 @@ Summaries stored by earlier versions of the mod may still show a GOATED
 router rule line, start messages, or already loaded counts in All time.
 
 Holds reach a session as denied tool calls, and the closeout hold as a
-blocked `Stop`. The mod reads each hold's gate and kind from its first line,
+blocked `Stop` or a denied commit. The mod reads each hold's gate and kind from its first line,
 and the skills it asks for from the skill names its text backticks, alone or
 as the skill of a `goated-skip:` line it offers. The pane counts a held skill
 as followed when the agent then loads it (or reads its files), and as not
@@ -121,6 +121,10 @@ it. In particular:
   ends, passes nothing. Claude Code ends a turn after nine blocks in a row
   whatever the hook says: then what the last block asked counts as not
   loaded, and what only earlier blocks asked counts as followed.
+- The adapter also holds a commit with the closeout's items when one is
+  unmet. That hold joins the turn's closeout row and counts as one at `Stop`
+  does: what is still waiting when the turn ends as an answer counts as
+  followed, since the `Stop` that let the turn end judged every item again.
 
 These rules live in `hooks/holds.ts`, the hold settlement: `hooks/classify.ts`
 reads the events and feeds them to it in order, and keeps the rest of a

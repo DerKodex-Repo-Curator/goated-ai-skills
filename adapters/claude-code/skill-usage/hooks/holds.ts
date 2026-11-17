@@ -10,6 +10,8 @@ export const ROUTE_LINE = '(route line)'
 
 /** The adapter's gate for a route's required skills. */
 const PIPELINE_GATE = 'pipeline'
+/** The adapter's closeout gate, which holds a commit (Ticket 059) as well as a `Stop`, asking for the same items. */
+const CLOSEOUT_GATE = 'closeout'
 /** Gates whose named skills are alternatives, one of which answers the hold: the spawn hold's `handoff` or `subagent-driven-development`. */
 const ALTERNATIVE_GATES = new Set(['spawn'])
 /**
@@ -64,12 +66,13 @@ export function holdSettlement(): HoldSettlement {
   // are alternatives), and its mark on the nudge's own log row, so settling it updates that row.
   // `agent`: the subagent it spoke to, absent for the main agent; that loop's turn end settles it.
   // `isStrict`: an adapter hold that only loading the skill clears; a skip line never declines it.
-  // `row`: the nudge's log row, which a repeat of the same hold in the turn joins. `isStop`: a hold on a `Stop`.
+  // `row`: the nudge's log row, which a repeat of the same hold in the turn joins.
+  // `isCloseout`: a closeout item, on a `Stop` or a commit, which the `Stop` that ends the turn judges again.
   // `isSkipOnly`: a skill the hold offers only as a skip line, which no load answers.
   // `isSkipRejected`: a blocked `Stop` asked for it after a skip line, so that skip line did not clear it.
   // `refs`, `needsLine`: what a design hold that offers its skill only as a skip line asks instead: a Read of each
   // design reference still unread, and a design-reads line. It is followed once both are in, as the adapter judges.
-  type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; isStop?: true; isSkipOnly?: true; isSkipRejected?: true; refs?: Set<string>; needsLine?: boolean; mark: NudgedSkill; row: NudgeRow }
+  type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; isCloseout?: true; isSkipOnly?: true; isSkipRejected?: true; refs?: Set<string>; needsLine?: boolean; mark: NudgedSkill; row: NudgeRow }
   /** Whether an ask is a design hold's, answered by its reads and line rather than by any read of the skill's files. */
   const asksDesign = (n: Open) => n.refs !== undefined || n.needsLine !== undefined
   /** Settles a design hold's ask once nothing it asked is missing; `outcome` names what came last. */
@@ -133,7 +136,8 @@ export function holdSettlement(): HoldSettlement {
   }
   /**
    * A loop's turn is over: what it left open can no longer be followed, so each is declined (a skip line said why) or
-   * ignored. A blocked `Stop` is the exception. The adapter judges every `Stop` it is given, so a main turn that ended
+   * ignored. A closeout item, asked by a blocked `Stop` or a held commit, is the exception. The adapter judges every
+   * `Stop` it is given against every closeout item, so a main turn that ended
    * as an answer (not interrupted, nor ended by an error) after the agent replied to the last block got past it: what
    * that block asked was met, by a check run, a fix or a load the hold cannot name. Claude Code ends a turn after
    * `STOP_BLOCK_LIMIT` blocks whatever the hook says, and then what the last block asked was not met; what an earlier
@@ -148,7 +152,7 @@ export function holdSettlement(): HoldSettlement {
     for (const n of ending) {
       const reason = n.isStrict || n.isSkipRejected ? undefined : skipReason(n.anyOf, n.agent)
       if (reason !== undefined) n.mark.reason = reason
-      const isMet = n.isStop === true && (isPassed || (isAnswer && !lastStopAsks.includes(n)))
+      const isMet = n.isCloseout === true && (isPassed || (isAnswer && !lastStopAsks.includes(n)))
       settle(m => m === n, reason !== undefined ? 'declined' : isMet ? 'followed' : 'ignored', by)
     }
   }
@@ -162,7 +166,8 @@ export function holdSettlement(): HoldSettlement {
       anyOf: ask,
       ...(e.agent ? { agent: e.agent } : {}),
       ...(e.holdKind === 'strict' ? { isStrict: true as const } : {}),
-      ...(e.isStop ? { isStop: true as const, isSkipRejected: true as const } : {}),
+      ...(e.isStop ? { isSkipRejected: true as const } : {}),
+      ...(e.holdKind && e.hook === CLOSEOUT_GATE && !e.agent ? { isCloseout: true as const } : {}),
       ...(isSkipOnly ? { isSkipOnly: true as const } : {}),
       ...(isSkipOnly && e.refs?.length ? { refs: new Set(e.refs) } : {}),
       ...(isSkipOnly && e.needsLine ? { needsLine: true } : {}),
