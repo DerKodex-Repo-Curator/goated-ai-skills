@@ -44,6 +44,7 @@ export const HOOK: Record<string, string> = {
   design: 'design hold',
   'design-reads': 'design-reads hold',
   'reference-reads': 'reference-reads hold',
+  'review-intake': 'review-intake hold',
   security: 'security hold',
   closeout: 'closeout hold',
   // Kept apart from the earlier hooks' `diagnose` key below, so their counts stay their own.

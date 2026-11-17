@@ -150,6 +150,7 @@ session's message never counts, and a brief never carries an override. The
 | `design` | justified-skip | The turn's first write adding five or more lines to a non-test code file inside the project folder (or any such write while the skill does not count as loaded). A test file never triggers it and is not counted when finding the turn's first such write: in TDD the test comes first and the design happens in the code after it | `software-design-principles` [counts as loaded](#loads), a valid [design-reads line](#design-references) is in the turn, and every [reference the edit requires](#design-references) has been read since the last compaction |
 | `design-reads` | justified-skip | Any later write to a code or configuration file inside the project folder, once `software-design-principles` [counts as loaded](#loads), whose [signals or the turn's design-reads lines](#design-references) require a reference not read since the last compaction. The hold names each file and what selected it | Each required reference is read with the Read tool |
 | `reference-reads` | justified-skip | A write by a write tool or a shell command that is not a check, inside the project folder or, for a `gate-fires` signal, anywhere, that fires a signal the installed registry declares for a reference of a skill that [counts as loaded](#loads) (see [Registry references](#registry-references)). The hold names each file by its path under the skill, `<skill>/references/<file>`, and what selected it | Each reference it names is read with the Read tool, in this turn or an earlier one since the last compaction; or a skip line naming its skill, for the turn |
+| `review-intake` | justified-skip | A write, by a write tool or a shell command, to a code file inside the project folder, once a [reviewer subagent](#reviewer-subagents) started by `Agent` or `Task` has reported in the turn: its result arrived, or, started in the background, its completion did. A held or failed spawn, any other brief, and a side session trigger nothing. A test file is held like other code; a docs or config file is not | `receiving-code-review` [counts as loaded](#loads), in this turn or an earlier one since the last compaction; or a skip line naming it, for the turn |
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` [counts as loaded](#loads) |
 | `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an `Edit` or `MultiEdit` whose old text has a `<<<<<<<` or `>>>>>>>` marker at a line start; a write, by a write tool or a shell command such as `git checkout --theirs`, to a file a Read in the turn showed with such a marker; or any write after a git merge, rebase, cherry-pick, revert, or pull whose result in the turn reported a conflict. A finished abort, quit, continue, or skip of that operation, or a finished commit, ends the conflict and drops the Reads before it. Only the turn is read, not the repository, so a conflict opened in an earlier turn is caught only by markers the turn shows: an edit whose old text spans only `=======` and one side, in a file not read this turn, is not held, because `=======` alone is also a heading underline. A conflicting stash pop or apply is not held | `resolving-merge-conflicts` [counts as loaded](#loads) |
 | `repeated-failure` | justified-skip | A write, by a write tool or a shell command, once one check command (as the closeout's Proof item recognises checks) has failed twice in a row in the turn. A shell command is held when any of its simple commands writes and is not itself a check, so `sed -i … && pytest` and `pytest \| tee out.txt` are held, while `pytest > out.txt` is a rerun. "The same check" is the same command text, whitespace aside, without a trailing pipe into output filters (`tail`, `head`, `grep`, `findstr`, `more`, `less`, `tee`, `Select-Object`, `Select-String`, `Out-Host`, `Out-String`) or a `2>&1` before it; so `pytest -q \| tail -20` and `pytest -q \| tail -40` are one check, and a narrowed rerun such as one test file of a failing suite is another. A piped run fails by what it prints (`N failed`, `N errors`, `FAILED (`, `FAIL`, `npm ERR!`, `error TS…`, `test result: FAILED`, and the like), since the exit code is the filter's; any other run fails by its exit code. A run whose only failures are test modules that could not load a missing module or name neither adds to the count nor resets it, whether or not it looks failed, since in TDD the first red run often fails because the module under test does not exist yet. Only each runner's own report counts: pytest's `ERROR collecting` section showing `ImportError while importing test module` or ending in an `ImportError` or `ModuleNotFoundError`; unittest's `_FailedTest` error ending in one of those; jest's `Test suite failed to run` with `Cannot find module`. A run counts as usual when it also shows a failure in a test that ran (`1 failed, 1 error`), when a module that is there fails to load (a `SyntaxError` or `NameError`: the edit-and-crash loop the gate exists for), or when a test only prints such text. These miss, toward holding: output cut before the runner names the cause (`pytest -q \| tail -3`), ts-jest's `TS2307`, and vitest's `Failed to load url`. The table is `LOAD_ERROR_SIGNS` in `actions.py`. A pass of the check resets its count; other commands between runs do not. A call that never ran does not count: one the adapter or another hook held, one refused at a permission prompt, or one interrupted | `diagnose` [counts as loaded](#loads) |
@@ -159,7 +160,7 @@ The closeout items, each judged against the turn's last code change. A code
 change is a write tool's file, or a file a shell command writes (its redirect
 target, copy destination, or removed, moved, or edited file), inside the
 project folder; a scratch or temp file elsewhere does not count. The `design`,
-`design-reads`, `reference-reads`, and `security` gates use the same rule, so a scratch script outside the
+`design-reads`, `reference-reads`, `review-intake`, and `security` gates use the same rule, so a scratch script outside the
 project is not held, except by a `reference-reads` signal of the
 `gate-fires` kind. The `conflict-resolution` and `repeated-failure` gates
 hold a write wherever its file is, since a worktree with a conflict, or the
@@ -412,8 +413,8 @@ items are unchanged then.
 
 #### Reviewer subagents
 
-A reviewer subagent is a finished spawn the `spawn` gate let through whose
-brief follows `subagent-driven-development`'s reviewer prompt
+A reviewer subagent is a finished `Agent` or `Task` spawn the `spawn` gate
+let through whose brief follows `subagent-driven-development`'s reviewer prompt
 (`references/reviewer-prompt.md`, read, with its `Review Mode`,
 `Review Inputs`, and `Required Report Format` headings). The gate records
 which templates each spawn's brief followed, by the call's id, in the
@@ -424,9 +425,16 @@ finished only once its completion arrives later in the turn: a
 `<task-notification>` naming the agent's id with a `completed` status, or the
 agent's `<agent-message from="<id>">` hand-back, as a prompt or a queued
 command.
-A subagent briefed any other way, from `handoff`'s spawn brief or the
-implementer prompt, is not a review, and the item's text says to use the
+A side session started with a reviewer brief (`start_session` or
+`hand_off_to_session`) is not one: its result arrives at once but says only
+that the review started. A subagent briefed any other way, from `handoff`'s
+spawn brief or the implementer prompt, is not a review, and the item's text says to use the
 reviewer prompt. Whether the review was any good is not judged.
+
+Once a reviewer subagent has reported in the turn, the [`review-intake`](#what-it-holds) gate holds the next write to a
+project code file until `receiving-code-review` counts as loaded, as that
+skill's Activation states, so the findings are classified before they are
+fixed.
 
 ### Design references
 
@@ -928,8 +936,8 @@ goated-hold: <gate> | <kind>
 
 - `<gate>` is one of `router-first`, `route-line`, `pipeline`, `commit`,
   `pull-request`, `pr-review`, `spawn`, `design`, `design-reads`,
-  `reference-reads`, `security`, `conflict-resolution`, `repeated-failure`,
-  or `closeout`.
+  `reference-reads`, `review-intake`, `security`, `conflict-resolution`,
+  `repeated-failure`, or `closeout`.
 - `<kind>` is `strict` or `justified-skip`.
 - The first line matches
   `^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-skip)$`.
@@ -960,7 +968,7 @@ goated-hold: <gate> | <kind>
   [subagent](#subagents), where only its current turn counts, the hold asks
   for the load or read in this turn.
 - A hold that a route or skip line can clear (`route-line`, `pipeline`,
-  `design`, `design-reads`, `reference-reads`, `security`,
+  `design`, `design-reads`, `reference-reads`, `review-intake`, `security`,
   `conflict-resolution`, `repeated-failure`, `pr-review`) says that a line in reply text may not be
   seen (see [Known Limits](#known-limits)), and to put the line in the held
   call's description, or in the description or Skill `args` of a call made
@@ -1075,7 +1083,7 @@ A hook call from inside a subagent carries `agent_id`. There:
 - the routing gates do not apply, because the parent's brief carries the route;
 - the action gates (`commit`, `pull-request`, `pr-review`, `spawn`, `design`,
   `design-reads`, `security`, `conflict-resolution`, `repeated-failure`) apply,
-  `reference-reads` aside, judged from
+  `reference-reads` and `review-intake` aside, judged from
   the subagent's own transcript, which Claude Code keeps in
   `<session-id>/subagents/agent-<agent_id>.jsonl` beside the main one. A
   subagent must load the skill itself: the parent's loads do not count, and
@@ -1356,6 +1364,10 @@ of the call's prompt, which is normally already there.
   subagent's edits, so a subagent's design edits need no citation. A citation
   in a reply that also makes a tool call can be lost the way a route line
   is, so the item points to the call fields too.
+- The `review-intake` gate sees only the turn a reviewer reported in. When
+  the review reports, the turn ends to ask the user, and the fixes come in
+  the next turn, those fixes are not held. A subagent's own edits are never
+  held, since only the main agent records which brief each spawn followed.
 - The `reference-reads` gate fails open: with no registry at its path (see
   [Install](#install)), or one it cannot read or parse, it asks for nothing,
   with a warning unless the default registry is simply missing. Its reader

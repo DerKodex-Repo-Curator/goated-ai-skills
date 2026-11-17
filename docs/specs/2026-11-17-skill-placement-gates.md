@@ -89,7 +89,7 @@ or two sessions. The gaps that matter:
   from the fork point closer to the branch, so local merges prefer the
   local base.
 - **Reviewer subagents.** For R1 and R2, a reviewer subagent is a finished
-  spawn whose brief follows `subagent-driven-development`'s reviewer
+  subagent spawn (not a side session) whose brief follows `subagent-driven-development`'s reviewer
   prompt. The `spawn` gate records which template a brief matched, by the
   call's id, as the design gates record an edit's references. A review
   briefed any other way, the `handoff` spawn brief included, does not

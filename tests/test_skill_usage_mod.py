@@ -77,6 +77,12 @@ def _edit(path: str, new: str) -> dict:
     return {"file_path": path, "old_string": "pass", "new_string": new}
 
 
+# A brief from the reviewer prompt, which starts a reviewer subagent.
+REVIEWER_BRIEF = (
+    "## Review Mode\n\nSpec review of the export change.\n\n## Review Inputs\n\n- The diff.\n\n"
+    "## Required Report Format\n\n- Findings with file paths.\n\n"
+    "goated-skills: standards-and-spec-review\n"
+)
 # Six added lines that trip no design-reads signal, and a line that declares no reference.
 PLAIN = "\n".join(f"total_{n} = {n}" for n in range(6))
 NONE_LINE = "goated-design-reads: none: only renames local names"
@@ -163,6 +169,13 @@ def _adapter_texts() -> dict[str, str]:
         referenced.load("diagnose")
         texts["referenceReads"] = reason(referenced.call(
             "Edit", _edit("tests/test_export.py", "client = MagicMock()\ntime.sleep(1)")))
+        # A reviewer subagent's report holds the fixes until receiving-code-review loads (Ticket 070).
+        intake = routed("review-intake")
+        intake.load("subagent-driven-development")
+        intake.read("/skills/subagent-driven-development/references/reviewer-prompt.md")
+        intake.subagent("r1").prompt("Review the change.", hook=False)
+        intake.spawn("r1", REVIEWER_BRIEF)
+        texts["reviewIntake"] = reason(intake.call("Edit", _edit("src/export.py", "rate = 2")))
         texts["security"] = reason(routed("security").call("Write", _write("src/auth.py")))
         # A shell write is held like a write tool's: here, to a dependency manifest.
         texts["shellWrite"] = reason(
@@ -317,6 +330,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "designLineReads": "design | justified-skip",
             "designReads": "design-reads | justified-skip",
             "referenceReads": "reference-reads | justified-skip",
+            "reviewIntake": "review-intake | justified-skip",
             "security": "security | justified-skip",
             "shellWrite": "security | justified-skip",
             "repeatedFailure": "repeated-failure | justified-skip",
@@ -360,6 +374,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "designLineReads": "skip software-design-principles",
             "designReads": "skip software-design-principles",
             "referenceReads": "skip <skill>",
+            "reviewIntake": "skip receiving-code-review",
             "security": "skip code-security-review",
             "shellWrite": "skip code-security-review",
             "securityNoExtension": "skip code-security-review",
