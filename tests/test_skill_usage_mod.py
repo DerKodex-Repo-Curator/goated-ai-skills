@@ -308,7 +308,10 @@ class SkillUsageModFixtureTests(unittest.TestCase):
         # A route or skip line in reply text is recorded only after the hook returns, and Claude
         # Code may store it as a narration summary that drops it (README "Known Limits"), so the
         # hint points to a tool call's description or a Skill call's args, then to the user's way out.
+        # The full hint comes once per turn; a later such hold in the turn gives one sentence that
+        # keeps the way out. The generator drives these keys as later holds in their turn.
         texts = _adapter_texts()
+        later_in_turn = {"designLineReads", "designReads", "prReviewRead"}
         ways_out = {
             "routeLine": "skip routing",
             "pipeline": "skip routing",
@@ -326,8 +329,12 @@ class SkillUsageModFixtureTests(unittest.TestCase):
         }
         for key, way_out in ways_out.items():
             with self.subTest(key=key):
-                self.assertIn("may not be seen", texts[key])
-                self.assertIn("description field of a shell or agent call, or in a Skill call's args", texts[key])
+                if key in later_in_turn:
+                    self.assertNotIn("may not be seen", texts[key])
+                    self.assertIn("in a shell or agent call's description or a Skill call's args", texts[key])
+                else:
+                    self.assertIn("may not be seen", texts[key])
+                    self.assertIn("description field of a shell or agent call, or in a Skill call's args", texts[key])
                 self.assertIn(f"`{way_out}`", texts[key])
 
     def test_holds_backtick_only_skill_names(self) -> None:

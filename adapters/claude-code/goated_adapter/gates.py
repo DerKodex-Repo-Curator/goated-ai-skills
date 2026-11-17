@@ -59,7 +59,12 @@ class Hold:
         return f"goated-hold: {self.gate} | {self.kind}\n{self.instruction}"
 
 
-def unseen_line_advice(line: str, way_out: str) -> str:
+# Opens the full unseen-line advice; a held result in the turn that contains it
+# shows the turn already gave the advice in full.
+FULL_ADVICE_OPENING = "in reply text may not be seen: Claude Code records a message only"
+
+
+def unseen_line_advice(line: str, way_out: str, turn: Turn) -> str:
     """Recovery advice for a hold that a route or skip line can clear.
 
     `line` names the line ("route line", "skip line"); `way_out` is the typed
@@ -68,10 +73,21 @@ def unseen_line_advice(line: str, way_out: str) -> str:
     the adapter reads (`transcript.call_line_text`), then to the user's way
     out. It names those fields without backticks, since the skill-usage mod
     reads every backticked bare word in a hold as a skill.
+
+    The advice is given in full once per turn: when one of `turn`'s held
+    results already carries it, a one-sentence form that keeps `way_out` is
+    returned instead. A held call made in parallel has no result yet, so it
+    does not count.
     """
 
+    if any(call.held and FULL_ADVICE_OPENING in call.output for call in turn.calls):
+        return (
+            f"Put the {line} on its own line in a shell or agent call's description or a "
+            "Skill call's args, as this turn's first such hold explained, or tell the user "
+            f"they can type `{way_out}` in their prompt."
+        )
     return (
-        f"A {line} in reply text may not be seen: Claude Code records a message only "
+        f"A {line} {FULL_ADVICE_OPENING} "
         "after this check, and can store the text of a message that makes a tool call "
         "as a summary that drops the line. A line in the description field of a shell "
         "or agent call, or in a Skill call's args, is read as written and counts from "
@@ -264,7 +280,7 @@ def check_routing(
         "no write or spawn between them are one task, corrected. A load in an "
         "earlier turn does not count, so load it again. If one does not apply, "
         "write a corrected route line without it; the last route line wins. "
-        + unseen_line_advice("route line", "skip routing"),
+        + unseen_line_advice("route line", "skip routing", turn),
     )
 
 
@@ -275,7 +291,7 @@ def _route_line_instruction(turn: Turn) -> str:
         "`goated-route: direct`, `goated-route: <intensity> | requires: <skills>`, "
         "or `goated-route: continue` when this prompt continues the current task "
         "or, in a session with no task yet, work begun elsewhere. "
-        + unseen_line_advice("route line", "skip routing")
+        + unseen_line_advice("route line", "skip routing", turn)
     )
     if turn.malformed:
         quoted = "; ".join(f"`{line}`" for line in turn.malformed)

@@ -735,6 +735,14 @@ goated-hold: <gate> | <kind>
   in an earlier message of the turn, and make the call again. It then says
   the user can type the matching override. It names those fields without
   backticks, since the mod would read a backticked bare word as a skill.
+  That advice is given in full only on the first such hold of a turn. A
+  later one in the same turn gives one sentence instead: put the line in a
+  shell or agent call's description or a Skill call's args, or tell the user
+  they can type the override. Whether the turn already gave the full advice
+  is read from the turn's earlier held results, so no state is kept. A call
+  held in parallel with the first has no result yet, so it gives the full
+  advice too. The next turn's first such hold gives it in full again. The
+  first line, and every hold that never carried the advice, stay the same.
 - A hold or closeout item that asks for a [change read](#change-reads) once
   its skill has loaded names that skill without backticks, or only in its
   skip line, since no load answers it: the commit, pull-request, and

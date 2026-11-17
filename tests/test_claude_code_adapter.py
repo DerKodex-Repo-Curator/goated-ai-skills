@@ -502,6 +502,93 @@ class PipelineTests(AdapterTestCase):
         self.assertEqual(decision(s.call("Edit")), "pass")
 
 
+class UnseenLineAdviceTests(AdapterTestCase):
+    """The unseen-line advice is given in full on a turn's first hold that carries
+    it; later ones in that turn give one sentence and keep the typed override."""
+
+    FULL = "may not be seen"
+    SHORT = "call's description or a Skill call's args"
+    AUTH = {"file_path": "src/auth.py", "content": "x = 1\n"}
+
+    def route_line_hold(self) -> dict:
+        s = self.session
+        s.prompt("Harden the login check.")
+        s.load(ROUTER)
+        return s.call("Edit")
+
+    def test_a_turns_first_hold_with_the_advice_gives_it_in_full(self) -> None:
+        s = self.session
+        s.prompt("Harden the login check.")
+        # Near miss: an earlier hold in the turn that carries no advice does not
+        # count as having shown it.
+        first = s.call("Edit")
+        self.assertTrue(reason(first).startswith("goated-hold: router-first"))
+        s.load(ROUTER)
+
+        held = s.call("Edit")
+        self.assertTrue(reason(held).startswith("goated-hold: route-line | strict\n"))
+        self.assertIn(self.FULL, reason(held))
+        self.assertIn("description field of a shell or agent call, or in a Skill call's args",
+                      reason(held))
+        self.assertIn("`skip routing`", reason(held))
+
+    def test_a_later_hold_in_the_turn_gives_one_sentence_and_the_override(self) -> None:
+        s = self.session
+        self.assertIn(self.FULL, reason(self.route_line_hold()))
+        s.say("goated-route: direct")
+
+        held = reason(s.call("Write", self.AUTH))
+        self.assertTrue(held.startswith("goated-hold: security | justified-skip\n"))
+        self.assertNotIn(self.FULL, held)
+        self.assertIn(self.SHORT, held)
+        self.assertIn("`skip code-security-review`", held)
+        self.assertIn("This edit was not applied.", held)
+
+    def test_advice_text_in_a_call_that_was_not_held_does_not_count_as_shown(self) -> None:
+        # Near miss for the short form: only this adapter's held results count.
+        s = self.session
+        s.prompt("Harden the login check.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        s.call("Bash", {"command": "cat README.md"},
+               result="A route line in reply text may not be seen: Claude Code records ...")
+
+        held = reason(s.call("Write", self.AUTH))
+        self.assertTrue(held.startswith("goated-hold: security"))
+        self.assertIn(self.FULL, held)
+
+    def test_the_next_turn_gives_the_full_advice_again(self) -> None:
+        s = self.session
+        self.route_line_hold()
+        s.say("goated-route: direct")
+        self.assertNotIn(self.FULL, reason(s.call("Write", self.AUTH)))
+
+        s.prompt("Also harden the logout check.")
+        s.say("goated-route: direct")
+        again = reason(s.call("Write", self.AUTH))
+        self.assertTrue(again.startswith("goated-hold: security"))
+        self.assertIn(self.FULL, again)
+        # Near miss: the new turn's own second such hold is short again.
+        self.assertNotIn(self.FULL, reason(s.call("Write", self.AUTH)))
+
+    def test_a_hold_that_never_carried_the_advice_is_unchanged(self) -> None:
+        commit = {"command": 'git commit -m "Harden login"'}
+        (self.root / "fresh").mkdir()
+        fresh = Session(self.root / "fresh")
+        fresh.prompt("Harden the login check.")
+        fresh.load(ROUTER)
+        fresh.say("goated-route: direct")
+        alone = reason(fresh.call("Bash", commit))
+        self.assertTrue(alone.startswith("goated-hold: commit | strict\n"))
+
+        s = self.session
+        self.route_line_hold()
+        s.say("goated-route: direct")
+        self.assertEqual(reason(s.call("Bash", commit)), alone)
+        # Near miss: a hold that carries the advice, later in the same turn, is shortened.
+        self.assertNotIn(self.FULL, reason(s.call("Write", self.AUTH)))
+
+
 class SpawnTests(AdapterTestCase):
     SPAWN_TOOLS = (
         "Agent",
