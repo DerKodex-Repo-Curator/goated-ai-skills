@@ -744,7 +744,8 @@ goated-hold: <gate> | <kind>
   once only one can claim it. When the marker cannot be made or read, each
   such hold gives the full advice. The next turn's first such hold gives it
   in full again. The first line, and every hold that never carried the
-  advice, stay the same. Holds in a subagent always give it in full.
+  advice, stay the same. A subagent's turns claim their own marker, so each
+  subagent gives the full advice once per turn, apart from its parent.
 - A hold or closeout item that asks for a [change read](#change-reads) once
   its skill has loaded names that skill without backticks, or only in its
   skip line, since no load answers it: the commit, pull-request, and
@@ -896,9 +897,10 @@ required when the design gates judged it, the last turn seen, and the latest
 typed overrides. It holds no prompt or reply
 text beyond the short override phrases and a commit message the user typed.
 Beside the state files, a `turn-markers/` folder holds one empty file per
-session, named for the turn whose hold gave the
+session, and one per subagent of it, named for the turn whose hold gave the
 [unseen-line advice](#hold-messages) in full. A new turn's claim replaces it,
-and a `SessionStart` after compaction or `/clear` deletes it.
+and a `SessionStart` after compaction or `/clear` deletes the session's and
+its subagents'.
 The action and closeout gates keep no state of their own: they read the
 current turn, the design gates also the design references read since the
 last compaction, and the closeout's citation item the references recorded

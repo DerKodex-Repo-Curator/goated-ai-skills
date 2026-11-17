@@ -661,11 +661,39 @@ class UnseenLineAdviceTests(AdapterTestCase):
         # Near miss: the advice-carrying hold that follows still gives it in full.
         self.assertIn(self.FULL, reason(s.call("Write", self.AUTH)))
 
+    def subagent_holds(self, agent_id: str, count: int = 2) -> list[str]:
+        """Security holds on `count` writes in a new subagent's turn."""
+
+        agent = self.session.subagent(agent_id)
+        agent.prompt("Harden the login check.", hook=False)
+        return [
+            reason(agent.call("Write", self.AUTH, agent_id=agent_id, agent_type="general-purpose"))
+            for _ in range(count)
+        ]
+
+    def test_a_subagents_first_hold_gives_the_full_advice_and_later_ones_one_sentence(self) -> None:
+        self.session.prompt("Delegate the login work.")
+        first, later = self.subagent_holds("a1")
+        self.assertTrue(first.startswith("goated-hold: security | justified-skip\n"), first)
+        self.assertIn(self.FULL, first)
+        self.assertNotIn(self.FULL, later)
+        self.assertIn(self.SHORT, later)
+        self.assertIn("`skip code-security-review`", later)
+        # Near miss: another subagent of the same session gives its own full
+        # advice once, and the parent's turn still has its own.
+        other_first, other_later = self.subagent_holds("a2")
+        self.assertIn(self.FULL, other_first)
+        self.assertNotIn(self.FULL, other_later)
+        s = self.session
+        s.load(ROUTER)
+        self.assertIn(self.FULL, reason(s.call("Edit")))
+
     def test_clearing_the_session_drops_its_advice_marker(self) -> None:
         s = self.session
         self.route_line_hold()
+        self.subagent_holds("a1", count=1)
         markers = s.config.state_dir / "turn-markers"
-        self.assertEqual(len(list(markers.iterdir())), 1)
+        self.assertEqual(len(list(markers.iterdir())), 2)
         s.hook("SessionStart", source="clear")
         self.assertEqual(list(markers.iterdir()), [])
 

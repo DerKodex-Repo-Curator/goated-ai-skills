@@ -19,9 +19,12 @@ from pathlib import Path
 UNSAFE_NAME_CHARS = re.compile(r"[^A-Za-z0-9_-]")
 REPLACE_ATTEMPTS = 5
 REPLACE_RETRY_SECONDS = 0.02
-# Beside the state files: one empty file per session, named for the turn that
-# claimed it.
+# Beside the state files: one empty file per session, and one per subagent of
+# it, named for the turn that claimed it.
 TURN_MARKERS_DIR = "turn-markers"
+# Separates a subagent's id from its session's in a marker name; no safe name
+# holds it, so a session's marker prefix never matches a subagent's.
+AGENT_SEPARATOR = "~"
 
 
 class Task:
@@ -216,18 +219,23 @@ class StateStore:
             temp.unlink(missing_ok=True)
             raise
 
-    def claim_turn(self, session_id: str, turn_key: str) -> bool:
-        """Claim the session's marker for `turn_key`; True for the first claim.
+    def claim_turn(self, session_id: str, turn_key: str, agent_id: str | None = None) -> bool:
+        """Claim the marker for `turn_key`; True for the first claim.
 
-        The claim is one exclusive file create, so of several hooks claiming
-        at once exactly one gets True. A successful claim drops the session's
-        markers of earlier turns. Raises OSError, or StateUnsafe, when the
-        marker cannot be made or read.
+        The marker belongs to the session, or to its subagent `agent_id`, so
+        each subagent's turns claim apart from the parent's. The claim is one
+        exclusive file create, so of several hooks claiming at once exactly
+        one gets True. A successful claim drops the same owner's markers of
+        earlier turns. Raises OSError, or StateUnsafe, when the marker cannot
+        be made or read.
         """
 
         folder = self.directory / TURN_MARKERS_DIR
         self._ensure_private_directory(folder)
-        prefix = f"{_safe_name(session_id)}."
+        owner = _safe_name(session_id)
+        if agent_id is not None:
+            owner += AGENT_SEPARATOR + _safe_name(agent_id)
+        prefix = f"{owner}."
         marker = folder / f"{prefix}{_safe_name(turn_key)}"
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
         try:
@@ -238,16 +246,18 @@ class StateStore:
         return True
 
     def clear_turn_markers(self, session_id: str) -> None:
-        """Drop the session's turn marker, best effort, as its state is reset."""
+        """Drop the turn markers of the session and its subagents, best effort,
+        as its state is reset."""
 
         folder = self.directory / TURN_MARKERS_DIR
         if folder.is_dir():
             self._drop_markers(folder, f"{_safe_name(session_id)}.")
+            self._drop_markers(folder, f"{_safe_name(session_id)}{AGENT_SEPARATOR}")
 
     @staticmethod
     def _drop_markers(folder: Path, prefix: str, keep: str | None = None) -> None:
-        # Safe names hold no "." or glob character, so the prefix matches only
-        # this session's markers.
+        # Safe names hold no ".", separator, or glob character, so the prefix
+        # matches only its owner's markers.
         for old in folder.glob(f"{prefix}*"):
             if old.name != keep:
                 try:
