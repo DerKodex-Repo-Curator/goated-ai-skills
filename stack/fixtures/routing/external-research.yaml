@@ -1,0 +1,45 @@
+schema_version: 1.0.0
+identifier: external-research
+title: A current external question routes to cited research
+request: Find the current rate limits of the two public geocoding services we might adopt, with cited sources, and say where they disagree.
+project_context:
+  - The answer depends on public provider documentation that changes over time.
+  - Nothing in the project records the limits, and no file changes are requested.
+expected:
+  profile:
+    task_size: standard
+    intent_maturity: scoped
+    workflow_intensity: standard
+    domain: research
+    risk_flags: []
+    continuity: single-session
+    execution: single-agent
+  data_sensitivity: public
+  action_reach: read-only
+  route_signals: []
+  proof_strategy: Cite each limit to its provider source with its date, and report conflicts or missing evidence.
+  route:
+    required_gates:
+      - proportional-orientation
+      - source-grounded-research
+      - consolidated-closeout
+    conditional_gates: []
+    skipped_gates:
+      - knowledge-retrieval
+      - tdd
+  checkpoint_events: []
+  approval:
+    mode: risk-adaptive-default
+    consent_reused: true
+    fresh_approval_required: false
+    scope_or_reach_changed: false
+    reason: Public reads need no approval.
+  evidence:
+    reuse: []
+    invalidate: []
+  closeout:
+    skill_reports_internal_deltas: true
+    main_agent_consolidates: true
+prohibited_behaviors:
+  - Answer from memory without cited, dated sources.
+  - Route to knowledge retrieval when no durable project knowledge holds the answer.

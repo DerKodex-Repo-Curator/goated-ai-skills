@@ -1,0 +1,47 @@
+schema_version: 1.0.0
+identifier: documentation-writing
+title: A new operator runbook routes to the documentation writer
+request: Write an operator runbook for restoring the export service from its nightly backup.
+project_context:
+  - The restore steps exist only in scripts and a few issue comments.
+  - No behavior or interface changes; the runbook is the work.
+expected:
+  profile:
+    task_size: standard
+    intent_maturity: scoped
+    workflow_intensity: standard
+    domain: documentation
+    risk_flags: []
+    continuity: single-session
+    execution: single-agent
+  data_sensitivity: public
+  action_reach: project-changing
+  route_signals: []
+  proof_strategy: Check each runbook step against the restore scripts it describes.
+  route:
+    required_gates:
+      - proportional-orientation
+      - documentation-writer
+      - direct-proof
+      - consolidated-closeout
+    conditional_gates: []
+    skipped_gates:
+      - doc-sync
+      - tdd
+  checkpoint_events: []
+  approval:
+    mode: approve-batch
+    consent_reused: true
+    fresh_approval_required: false
+    scope_or_reach_changed: false
+    reason: The request covers writing one new runbook file.
+  evidence:
+    reuse:
+      - restore-scripts
+    invalidate: []
+  closeout:
+    skill_reports_internal_deltas: true
+    main_agent_consolidates: true
+prohibited_behaviors:
+  - Treat writing a new runbook as doc sync after a code change.
+  - Describe restore steps the scripts do not perform.

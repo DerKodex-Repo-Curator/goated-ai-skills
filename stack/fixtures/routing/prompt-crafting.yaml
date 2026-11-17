@@ -1,0 +1,45 @@
+schema_version: 1.0.0
+identifier: prompt-crafting
+title: Turning a rough request into a prompt routes to goated-prompt
+request: Turn my rough note about migrating the billing tests into a reusable task prompt for a fresh agent.
+project_context:
+  - The note names the goal but no scope, constraints, or done criteria.
+  - The prompt is the deliverable; nothing is implemented now.
+expected:
+  profile:
+    task_size: tiny
+    intent_maturity: fuzzy
+    workflow_intensity: lightweight
+    domain: content
+    risk_flags: []
+    continuity: single-session
+    execution: single-agent
+  data_sensitivity: public
+  action_reach: session-local
+  route_signals: []
+  proof_strategy: Check the prompt states goal, scope, constraints, and done criteria the note supports.
+  route:
+    required_gates:
+      - proportional-orientation
+      - goated-prompt
+      - consolidated-closeout
+    conditional_gates: []
+    skipped_gates:
+      - write-a-spec
+      - tdd
+  checkpoint_events: []
+  approval:
+    mode: risk-adaptive-default
+    consent_reused: true
+    fresh_approval_required: false
+    scope_or_reach_changed: false
+    reason: A prompt in the reply changes no files.
+  evidence:
+    reuse: []
+    invalidate: []
+  closeout:
+    skill_reports_internal_deltas: true
+    main_agent_consolidates: true
+prohibited_behaviors:
+  - Start implementing the migration the note describes.
+  - Invent scope or constraints the note does not support.

@@ -12,10 +12,10 @@ metadata:
 Select one proportionate route for the task, reuse shared evidence and consent,
 and revise only the affected route parts at controlled checkpoints.
 
-Use this router when work begins, an existing work envelope needs refreshing,
-or a material route signal appears. A finished skill alone is not a reason to
-reload it. For an obvious tiny request, apply the lightweight path silently
-apart from the one-line `goated-route: direct`.
+Rerun routing when an envelope needs refreshing or a material route signal
+appears. A finished skill alone is not a reason to reload it. For an obvious
+tiny request, apply the lightweight path silently apart from the one-line
+`goated-route: direct`.
 
 ## Inputs
 
@@ -75,7 +75,7 @@ skill map, approval, evidence, checkpoint, and route-line rules in this file.
 | --- | --- | --- |
 | Proportional orientation | Unfamiliar, cross-area, stale, or boundary-uncertain work, or a `standard` or `full` route from a brief | `session-start-progressive-disclosure` |
 | Clarification or diagnosis | Intent or root cause materially blocks action | `grill-with-docs`; `diagnose` for failures |
-| External research | Current external claims need cited, freshness-aware evidence | `source-grounded-research` |
+| External research | External claims need cited sources, or their authority, freshness, conflicts, or gaps matter | `source-grounded-research` |
 | Knowledge retrieval | Durable project knowledge must answer a question, especially when authority, freshness, conflict, or provenance matters | `knowledge-retrieval` |
 | Wayfinder | Uncertainty branches across focused sessions and later decisions depend on earlier evidence | `wayfinder` |
 | Spec, architecture, or tickets | Durable intent, module strategy, or multiple resumable slices must be settled | `write-a-spec`, `design-codebase-architecture`, `spec-to-tickets` |
@@ -89,38 +89,40 @@ skill map, approval, evidence, checkpoint, and route-line rules in this file.
 | Handoff | Work is resumable, interrupted, cross-session delegated, or unfinished | `handoff` |
 
    - Load code refinement only for observed debt or explicit cleanup.
-   - Other specialists load on their own triggers: `documentation-writer` or
-     `documentation-cleanup` when docs are the work, `goated-prompt` for
-     prompt work, `prototype` for cheap evidence, and `setup-scribe` for setup
-     knowledge. When a named skill is not installed, apply the gate directly
-     and leave it out of `requires:`.
-   - Wayfinder is not a synonym for large work. Reject it for session-sized
-     discussion and for implementation whose decisions are already settled.
-     Its chart requires approval covering destination, location, visible
-     frontier, action reach, and initial write scope before any map write;
-     envelope consent that covers all five dimensions satisfies it.
+   - Other specialists load on their own triggers: `documentation-writer` to
+     write or substantially revise guides, manuals, or runbooks;
+     `documentation-cleanup` to audit or tidy docs; `goated-prompt` to turn
+     rough requests into prompts; `retrospective` after a merged wave of
+     delegated tickets, or recurring friction; `prototype` for cheap evidence;
+     `setup-scribe` for setup knowledge. When a named skill is not
+     installed, apply the gate directly and leave it out of `requires:`.
+   - Reject Wayfinder for merely large work, session-sized discussion, or
+     implementation whose decisions are settled. Its chart requires approval
+     covering destination, location, visible frontier, action reach, and
+     initial write scope before any map write; envelope consent covering all
+     five satisfies it.
    - Tiny work uses direct action and narrow proof without extra gates.
 
 5. **Apply approval once for the current reach.**
-   - With no selected mode, use the risk-adaptive default: safe reads and
+   - Without a selected mode, use the risk-adaptive default: safe reads and
      diagnostics proceed; scoped reversible project writes may use one batch;
      destructive, credential, protected-branch, deployment, publication, and
      external-changing actions need explicit approval covering that action.
    - Honor `confirm-each-write`, `approve-batch`,
      `standing-session-consent`, or `draft-without-applying`.
-   - Reuse consent while its scope and action reach still cover the work. A
-     material change to either invalidates consent where relevant and requires
-     a fresh decision before the expanded action.
+   - Reuse consent while its scope and action reach cover the work; a
+     material change to either needs a fresh decision before the expanded
+     action.
    - Skills do not add approval gates to covered actions. For a necessary
      pause, cite the instruction and unresolved decision; continue independent
      authorized work.
 
 6. **Execute through selected gates.**
-   - Give each skill the relevant envelope slice and fresh evidence instead of
-     asking it to rediscover the task.
+   - Give each skill its envelope slice and fresh evidence so it need not
+     rediscover the task.
    - Skills return internal deltas: result, evidence, changes, risks, route
-     signals, and skipped checks. They do not reconstruct the downstream route
-     or produce competing task closeouts.
+     signals, and skipped checks. They never rebuild the route or give
+     competing closeouts.
    - Keep routine routing internal. Report only decisions, blockers, approval
      needs, material scope or risk changes, or useful long-work progress.
 
@@ -145,7 +147,7 @@ skill map, approval, evidence, checkpoint, and route-line rules in this file.
 
 Return one compact envelope update using Step 2's core fields. Add only
 decision-relevant route changes, approval needs, evidence, or residual risk,
-and explain a change when it affects a user decision. Standalone use returns
+explaining any change that affects a user decision. Standalone use returns
 the same route and closeout without shared files.
 
 End routing with one route line, on its own line, outside code blocks:
@@ -166,8 +168,8 @@ call it covers.
 
 The main agent owns the envelope, routing, consent interpretation, and
 integration. Delegate only bounded work with non-overlapping ownership. Require
-inspected paths, commands, evidence, assumptions, status, and envelope deltas,
-and review them before use. Without delegation, run the route sequentially.
+inspected paths, commands, evidence, assumptions, status, and envelope deltas;
+review them before use. Without delegation, run the route sequentially.
 
 ## Guardrails
 

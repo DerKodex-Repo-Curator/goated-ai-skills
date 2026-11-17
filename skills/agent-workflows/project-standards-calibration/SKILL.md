@@ -16,6 +16,10 @@ Activate it only when the onboarding artifact budget includes a standards
 profile because agents would otherwise rediscover or misapply important norms.
 Onboarding without that need proceeds without one.
 
+A project with no `docs/agents/project-standards.md` is a candidate for this
+skill, not a reason to activate it; an installed enforcement adapter may name
+it once per project as a notice that never blocks.
+
 ## Inputs
 
 - User request or onboarding goal, and the target-project root path.
