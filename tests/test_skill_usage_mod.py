@@ -225,10 +225,13 @@ def _adapter_texts() -> dict[str, str]:
             described.call("Bash", {"command": 'gh pr create --title "Add export" --body "Adds it."'})
         )
         # A large pull request, once the pull-request gate passes: the review hold, then its change read.
-        large = routed("pr-review")
+        # A change read after the last change meets the read before or after the load (Ticket 092),
+        # so the read is asked for only when the user typed a skip of the pull-request gate's skill.
+        large = session("pr-review")
+        large.prompt("Open the pull request; skip pr-description.")
+        large.load(ROUTER)
+        large.say("goated-route: direct")
         git_branch_with_change(large.project, 450)
-        large.load("pr-description")
-        large.run("git diff main...HEAD")
         open_pr = {"command": 'gh pr create --base main --title "Add export" --body "Adds it."'}
         texts["prReview"] = reason(large.call("Bash", open_pr))
         large.load("standards-and-spec-review")

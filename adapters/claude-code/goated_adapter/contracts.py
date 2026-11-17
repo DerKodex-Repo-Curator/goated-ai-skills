@@ -77,11 +77,12 @@ BRIEF_TEMPLATES = (
 
 def templates_read(calls) -> list[str]:
     """The `reference` of each brief template that finished Read calls among
-    `calls` read, in order. A shell command printing one does not count."""
+    `calls` read whole, in order (`Call.whole_read_path`). A shell command
+    printing one does not count."""
 
     return [
-        template.reference for call in calls if call.name == "Read" and call.ok
-        for template in BRIEF_TEMPLATES if template.read_by(str(call.input.get("file_path") or ""))
+        template.reference for call in calls if (path := call.whole_read_path())
+        for template in BRIEF_TEMPLATES if template.read_by(path)
     ]
 
 

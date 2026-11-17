@@ -26,7 +26,7 @@ without it.
 | Closeout items: each item a closeout hold lists, such as Proof, Unfinished, Docs, Design, Security, Setup, or one added later, with its own outcome | The item lines of the closeout hold's text, `- <Label>: …`, at a commit or a `Stop`; the item's skill is the first it backticks, else the skill of the skip line it offers |
 | Your overrides, by phrase | The adapter's sentence `recorded your override for this prompt` in its hook context; its `commit message` phrase shows as `commit message: <text>` |
 | Reads of skills' reference and other supporting files, whether the skill had loaded first, and when in the turn: before its first code change, between two, after the last, or in a turn with no code change | `Read` paths and shell commands; code changes are edit tool calls on a code file, by the main agent or a subagent, that ran |
-| Declared references: for each reference a hold asked to read (the `reference-reads`, `design` and `design-reads` holds), how often a hold fired for it, then it was read with the Read tool, or a skip line naming its skill declined it while it was unread (skipped). A reference fires once while it waits unread in its turn, however many holds name it; a later turn's hold fires it again | The references each hold backticks by path, `Read` tool calls, and skip lines, as the hold settlement counts them |
+| Declared references: for each reference a hold asked to read (the `reference-reads`, `design` and `design-reads` holds), how often a hold fired for it, then it was read whole with the Read tool, or a skip line naming its skill declined it while it was unread (skipped). A reference fires once while it waits unread in its turn, however many holds name it; a later turn's hold fires it again | The references each hold backticks by path, `Read` tool calls, and skip lines, as the hold settlement counts them |
 | Subagent spawns, with type and task, including ones that load no skill | Agent tool calls that ran; a held or failed attempt shows in the log as held but is not counted |
 | A subagent's reads of a skill's `SKILL.md` | A subagent's `Read` calls |
 
@@ -133,8 +133,9 @@ it. In particular:
   a later edit's references; both name the skill only in their skip line and
   backtick each reference by its path. Such a hold is met, as the adapter
   judges it, once the agent has used the Read tool on each reference it names
-  (a shell command printing one, another of the skill's files, or its
-  `SKILL.md` does not count), and counts as files read. Loading the skill
+  with no `limit`, `offset` or `pages` (a partial Read, a shell command
+  printing one, another of the skill's files, or its `SKILL.md` does not
+  count), and counts as files read. Loading the skill
   again, or writing a design-reads line, answers neither.
 - The adapter's `reference-reads` hold asks for the skill references the
   GOATED registry declares for an edit, each backticked by its path under

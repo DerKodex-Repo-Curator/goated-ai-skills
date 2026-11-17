@@ -34,8 +34,8 @@ export type UsageEvent = Stamp &
      * `id`: the call's tool_use id, so a failed read (`refused`) read nothing.
      */
     | { kind: 'file-read'; id?: string; file: string }
-    /** A supporting file of a skill read, such as `references/x.md`, by the main agent or a subagent; `isReadTool`: by the Read tool, not a shell command. */
-    | { kind: 'ref'; skill: string; file: string; isReadTool?: true; isSubagent?: true }
+    /** A supporting file of a skill read, such as `references/x.md`, by the main agent or a subagent; `isReadTool`: by the Read tool, not a shell command; `isPartialRead`: by a Read with a limit, offset, or pages, which answers no hold. */
+    | { kind: 'ref'; skill: string; file: string; isReadTool?: true; isPartialRead?: true; isSubagent?: true }
     /** A subagent reading a skill's SKILL.md, the skill's body, without the Skill tool. */
     | { kind: 'body'; skill: string; isSubagent: true; agent?: string }
     /** A winning `goated-route:` line in a reply, by the main agent or the subagent `agent`. */

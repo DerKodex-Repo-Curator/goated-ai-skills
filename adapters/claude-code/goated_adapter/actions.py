@@ -168,6 +168,9 @@ RED_FLAGS_REFERENCE = "software-design-principles/references/red-flags.md"
 # The question `red-flags.md` ends with, which the closeout's red-flags item
 # repeats. No hold checks an answer.
 RED_FLAGS_QUESTION = "Name one input that would break this change, and say what happens."
+# How a hold asks for a required file: a Read with a range does not count
+# (`Call.whole_read_path`).
+WHOLE_READ = "whole with the Read tool, with no limit or offset"
 # Tools that start another agent, each with the input field that carries the
 # brief. A call without a brief (an offer card, or starting a saved proposal)
 # hands over no text, so it is not held.
@@ -349,23 +352,23 @@ class _Proof:
         return -1
 
     def read_index(self, reference: str, after: int = -1) -> int | None:
-        """Where the first finished Read of `reference` after call `after` is, if any."""
+        """Where the first finished whole Read of `reference` after call `after` is, if any."""
 
         return next((index for index in self._read_indexes(reference) if index > after), None)
 
     def last_read_index(self, reference: str, before: int) -> int | None:
-        """Where the last finished Read of `reference` before call `before` is, if any."""
+        """Where the last finished whole Read of `reference` before call `before` is, if any."""
 
         return next((index for index in reversed(self._read_indexes(reference)) if index < before), None)
 
     def _read_indexes(self, reference: str) -> list[int]:
-        """Where each finished Read of `reference` in the turn is, in order: the
-        one predicate `read_index` and `last_read_index` share."""
+        """Where each finished whole Read of `reference` in the turn is, in
+        order (`Call.whole_read_path`): the one predicate `read_index` and
+        `last_read_index` share."""
 
         return [
             index for index, call in enumerate(self.turn.calls)
-            if call.name == "Read" and call.ok
-            and _ends_with_path(str(call.input.get("file_path") or ""), reference)
+            if (path := call.whole_read_path()) and _ends_with_path(path, reference)
         ]
 
 
@@ -549,7 +552,8 @@ def _pr_review_hold(size_of: Callable[[], int | None], proof: _Proof,
                     changes: Callable[[], "_Changes"], by_tool: bool = False) -> Hold | None:
     """Hold a pull request that changes `REVIEW_MIN_LINES` or more lines, as
     `size_of` measures it (None: unknown), until `standards-and-spec-review`
-    loads and the change is read after it, or a skip line names it. Checked
+    loads and the change is read after the last change, before or after the
+    load (Ticket 092), or a skip line names it. Checked
     after the `pull-request` gate passes; `size_of` runs only when the turn's
     proof would not already clear it."""
 
@@ -795,9 +799,8 @@ def _change_read_hold(gate: str, skill: str, proof: _Proof, changes: "_Changes",
                       doing: str, then: str, review: bool = False) -> Hold | None:
     """Hold a commit or pull request, whose skill has loaded, until a change read
     follows the turn's last change to any project file, before or after the
-    load (Ticket 059). `review`: the hold asks for a review done with `skill`,
-    so its read must follow the load too, and it is justified-skip, so a skip
-    line naming `skill` clears it.
+    load (Tickets 059 and 092). `review`: the hold asks for a review done with
+    `skill`, and it is justified-skip, so a skip line naming `skill` clears it.
 
     An MCP tool (`by_tool`) passes when the turn changed no project file: it
     carries the change in its own input, and outside a git checkout no diff
@@ -807,12 +810,10 @@ def _change_read_hold(gate: str, skill: str, proof: _Proof, changes: "_Changes",
 
     if by_tool and changes.last_change < 0:
         return None
-    since = max(proof.load_index(skill), changes.last_change) if review else changes.last_change
-    if changes.read_after(since):
+    if changes.read_after(changes.last_change):
         return None
     how = CHANGE_READ if changes.paths else DIFF_ONLY_READ
-    loaded = f", after loading the {skill} skill" if review else ""
-    after = (" and" if review else ",") + " after your last change" if changes.last_change >= 0 else ""
+    after = ", after your last change" if changes.last_change >= 0 else ""
     # Not backticked: the skill-usage mod would read a backticked skip line as an ask
     # that only a skip line answers, and count a read that clears this hold as ignored.
     tail = (f"Or write a skip line, goated-skip: {skill}: <reason>, on its own line. "
@@ -820,7 +821,7 @@ def _change_read_hold(gate: str, skill: str, proof: _Proof, changes: "_Changes",
             else "This hold is strict: a goated-skip line does not clear it.")
     return Hold(
         gate, JUSTIFIED_SKIP if review else STRICT,
-        f"Read the change before {doing}{loaded}{after}: "
+        f"Read the change before {doing}{after}: "
         f"{how}. Then {then}. The whole command was held, so rerun "
         "any steps chained before it too. A read chained in the same command, or made "
         f"in parallel with this call, has not finished, so it does not count. {tail}",
@@ -835,7 +836,7 @@ def _spawn_hold(brief: str, proof: _Proof) -> Hold | None:
         return Hold(
             "spawn", STRICT,
             f"Before starting another agent or session with a brief, load `{HANDOFF_SKILL}` "
-            f"with the Skill tool{proof.within}, read its `references/spawn-brief.md`, and "
+            f"with the Skill tool{proof.within}, read its `references/spawn-brief.md` whole, and "
             "write the brief from that template (Goal, Scope, Done Means, and its skills line "
             "at least). For a "
             "scoped implementation or review task, load `subagent-driven-development` "
@@ -847,7 +848,7 @@ def _spawn_hold(brief: str, proof: _Proof) -> Hold | None:
         files = " or ".join(f"`{t.reference}`" for t in loaded)
         return Hold(
             "spawn", STRICT,
-            f"Read {files} with the Read tool{proof.within} and write the brief from it. "
+            f"Read {files} {WHOLE_READ}{proof.within}, and write the brief from it. "
             "The template is the point of this step, so the skill load alone does not "
             "clear the hold. Nothing was started.",
         )
@@ -1074,7 +1075,7 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
         return Hold(
             "design-reads", JUSTIFIED_SKIP,
             f"This edit of \"{path.rsplit('/', 1)[-1]}\" needs design references not yet read "
-            "since the last compaction. Read each with the Read tool before the edit, and "
+            f"since the last compaction. Read each {WHOLE_READ}, before the edit, and "
             f"apply it: {_reference_list(unread)}. If the edit has no design in it, "
             f"write `goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. This edit "
             "was not applied. " + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
@@ -1084,7 +1085,7 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
         "changing code' rules"
     ]
     if unread:
-        steps.append(f"read with the Read tool each reference it requires: {_reference_list(unread)}")
+        steps.append(f"read each reference it requires {WHOLE_READ}: {_reference_list(unread)}")
     return Hold(
         "design", JUSTIFIED_SKIP,
         f"This is a substantial code change. Before it, {'; '.join(steps)}. If the edit is "
@@ -1109,7 +1110,7 @@ def _reference_reads_hold(path: str | None, tool_input: dict | None, proof: _Pro
     read), where the file is in the project, whether the repeated-failure
     gate's condition holds, and, for a sensitive file, the security
     categories of the turn's `changes` with this one's. A reference counts as
-    read after a finished Read of it since the last compaction. With no
+    read after a finished whole Read of it since the last compaction. With no
     `references`, or a registry that declares none, nothing is held.
     """
 
@@ -1144,7 +1145,7 @@ def _reference_reads_hold(path: str | None, tool_input: dict | None, proof: _Pro
     return Hold(
         "reference-reads", JUSTIFIED_SKIP,
         f"This write{target} needs skill references not yet read since the last compaction; "
-        "the GOATED registry declares when each is required. Read each with the Read tool "
+        f"the GOATED registry declares when each is required. Read each {WHOLE_READ}, "
         f"before the write, and apply it: {listing}. If one does not apply to this write, "
         f"write {skip_lines} on its own line instead, naming its skill. This write was not "
         "applied. " + unseen_line_advice("skip line", way_out),
@@ -1382,8 +1383,8 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     security review. A load counts until the next compaction (`earlier`).
     The doc-sync, design, and security items each also need a change read: doc-sync's after the last code change, the
     design item's after its red-flags read and the last code change that is
-    not comment-only, and security's after its load and the last
-    sensitive change. A turn
+    not comment-only, and security's after the last sensitive change, before
+    or after its load (Ticket 092). A turn
     that installed a package it names, or wrote an env or settings file, needs
     `setup-scribe` loaded at any point in the turn (Setup). Each item accepts
     a skip line; `final_text` is the reply being finished, which
@@ -1421,13 +1422,13 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     sensitive = changes.sensitive
     if sensitive and SECURITY_SKILL in proof.loads and not proof.skipped(SECURITY_SKILL):
         last_sensitive = sensitive[-1][0]
-        if not changes.read_after(max(proof.load_index(SECURITY_SKILL), last_sensitive)):
+        if not changes.read_after(last_sensitive):
             categories = ", ".join(dict.fromkeys(category for _, category in sensitive))
             items.append(
-                f"- Security: a security-sensitive file changed ({categories}). After loading "
-                f"the {SECURITY_SKILL} skill and after the last sensitive change, read the "
-                f"change itself and review it: {CHANGE_READ}. Or, if it crosses no trust "
-                f"boundary, write `goated-skip: {SECURITY_SKILL}: <reason>`."
+                f"- Security: a security-sensitive file changed ({categories}). After the "
+                f"last sensitive change, read the change itself and review it: {CHANGE_READ}. "
+                f"Or, if it crosses no trust boundary, write "
+                f"`goated-skip: {SECURITY_SKILL}: <reason>`."
             )
     setup_item = _setup_item(turn, subagents or {}, proof, project)
     if setup_item:
@@ -1497,7 +1498,7 @@ def _code_items(changes: "_Changes", proof: _Proof) -> list[str]:
         flags = _red_flags_read(proof, designed)
         if flags is None:
             items.append(
-                f"- Design: read `{RED_FLAGS_REFERENCE}` with the Read tool after your last "
+                f"- Design: read `{RED_FLAGS_REFERENCE}` {WHOLE_READ}, after your last "
                 f"code change (an edit of comments only aside), then read the change itself "
                 f"and scan it against them: {CHANGE_READ}. Then answer their closing "
                 f"question: {RED_FLAGS_QUESTION} "
@@ -1519,8 +1520,8 @@ def _review_item(changes: "_Changes", proof: _Proof, spawn_templates: dict[str, 
     branch's work is not large, cannot be measured, or the item is met: by a
     reviewer subagent started after the last code change that has finished
     (one started in the background once its completion arrived in the turn),
-    by the skill loaded and a change read after both the load and that
-    change, or by a skip line. `branch_size` runs only when nothing else met it."""
+    by the skill loaded and a change read after that change, before or after
+    the load (Ticket 092), or by a skip line. `branch_size` runs only when nothing else met it."""
 
     if proof.skipped(REVIEW_SKILL):
         return []
@@ -1529,7 +1530,7 @@ def _review_item(changes: "_Changes", proof: _Proof, spawn_templates: dict[str, 
            for index, call in enumerate(proof.turn.calls)):
         return []
     loaded = proof.load_index(REVIEW_SKILL)
-    if loaded is not None and changes.read_after(max(loaded, last)):
+    if loaded is not None and changes.read_after(last):
         return []
     size = branch_size()
     if size is None or size < REVIEW_MIN_LINES:
@@ -1552,9 +1553,8 @@ def _review_item(changes: "_Changes", proof: _Proof, spawn_templates: dict[str, 
         return [f"- Review: {size_text}. Load `{REVIEW_SKILL}`, then read the change itself "
                 f"and review it: {CHANGE_READ}. {reviewer} {skip}"]
     # The skill is loaded, so it is named only in the skip line: no load answers this.
-    return [f"- Review: {size_text}. After loading the {REVIEW_SKILL} skill and after your "
-            f"last code change, read the change itself and review it: {CHANGE_READ}. "
-            f"{reviewer} {skip}"]
+    return [f"- Review: {size_text}. After your last code change, read the change itself "
+            f"and review it: {CHANGE_READ}. {reviewer} {skip}"]
 
 
 def _verification_item(changes: "_Changes", proof: _Proof, intensity: str | None,

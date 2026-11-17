@@ -165,15 +165,15 @@ def selected(references, edit: Edit) -> list[tuple[Reference, str]]:
 
 def reads_in(calls) -> list[str]:
     """The skill references, as `Reference.path`, that finished Read calls
-    among `calls` read, in order. A shell command printing one does not count."""
+    among `calls` read whole, in order (`Call.whole_read_path`). A shell
+    command printing one does not count."""
 
     found = []
     for call in calls:
-        if call.name == "Read" and call.ok:
-            path = str(call.input.get("file_path") or "").replace("\\", "/").lower()
-            match = REFERENCE_PATH_RE.search(path)
-            if match:
-                found.append(f"{match.group(1)}/references/{match.group(2)}")
+        path = call.whole_read_path()
+        match = path and REFERENCE_PATH_RE.search(path.replace("\\", "/").lower())
+        if match:
+            found.append(f"{match.group(1)}/references/{match.group(2)}")
     return found
 
 

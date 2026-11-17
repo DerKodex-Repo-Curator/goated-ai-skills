@@ -133,13 +133,13 @@ def reference_read(path: str) -> str | None:
 
 
 def reads_in(calls) -> list[str]:
-    """The references that finished Read calls among `calls` read, in order.
-    A shell command printing one does not count, as for the red flags."""
+    """The references that finished Read calls among `calls` read whole, in
+    order (`Call.whole_read_path`). A shell command printing one does not
+    count, as for the red flags."""
 
     return [
         name for call in calls
-        if call.name == "Read" and call.ok
-        and (name := reference_read(str(call.input.get("file_path") or ""))) is not None
+        if (path := call.whole_read_path()) and (name := reference_read(path)) is not None
     ]
 
 
