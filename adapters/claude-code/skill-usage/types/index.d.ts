@@ -228,8 +228,17 @@ export type AllTime = {
   earlier?: EarlierHolds
 } & Measures
 
-/** What summaries stored by earlier versions of the mod held, by gate and by kind, and how many such sessions there were. */
-export type EarlierHolds = { sessions: number; nudges: Record<string, Counts<Outcome>>; holds?: Counts<HoldKind> }
+/**
+ * What summaries stored by earlier versions of the mod held that is keyed by gate or tied to one: holds by gate and by
+ * kind, closeout items and skip reasons; and how many such sessions there were.
+ */
+export type EarlierHolds = {
+  sessions: number
+  nudges: Record<string, Counts<Outcome>>
+  holds?: Counts<HoldKind>
+  closeoutItems?: Record<string, Counts<Outcome>>
+  skipReasons?: SkipReasons
+}
 
 /**
  * The skills the session lists for the model, and whether the listing was cut
@@ -252,7 +261,7 @@ declare module 'claude-code' {
       baseline: Shaped<SessionSummary | null>
       available: Shaped<Available | null>
       allTime: Shaped<AllTime | null>
-      /** This session's project key, read once (hooks/project.ts). */
+      /** This session's project key, worked out once (hooks/project.ts); `''` when no project folder could be read. */
       project: string | null
       /** The project key All time is filtered to; null for every project. */
       allProject: string | null

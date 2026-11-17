@@ -24,6 +24,7 @@ import type {
   Route,
   SessionSummary,
   SideSessionKind,
+  SkipReasons,
   SubagentCounts,
   TimelineEntry,
   UsageEvent,
@@ -799,7 +800,7 @@ function addMeasures(into: Measures, from: Measures) {
   addFlat(reads.files, from.designReads?.files)
   reads.none += from.designReads?.none ?? 0
   if (from.closeoutItems) addCounts((into.closeoutItems ??= {}), from.closeoutItems)
-  for (const [skill, gates] of Object.entries(from.skipReasons ?? {})) addCounts(((into.skipReasons ??= {})[skill] ??= {}), gates)
+  addSkipReasons(into, from.skipReasons)
 }
 
 function addCounts<K extends string>(into: Record<string, Counts<K>>, from: Record<string, Counts<K>>) {
@@ -857,19 +858,27 @@ function addInto(out: AllTime, summary: SessionSummary): AllTime {
     addMeasures(out, summary)
     return out
   }
-  const { holds, ...withoutHolds } = summary
-  addEarlier(out, { sessions: 1, nudges: summary.nudges, ...(holds ? { holds } : {}) })
-  addMeasures(out, withoutHolds)
+  // Everything keyed by a gate, or tied to one, stays apart: its gate names may be retired ones.
+  const { holds, closeoutItems, skipReasons, ...gateFree } = summary
+  addEarlier(out, { sessions: 1, nudges: summary.nudges, ...(holds ? { holds } : {}), ...(closeoutItems ? { closeoutItems } : {}), ...(skipReasons ? { skipReasons } : {}) })
+  addMeasures(out, gateFree)
   return out
 }
 
-/** Adds the earlier versions' holds `from` into `into`'s, in place. */
+/** Adds the earlier versions' gate-keyed data `from` into `into`'s, in place. */
 function addEarlier(into: AllTime, from: EarlierHolds | undefined) {
   if (!from) return
   const earlier = (into.earlier ??= { sessions: 0, nudges: {} })
   earlier.sessions += from.sessions
   addCounts(earlier.nudges, from.nudges)
   if (from.holds) addFlat((earlier.holds ??= {}), from.holds)
+  if (from.closeoutItems) addCounts((earlier.closeoutItems ??= {}), from.closeoutItems)
+  addSkipReasons(earlier, from.skipReasons)
+}
+
+/** Adds skip reasons `from` into `into`'s, in place: by skill, then gate, then reason. */
+function addSkipReasons(into: { skipReasons?: SkipReasons }, from: SkipReasons | undefined) {
+  for (const [skill, gates] of Object.entries(from ?? {})) addCounts(((into.skipReasons ??= {})[skill] ??= {}), gates)
 }
 
 /** Adds the totals `from` into a copy of `into`: the same sums `addSession` makes, for many sessions at once. */

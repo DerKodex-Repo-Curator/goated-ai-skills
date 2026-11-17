@@ -524,6 +524,19 @@ function skipReasonRows(reasons: SkipReasons | undefined): { skill: string; gate
 
 const EARLIER_TITLE = 'Hooks from earlier versions of the mod'
 const EARLIER_NOTE = (earlier: EarlierHolds) => `${plural(earlier.sessions, 'session')} stored before summaries carried a version`
+/**
+ * What earlier versions' summaries held, one line each, in the words of the current tables: each gate's holds, then
+ * each closeout item, then each skill and gate a skip line declined with its reasons, most given first.
+ */
+function earlierLines(earlier: EarlierHolds): string[] {
+  const reasonWords = (reasons: [string, number][]) => reasons.map(([reason, count]) => `"${reason}" ×${count}`).join(' · ')
+  return [
+    ...Object.entries(earlier.nudges).sort(byMostThenName).map(([hook, outcomes]) => `${hookName(hook)}: ${outcomeWords(outcomes)}`),
+    ...Object.entries(earlier.closeoutItems ?? {}).sort(byMostThenName).map(([label, outcomes]) => `${label}: ${outcomeWords(outcomes)}`),
+    ...skipReasonRows(earlier.skipReasons).map(row => `${row.skill} › ${hookName(row.gate)}: ${reasonWords(row.reasons)}`),
+  ]
+}
+
 /** How the sessions stored with no project key, by versions before keys were recorded, are named. */
 const NOT_RECORDED = 'not recorded'
 
@@ -588,10 +601,8 @@ export function allTimeTab(v: View, everything: AllTime, rows: number, filter?: 
       {filter && everything.byProject && projectChooser(v, everything, filter)}
       {usageTables(v, all, rows, '')}
       {all.earlier && [
-        title(v, EARLIER_TITLE, `${EARLIER_NOTE(all.earlier)}; their holds add to no count above`),
-        ...Object.entries(all.earlier.nudges)
-          .sort(byMostThenName)
-          .map(([hook, outcomes]) => line(v, `${hookName(hook)}: ${outcomeWords(outcomes)}`, 'dim')),
+        title(v, EARLIER_TITLE, `${EARLIER_NOTE(all.earlier)}; their holds, closeout items and skip reasons add to no count here`),
+        ...earlierLines(all.earlier).map(text => line(v, text, 'dim')),
       ]}
       {title(v, 'Skip reasons', 'why a skip line declined a hold, by skill and hold')}
       {skipReasonRows(all.skipReasons).length === 0
@@ -690,7 +701,7 @@ export function reportText(all: AllTime, avail: Available | null): string {
   for (const [label, c] of items) out.push(`- ${label}: ${outcomeWords(c)}`)
   if (all.earlier) {
     out.push('', `## ${EARLIER_TITLE}`, '', `${EARLIER_NOTE(all.earlier)}.`, '')
-    for (const [hook, outcomes] of Object.entries(all.earlier.nudges).sort(byMostThenName)) out.push(`- ${hookName(hook)}: ${outcomeWords(outcomes)}`)
+    for (const text of earlierLines(all.earlier)) out.push(`- ${text}`)
   }
   const projects = projectRows(all)
   if (projects.length > 0) {

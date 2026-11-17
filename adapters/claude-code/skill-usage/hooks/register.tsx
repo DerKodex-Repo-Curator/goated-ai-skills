@@ -17,7 +17,8 @@ import { addSession, allTimeOf, closeOpen, DATA_VERSION, historyEvents, isObserv
 import type { HistoryMessage } from './classify'
 import type { View } from './meaning'
 import { forgetPictures, PREVIEW_MS } from './picture'
-import { projectKey } from './project'
+import { errorText } from './holds'
+import { newSalt, projectKey } from './project'
 import { allTimeTab, PANE_COLUMNS, reportText, sessionTab, statusText, unusedTab } from './view'
 
 const PANE = 'skill-usage'
@@ -25,6 +26,8 @@ const SESSION_KEY = 's:'
 const LEGACY_STORE_KEY = 'sessions' // an earlier layout kept every session under one key
 /** The total of the sessions folded out of the store once more than `MAX_SESSIONS` others were kept. */
 const OLDER_KEY = 'older'
+/** The install's salt for project keys (hooks/project.ts). */
+const SALT_KEY = 'project-salt'
 const MAX_EVENTS = 5000
 const MAX_SESSIONS = 300
 const OWN_SOURCES = new Set(['userSettings', 'projectSettings'])
@@ -123,7 +126,7 @@ export const register: Register = on => {
     const current = await read($, tab)
     const session = summarize(await read($, events))
     // The project key as kept: a render reads it and never asks the session, which liveSummary does.
-    const own = (await read($, project)) ?? undefined
+    const own = (await read($, project)) || undefined
     const live = mergeSummaries(await read($, baseline), { ...session, ...(own ? { project: own } : {}) })
     const error = await read($, lastError)
     // The Work Map's feed length: enough to follow a turn, short enough to stay under the picture.
@@ -202,15 +205,21 @@ async function claimSession($: Dollar): Promise<string> {
  * Once per session, rebuilds the events from the session's history, so a mod
  * that loaded mid-session (a hot reload, an install) shows what came before.
  * History covers what was observed live too, so it replaces the events. A
- * resumed session the store already has keeps its stored baseline instead.
- * Runs from session.start alone: after `/clear` the new session is observed
- * from its first row.
+ * resumed session the store already has keeps a stored baseline instead: what
+ * the store holds now, which, when a shape bump dropped the events, includes
+ * the stretch since the resume that the dropped events covered. Runs from
+ * session.start alone: after `/clear` the new session is observed from its
+ * first row.
  */
 async function backfill($: Dollar) {
   const id = await $.session.id()
   if ((await read($, backfilled)) === id) return
   await update($, backfilled, () => id)
-  if (await read($, baseline)) return
+  if (await read($, baseline)) {
+    const stored = (await $.store.get(SESSION_KEY + id)) as Stored | undefined
+    if (stored) await update($, baseline, () => closeOpen(stored.summary))
+    return
+  }
   const history = (await $.session.messages({ as: 'api' })) as HistoryMessage[]
   const rebuilt = historyEvents(history, await knownSkills($), await $.clock.now())
   await update($, events, () => rebuilt.slice(-MAX_EVENTS))
@@ -241,24 +250,56 @@ async function loadAllTime($: Dollar, id: string) {
   if (JSON.stringify(await read($, allTime)) !== JSON.stringify(result.total)) await update($, allTime, () => result.total)
 }
 
-/** This session so far: the stored baseline plus what was observed since, with its project key. */
+/** This session so far: the stored baseline plus what was observed since, with its project key when it has one. */
 async function liveSummary($: Dollar, isFinal = false): Promise<SessionSummary> {
   const { timeline: _, ...summary } = summarize(await read($, events), isFinal)
-  return mergeSummaries(await read($, baseline), { ...summary, project: await projectOf($) })
+  const key = await projectOf($)
+  return mergeSummaries(await read($, baseline), { ...summary, ...(key ? { project: key } : {}) })
 }
 
 /**
- * This session's project key, read once and kept. The folder is the repository's root, the main working tree's for a
- * worktree, so sessions in a repository's worktrees count as that one project; outside a repository, the session's
- * project root. Only the key is kept, never the folder.
+ * This session's project key, worked out once and kept: `''` in the state when no folder could be read, so the session
+ * is stored with no project rather than not at all, and the lookups are not tried at every row. Only the key is kept,
+ * never the folder.
  */
-async function projectOf($: Dollar): Promise<string> {
+async function projectOf($: Dollar): Promise<string | undefined> {
   const kept = await read($, project)
-  if (kept) return kept
-  const folder = (await $.session.repo())?.root ?? (await $.session.root())
-  const key = await projectKey(folder)
+  if (kept !== null) return kept || undefined
+  const folder = await projectFolder($)
+  const key = folder === undefined ? '' : await projectKey(folder, await installSalt($))
   await update($, project, () => key)
-  return key
+  return key || undefined
+}
+
+/**
+ * The project folder: the repository's root, the main working tree's for a worktree, so a repository's worktrees count
+ * as one project; outside a repository, or when that lookup fails, the session's project root; undefined when that
+ * fails too. A project key is a label on the summary, so a failed lookup leaves the session unlabelled, not unstored.
+ */
+async function projectFolder($: Dollar): Promise<string | undefined> {
+  try {
+    const repo = await $.session.repo()
+    if (repo) return repo.root
+  } catch {
+    // No repository answer: the session root stands in below.
+  }
+  try {
+    return await $.session.root()
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The install's salt for project keys, kept in the store so a project keeps its key across sessions; made on first
+ * use. Two sessions making it at the same moment each read back the one written last, though one may already have
+ * used its own for its key.
+ */
+async function installSalt($: Dollar): Promise<string> {
+  const kept = await $.store.get(SALT_KEY)
+  if (typeof kept === 'string') return kept
+  await $.store.set(SALT_KEY, newSalt())
+  return String(await $.store.get(SALT_KEY))
 }
 
 async function persist($: Dollar, isFinal: boolean) {
@@ -287,7 +328,7 @@ function showStatus($: Dollar, s: SessionSummary) {
 }
 
 async function noteError($: Dollar, error: unknown) {
-  await update($, lastError, () => String(error))
+  await update($, lastError, () => errorText(error))
 }
 
 /**
