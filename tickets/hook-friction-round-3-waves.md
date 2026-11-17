@@ -25,16 +25,16 @@ to 4 there are merged.
 | 5 | [093](093-adapter-inline-script-writes.md) | 3 | adapter and skills | AFK | None |
 | 5 | [094](094-adapter-own-subagent-reports-continue-the-turn.md) | 3 | adapter | AFK | None |
 | 6 | [090](090-adapter-test-edit-reference-thresholds.md) | 3 | adapter, skills and registry | AFK | 089 |
-| 6 | [092](092-adapter-whole-reads-and-read-order.md) | 3 | adapter | AFK | 089, 091 |
-| 6 | [095](095-adapter-joint-holds-in-one-message.md) | 3 | adapter and mod | AFK | 086, 087, 088, 089, 091, 093 |
-| 7 | [096](096-adapter-early-closeout-note.md) | 3 | adapter | AFK | 095 |
-| 8 | [079](079-enforcement-contract-and-event-model.md) | 2 | core | HITL (maintainer accepts the ADR and event model) | its round 2 blockers (merged), and 086 to 096 |
-| 9 | [080](080-adapter-rules-read-the-event-model.md) | 2 | adapter | AFK | 079 |
-| 10 | [081](081-shared-enforcement-core.md) | 2 | core | AFK | 080 |
-| 11 | [082](082-neutral-usage-log-and-report.md) | 2 | core | AFK | 078, 081 |
-| 11 | [083](083-adapter-guide-and-worked-example.md) | 2 | docs | AFK | 081 |
-| 12 | [084](084-pi-agent-adapter.md) | 2 | new adapter | HITL (build decision after research) | 082, 083 |
-| 13 | [085](085-opencode-adapter.md) | 2 | new adapter | HITL (build decision after research) | 084 |
+| 6 | [092](092-adapter-whole-reads-and-read-order.md) | 3 | adapter and mod | AFK | 078, 089, 091 |
+| 7 | [095](095-adapter-joint-holds-in-one-message.md) | 3 | adapter and mod | AFK | 086 to 094 |
+| 8 | [096](096-adapter-early-closeout-note.md) | 3 | adapter | AFK | 095 |
+| 9 | [079](079-enforcement-contract-and-event-model.md) | 2 | core | HITL (maintainer accepts the ADR and event model) | its round 2 blockers (merged), and 086 to 096 |
+| 10 | [080](080-adapter-rules-read-the-event-model.md) | 2 | adapter | AFK | 079 |
+| 11 | [081](081-shared-enforcement-core.md) | 2 | core | AFK | 080 |
+| 12 | [082](082-neutral-usage-log-and-report.md) | 2 | core | AFK | 078, 081 |
+| 12 | [083](083-adapter-guide-and-worked-example.md) | 2 | docs | AFK | 081 |
+| 13 | [084](084-pi-agent-adapter.md) | 2 | new adapter | HITL (build decision after research) | 082, 083 |
+| 14 | [085](085-opencode-adapter.md) | 2 | new adapter | HITL (build decision after research) | 084 |
 
 ## Decisions Recorded Here
 
@@ -49,9 +49,13 @@ The maintainer decided these on 2026-11-17, when round 3 was planned:
   them: the event model's decision must carry several holds (Ticket 095),
   and the contract gains the `scripted-edit` gate (Ticket 093) and loses
   the design-reads line and the citations item (Ticket 089).
-- **Ticket 078 is unaffected** and runs beside wave 5. It counts
-  reference reads in the mod; Ticket 092 later makes a partial read not
-  count, and says so in the mod if the mod counts reads itself.
+- **Ticket 078 keeps its scope** and runs beside wave 5. It counts
+  reference reads in the mod. Ticket 092 makes a partial read not count
+  and may change that counting, so 092 waits for 078.
+- **Ticket 095 waits for every other round 3 ticket but 096.** It
+  restructures the dispatch and the hold message that 086 to 093 change,
+  and its turn marker resets on the turn boundaries 094 changes. That
+  moved 095 to wave 7 and each later ticket one wave on.
 - **Ticket 071's skills line stays as shipped.** A brief must carry a
   `goated-skills:` line, and `goated-skills: none: <reason>` is its
   justified skip. No ticket.

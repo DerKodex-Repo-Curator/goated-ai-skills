@@ -9,6 +9,9 @@ order files remain the source of truth for blockers:
 [portable enforcement core](portable-enforcement-core-order.md). A ticket's
 wave is one after the latest of its blockers' waves.
 
+Waves 1 to 4 are merged. For 078 to 085, waves 5 to 10 below are replaced
+by [hook-friction-round-3-waves.md](hook-friction-round-3-waves.md).
+
 | Wave | Ticket | Area | Type | Blocked by |
 | --- | --- | --- | --- | --- |
 | 1 (ready now) | [061](061-adapter-design-closeout-citations-and-question.md) | adapter | AFK | None |

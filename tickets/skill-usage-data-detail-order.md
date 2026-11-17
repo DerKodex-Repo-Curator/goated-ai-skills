@@ -2,8 +2,10 @@
 
 Source spec: `docs/specs/2026-11-17-skill-usage-data-detail.md`
 
-Parallel waves across all five order files:
-[hook-friction-round-2-waves.md](hook-friction-round-2-waves.md)
+Parallel waves across the round 2 order files:
+[hook-friction-round-2-waves.md](hook-friction-round-2-waves.md). For
+Ticket 078 and later, with round 3's two order files:
+[hook-friction-round-3-waves.md](hook-friction-round-3-waves.md)
 
 1. `tickets/075-skill-usage-hold-detail.md`
    - Blocked by: None

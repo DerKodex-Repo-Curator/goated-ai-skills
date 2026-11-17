@@ -90,8 +90,10 @@ show problems that are not about any one trigger:
   repeated `Stop` closeout included. When the turn marker cannot be
   claimed or read, the full text is used, as in Ticket 062.
 - **R4, a named carrier.** A hold that a line can clear, on a call with
-  no line field, names one carrier: a shell call whose command is `true`
-  and whose description holds the line. That call passes every hold.
+  no line field, names one carrier for the session's shell: a shell call
+  whose description holds the line and whose command is `true` in Bash
+  or `$null` in PowerShell, where `true` is not a command. Both are plain
+  reads, and each passes every hold.
 - **R5, inline scripts.** The adapter reads the code an interpreter is
   given inline (`python`, `node`, `perl`, `ruby`, `deno`, `bun` with `-c`
   or `-e` and the like, or a script on standard input from a heredoc) for
@@ -113,14 +115,20 @@ show problems that are not about any one trigger:
 - **R7, own subagent reports.** A prompt that is the report of a subagent
   this session started continues the current turn: the route line, skip
   lines, overrides, checks, change reads and the brief's route all stand,
-  and the closeout sees the whole turn. A prompt the adapter cannot tie to
-  one of the session's own spawns opens a turn as today.
-- **R8, early closeout note.** After the first finished code change of a
-  turn, the adapter adds one short note, once per turn, naming the
-  closeout items the turn will meet as far as it can tell then, and saying
-  they can be met before the report. It is context for the agent and
-  never blocks. The install snippet gains the hook that runs after a
-  call. A turn that already met a closeout hold gets no note.
+  and the closeout sees the whole turn. A report that arrives after the
+  turn ended with `Stop` continues that turn's route and lines too, but
+  the turn's typed overrides stop applying at `Stop`: an override is the
+  user's word for the turn they were watching, not for work a late report
+  restarts. A prompt the adapter cannot tie to one of the session's own
+  spawns opens a turn as today.
+- **R8, early closeout note.** After the first finished code change a
+  turn makes with a file edit tool, the adapter adds one short note, once
+  per turn, naming the closeout items the turn will meet as far as it can
+  tell then, and saying they can be met before the report. It is context
+  for the agent and never blocks. The install snippet gains the hook that
+  runs after a call, limited to the file edit tools so no other call
+  starts a hook process; a code change by a shell command brings no note.
+  A turn that already met a closeout hold gets no note.
 - **R9, documentation.** The adapter README's What It Holds, Shell
   writes, Hold messages, Subagents, Install, Latency and Known Limits
   sections match the behaviour. Changed hold texts are regenerated for
@@ -143,8 +151,8 @@ show problems that are not about any one trigger:
 - [ ] AC5: A second `Stop` hold in a turn lists only the unmet items, in
       the short form. The first hold of the next turn is full again.
 - [ ] AC6: A hold on an `Edit` call that a skip line can clear names the
-      `true` carrier, and that call passes before and after the router
-      loads.
+      carrier for the session's shell, `true` in Bash or `$null` in
+      PowerShell, and each passes before and after the router loads.
 - [ ] AC7: `python - <<'EOF'` with `open("src/app.py", "w")` is held by
       `scripted-edit`; with a skip line it runs and the closeout then
       treats `src/app.py` as changed code. The same script writing
@@ -158,11 +166,13 @@ show problems that are not about any one trigger:
 - [ ] AC10: After a background subagent's report arrives as a prompt, a
       write needs no new route line, an earlier skip line still counts,
       and the `Stop` closeout lists the code changed before the report. A
-      message from an unrelated session opens a new turn.
+      message from an unrelated session opens a new turn. After a report
+      that arrives once the turn ended with `Stop`, the turn's route line
+      and skip lines still count and its typed override does not.
 - [ ] AC11: In a session routed by its brief, an own-subagent report does
       not end the brief's route.
-- [ ] AC12: A turn's first code change brings one note naming its
-      closeout items. A second change brings none, and no call or `Stop`
+- [ ] AC12: A turn's first code change by a file edit tool brings one
+      note naming its closeout items. A second change brings none, and no call or `Stop`
       is blocked by the note.
 - [ ] AC13: Hold first lines are unchanged, and every hold today's tests
       expect alone is still given alone with the same text, apart from
@@ -220,7 +230,8 @@ None.
   recording shape falls back to opening a turn, which is today's
   behaviour.
 - R8 adds a sentence to every turn that changes code, and one more hook
-  process per call.
+  process per file edit call. A turn that changes code only by shell
+  commands gets no note and still reports twice.
 
 ## Sources
 

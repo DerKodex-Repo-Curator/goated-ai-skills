@@ -29,6 +29,9 @@ Two rules about reads are uneven:
   template (`spawn-brief.md` and the implementer and reviewer prompts) or
   `red-flags.md`. The hold says to read the whole file. A read whose
   range cannot be read from the call is partial.
+- **Both red-flags readers.** `_red_flags_read` in `actions.py`
+  duplicates `_Proof.read_index`. The whole-read rule must hold in both
+  places; give them one reader if that is the smaller change.
 - **Read order.** For Review, Security and `pr-review`, a change read
   after the last change counts whether it came before or after the load.
   State the rule once in the README's Change reads section, for every
@@ -44,7 +47,8 @@ Two rules about reads are uneven:
 - The parent spec: R12, R13, Constraints.
 - `adapters/claude-code/goated_adapter/design_reads.py` and
   `reference_reads.py`: `reads_in`; `contracts.py`: `templates_read`;
-  `actions.py`: `_Proof.read_index`, `_change_read_hold`, `_review_item`,
+  `actions.py`: `_Proof.read_index`, `_red_flags_read`,
+  `_change_read_hold`, `_review_item`,
   the Security item and the `pr-review` hold.
 - `adapters/claude-code/README.md`: Change reads, "A required read" in
   What It Holds.
@@ -58,8 +62,10 @@ Two rules about reads are uneven:
 - [ ] A `Read` with `limit: 20` of a required design reference leaves the
       hold in place, and the hold says to read the whole file. A whole
       read clears it.
-- [ ] The same holds for a registry reference, `spawn-brief.md` and
-      `red-flags.md`.
+- [ ] The same holds for a registry reference, `spawn-brief.md`, the
+      implementer and reviewer prompt templates of
+      `subagent-driven-development`, and `red-flags.md`, at the closeout
+      and wherever else the red-flags read is judged.
 - [ ] A `Read` with `offset` alone is partial.
 - [ ] A whole read made in an earlier turn still counts until a
       compaction.
@@ -79,6 +85,8 @@ Two rules about reads are uneven:
 
 ## Blocked By
 
+- `tickets/078-skill-usage-reference-counts.md` (adds the mod's count of
+  reference reads, which this ticket may change).
 - `tickets/089-adapter-design-holds-without-written-text.md` (changes the
   design reads and the Design red-flags item).
 - `tickets/091-adapter-review-size-and-installs.md` (changes the Review

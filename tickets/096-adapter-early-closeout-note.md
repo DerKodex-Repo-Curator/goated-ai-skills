@@ -29,16 +29,29 @@ read. The agent only has to know what will be asked.
   `software-design-principles` counts as loaded and the edit is
   substantial; Verification on a `full` route.
 - **Once per turn.** One note per turn and agent, claimed with the turn
-  marker of Ticket 062. A turn that already met a closeout hold gets
-  none. When the marker cannot be claimed or read, no note is added.
+  marker under a purpose key of its own. Ticket 095 gives the marker
+  purpose keys; the note's key is separate from the advice's and from
+  each gate's, so claiming one never fails or erases another. A turn that
+  already met a closeout hold gets no note. A failed claim, or a marker
+  that cannot be read, adds no note.
 - **Never blocks.** The note holds no call and no `Stop`. If the adapter
   cannot tell an item yet, the note leaves it out; the closeout itself
   is unchanged and still decides.
-- **The hook.** The note is delivered by a hook that runs after a call.
-  The install snippet and the shell-form alternative gain it, and the
-  README's Install section says an existing install must add the event
-  to get the note; without it nothing else changes. The hook follows the
-  adapter's failure rule.
+- **The hook.** The note is delivered by a hook that runs after a call
+  (`PostToolUse`). It reads the call that triggered it from the hook's
+  own payload (`tool_name`, `tool_input`, `tool_response`), not from the
+  transcript, which may not hold the call yet. The transcript and the
+  state are read only for what the payload cannot say, such as whether
+  a skill counts as loaded.
+- **A matcher, for latency.** The install snippet registers the hook
+  with a matcher limited to the write tools (`Edit`, `Write`,
+  `MultiEdit`, `NotebookEdit`), so no other call starts a hook process.
+  A code change made by a shell command therefore brings no note; say so
+  in the README. The closeout still judges it.
+- **Install.** The install snippet and the shell-form alternative gain
+  the event, and the README's Install section says an existing install
+  must add it to get the note; without it nothing else changes. The hook
+  follows the adapter's failure rule.
 - **No note in a subagent**, which has no closeout.
 - Update the README's Install, What It Holds (the closeout), Session
   Start Notices or a section beside it, Latency and Known Limits.
@@ -50,7 +63,8 @@ read. The agent only has to know what will be asked.
   existing notices are returned, `_pre_tool_use` and `_stop`.
 - `adapters/claude-code/goated_adapter/actions.py`: `_closeout_hold`,
   `_code_items`, `_changes`, for what makes each item apply.
-- `adapters/claude-code/goated_adapter/state.py`: the turn marker.
+- `adapters/claude-code/goated_adapter/state.py`: `claim_turn` and
+  `_drop_markers`, the turn marker as Ticket 095 leaves it.
 - `adapters/claude-code/settings.snippet.json` and the README's Install
   and Latency sections.
 - `tickets/073-notices-for-retrospective-and-onboarding.md`, for how a
@@ -66,8 +80,15 @@ read. The agent only has to know what will be asked.
       the note also names the Design red-flags item.
 - [ ] A second code change in the turn brings no note. The first code
       change of the next turn brings one.
-- [ ] An edit of a docs file, a held edit, and an edit outside the
-      project bring none.
+- [ ] An edit of a docs file, a held edit, a failed edit, an edit outside
+      the project, and a code change by a shell command bring none.
+- [ ] The note is right when the transcript does not yet hold the
+      triggering call: it is judged from the hook's payload.
+- [ ] In one turn that carries the full unseen-line advice, a short
+      repeat of one gate's hold, and the first code change: the advice is
+      full once, the repeat is short, and the note appears once. No claim
+      fails or erases another.
+- [ ] With the marker unwritable, no note is added and nothing is held.
 - [ ] A turn whose items are all met before `Stop` ends with no closeout
       hold.
 - [ ] No call or `Stop` is blocked by the note, and a failure in the new

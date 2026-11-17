@@ -28,7 +28,8 @@ remaining tickets:
    - Blocked by: 089
    - Enables: test references asked only when a test is designed.
 7. `tickets/092-adapter-whole-reads-and-read-order.md`
-   - Blocked by: 089, 091
+   - Blocked by: 089, 091, and
+     `tickets/078-skill-usage-reference-counts.md`
    - Enables: whole reads of required files, and one diff read per item.
 
 Tickets were combined where splitting bought no parallel work, separate
@@ -63,7 +64,7 @@ here, so the contract states these rules as they then stand.
 - `tickets/089-adapter-design-holds-without-written-text.md`
 - `tickets/091-adapter-review-size-and-installs.md`
 
-Ticket 090 follows 089. Ticket 092 follows 089 and 091.
+Ticket 090 follows 089. Ticket 092 follows 089, 091 and round 2's 078.
 
 ## Coverage
 

@@ -49,13 +49,21 @@ put the line in another call but names none that is certain to pass.
 - **Short repeats per turn.** A second or later hold by the same gate in
   a turn carries a short form naming what is still unmet and how to clear
   it; the repeated `Stop` closeout lists only its unmet items that way.
-  Use the turn marker of Ticket 062. When it cannot be claimed or read,
-  the full text is used.
-- **A named carrier.** A hold that a line can clear, on a call with no
-  line field, names one carrier: a shell call whose command is `true` and
-  whose description holds the line. Confirm that call passes every hold,
-  before and after the router loads (Ticket 088 makes `true` a plain
-  read).
+  When the marker cannot be claimed or read, the full text is used.
+- **The turn marker gains a purpose.** Ticket 062's marker cannot be
+  reused as written: `state.claim_turn` keeps one marker per owner and
+  turn, and `_drop_markers` deletes the owner's other markers, so a second
+  kind of claim in a turn would fail or erase the first. The marker gains
+  a purpose key, such as the advice or a gate's name. A claim is exclusive
+  per owner, turn and purpose. Markers are dropped only across turns,
+  never across purposes within a turn. Ticket 096 adds a purpose of its
+  own on top of this.
+- **A named carrier per shell.** A hold that a line can clear, on a call
+  with no line field, names one carrier for the shell the session has: a
+  shell call whose description holds the line and whose command is `true`
+  in Bash or `$null` in PowerShell (`true` is not a command there). Both
+  are plain reads and pass every hold, before and after the router loads.
+  Ticket 088 makes `true` a plain read; add `$null` as one here.
 - Update the README's Hold messages, What It Holds ("No free retry") and
   Latency sections, the mod's README, and regenerate the hold texts.
 
@@ -67,7 +75,8 @@ put the line in another call but names none that is certain to pass.
 - `adapters/claude-code/goated_adapter/actions.py`: `check_action`,
   `_closeout_hold`, `CHANGE_READ` and the other shared texts.
 - `adapters/claude-code/goated_adapter/gates.py`: `check_routing`, `Hold`,
-  `unseen_line_advice`, `advice_once`; `state.py`: the turn marker.
+  `unseen_line_advice`, `advice_once`; `state.py`: `claim_turn` and
+  `_drop_markers`, the turn marker.
 - `adapters/claude-code/skill-usage/hooks/holds.ts` and `classify.ts`,
   and `tests/adapter-texts.ts`, for how the mod reads a hold.
 - `adapters/claude-code/README.md`: Hold messages, Latency.
@@ -90,9 +99,15 @@ put the line in another call but names none that is certain to pass.
 - [ ] A second `Stop` hold in a turn lists only the unmet items, in the
       short form. The first hold of the next turn is full again. With the
       marker unwritable, each hold is full.
+- [ ] In one turn, a hold carrying the full unseen-line advice, then two
+      holds by one gate, then two by another: the advice is full once,
+      and each gate's second hold is short. Neither claim erases the
+      other, and the next turn starts with every form full again.
 - [ ] A hold on an `Edit` call that a skip line can clear names the
-      `true` carrier, and that call passes before and after the router
-      loads.
+      carrier: `true` in a session whose shell tool is Bash, `$null` in
+      one whose shell tool is PowerShell. A Bash call of `true` and a
+      PowerShell call of `$null` each pass before and after the router
+      loads, and carry the line.
 - [ ] Hold first lines are unchanged.
 - [ ] The adapter's measured latency stays within the README's budget
       with every gate judged.
@@ -112,12 +127,17 @@ put the line in another call but names none that is certain to pass.
 - `tickets/087-adapter-routing-orientation-by-reads-and-outside-writes.md`
 - `tickets/088-adapter-wider-plain-reads.md`
 - `tickets/089-adapter-design-holds-without-written-text.md`
+- `tickets/090-adapter-test-edit-reference-thresholds.md`
 - `tickets/091-adapter-review-size-and-installs.md`
+- `tickets/092-adapter-whole-reads-and-read-order.md`
 - `tickets/093-adapter-inline-script-writes.md`
+- `tickets/094-adapter-own-subagent-reports-continue-the-turn.md`
 
-Each changes a gate, or adds one, in the dispatch this ticket
-restructures. Ticket 088 makes `true` a plain read, which the carrier
-criterion needs.
+Each changes a gate, a hold's text or the turn's boundaries, or adds a
+gate, in the dispatch and message assembly this ticket restructures.
+Ticket 088 makes `true` a plain read, which the carrier criterion needs.
+Ticket 094 changes which prompts open a turn, which decides when the
+turn marker resets.
 
 ## Scope Exclusions
 

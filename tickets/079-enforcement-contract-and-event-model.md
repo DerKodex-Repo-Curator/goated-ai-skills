@@ -69,6 +69,8 @@ adapter for another harness has nothing to build on or be checked against.
       can return is missing from it.
 - [ ] The event model's schema validates every scenario, and a request of
       an unknown version is rejected by the schema.
+- [ ] The decision schema carries one or more holds in firing order, and
+      a scenario covers a joint hold.
 - [ ] The scenarios cover each gate holding, each way it clears, and a
       near miss, and name no harness or harness tool.
 - [ ] Every scenario passes against the Claude Code adapter through the

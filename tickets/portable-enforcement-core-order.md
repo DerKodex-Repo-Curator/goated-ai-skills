@@ -2,7 +2,9 @@
 
 Source spec: `docs/specs/2026-11-17-portable-enforcement-core.md`
 
-Parallel waves across all five order files:
+Parallel waves across the round 2 and round 3 order files:
+[hook-friction-round-3-waves.md](hook-friction-round-3-waves.md), which
+replaces waves 5 to 10 of
 [hook-friction-round-2-waves.md](hook-friction-round-2-waves.md)
 
 1. `tickets/079-enforcement-contract-and-event-model.md`

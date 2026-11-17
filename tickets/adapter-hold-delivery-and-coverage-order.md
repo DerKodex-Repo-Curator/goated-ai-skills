@@ -13,7 +13,7 @@ remaining tickets:
    - Blocked by: None
    - Enables: a turn that survives its own subagent's report.
 3. `tickets/095-adapter-joint-holds-in-one-message.md`
-   - Blocked by: 093, and 086, 087, 088, 089 and 091 in
+   - Blocked by: 093, 094, and 086 to 092 in
      `tickets/adapter-low-signal-holds-order.md`
    - Enables: one retry for a call that meets several holds, and shorter
      hold texts.
@@ -28,9 +28,11 @@ it.
 Tickets 093 and 094 touch different modules: the shell reading and a new
 gate, and the transcript's turn boundaries. Ticket 088, in the other
 order file, also changes the shell reading, in different functions.
-Ticket 095 restructures the dispatch every gate runs through, so it
-follows each ticket that changes or adds a gate. Ticket 096 adds a hook
-and uses the texts and turn marker 095 settles.
+Ticket 095 restructures the dispatch every gate runs through and the way
+a hold message is assembled, so it follows every other round 3 ticket
+but 096: each changes a gate, a hold's text or, in 094, the turn
+boundaries the turn marker resets on. Ticket 096 adds a hook and uses
+the texts and the turn marker's purpose key that 095 settles.
 
 Ticket 079, in `tickets/portable-enforcement-core-order.md`, waits for
 every ticket here. Its event model must carry several holds in one
@@ -41,8 +43,7 @@ decision, which Ticket 095 defines.
 - `tickets/093-adapter-inline-script-writes.md`
 - `tickets/094-adapter-own-subagent-reports-continue-the-turn.md`
 
-Ticket 095 follows 086, 087, 088, 089, 091 and 093. Ticket 096 follows
-095.
+Ticket 095 follows 086 to 094. Ticket 096 follows 095.
 
 ## Coverage
 

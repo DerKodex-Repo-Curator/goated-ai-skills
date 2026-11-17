@@ -33,8 +33,11 @@ the signals that need no added text.
 
 - **One rule for both.** A test-file edit selects `coding.md` and
   `test-design.md` only when it creates the test file or adds twenty or
-  more lines. Both gates count added lines the same way: the lines the
-  edit adds, not unchanged context.
+  more lines. Both gates count added lines the same way, as the design
+  gate's `_Added` does today: an added line is any line of the new text
+  whose text is not in the old text, so a changed line and a new line
+  each count, and unchanged context does not. An `Edit` whose old and new
+  strings share thirty unchanged lines and add four is not asked.
 - **The registry states it.** The `tdd` entry's signal for
   `test-design.md` expresses "creates the file, or adds at least twenty
   lines". Extend the signal kind, the registry schema, the validator and
@@ -74,8 +77,10 @@ the signals that need no added text.
       `test-design.md`.
 - [ ] An edit adding twenty lines to an existing test file requires both;
       one adding nineteen requires neither.
-- [ ] An edit rewriting thirty lines of a test file while adding four
-      requires neither.
+- [ ] An `Edit` whose old and new strings share thirty unchanged lines
+      and add four lines not in the old text requires neither. One that
+      changes the text of twenty lines requires both, since a changed
+      line counts as added.
 - [ ] A test edit adding a mock or patch still requires
       `mocking-and-seams.md` at any size.
 - [ ] The registry validates, the reader and a full YAML parser agree on

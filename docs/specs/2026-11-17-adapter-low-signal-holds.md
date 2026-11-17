@@ -117,10 +117,15 @@ These are the confirmed low-signal triggers:
   `session-start-progressive-disclosure`, as today, or by three finished
   `Read` calls of distinct files, anywhere, since the session started or
   the last compaction. The hold names both ways.
-- **R4, writes outside the project.** A write whose every file is certainly
-  outside the project passes `router-first`, `route-line` and `pipeline`.
-  "Certainly outside" is the rule the other gates use: when in doubt, a file
-  is inside. Spawns and commands that are not writes are held as today.
+- **R4, writes outside the project.** A write passes `router-first`,
+  `route-line` and `pipeline` when every file it writes is certainly
+  outside the project, and is also inside no git checkout and not under
+  the user's `~/.claude` folder. "Certainly outside" is the rule the other
+  gates use: when in doubt, a file is inside. The two further conditions
+  keep routing on a write to another repository or worktree, and on a
+  write to installed skills, rules and settings; a temp scratch folder
+  meets all three. Spawns and commands that are not writes are held as
+  today.
 - **R5, plain reads.** These also count as plain reads, alone or joined as
   plain reads already may be:
   - a command after a leading `cd` to a literal path;
@@ -200,7 +205,8 @@ These are the confirmed low-signal triggers:
       reads it is held, and the hold names both ways to clear it.
 - [ ] AC5: Before the router loads, a `cp` into a temp folder outside the
       project is not held, a `cp` into the project is, and a write whose
-      folder cannot be read is.
+      folder cannot be read is. A write into another git checkout, or
+      under the user's `~/.claude` folder, is held.
 - [ ] AC6: Each form R5 keeps passes `router-first` before the router
       loads, and a near miss for each is held: `git branch new-name`,
       `echo x > f`, `cd sub && rm f`.
@@ -285,6 +291,14 @@ None.
 - R3 lets three unrelated reads stand for orientation. That is the chosen
   trade: the skill's own work is targeted reading, and a session that
   writes before reading anything is still held.
+- R4 lets unrouted work write outside the project. Left at "outside the
+  project" alone, that would include another repository, a sibling
+  worktree and the user's installed skills and settings, where a write
+  is real work or changes how every session behaves. R4 therefore keeps
+  routing on any file inside a git checkout or under `~/.claude`. What
+  still passes is a write to a folder that is none of these, such as a
+  temp scratch folder; a project kept outside any git checkout and
+  outside the session's folders is not protected.
 - R6 and R7 remove the only check that an agent connected a reference to
   its change. The agents' reports say the reads and the red-flags question
   carried the value.
