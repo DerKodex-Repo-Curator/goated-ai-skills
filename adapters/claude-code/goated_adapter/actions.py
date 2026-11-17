@@ -9,7 +9,7 @@ with `handoff`'s spawn brief or `subagent-driven-development`, design with
 `code-security-review`, resolve a merge conflict with
 `resolving-merge-conflicts`, investigate a check that keeps failing with
 `diagnose`, close a code-changing turn with proof, `doc-sync`, `handoff`,
-the design red flags, citations of the design references it required, a
+the design red flags, a
 review when the branch is large, and `verification-before-completion` when
 the work is large, delegated, sensitive, or on a `full` route, and close a
 turn that changed setup with `setup-scribe`. The `reference-reads` gate
@@ -30,10 +30,8 @@ request's size, which the `pr-review` gate asks git for, and only when its
 hold would otherwise fire; the branch's work, which the closeout's Review
 and Verification items ask git for only when nothing else met them; which
 brief templates the turn's spawns followed, which the hooks record when the
-`spawn` gate lets one through; the design skill's section ids, which the
-closeout reads from the installed skill only when it checks citations; and
-the registry's reference declarations, read only for a write to a project
-file.
+`spawn` gate lets one through; and the registry's reference declarations,
+read only for a write to a project file.
 
 Strict holds clear only on proof or a user override. Justified-skip holds also
 clear on a `goated-skip: <skill>: <reason>` line in the current turn.
@@ -61,7 +59,7 @@ from . import contracts, design_reads, reference_reads, shell
 from .gates import (
     COMMAND_TOOLS, STRICT, Hold, goated_skill_name, spawns_a_reader, unseen_line_advice,
 )
-from .markers import declared_files, parse_reply
+from .markers import parse_reply
 from .transcript import Call, Turn, skill_name
 
 JUSTIFIED_SKIP = "justified-skip"
@@ -170,16 +168,6 @@ RED_FLAGS_REFERENCE = "software-design-principles/references/red-flags.md"
 # The question `red-flags.md` ends with, which the closeout's red-flags item
 # repeats. No hold checks an answer.
 RED_FLAGS_QUESTION = "Name one input that would break this change, and say what happens."
-# Where a design citation counts besides reply text: the call fields that carry
-# route and skip lines (`transcript.LINE_FIELDS`). Named without backticks, so
-# the skill-usage mod reads no skill from them.
-CITATION_FIELDS = "a shell or agent call's description or a Skill call's args"
-# Why a commit-time citation belongs in those fields rather than reply text.
-UNSEEN_AT_COMMIT = (
-    "Reply text may not be seen at commit: text in the commit's own message is recorded "
-    "only after this check, and earlier text can be stored as a summary that drops it."
-)
-
 # Tools that start another agent, each with the input field that carries the
 # brief. A call without a brief (an offer card, or starting a saved proposal)
 # hands over no text, so it is not held.
@@ -363,11 +351,22 @@ class _Proof:
     def read_index(self, reference: str, after: int = -1) -> int | None:
         """Where the first finished Read of `reference` after call `after` is, if any."""
 
-        return next((
+        return next((index for index in self._read_indexes(reference) if index > after), None)
+
+    def last_read_index(self, reference: str, before: int) -> int | None:
+        """Where the last finished Read of `reference` before call `before` is, if any."""
+
+        return next((index for index in reversed(self._read_indexes(reference)) if index < before), None)
+
+    def _read_indexes(self, reference: str) -> list[int]:
+        """Where each finished Read of `reference` in the turn is, in order: the
+        one predicate `read_index` and `last_read_index` share."""
+
+        return [
             index for index, call in enumerate(self.turn.calls)
-            if index > after and call.name == "Read" and call.ok
+            if call.name == "Read" and call.ok
             and _ends_with_path(str(call.input.get("file_path") or ""), reference)
-        ), None)
+        ]
 
 
 def is_action_tool(tool_name: str) -> bool:
@@ -381,12 +380,9 @@ def is_action_tool(tool_name: str) -> bool:
 
 
 class Closeout(NamedTuple):
-    """What a commit's closeout hold reads besides the turn: `edit_references`,
-    `design_ids`, `spawn_templates`, `intensity`, and `briefed`, as `check_closeout`
-    takes them."""
+    """What a commit's closeout hold reads besides the turn: `spawn_templates`,
+    `intensity`, and `briefed`, as `check_closeout` takes them."""
 
-    edit_references: dict[str, list[str]]
-    design_ids: Callable[[], dict[str, tuple[str, ...]]] | None = None
     spawn_templates: dict[str, list[str]] | None = None
     intensity: str | None = None
     briefed: bool = False
@@ -425,7 +421,6 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     changes = lambda: _Changes(turn, spawned(), project)
     at_commit = lambda by_tool=False: closeout and check_closeout(
         turn, overrides, namespaces, subagents=spawned(), project=project,
-        edit_references=closeout.edit_references, design_ids=closeout.design_ids,
         at_commit=True, by_tool=by_tool, earlier=earlier,
         spawn_templates=closeout.spawn_templates, intensity=closeout.intensity,
         briefed=closeout.briefed,
@@ -1045,13 +1040,12 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
     """Hold a project file write until its design is done (spec R5).
 
     The `design` gate holds a turn's first substantial non-test code edit until
-    `software-design-principles` loads, a design-reads line is in the turn,
-    and every reference the edit requires is read. The `design-reads` gate
-    holds any later edit the design-reads rules apply to, once the skill is
-    loaded, until the references it requires are read. `design_reads` says
-    which those are. A load or a read counts until the next compaction, a
-    design-reads line only in its turn; a skip line or the user's skip of the
-    skill clears both gates.
+    `software-design-principles` loads and every reference the edit's signals
+    select is read. The `design-reads` gate holds any later edit the
+    design-reads rules apply to, once the skill is loaded, until the
+    references it requires are read. `design_reads` says which those are. A
+    load or a read counts until the next compaction; a skip line or the
+    user's skip of the skill clears both gates.
     """
 
     code, test = is_code(path), is_test(path, project)
@@ -1064,26 +1058,24 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
     if not loaded and not substantial:
         return None
     earlier = _project_code_writes(proof.turn, project)
-    declared = declared_files(proof.turn.design_reads)
-    required = _edit_required(path, tool_input, proof, project, earlier)
+    required = design_reads.required(
+        path, tool_input, is_code=code, is_test=test, small=_small_edit(tool_input),
+        written_before=any(p == path for p, _ in earlier),
+        other_code_files=len({p for p, _ in earlier if p != path and not is_test(p, project)}),
+        cwd=project.cwd if project else None,
+    )
     unread = {name: why for name, why in required.items() if name not in proof.references_read}
-    needs_line = substantial and not proof.turn.design_reads
-    if loaded and not needs_line and not unread:
+    if loaded and not unread:
         return None
-    unknown = design_reads.unknown(declared)
-    misnamed = (
-        " Your design-reads lines name files that are not design references, so they require "
-        "nothing: " + ", ".join(f'"{name}"' for name in unknown) + "."
-    ) if unknown else ""
     first = substantial and not any(
         not small for p, small in earlier if not is_test(p, project)
     )
-    if loaded and not needs_line and not first:
+    if loaded and not first:
         return Hold(
             "design-reads", JUSTIFIED_SKIP,
             f"This edit of \"{path.rsplit('/', 1)[-1]}\" needs design references not yet read "
             "since the last compaction. Read each with the Read tool before the edit, and "
-            f"apply it: {_reference_list(unread)}.{misnamed} If the edit has no design in it, "
+            f"apply it: {_reference_list(unread)}. If the edit has no design in it, "
             f"write `goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. This edit "
             "was not applied. " + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
         )
@@ -1091,23 +1083,14 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
         f"load `{DESIGN_SKILL}` with the Skill tool{proof.within} and apply its 'Before "
         "changing code' rules"
     ]
-    if needs_line:
-        malformed = "; ".join(f'"{line}"' for line in proof.turn.malformed_design_reads)
-        steps.append(
-            "write the skill's design-reads line in this turn, on its own line, naming the "
-            "references whose "
-            "conditions hold, as `goated-design-reads: <file>, <file>`, or "
-            "`goated-design-reads: none: <reason>` when none does"
-            + (f" (these lines in this turn do not match the grammar: {malformed})" if malformed else "")
-        )
     if unread:
         steps.append(f"read with the Read tool each reference it requires: {_reference_list(unread)}")
     return Hold(
         "design", JUSTIFIED_SKIP,
-        f"This is a substantial code change. Before it, {'; '.join(steps)}."
-        f"{misnamed} If the edit is mechanical, with no design in it, write "
-        f"`goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. This edit was not "
-        "applied. " + unseen_line_advice("design-reads or skip line", f"skip {DESIGN_SKILL}"),
+        f"This is a substantial code change. Before it, {'; '.join(steps)}. If the edit is "
+        f"mechanical, with no design in it, write `goated-skip: {DESIGN_SKILL}: <reason>` on "
+        "its own line instead. This edit was not applied. "
+        + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
     )
 
 
@@ -1165,40 +1148,6 @@ def _reference_reads_hold(path: str | None, tool_input: dict | None, proof: _Pro
         f"before the write, and apply it: {listing}. If one does not apply to this write, "
         f"write {skip_lines} on its own line instead, naming its skill. This write was not "
         "applied. " + unseen_line_advice("skip line", way_out),
-    )
-
-
-def design_references(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
-                      namespaces: tuple[str, ...] = (),
-                      project: Project | None = None,
-                      earlier: SinceCompaction = SinceCompaction()) -> list[str]:
-    """The design references an edit requires, as the design gates judge it,
-    for the closeout's citation item: [] unless `software-design-principles`
-    is loaded and not skipped and the design-reads rules apply to the edited
-    project file. Call it for a call `check_action` let through."""
-
-    if tool_name not in FILE_WRITE_TOOLS:
-        return []
-    proof = _Proof(turn, overrides, namespaces, earlier=earlier)
-    path = _norm(str(tool_input.get(FILE_WRITE_TOOLS[tool_name]) or ""))
-    applies = design_reads.applies(path, is_code=is_code(path), is_test=is_test(path, project))
-    judged = applies and _in_project(path, project) and proof.loaded(DESIGN_SKILL)
-    if not judged or proof.skipped(DESIGN_SKILL):
-        return []
-    earlier = _project_code_writes(turn, project)
-    return list(_edit_required(path, tool_input, proof, project, earlier))
-
-
-def _edit_required(path: str, tool_input: dict, proof: _Proof, project: Project | None,
-                   earlier: list[tuple[str, int]]) -> dict[str, str]:
-    """The references an edit of `path` requires, each with why (see
-    `design_reads.required`); `earlier` is `_project_code_writes` of the turn."""
-
-    return design_reads.required(
-        path, tool_input, is_code=is_code(path), is_test=is_test(path, project),
-        small=_small_edit(tool_input), written_before=any(p == path for p, _ in earlier),
-        other_code_files=len({p for p, _ in earlier if p != path and not is_test(p, project)}),
-        declared=declared_files(proof.turn.design_reads), cwd=project.cwd if project else None,
     )
 
 
@@ -1413,29 +1362,27 @@ def _folder_key(folder: str) -> str:
 def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = (),
                    final_text: str = "", subagents: dict | None = None,
                    project: Project | None = None,
-                   edit_references: dict[str, list[str]] | None = None,
-                   design_ids: Callable[[], dict[str, tuple[str, ...]]] | None = None,
                    at_commit: bool = False, by_tool: bool = False,
                    earlier: SinceCompaction = SinceCompaction(),
                    spawn_templates: dict[str, list[str]] | None = None,
                    intensity: str | None = None, briefed: bool = False) -> Hold | None:
     """Return the closeout hold for a turn about to end, if any; `at_commit`:
     for a commit the turn is about to make, which must meet it first, made by
-    an MCP commit tool when `by_tool`, which has no command to rerun and no
-    field that carries a citation.
+    an MCP commit tool when `by_tool`, which has no command to rerun.
 
     A turn that changed code needs, after its last code change, a check
     command (proof), in a later call or later in the same shell command. It
     also needs `doc-sync` when non-test code changed, `handoff` when the
     last check after the change failed (work left unfinished), and a read
-    of the design red flags after the change, with a citation of a section of
-    each design reference the turn's edits required, when `_designing` says
-    the Design items apply. A turn that changed a security-sensitive file,
+    of the design red flags after the change when `_designing` says the
+    Design item applies; after a red-flags read, design changes that add
+    fewer than `DESIGN_MIN_LINES` lines in total need only a change read
+    (`_red_flags_read`). A turn that changed a security-sensitive file,
     code or not, while `code-security-review` counts as loaded, needs a
     security review. A load counts until the next compaction (`earlier`).
     The doc-sync, design, and security items each also need a change read: doc-sync's after the last code change, the
-    design item's after its red-flags read, which follows the last code change
-    that is not comment-only, and security's after its load and the last
+    design item's after its red-flags read and the last code change that is
+    not comment-only, and security's after its load and the last
     sensitive change. A turn
     that installed a package it names, or wrote an env or settings file, needs
     `setup-scribe` loaded at any point in the turn (Setup). Each item accepts
@@ -1446,13 +1393,6 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     turns. Their code changes count as made at the spawn; a subagent that ran
     a check after its own last change has already proved them. Only files
     inside `project` count (see `find_project`); a scratch file elsewhere does not.
-    `edit_references` maps the tool_use_id of each edit the design gates
-    judged in this turn to the references it required (`design_references`);
-    the finished ones among them are the turn's required set. A subagent's
-    edits are not in it, so they need no citation. `design_ids` returns each
-    reference's section ids from the installed skill
-    (`design_reads.section_ids`); it is called only when citations are
-    checked, and a reference it leaves out needs none.
 
     A turn that changed code on a branch whose work against its base is
     `REVIEW_MIN_LINES` or more (`changed_lines` with `WORKING_TREE`, asked
@@ -1473,7 +1413,7 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     branch_size = functools.cache(
         lambda: changed_lines(project.cwd if project else None, None, WORKING_TREE))
     items = (
-        _code_items(changes, proof, edit_references or {}, design_ids, at_commit, by_tool)
+        _code_items(changes, proof)
         + ([] if briefed else _review_item(changes, proof, spawn_templates or {}, branch_size))
         if changes.code else []
     )
@@ -1510,13 +1450,9 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     )
 
 
-def _code_items(changes: "_Changes", proof: _Proof, edit_references: dict[str, list[str]],
-                design_ids: Callable[[], dict[str, tuple[str, ...]]] | None,
-                at_commit: bool, by_tool: bool) -> list[str]:
+def _code_items(changes: "_Changes", proof: _Proof) -> list[str]:
     """The closeout items a code change needs: proof, a handoff for a failed
-    check, doc-sync, the design red flags, and the design citations, each with
-    what is missing; `at_commit` and `by_tool`, as `check_closeout` takes
-    them, say where a citation can still be written."""
+    check, doc-sync, and the design red flags, each with what is missing."""
 
     code = changes.code
     last = code[-1].index
@@ -1557,8 +1493,8 @@ def _code_items(changes: "_Changes", proof: _Proof, edit_references: dict[str, l
             )
     if _designing(proof, changes.project) and not proof.skipped(DESIGN_SKILL):
         # Fixing a comment the red-flags scan found needs no second scan (Ticket 059).
-        designed = max((c.index for c in code if not c.comment_only), default=-1)
-        flags = proof.read_index(RED_FLAGS_REFERENCE, after=designed)
+        designed = [c for c in code if not c.comment_only]
+        flags = _red_flags_read(proof, designed)
         if flags is None:
             items.append(
                 f"- Design: read `{RED_FLAGS_REFERENCE}` with the Read tool after your last "
@@ -1567,33 +1503,12 @@ def _code_items(changes: "_Changes", proof: _Proof, edit_references: dict[str, l
                 f"question: {RED_FLAGS_QUESTION} "
                 f"Or write `goated-skip: {DESIGN_SKILL}: <reason>`."
             )
-        elif not changes.read_after(flags):
+        elif not changes.read_after(max([flags, *(c.index for c in designed)])):
             items.append(
-                "- Design: after reading the red flags, read the change itself and scan it "
-                f"against them, not your memory of it: {CHANGE_READ}. Then answer their "
-                f"closing question: {RED_FLAGS_QUESTION} Or write "
-                f"`goated-skip: {DESIGN_SKILL}: <reason>`."
-            )
-        uncited = _uncited_references(proof, edit_references, design_ids)
-        if uncited:
-            if not at_commit:
-                where = f"Put the citations in your reply, or in {CITATION_FIELDS}."
-            elif by_tool:
-                where = (
-                    f"This tool's fields carry no citation, so put them in {CITATION_FIELDS} "
-                    f"made in an earlier message, then make the commit again. {UNSEEN_AT_COMMIT}"
-                )
-            else:
-                where = (
-                    "Put the citations in this commit call's description and make the call "
-                    f"again, or in {CITATION_FIELDS} made in an earlier message. "
-                    + UNSEEN_AT_COMMIT
-                )
-            items.append(
-                "- Design: cite a section of each design reference this turn required, as "
-                "file#id, with how it shaped the change or why it did not apply; the Section "
-                f"Index in the skill's SKILL.md lists each file's ids. {where} Not yet "
-                f"cited: {', '.join(uncited)}. Or write `goated-skip: {DESIGN_SKILL}: <reason>`."
+                "- Design: after reading the red flags and after your last code change, read "
+                "the change itself and scan it against them, not your memory of it: "
+                f"{CHANGE_READ}. Then answer their closing question: {RED_FLAGS_QUESTION} "
+                f"Or write `goated-skip: {DESIGN_SKILL}: <reason>`."
             )
     return items
 
@@ -1685,26 +1600,34 @@ def _designing(proof: _Proof, project: Project | None) -> bool:
     )
 
 
-def _uncited_references(proof: _Proof, edit_references: dict[str, list[str]],
-                        design_ids: Callable[[], dict[str, tuple[str, ...]]] | None) -> list[str]:
-    """The references the turn's finished design edits required that it
-    cites no section of, in the skill's order. A citation counts in reply
-    text, the reply being finished included, and in the call fields that
-    carry route and skip lines, held calls and the call being judged included."""
+def _red_flags_read(proof: _Proof, designed: list["_Change"]) -> int | None:
+    """Where the red-flags read that covers the turn's `designed` changes, the
+    code changes that are not comment-only, is in its calls, or None: the
+    first read after the last of them, or else the turn's last read before
+    it when the changes after that read add fewer than `DESIGN_MIN_LINES`
+    lines in total and those before it add at least that many, so the read
+    scanned a designed change (spec R8). A change whose added lines are
+    unknown, a shell write or a subagent's, counts as large."""
 
-    required = {
-        name for call in proof.turn.calls if call.ok
-        for name in edit_references.get(call.tool_id, ())
-    }
-    if not required or design_ids is None:
-        return []
-    ids = design_ids()
-    cited = design_reads.citations([*proof.turn.texts, *proof.turn.call_texts, proof.extra_text])
-    return [
-        name for name in design_reads.REFERENCES
-        if name in required and name in ids
-        and not any(f"{name}#{section}" in cited for section in ids[name])
-    ]
+    last = max((c.index for c in designed), default=-1)
+    after = proof.read_index(RED_FLAGS_REFERENCE, after=last)
+    if after is not None:
+        return after
+    before = proof.last_read_index(RED_FLAGS_REFERENCE, before=last)
+    if before is None:
+        return None
+    scanned = [c.added_lines for c in designed if c.index < before]
+    since = [c.added_lines for c in designed if c.index > before]
+    if not _large(scanned) or _large(since):
+        return None
+    return before
+
+
+def _large(added_lines: list[int | None]) -> bool:
+    """Whether changes adding `added_lines` add `DESIGN_MIN_LINES` or more in
+    total; a change whose count is unknown (None) makes them large."""
+
+    return None in added_lines or sum(added_lines) >= DESIGN_MIN_LINES
 
 
 def _setup_item(turn: Turn, subagents: dict, proof: _Proof, project: Project | None) -> str:
@@ -1781,18 +1704,23 @@ class _Change:
     files, which of them are code, whether it is already proved: by a check
     later in the same command, or by a subagent's own check, whether it
     is an edit that changed only comments and docstrings
-    (`design_reads.comment_only`), and whether a spawned subagent made it."""
+    (`design_reads.comment_only`), whether a spawned subagent made it, and
+    how many lines an edit tool call added (`countable_lines`), None when
+    unknown."""
 
-    __slots__ = ("index", "paths", "code_paths", "proven", "comment_only", "by_subagent")
+    __slots__ = ("index", "paths", "code_paths", "proven", "comment_only", "by_subagent",
+                 "added_lines")
 
     def __init__(self, index: int, paths: list[str], proven: bool = False,
-                 comment_only: bool = False, by_subagent: bool = False) -> None:
+                 comment_only: bool = False, by_subagent: bool = False,
+                 added_lines: int | None = None) -> None:
         self.index = index
         self.paths = paths
         self.code_paths = [p for p in paths if _is_code_change(p)]
         self.proven = proven
         self.comment_only = comment_only
         self.by_subagent = by_subagent
+        self.added_lines = added_lines
 
 
 class _Changes:
@@ -1861,9 +1789,11 @@ def _changes(turn: Turn, subagents: dict, project: Project | None):
             continue
         paths = _changed_paths(call, project)
         if paths:
+            edited = call.name in FILE_WRITE_TOOLS
             yield _Change(index, paths, _proves_itself(call, project),
-                          call.name in FILE_WRITE_TOOLS and design_reads.comment_only(
-                              str(call.input.get(FILE_WRITE_TOOLS[call.name]) or ""), call.input))
+                          edited and design_reads.comment_only(
+                              str(call.input.get(FILE_WRITE_TOOLS[call.name]) or ""), call.input),
+                          added_lines=countable_lines(call.input) if edited else None)
 
 
 def _changed_paths(call, project: Project | None) -> list[str]:
@@ -2220,18 +2150,25 @@ def added_lines(tool_input: dict) -> int:
     return sum(len(t.split("\n")) for t in texts if isinstance(t, str) and t)
 
 
-def _small_edit(tool_input: dict) -> bool:
-    """Whether an edit adds fewer than `DESIGN_MIN_LINES` lines, as
-    `added_lines` counts them. An edit whose added lines cannot be counted, an
-    `edits` entry that is not an edit or an input with no text it writes, is
-    not small."""
+def countable_lines(tool_input: dict) -> int | None:
+    """The lines an edit adds, as `added_lines` counts them, or None when they
+    cannot be counted: an `edits` entry that is not an edit, or an input with
+    no text it writes."""
 
     edits = tool_input.get("edits")
     if isinstance(edits, list):
         countable = all(isinstance(e, dict) and isinstance(e.get("new_string"), str) for e in edits)
     else:
         countable = any(isinstance(tool_input.get(key), str) for key in ("content", "new_string", "new_source"))
-    return countable and added_lines(tool_input) < DESIGN_MIN_LINES
+    return added_lines(tool_input) if countable else None
+
+
+def _small_edit(tool_input: dict) -> bool:
+    """Whether an edit adds fewer than `DESIGN_MIN_LINES` lines; one whose
+    added lines cannot be counted is not small."""
+
+    lines = countable_lines(tool_input)
+    return lines is not None and lines < DESIGN_MIN_LINES
 
 
 def _subject(message: str) -> str:

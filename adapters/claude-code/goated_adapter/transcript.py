@@ -186,9 +186,7 @@ class Turn:
     invoked as `/<skill>` included once its body loaded. `route` is
     the winning route line, `routes` every valid route line in order, and
     `malformed` the route-like lines that failed the grammar. `skips` are the
-    valid `goated-skip` lines, `design_reads` the valid `goated-design-reads`
-    lines and `malformed_design_reads` those that failed the grammar, and
-    `texts` the turn's reply texts, in order, and `call_texts` the text of
+    valid `goated-skip` lines, and `texts` the turn's reply texts, in order, and `call_texts` the text of
     the field `call_line_text` reads of each call, held calls included, in
     order. Lines count from both, once per call id in `call_ids`. `calls` are the tool calls that finished in this
     turn, oldest first, and `unfinished` the `(name, input)` of recorded calls
@@ -204,7 +202,7 @@ class Turn:
     __slots__ = (
         "key", "is_compaction", "typed", "prompt_id", "loads",
         "route", "routes", "malformed", "skips", "calls", "prompt_ids",
-        "opens_transcript", "design_reads", "malformed_design_reads", "call_ids",
+        "opens_transcript", "call_ids",
         "unfinished", "texts", "call_texts", "brief_route", "_brief_candidate",
         "finished_agents",
     )
@@ -220,8 +218,6 @@ class Turn:
         self.opens_transcript = False
         self.malformed: list[str] = []
         self.skips: list[dict] = []
-        self.design_reads: list[dict] = []
-        self.malformed_design_reads: list[str] = []
         self.calls: list[Call] = []
         self.prompt_ids: set[str] = set()
         self.call_ids: set[str] = set()
@@ -255,8 +251,6 @@ class Turn:
             self.routes.append(markers.route)
         self.malformed.extend(markers.malformed)
         self.skips.extend(markers.skips)
-        self.design_reads.extend(markers.design_reads)
-        self.malformed_design_reads.extend(markers.malformed_design_reads)
 
     def add_call(self, tool_id: str, tool_name: str, tool_input: dict) -> None:
         """Count the marker lines a tool call carries, once per call id.

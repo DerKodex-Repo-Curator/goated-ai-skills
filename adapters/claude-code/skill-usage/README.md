@@ -27,13 +27,14 @@ without it.
 | Your overrides, by phrase | The adapter's sentence `recorded your override for this prompt` in its hook context; its `commit message` phrase shows as `commit message: <text>` |
 | Reads of skills' reference and other supporting files, whether the skill had loaded first, and when in the turn: before its first code change, between two, after the last, or in a turn with no code change | `Read` paths and shell commands; code changes are edit tool calls on a code file, by the main agent or a subagent, that ran |
 | Declared references: for each reference a hold asked to read (the `reference-reads`, `design` and `design-reads` holds), how often a hold fired for it, then it was read with the Read tool, or a skip line naming its skill declined it while it was unread (skipped). A reference fires once while it waits unread in its turn, however many holds name it; a later turn's hold fires it again | The references each hold backticks by path, `Read` tool calls, and skip lines, as the hold settlement counts them |
-| Design-reads lines: in how many replies each reference file was declared (a reply's lines add up to one set of files, each counted once), and how many lines declared `none` | `goated-design-reads:` lines in replies, and in the same call fields as route lines |
 | Subagent spawns, with type and task, including ones that load no skill | Agent tool calls that ran; a held or failed attempt shows in the log as held but is not counted |
 | A subagent's reads of a skill's `SKILL.md` | A subagent's `Read` calls |
 
-Route, skip and design-reads lines are read with the marker grammar in
+Route and skip lines are read with the marker grammar in
 `stack/fixtures/markers/README.md`, and the mod's tests check that reading
-against `lines.yaml` and `design-reads.yaml` there.
+against `lines.yaml` there. A `goated-design-reads:` line, which left the
+grammar, is prose: the mod records nothing for it, and design-reads counts
+stored by earlier versions are no longer shown.
 
 A code change is what the adapter counts as one where the mod can see it: an
 `Edit`, `Write`, `MultiEdit` or `NotebookEdit` call on a file whose extension
@@ -128,16 +129,13 @@ it. In particular:
   compaction, before or after the hold, as the adapter counts them; a failed
   Read does not count.
 - Once `software-design-principles` has loaded, the adapter's `design` hold
-  asks for its design-reads line and the references the edit requires, and
-  the `design-reads` hold for a later edit's references; both name the skill
-  only in their skip line, backtick each reference by its path, and the
-  `design` hold backticks the line's form when it asks for one. Such a hold
-  is met, as the adapter judges it, once the agent has used the Read tool on
-  each reference it names (a shell command printing one, another of the
-  skill's files, or its `SKILL.md` does not count) and written a
-  design-reads line if it asked for one. It counts as files read when a read
-  came last, and as followed when the line did. Loading the skill again
-  answers neither.
+  asks for the references the edit requires, and the `design-reads` hold for
+  a later edit's references; both name the skill only in their skip line and
+  backtick each reference by its path. Such a hold is met, as the adapter
+  judges it, once the agent has used the Read tool on each reference it names
+  (a shell command printing one, another of the skill's files, or its
+  `SKILL.md` does not count), and counts as files read. Loading the skill
+  again, or writing a design-reads line, answers neither.
 - The adapter's `reference-reads` hold asks for the skill references the
   GOATED registry declares for an edit, each backticked by its path under
   the skill (`tdd/references/mocking-and-seams.md`), and names each skill
@@ -157,10 +155,8 @@ it. In particular:
 - A skill a hold offers only as a skip line, such as
   `verification-before-completion` for the closeout's proof item, is answered
   by a skip line or by the adapter letting the turn end, never by loading it:
-  the adapter counts a check run, a read of the red-flags file, a citation of
-  each design reference the turn required (in reply text, or in a shell or
-  agent call's description or a Skill call's args), or a read of the change
-  (its diff, or a changed file), not a load. A closeout item whose
+  the adapter counts a check run, a read of the red-flags file, or a read of
+  the change (its diff, or a changed file), not a load. A closeout item whose
   skill already loaded asks for that read of the change, so it names the
   skill only as a skip line.
 - A blocked `Stop` does not end the turn, so the closeout hold waits for the
@@ -182,10 +178,8 @@ it. In particular:
   followed, since the `Stop` that let the turn end judged every item again.
 - Each closeout hold counts once for each item it lists, with that item's
   outcome, which is the outcome of the skill the item names. The labels are
-  read from the hold's text, which the adapter keeps stable for this. The
-  design red-flags item and the design citations item, which Ticket 075
-  names as two items, share the label `Design` and the skill, so the mod
-  cannot tell them apart and a hold listing both counts `Design` once.
+  read from the hold's text, which the adapter keeps stable for this. Two
+  item lines that share a label and a skill count once.
 
 These rules live in `hooks/holds.ts`, the hold settlement: `hooks/classify.ts`
 reads the events and feeds them to it in order, and keeps the rest of a
@@ -447,9 +441,8 @@ claude plugin test .
 claude plugin validate .
 ```
 
-The tests read four generated modules: `tests/marker-fixtures.ts`, from
-`stack/fixtures/markers/lines.yaml`; `tests/design-reads-fixtures.ts`, from
-`stack/fixtures/markers/design-reads.yaml`; `tests/registry-fixture.ts`, the
+The tests read three generated modules: `tests/marker-fixtures.ts`, from
+`stack/fixtures/markers/lines.yaml`; `tests/registry-fixture.ts`, the
 registry `stack/goated-stack.yaml` with the references a full YAML parser
 reads from it; and `tests/adapter-texts.ts`, the
 hold reasons and override context the adapter produces when the generator

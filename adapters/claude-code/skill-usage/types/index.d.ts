@@ -17,10 +17,10 @@ export type UsageEvent = Stamp &
     /** `isSubagent`: the hook spoke to a subagent, not the main agent; `agent`: which subagent, so its own turn end settles it. */
     /** `holdKind`: an adapter hold (`goated-hold:`), whose `hook` is its gate; `isStop`: it held a `Stop`, not a call. */
     /** `skipOnly`: the named skills the hold offers only as a skip line, which no load answers. */
-    /** `refs`: the design references (`errors.md`) a design hold asks to Read; `needsLine`: it asks for a design-reads line. */
+    /** `refs`: the design references (`errors.md`) a design hold asks to Read. */
     /** `items`: the items a closeout hold lists, each with the skill it names. */
     /** `briefAdded`: the skills a pipeline hold asks for because the session started from a brief, not because its route named them. */
-    | { kind: 'nudge'; hook: string; named: string[]; holdKind?: HoldKind; isStop?: true; skipOnly?: string[]; refs?: string[]; needsLine?: true; items?: CloseoutItem[]; briefAdded?: string[]; isSubagent?: true; agent?: string }
+    | { kind: 'nudge'; hook: string; named: string[]; holdKind?: HoldKind; isStop?: true; skipOnly?: string[]; refs?: string[]; items?: CloseoutItem[]; briefAdded?: string[]; isSubagent?: true; agent?: string }
     /** A `goated-skip: <skill>: <reason>` line in a reply: the agent (or the subagent `agent`) declined a skill for this turn. */
     | { kind: 'skip'; skill: string; reason: string; isSubagent?: true; agent?: string }
     /**
@@ -40,11 +40,6 @@ export type UsageEvent = Stamp &
     | { kind: 'body'; skill: string; isSubagent: true; agent?: string }
     /** A winning `goated-route:` line in a reply, by the main agent or the subagent `agent`. */
     | ({ kind: 'route'; isSubagent?: true; agent?: string } & Route)
-    /**
-     * A reply's `goated-design-reads:` lines, by the main agent or the subagent `agent`: the union of the files they
-     * declare, each once, and the reason of each `none` line.
-     */
-    | { kind: 'design-reads'; files: string[]; noneReasons: string[]; isSubagent?: true; agent?: string }
     /** The adapter's notice that it recorded overrides you typed, each phrase lowercased. */
     | { kind: 'override'; phrases: string[] }
     /** An Agent tool call starting a subagent, by the main agent or the subagent `agent`. */
@@ -93,16 +88,10 @@ export type Intensity = 'lightweight' | 'standard' | 'full'
 export type Route = { form: 'direct' | 'continue' } | { form: 'route'; intensity: Intensity; requires: string[] }
 export type RouteForm = Route['form']
 
-/** A design-reads line as the marker grammar reads it: the reference files it declares, or `none` with a reason. */
-export type DesignReads = { form: 'files'; files: string[] } | { form: 'none'; reason: string }
-
-/** Design-reads lines counted: in how many replies each file was declared, and how many lines declared `none`. */
-export type DesignReadCounts = { files: Record<string, number>; none: number }
-
 /**
  * One item a closeout hold lists, read from its `- <Label>: ` line: its label, such as `Proof` or `Docs`, and the skill
  * the item names, whose ask settles the item. The adapter keeps the labels stable for this; two items that share a label
- * and a skill (the design red flags and citations) are one.
+ * and a skill are one.
  */
 export type CloseoutItem = { label: string; skill: string }
 
@@ -165,8 +154,6 @@ export type Measures = {
   /** Overrides you typed, by phrase. */
   overrides?: Record<string, number>
   subagents?: SubagentCounts
-  /** Design-reads lines, by file declared, and `none` declarations. */
-  designReads?: DesignReadCounts
   /** What became of each closeout item, by its label: one count per closeout hold that listed it. */
   closeoutItems?: Record<string, Counts<Outcome>>
   /** The reasons of the skip lines that declined a hold, by skill and gate, each cut to a fixed length. */
@@ -221,7 +208,6 @@ export type TimelineEntry = Stamp &
     /** `isLoaded`: the skill had loaded (since the last compaction) when its file was read. */
     | { kind: 'ref'; skill: string; file: string; isLoaded: boolean; isSubagent?: true }
     | ({ kind: 'route'; isSubagent?: true } & Route)
-    | { kind: 'design-reads'; files: string[]; noneReasons: string[]; isSubagent?: true }
     | { kind: 'override'; phrases: string[] }
     /** `isHeld`: the call was refused, so no subagent started. */
     | { kind: 'spawn'; agentType: string; description: string; isHeld?: true; isSubagent?: true }

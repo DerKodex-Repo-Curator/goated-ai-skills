@@ -155,6 +155,8 @@ class CurrentRegistryTests(unittest.TestCase):
         registry = load_registry(REPO_ROOT)
         design = skill_entry(registry, "software-design-principles")["references"]
         for entry in design:
+            if entry["file"] == "differences.md":
+                continue  # No signal selects it (Ticket 089); see the test below.
             gate = "closeout" if entry["file"] == "red-flags.md" else "design-reads"
             with self.subTest(file=entry["file"]):
                 self.assertEqual(
@@ -167,6 +169,21 @@ class CurrentRegistryTests(unittest.TestCase):
                         {"kind": "existing-rule", "gate": "spawn"},
                         entry.get("signal"),
                     )
+
+    def test_the_design_reference_no_signal_selects_is_advisory(self) -> None:
+        # Ticket 089: only the removed design-reads line named differences.md.
+        design = {
+            entry["file"]: entry
+            for entry in skill_entry(load_registry(REPO_ROOT), "software-design-principles")[
+                "references"
+            ]
+        }
+        self.assertNotIn("signal", design["differences.md"])
+        self.assertGreaterEqual(len(design["differences.md"].get("advisory", "").split()), 3)
+        # The near miss: a reference a signal selects keeps its gate.
+        self.assertEqual(
+            {"kind": "existing-rule", "gate": "design-reads"}, design["errors.md"].get("signal")
+        )
 
     def test_maintainer_docs_state_the_reference_standard(self) -> None:
         agents = " ".join(

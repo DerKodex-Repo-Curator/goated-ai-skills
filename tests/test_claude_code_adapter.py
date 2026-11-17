@@ -33,7 +33,6 @@ from claude_code_adapter_support import (
 )
 
 MARKER_FIXTURES = REPO_ROOT / "stack" / "fixtures" / "markers" / "lines.yaml"
-DESIGN_READS_FIXTURES = MARKER_FIXTURES.with_name("design-reads.yaml")
 RECORDED = REPO_ROOT / "tests" / "fixtures" / "claude_code_adapter"
 
 
@@ -1627,28 +1626,6 @@ class MarkerAgreementTests(unittest.TestCase):
                 reply["expect"],
                 reply["identifier"],
             )
-
-    def test_adapter_parser_agrees_with_the_design_reads_fixtures(self) -> None:
-        from goated_adapter import markers
-
-        data = yaml.safe_load(DESIGN_READS_FIXTURES.read_text(encoding="utf-8"))
-        for case in data["design_reads_lines"]["valid"]:
-            self.assertEqual(markers.parse_design_reads_line(case["line"]), case["expect"], case["line"])
-        for case in data["design_reads_lines"]["invalid"]:
-            self.assertIsNone(markers.parse_design_reads_line(case["line"]), case["line"])
-        for reply in data["design_reads_replies"]:
-            parsed = markers.parse_reply(reply["text"])
-            self.assertEqual(
-                {
-                    "files": markers.declared_files(parsed.design_reads),
-                    "lines": parsed.design_reads,
-                    "malformed": parsed.malformed_design_reads,
-                },
-                reply["expect"],
-                reply["identifier"],
-            )
-            # Design-reads lines stay out of the route and skip lines' malformed list.
-            self.assertFalse(any("design-reads" in line.lower() for line in parsed.malformed))
 
 
 class RecordedSessionTests(unittest.TestCase):

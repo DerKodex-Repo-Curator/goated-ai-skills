@@ -61,13 +61,6 @@ def installed_skill_names(cwd: Path, home: Path) -> frozenset[str]:
     return frozenset(folder.name for folder in _skill_folders(cwd, home))
 
 
-def skill_folder(cwd: Path, home: Path, skill: str) -> Path | None:
-    """The folder of `skill` as Claude Code finds it (see
-    `installed_skill_names`), a user skill first, or None when not installed."""
-
-    return next((folder for folder in _skill_folders(cwd, home) if folder.name == skill), None)
-
-
 def _skill_folders(cwd: Path, home: Path):
     """Each skill folder Claude Code can find: user skills, then project
     skills from `cwd` up, then plugin skills, the newest cached plugin

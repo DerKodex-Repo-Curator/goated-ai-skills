@@ -1477,7 +1477,7 @@ test("route and skip lines count from a Skill call's args and any call's descrip
   ])
 })
 
-test('no other field of a call carries a route, skip or design-reads line', async () => {
+test('no other field of a call carries a route or skip line', async () => {
   const line = 'goated-route: direct'
   const uses = [
     { name: 'Edit', input: { file_path: 'notes.md', old_string: 'x', new_string: line } },
@@ -1491,14 +1491,14 @@ test('no other field of a call carries a route, skip or design-reads line', asyn
     { name: 'TaskCreate', input: { subject: 'x', description: line } },
     { name: 'Skill', input: { skill: 'tdd', description: line } },
   ]
-  expect(toolUseEvents(uses, false, 7).filter(e => e.kind === 'route' || e.kind === 'skip' || e.kind === 'design-reads')).toEqual([])
+  expect(toolUseEvents(uses, false, 7).filter(e => e.kind === 'route' || e.kind === 'skip')).toEqual([])
 })
 
-test('a design-reads line counts from the same call fields as a route line', async () => {
-  const uses = [{ name: 'Bash', input: { command: 'ls', description: 'goated-design-reads: process.md' } }]
-  expect(toolUseEvents(uses, false, 8).filter(e => e.kind === 'design-reads')).toMatchObject([
-    { kind: 'design-reads', t: 8, files: ['process.md'], noneReasons: [] },
-  ])
+test('a design-reads line in a call field records nothing (Ticket 089)', async () => {
+  const described = (description: string) => toolUseEvents([{ name: 'Bash', input: { command: 'ls', description } }], false, 8)
+  expect(described('goated-design-reads: process.md')).toEqual(described('List files'))
+  // The near miss: a route line in the same field is still read.
+  expect(described('goated-route: direct').filter(e => e.kind === 'route')).toHaveLength(1)
 })
 
 test('history reads a route line from a call when the reply text was saved as a summary', async () => {

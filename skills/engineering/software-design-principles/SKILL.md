@@ -48,48 +48,21 @@ references each moment names for the reasoning.
 1. Check what already decides the question: project instructions, documented
    standards, and the conventions in the surrounding code. Those win.
 2. At the start of design work in a turn, check each moment's **Read now**
-   list below and write the design-reads line naming every reference whose
-   condition holds, even one already read. Read each before the work it
-   serves, unless it was already read in this context window. Write a new line
-   when the work changes and another condition holds. A small edit, one
-   writing fewer than five lines, meets a condition only through its code,
-   such as a new module or public interface, error handling, or concurrency;
-   being a test, a setting, a comment, or one more file of a change does not.
+   list below and read each reference whose condition holds before the work
+   it serves, unless it was already read in this context window. Check again
+   when the work changes. A small edit, one writing fewer than five lines,
+   meets a condition only through its code, such as a new module or public
+   interface, error handling, or concurrency; being a test, a setting, a
+   comment, or one more file of a change does not.
 3. Apply the rules for the current moment. Scale the effort to the change: a
    one-line fix needs a glance at the rules, not a design exercise.
 4. Before reporting the work as done, read [Red Flags](references/red-flags.md)
-   and scan the change against it.
-5. In the reply that reports the work, cite the references, following the
-   citation convention below.
+   and scan the change against it. By the same small-edit measure, later
+   fixes that add fewer than five lines in total, comments aside, need no
+   second read of it; scan the changed code itself again instead.
 
 For review-only work, where nothing is changed, read `red-flags.md` and the
-references whose conditions the reviewed code meets; the design-reads line and
-citations apply to the review report.
-
-### Design-reads line
-
-Write it on its own line, outside code blocks and prose, bare or in one pair
-of backticks, in lowercase:
-
-- `goated-design-reads: <file>, <file>` names references by file name, without
-  `references/`, such as `goated-design-reads: process.md, errors.md`;
-- `goated-design-reads: none: <reason>` declares that no condition holds, with
-  a reason of at least three words, such as
-  `goated-design-reads: none: renames one local variable`.
-
-A later line in the turn adds its files to the earlier ones; it never removes
-any. Listing `red-flags.md` is allowed but adds nothing, since step 4 always
-reads it. The line tells the user, and any reviewer, which reasoning the work
-rests on.
-
-### Citations
-
-Cite a section as `file#id`, such as `process.md#design-twice`; the index
-below lists every id with its file. The reply that reports the work cites at
-least one id from each file its design-reads lines name, whether or not it was
-re-read this turn, saying how it shaped the change or why it did not apply,
-such as "`errors.md#crash-early`: the parser now raises on a bad header
-instead of returning an empty record".
+references whose conditions the reviewed code meets.
 
 ## Rules
 
@@ -229,8 +202,8 @@ condition first arises while writing:
 
 ## Section Index
 
-Cite a section as `file#id`. Each id is an `<!-- id: #name -->` comment in
-the file listed here.
+A section is named `file#id`, such as `process.md#design-twice`. Each id is
+an `<!-- id: #name -->` comment in the file listed here.
 
 | Reference | Read when | Section ids |
 | --- | --- | --- |
@@ -246,8 +219,7 @@ the file listed here.
 
 ## Output Contract
 
-This skill shapes the work; it does not add a report. It adds only the
-design-reads line and the citations defined in the Workflow. In integrated use,
+This skill shapes the work; it does not add a report. In integrated use,
 return only material deltas:
 
 - a design decision that needs the user's choice, with the options compared;

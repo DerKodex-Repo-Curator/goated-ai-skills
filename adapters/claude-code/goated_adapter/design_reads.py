@@ -5,34 +5,27 @@ documented in the adapter README ("Design references"): which edits they
 apply to, what an edit adds, and each reference with what in an edit selects
 it, close to the skill's own "Read now" conditions. `red-flags.md` is not
 here; the closeout requires it on every change. `differences.md` has no
-signal: only a design-reads line names it.
+signal, so no edit requires it: the registry declares it advisory.
 
 Signals are word and shape matches on the code an edit adds, so they lean
 toward selecting; a reference read counts until the next compaction, which
 bounds the cost. What is code is the action gates' rule (`actions.is_code`);
 what is a test file is this module's (`is_test_path`), which the closeout
 shares. Callers pass both answers.
-
-It also owns what the closeout's citation item reads (spec R6): each
-reference's section ids, from the installed skill's own files, and the
-citations a text makes.
 """
 
 from __future__ import annotations
 
 import os
 import re
-from pathlib import Path
 from typing import NamedTuple
 
 SKILL_REFERENCES = "software-design-principles/references/"
-# The references a design-reads line can require, in the skill's order.
+# The design references whose reads count, in the skill's order.
 REFERENCES = (
     "process.md", "complexity-and-modules.md", "decoupling.md", "readability.md",
     "errors.md", "coding.md", "concurrency.md", "differences.md",
 )
-# Named in a design-reads line, it requires nothing here: the closeout requires it.
-CLOSEOUT_REFERENCE = "red-flags.md"
 # The non-test code file a turn edits that makes the edit a change across files.
 MANY_CODE_FILES = 3
 # A file on disk larger than this is not compared: all of a Write's text counts as added.
@@ -65,11 +58,6 @@ CONCURRENCY_RE = re.compile(
 CONFIG_PATH_RE = re.compile(
     r"\.(?:ya?ml|toml|json|env)$|(?:^|/)\.env(?:\.[^/]*)?$|(?:^|/)settings\.[^/]+$", re.IGNORECASE
 )
-# A section id, declared on its own line in a reference file before its heading.
-SECTION_ID_RE = re.compile(r"^<!-- id: #([a-z0-9]+(?:-[a-z0-9]+)*) -->[ \t]*$", re.MULTILINE)
-HEADING_RE = re.compile(r"^(#{2,3}) ", re.MULTILINE)
-# A citation, `errors.md#crash-early`, bare or after a path such as `references/`.
-CITATION_RE = re.compile(r"(?<![\w.-])([a-z0-9]+(?:-[a-z0-9]+)*\.md)#([a-z0-9]+(?:-[a-z0-9]+)*)")
 # Lock files are written by tools, not designed.
 LOCK_FILE_RE = re.compile(r"(?:^|/)(?:[^/]*[-.]lock\.(?:json|ya?ml|toml)|npm-shrinkwrap\.json)$",
                           re.IGNORECASE)
@@ -102,14 +90,13 @@ def applies(path: str, *, is_code: bool, is_test: bool) -> bool:
 
 
 def required(path: str, tool_input: dict, *, is_code: bool, is_test: bool, small: bool,
-             written_before: bool, other_code_files: int, declared: list[str],
+             written_before: bool, other_code_files: int,
              cwd: str | None) -> dict[str, str]:
-    """The references an edit requires, each with why, in the skill's order.
+    """The references an edit's signals select, each with why, in the skill's order.
 
-    They are those its signals select plus the known ones in `declared`, the
-    turn's design-reads files. `small`: the edit adds too few lines for the
-    `design` gate, so no signal selects a reference by the kind of file or
-    text it touches (see `_signals`). `written_before`: the turn already
+    `small`: the edit adds too few lines for the `design` gate, so no signal
+    selects a reference by the kind of file or text it touches (see
+    `_signals`). `written_before`: the turn already
     wrote this file. `other_code_files`: how many other non-test code files
     the turn has edited. A Write is compared with the file on disk, a
     relative path taken from `cwd`, so only what it adds counts.
@@ -122,9 +109,6 @@ def required(path: str, tool_input: dict, *, is_code: bool, is_test: bool, small
         is_test=is_test, small=small,
         code_files=other_code_files + 1 if is_code and not is_test else 0,
     )
-    for name in declared:
-        if name in REFERENCES:
-            found[name] = "named in your design-reads line"
     return {name: found[name] for name in REFERENCES if name in found}
 
 
@@ -135,45 +119,6 @@ def added_code(path: str, tool_input: dict, cwd: str | None) -> list[str]:
 
     on_disk = _disk_text(path, cwd) if "content" in tool_input else None
     return _Added(tool_input, on_disk).code
-
-
-def section_ids(skill_folder: Path | None) -> dict[str, tuple[str, ...]]:
-    """Each design reference's section ids, in file order, from the
-    `<!-- id: #name -->` comments in `skill_folder`'s reference files.
-
-    An id whose `##` heading groups `###` sections, such as `#errors`, names
-    a part of the file, not a section, so it is left out, as the skill's
-    Section Index leaves it out. A reference whose file cannot be read, or
-    that declares no section, is left out, so its citation is not required.
-    """
-
-    ids: dict[str, tuple[str, ...]] = {}
-    if skill_folder is None:
-        return ids
-    for name in REFERENCES:
-        try:
-            text = (skill_folder / "references" / name).read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        found = tuple(
-            match.group(1) for match in SECTION_ID_RE.finditer(text)
-            if not _groups_sections(text, match.end())
-        )
-        if found:
-            ids[name] = found
-    return ids
-
-
-def citations(texts: list[str]) -> set[str]:
-    """The sections `texts` cite, each as `file#id`, such as `errors.md#crash-early`."""
-
-    return {f"{name}#{section}" for text in texts for name, section in CITATION_RE.findall(text)}
-
-
-def unknown(declared: list[str]) -> list[str]:
-    """The files a design-reads line names that are not design references."""
-
-    return [name for name in declared if name not in REFERENCES and name != CLOSEOUT_REFERENCE]
 
 
 def reference_read(path: str) -> str | None:
@@ -196,16 +141,6 @@ def reads_in(calls) -> list[str]:
         if call.name == "Read" and call.ok
         and (name := reference_read(str(call.input.get("file_path") or ""))) is not None
     ]
-
-
-def _groups_sections(text: str, at: int) -> bool:
-    """Whether the first heading after `at` is a `##` with a `###` under it."""
-
-    heading = HEADING_RE.search(text, at)
-    if heading is None or heading.group(1) != "##":
-        return False
-    following = HEADING_RE.search(text, heading.end())
-    return following is not None and following.group(1) == "###"
 
 
 class _Added:

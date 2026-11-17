@@ -122,7 +122,7 @@ EXPECTED_SUCCESS_OUTPUT = "\n".join(
         "Source-grounded-research fixture validation passed for 6 scenarios.",
         "Setup Scribe fixture validation passed for 8 scenarios.",
         "Wayfinding fixture validation passed for 10 scenarios.",
-        "Marker-line fixture validation passed for 2 scenarios.",
+        "Marker-line fixture validation passed for 1 scenarios.",
         (
             "Word-budget report: shared policy 1200 words "
             "(within 800-1,200 target)."
@@ -167,7 +167,7 @@ EXPECTED_EMPTY_REPOSITORY_OUTPUT = "\n".join(
     (
         "GOATED skill validation failed for 0 implemented skills.",
         "",
-        "Blocking errors: 20",
+        "Blocking errors: 19",
         "- skills: missing skills directory",
         "- stack/goated-stack.yaml: missing required file",
         (
@@ -216,7 +216,6 @@ EXPECTED_EMPTY_REPOSITORY_OUTPUT = "\n".join(
         "- stack/fixtures/setup-scribe: no setup-scribe fixtures found",
         "- stack/fixtures/wayfinding: no wayfinding fixtures found",
         "- stack/fixtures/markers/lines.yaml: missing required file",
-        "- stack/fixtures/markers/design-reads.yaml: missing required file",
         (
             "- stack/fixtures/reference-reads/entries.yaml: "
             "missing required file"

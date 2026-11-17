@@ -4,8 +4,6 @@ The mod's tests run inside Claude Code's plugin test kit, which has no file
 system, YAML parser, or Python, so they read generated TypeScript modules:
 
 - `marker-fixtures.ts`, the marker fixtures in `stack/fixtures/markers/lines.yaml`;
-- `design-reads-fixtures.ts`, the design-reads line fixtures in
-  `stack/fixtures/markers/design-reads.yaml`;
 - `registry-fixture.ts`, the source registry `stack/goated-stack.yaml` with the
   references each skill declares, as a full YAML parser reads them, so the mod's
   own reader is tested against both;
@@ -23,7 +21,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 import sys
 import tempfile
 import unittest
@@ -37,17 +34,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # A whole backticked token shaped like a skill name, as the mod reads one from a hold.
 BARE_BACKTICKED = re.compile(r"`([a-z0-9]+(?:-[a-z0-9]+)*)`")
 MARKER_FIXTURES = REPO_ROOT / "stack" / "fixtures" / "markers" / "lines.yaml"
-DESIGN_READS_FIXTURES = REPO_ROOT / "stack" / "fixtures" / "markers" / "design-reads.yaml"
 MOD_ROOT = REPO_ROOT / "adapters" / "claude-code" / "skill-usage"
 GENERATED_MARKERS = MOD_ROOT / "tests" / "marker-fixtures.ts"
-GENERATED_DESIGN_READS = MOD_ROOT / "tests" / "design-reads-fixtures.ts"
 # The mod's copies of the adapter's code-file extensions and edit tools, in hooks/classify.ts.
 MOD_CODE_EXTENSIONS = re.compile(r"const CODE_EXTENSIONS = new Set\(\s*'([^']*)'")
 MOD_FILE_EDIT_TOOLS = re.compile(r"const FILE_EDIT_TOOLS: Record<string, string> = \{([^}]*)\}")
 GENERATED_ADAPTER_TEXTS = MOD_ROOT / "tests" / "adapter-texts.ts"
 REGISTRY = REPO_ROOT / "stack" / "goated-stack.yaml"
 GENERATED_REGISTRY = MOD_ROOT / "tests" / "registry-fixture.ts"
-DESIGN_SKILL_DIR = REPO_ROOT / "skills" / "engineering" / "software-design-principles"
 
 
 def _module(source: str, name: str, value: object) -> str:
@@ -63,11 +57,6 @@ def _module(source: str, name: str, value: object) -> str:
 def render_marker_fixtures() -> str:
     fixtures = yaml.safe_load(MARKER_FIXTURES.read_text(encoding="utf-8"))
     return _module("stack/fixtures/markers/lines.yaml", "MARKER_FIXTURES", fixtures)
-
-
-def render_design_reads_fixtures() -> str:
-    fixtures = yaml.safe_load(DESIGN_READS_FIXTURES.read_text(encoding="utf-8"))
-    return _module("stack/fixtures/markers/design-reads.yaml", "DESIGN_READS_FIXTURES", fixtures)
 
 
 def render_registry_fixture() -> str:
@@ -99,9 +88,8 @@ REVIEWER_BRIEF = (
     "## Required Report Format\n\n- Findings with file paths.\n\n"
     "goated-skills: standards-and-spec-review\n"
 )
-# Six added lines that trip no design-reads signal, and a line that declares no reference.
+# Six added lines that trip no design-reads signal.
 PLAIN = "\n".join(f"total_{n} = {n}" for n in range(6))
-NONE_LINE = "goated-design-reads: none: only renames local names"
 
 
 def _stop_reason(s: Session) -> str:
@@ -168,13 +156,12 @@ def _adapter_texts() -> dict[str, str]:
         texts["spawnRead"] = reason(spawn.call("Agent", {"prompt": BRIEF}))
 
         texts["design"] = reason(routed("design").call("Write", _write("src/export.py")))
-        # Once the skill loads: the design hold asks for its design-reads line and the
-        # references the edit requires, then the design-reads hold for a later edit's references.
+        # Once the skill loads: the design hold asks for the references the edit requires
+        # and no design-reads line (Ticket 089), then the design-reads hold for a later
+        # edit's references.
         designed = routed("design-reads")
         designed.load("software-design-principles")
-        texts["designLine"] = reason(designed.call("Edit", _edit("src/export.py", PLAIN)))
-        texts["designLineReads"] = reason(designed.call("Write", _write("src/export.py")))
-        designed.say(NONE_LINE)
+        texts["designFirstReads"] = reason(designed.call("Write", _write("src/export.py")))
         designed.call("Edit", _edit("src/export.py", PLAIN))
         texts["designReads"] = reason(designed.call("Edit", _edit("src/export.py", "try:\n    rate = 1")))
         # The references the registry declares for a loaded skill's edit signals (Ticket 067):
@@ -217,7 +204,6 @@ def _adapter_texts() -> dict[str, str]:
         # The other closeout items: a failed last check (Unfinished) and the design skill's red flags.
         unfinished = routed("closeout-unfinished")
         unfinished.load("software-design-principles")
-        unfinished.say(NONE_LINE)
         unfinished.call("Edit", _edit("src/export.py", PLAIN))
         unfinished.run("pytest -q", success=False)
         texts["closeoutUnfinished"] = _stop_reason(unfinished)
@@ -249,7 +235,6 @@ def _adapter_texts() -> dict[str, str]:
         texts["prReviewRead"] = reason(large.call("Bash", open_pr))
         reviewed = routed("closeout-change-read")
         reviewed.load("software-design-principles")
-        reviewed.say(NONE_LINE)
         reviewed.load("code-security-review")
         reviewed.load("doc-sync")
         reviewed.load("verification-before-completion")  # Meets the Verification item its sensitive file raises.
@@ -257,18 +242,6 @@ def _adapter_texts() -> dict[str, str]:
         reviewed.run("pytest -q")
         reviewed.read("/skills/software-design-principles/references/red-flags.md")
         texts["closeoutChangeRead"] = _stop_reason(reviewed)
-        # The design citations item alone: a required reference with no cited section.
-        cited = routed("closeout-citation")
-        shutil.copytree(DESIGN_SKILL_DIR, cited.config.home / ".claude" / "skills" / DESIGN_SKILL_DIR.name)
-        cited.load("software-design-principles")
-        cited.say("goated-design-reads: errors.md")
-        cited.read("/skills/software-design-principles/references/errors.md")
-        cited.call("Edit", _edit("src/export.py", PLAIN))
-        cited.run("pytest -q")
-        cited.say("goated-skip: doc-sync: internal constant with no documented behavior")
-        cited.read("/skills/software-design-principles/references/red-flags.md")
-        cited.run("git diff")
-        texts["closeoutCitation"] = _stop_reason(cited)
         # The closeout at a commit whose own hold is met (Ticket 059).
         committing = routed("closeout-commit")
         committing.say("goated-skip: software-design-principles: one mechanical constant change")
@@ -312,7 +285,6 @@ def render_adapter_texts() -> str:
 
 GENERATED = {
     GENERATED_MARKERS: render_marker_fixtures,
-    GENERATED_DESIGN_READS: render_design_reads_fixtures,
     GENERATED_ADAPTER_TEXTS: render_adapter_texts,
     GENERATED_REGISTRY: render_registry_fixture,
 }
@@ -347,8 +319,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "spawn": "spawn | strict",
             "spawnRead": "spawn | strict",
             "design": "design | justified-skip",
-            "designLine": "design | justified-skip",
-            "designLineReads": "design | justified-skip",
+            "designFirstReads": "design | justified-skip",
             "designReads": "design-reads | justified-skip",
             "referenceReads": "reference-reads | justified-skip",
             "reviewIntake": "review-intake | justified-skip",
@@ -359,7 +330,6 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "closeout": "closeout | justified-skip",
             "closeoutUnfinished": "closeout | justified-skip",
             "closeoutSetup": "closeout | justified-skip",
-            "closeoutCitation": "closeout | justified-skip",
             "closeoutCommit": "closeout | justified-skip",
             "closeoutReview": "closeout | justified-skip",
             "commitContract": "commit | strict",
@@ -373,7 +343,14 @@ class SkillUsageModFixtureTests(unittest.TestCase):
         self.assertIn("- Unfinished:", texts["closeoutUnfinished"])
         self.assertIn("- Design:", texts["closeoutUnfinished"])
         self.assertIn("- Setup:", texts["closeoutSetup"])
-        self.assertIn("Not yet cited: errors.md.", texts["closeoutCitation"])
+        # Ticket 089: no hold asks for a design-reads line or a citation; the near miss,
+        # the design hold's references, is still asked for.
+        for key, text in texts.items():
+            with self.subTest(key=key):
+                self.assertNotIn("design-reads line", text)
+                self.assertNotIn("goated-design-reads", text)
+                self.assertNotIn("file#id", text)
+        self.assertIn("references/process.md", texts["designFirstReads"])
         self.assertIn("Before committing in this turn", texts["closeoutCommit"])
         self.assertIn("- Proof:", texts["closeoutCommit"])
         self.assertIn("- Review:", texts["closeoutReview"])
@@ -386,14 +363,13 @@ class SkillUsageModFixtureTests(unittest.TestCase):
         # The full hint comes once per turn; a later such hold in the turn gives one sentence that
         # keeps the way out. The generator drives these keys as later holds in their turn.
         texts = _adapter_texts()
-        later_in_turn = {"designLineReads", "designReads", "prReviewRead"}
+        later_in_turn = {"designReads", "prReviewRead"}
         ways_out = {
             "routeLine": "skip routing",
             "pipeline": "skip routing",
             "pipelineBrief": "skip routing",
             "design": "skip software-design-principles",
-            "designLine": "skip software-design-principles",
-            "designLineReads": "skip software-design-principles",
+            "designFirstReads": "skip software-design-principles",
             "designReads": "skip software-design-principles",
             "referenceReads": "skip <skill>",
             "reviewIntake": "skip receiving-code-review",

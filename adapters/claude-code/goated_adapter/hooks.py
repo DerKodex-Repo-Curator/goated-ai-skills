@@ -13,10 +13,10 @@ import os
 import re
 from pathlib import Path
 
-from . import actions, design_reads, friction, gates, onboarding, reference_reads
+from . import actions, friction, gates, onboarding, reference_reads
 from .overrides import GOATED_SKILLS, parse_overrides
 from .policy import (
-    installed_skill_names, router_skill_installed, shared_policy_loaded, skill_folder,
+    installed_skill_names, router_skill_installed, shared_policy_loaded,
 )
 from .state import StateStore, StateUnsafe
 from .transcript import (
@@ -209,21 +209,13 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
         hold = actions.check_action(
             tool_name, tool_input, current, overrides, config.skill_namespaces,
             _project(payload, config), spawned, earlier,
-            closeout=actions.Closeout(state.design_edits_of(current.key),
-                                      _design_ids(payload, config),
-                                      state.spawn_templates_of(current.key),
+            closeout=actions.Closeout(state.spawn_templates_of(current.key),
                                       _route_intensity(state), state.briefed),
             references=lambda: _registry_references(config, registry_warnings),
         )
     tool_use_id = str(payload.get("tool_use_id") or "")
     if hold is None and tool_use_id:
-        # What the design gates required of an edit they let through, and which
-        # templates a spawn's brief followed, for the closeout.
-        references = actions.design_references(
-            tool_name, tool_input, current, overrides, config.skill_namespaces,
-            _project(payload, config), earlier)
-        if references:
-            state.record_design_edit(current.key, tool_use_id, references)
+        # Which templates a spawn's brief followed, for the closeout.
         templates = actions.brief_templates(
             tool_name, tool_input, current, overrides, config.skill_namespaces, earlier)
         if templates:
@@ -368,8 +360,6 @@ def _stop(payload: dict, config: Config) -> str:
         str(payload.get("last_assistant_message") or ""),
         subagents,
         _project(payload, config),
-        state.design_edits_of(current.key),
-        _design_ids(payload, config),
         earlier=_since_compaction(state),
         spawn_templates=state.spawn_templates_of(current.key),
         intensity=_route_intensity(state),
@@ -418,14 +408,6 @@ def _unread_warning(unread: list[str]) -> str | None:
         return None
     return ("could not read the transcript of subagent " + ", ".join(unread)
             + ", so its changes were not checked")
-
-
-def _design_ids(payload: dict, config: Config):
-    """Reads each design reference's section ids from the installed skill, for
-    the closeout's citation item, when called."""
-
-    return lambda: design_reads.section_ids(skill_folder(
-        Path(str(payload.get("cwd") or ".")), config.home, actions.DESIGN_SKILL))
 
 
 def _prompt_id(payload: dict) -> str | None:

@@ -93,7 +93,7 @@ of hold:
   with a reason of three or more words, in the current turn. The reason stays
   in the transcript, where the skill-usage mod reads it.
 
-Route, skip and design-reads lines are read from the agent's reply text and
+Route and skip lines are read from the agent's reply text and
 from one field
 of some built-in tool calls: the `description` of a `Bash`, `PowerShell`,
 `Agent`, or `Task` call, and the `args` of a `Skill` call, such as
@@ -155,8 +155,8 @@ item (see the closeout table below).
 | `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` [counts as loaded](#loads); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file |
 | `pr-review` | justified-skip | A pull-request command or tool the `pull-request` gate holds, once that gate passes, when the pull request is [large](#large-pull-requests): 400 or more changed lines of non-test code against its base | `standards-and-spec-review` [counts as loaded](#loads); then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
 | `spawn` | strict | Starting an agent or session with a brief, except a [read-only subagent](#plain-reads) | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, each in this turn or an earlier one since the last compaction (see [Loads](#loads)); and the brief, on every spawn, passes the [content check](#content-checks) |
-| `design` | justified-skip | The turn's first write adding five or more lines to a non-test code file inside the project folder (or any such write while the skill does not count as loaded). A test file never triggers it and is not counted when finding the turn's first such write: in TDD the test comes first and the design happens in the code after it | `software-design-principles` [counts as loaded](#loads), a valid [design-reads line](#design-references) is in the turn, and every [reference the edit requires](#design-references) has been read since the last compaction |
-| `design-reads` | justified-skip | Any later write to a code or configuration file inside the project folder, once `software-design-principles` [counts as loaded](#loads), whose [signals or the turn's design-reads lines](#design-references) require a reference not read since the last compaction. The hold names each file and what selected it | Each required reference is read with the Read tool |
+| `design` | justified-skip | The turn's first write adding five or more lines to a non-test code file inside the project folder (or any such write while the skill does not count as loaded). A test file never triggers it and is not counted when finding the turn's first such write: in TDD the test comes first and the design happens in the code after it | `software-design-principles` [counts as loaded](#loads), and every [reference the edit's signals select](#design-references) has been read since the last compaction |
+| `design-reads` | justified-skip | Any later write to a code or configuration file inside the project folder, once `software-design-principles` [counts as loaded](#loads), whose [signals](#design-references) select a reference not read since the last compaction. The hold names each file and what selected it | Each required reference is read with the Read tool |
 | `reference-reads` | justified-skip | A write by a write tool or a shell command that is not a check, inside the project folder or, for a `gate-fires` signal, anywhere, that fires a signal the installed registry declares for a reference of a skill that [counts as loaded](#loads) (see [Registry references](#registry-references)). The hold names each file by its path under the skill, `<skill>/references/<file>`, and what selected it | Each reference it names is read with the Read tool, in this turn or an earlier one since the last compaction; or a skip line naming its skill, for the turn |
 | `review-intake` | justified-skip | A write, by a write tool or a shell command, to a code file inside the project folder, once a [reviewer subagent](#reviewer-subagents) started by `Agent` or `Task` has reported in the turn: its result arrived, or, started in the background, its completion did. A held or failed spawn, any other brief, and a side session trigger nothing. A test file is held like other code; a docs or config file is not | `receiving-code-review` [counts as loaded](#loads), in this turn or an earlier one since the last compaction; or a skip line naming it, for the turn |
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` [counts as loaded](#loads) |
@@ -231,8 +231,7 @@ check after its own last change, that change is already proved.
 | Proof | A change not already proved | A check command run after the last code change: a test runner, linter, type checker, or build tool (`pytest`, `python -m unittest`, `npm test`, `cargo test`, `go vet`, `tsc`, `make check`, and the like, also through `uv run` or `npx`), or a script whose name says test, check, lint, verify, validate, or build (`scripts/validate_skills.py`). The check may be a later call, or later in the same shell command as the write (`cp a.py src/a.py && pytest`): every command from the write to the check must be joined by `&&`, `;`, or a newline, none of them an `exit`, `return`, or the like, and neither inside a branch, loop, function, or group (`if`, `( )`, `{ }`); the check must not run in the background (`pytest &`), though a pipe or `\|\|` after it is fine (`pytest 2>&1 \| tee log.txt`). A code file written after the check, or by a .NET call (`[IO.File]::WriteAllText`) anywhere in the command, is not proved by it; another file written after it, such as a log, does not matter. Inline interpreter code (`python -c`, `python -Bc`, `node -pe`, `perl -e`) is not a check; a shell's inline command line (`bash -c`, `pwsh -Command`) is read as a command line, so `bash -c 'npm test'` is a check and `bash -c 'echo tests ok'` is not | `verification-before-completion` |
 | Unfinished work | The last check after the change failed | `handoff` counts as loaded | `handoff` |
 | Docs | A code file outside the tests changed | `doc-sync` counts as loaded, and a [change read](#change-reads) follows the last code change, before or after the load | `doc-sync` |
-| Design red flags | `software-design-principles` loaded in the turn, or counts as loaded and the turn made an edit the `design` gate triggers on (five or more lines added to a non-test code file), so a later turn of small edits meets no Design item | `software-design-principles/references/red-flags.md` is read after the last code change that is not [comment-only](#comment-only-edits), then a [change read](#change-reads) after that read. The item repeats the question `red-flags.md` ends with (name one input that would break this change, and say what happens); no answer is checked | `software-design-principles` |
-| Design citations | The Design red flags item applies, and the turn's edits required a [design reference](#design-references) | The turn cites a section of each required reference as `file#id`, such as `errors.md#crash-early`, in its reply text, the reply being finished included, or in a call field that carries route and skip lines: a shell or agent call's `description` or a Skill call's `args`, the commit call being judged included (see [Design references](#design-references)) | `software-design-principles` |
+| Design red flags | `software-design-principles` loaded in the turn, or counts as loaded and the turn made an edit the `design` gate triggers on (five or more lines added to a non-test code file), so a later turn of small edits meets no Design item | `software-design-principles/references/red-flags.md` is read after the last code change that is not [comment-only](#comment-only-edits), then a [change read](#change-reads) after that read and that change. After a red-flags read in the turn that follows code changes adding five or more lines, later code changes that add fewer than five lines in total, comment-only ones aside, need no second red-flags read, only the change read after the last of them; a read before any such change covers no later change; a change whose added lines are unknown, a shell write or a subagent's, counts as five or more. The item repeats the question `red-flags.md` ends with (name one input that would break this change, and say what happens); no answer is checked | `software-design-principles` |
 | Review | The turn changed code, the session was not started from a brief, and the branch's work is [large](#large-branches): 400 or more changed lines against its base in code files outside test paths, counting committed, staged, unstaged, and untracked files that git does not ignore. A session whose first prompt was a brief with a route line from the session that started it meets no Review item for the whole session, typed prompts and compactions included: the starting session reviews the work when it inspects the report and the changed paths (`handoff`'s spawn-brief template). Missing state counts as not briefed | A [reviewer subagent](#reviewer-subagents) that finished after the last code change; or `standards-and-spec-review` counts as loaded and a [change read](#change-reads) follows the load and the last code change | `standards-and-spec-review` |
 | Verification | The turn changed code or a security-sensitive file, and one of these holds: the task's route is `full`; a subagent the turn spawned changed code; a security-sensitive file changed; or the branch's work is [large](#large-branches) | `verification-before-completion` counts as loaded | `verification-before-completion`, the Proof item's skip line, so one line answers both |
 | Security | `code-security-review` counts as loaded and a security-sensitive file (the `security` gate's paths, code or not) changed | A [change read](#change-reads) after the load and the last sensitive change | `code-security-review` |
@@ -328,7 +327,7 @@ sees only the whole command's result.
   [design references](#design-references) read. The [state](#state) keeps
   the loaded names and the reads; a resumed session keeps them, and missing
   or reset state counts as not loaded.
-- **Everything else is per turn.** Route, skip, and design-reads lines, and
+- **Everything else is per turn.** Route and skip lines, and
   typed overrides, count only in their turn. So do the checks tied to a
   change: [change reads](#change-reads), the red-flags read after the last
   change, and Proof. A hold stops firing as soon as the turn shows
@@ -486,11 +485,10 @@ fixed.
 ### Design references
 
 `software-design-principles` keeps its reasoning in reference files and names,
-for each moment of a change, which to read; it asks the agent to write a
-design-reads line, `goated-design-reads: <file>, <file>` or
-`goated-design-reads: none: <reason>`, whose grammar
-`stack/fixtures/markers/README.md` owns. The `design` and `design-reads` gates
-enforce those reads where the skill is loaded.
+for each moment of a change, which to read. The `design` and `design-reads`
+gates enforce those reads where the skill is loaded, judged from the edit
+itself: no line the agent writes declares them. A `goated-design-reads:`
+line, which earlier versions asked for, is ignored like other prose.
 
 The rules live in one place,
 [`goated_adapter/design_reads.py`](goated_adapter/design_reads.py), with the
@@ -501,13 +499,8 @@ a code file, or of a configuration file (`.yaml`, `.yml`, `.toml`, `.json`,
 `.env`, `.env.*`, `settings.*`) that is neither a lock file (`*-lock.json`,
 `pnpm-lock.yaml`, `npm-shrinkwrap.json`) nor under a test path.
 
-An edit requires the references the turn's valid design-reads lines name
-(their union) plus those its signals select. `red-flags.md`, which the
-closeout requires, adds nothing; any other name that is not a reference
-(`proces.md`) requires nothing, and a hold quotes it as not a design
-reference.
-
-Signals are judged on what the edit adds: the lines of its new text, or of a
+An edit requires the references its signals select. Signals are judged on
+what the edit adds: the lines of its new text, or of a
 `Write`'s text, that the text it replaces did not hold, indentation aside. A
 `Write` over a file on disk is compared with that file. A definition whose
 name the old text already defined, as in a signature change, is not new.
@@ -523,11 +516,9 @@ code file, and no `readability.md` for a comment or docstring.
 `software-design-principles` states this rule; the adapter enforces it.
 Outside test files, which get no signal read from the code, signals read from
 the added code apply at any size: a new code file or public top-level
-definition, error handling, and concurrency. A design-reads line
-still requires every reference it names. An edit whose added lines cannot be
+definition, error handling, and concurrency. An edit whose added lines cannot be
 counted, such as a `MultiEdit` with an `edits` entry that is not an edit, is
-not small. A small edit that requires nothing adds nothing for the closeout's
-Design citations item to ask for.
+not small.
 
 | Reference | Selected when the edit |
 | --- | --- |
@@ -538,7 +529,10 @@ Design citations item to ask for.
 | `errors.md` | adds code holding `try`, `except`, `catch`, `raise`, `throw`, `finally`, `defer` as words, or `with open` |
 | `coding.md` | is not small and edits a test file; a test file selects nothing else |
 | `concurrency.md` | adds code holding `threading`, `Lock`, `RLock`, `Mutex`, `asyncio`, `synchronized`, `Promise.all`, a word starting `Atomic`, or `go func` |
-| `differences.md` | never selected; only a design-reads line requires it |
+| `differences.md` | never selected: no tool call shows two rules pulling apart, so the registry declares it advisory |
+
+`red-flags.md` is not among them: the closeout's Design red flags item asks
+for it.
 
 A typical change, one new public function with a docstring and error
 handling, its caller, and its test, requires five: `process.md`,
@@ -550,57 +544,19 @@ A reference counts as read after a finished `Read` of a path ending in
 one, until the next compaction: the [state](#state) keeps the names read, a
 resumed session keeps them, and a compaction's or `/clear`'s `SessionStart`
 clears them, so each reference is required at most once per context window.
-The skill's load counts the same way (see [Loads](#loads)), while the
-design-reads line counts only in its turn.
+The skill's load counts the same way (see [Loads](#loads)).
 A shell command printing one does not count. A skip line or a typed `skip
 software-design-principles` clears both gates for the turn.
 
 The first substantial non-test code edit of a turn meets `design`, which asks
-for what is missing: the load, the line, and the reads. A later edit, or any
+for what is missing: the load and the reads. A later edit, or any
 test file edit once the skill counts as loaded, meets `design-reads`, which
 asks only for reads; a test file edit that is not small still requires
 `coding.md`. A small edit while the skill does not count as loaded is not
 held, as before.
 
-At closeout, the Design citations item asks for a citation of each reference
-the turn required, whether read in this turn or an earlier one: the turn
-cites at least one section id of each, with how it shaped the change or why
-it did not apply, as the skill's citation convention asks.
-The turn's required set is what the `design` and `design-reads` gates
-required of its edits: when the skill is loaded and a gate lets an edit of a
-project file through, the adapter records that edit's required references in
-its [state](#state), by the call's `tool_use_id`, and the closeout unions
-those of the turn's edits that finished. An edit made before the skill
-loaded, an edit a hold or the user stopped, and an edit whose hook input
-names no `tool_use_id` add nothing.
-
-A citation is `<file>#<id>`, bare, backticked, or after a path
-(`references/errors.md#crash-early`), anywhere in the turn's reply text,
-inside a quote or a code block too, or in the call fields that carry
-[route and skip lines](#what-it-holds): the `description` of a shell or
-agent call and the `args` of a Skill call. Any call of the turn counts, a
-held call and the commit call being judged included, so a commit held for a
-missing citation passes when made again with the citation in its
-`description`. Claude Code can store the text of a message that makes a
-tool call as a summary that drops the citation (see
-[Known Limits](#known-limits)), and before a commit every message makes one.
-No other field counts: a command, an edit's or a file's text, and an MCP
-tool's `description` carry no citation. Its id must be a section id that file
-declares in an `<!-- id: #name -->` comment in the installed skill's
-`references/`, so an id of another reference, or a bare `#crash-early`, does
-not count. An id whose `##` heading groups `###` sections, such as
-`#errors`, names a part of the file, not a section, so it does not count
-either; the remaining ids are the ones the skill's Section Index lists, which
-a test checks. The ids come from those files, not from a copy in the adapter:
-a user skill is looked for first, then project skills, then plugin skills,
-the newest cached version first. The item names each uncited reference,
-points to the Section Index for its ids, and names the call fields without
-backticks, as the unseen-line advice does. At commit the report is not
-written yet, and reply text may not be seen, so a shell commit is asked for
-the citation in its own description, or in a call made in an earlier
-message. An MCP commit tool carries no citation in any field, so it is asked
-for one in such an earlier call. At `Stop` the item asks for it in the reply. Whether a citation says anything
-useful is not judged.
+The skill's section ids and its Section Index name sections for navigation;
+no hold asks for a citation of them.
 
 ### Registry references
 
@@ -928,7 +884,7 @@ Agents commit before they report, so a commit meets the closeout first. A
 commit, as the `commit` gate sees one (a git commit in a shell command or an
 MCP commit tool), that the `commit` gate lets through is held while the turn
 has an unmet closeout item: Proof, Unfinished work, Docs, Design red flags,
-Design citations, Review, Verification, Security, or Setup. The hold's first line is the
+Review, Verification, Security, or Setup. The hold's first line is the
 closeout's, `goated-hold: closeout | justified-skip`, its items are the
 closeout's texts, and each item accepts its usual skip line. It opens
 `Before committing in this turn`; for a shell commit it adds that the whole
@@ -955,7 +911,7 @@ no change between, needs no second read.
 | Step | The change read must follow |
 | --- | --- |
 | Docs | The last code change, before or after the `doc-sync` load |
-| Design | The red-flags read, which itself follows the last code change that is not [comment-only](#comment-only-edits) |
+| Design | The red-flags read and the last code change that is not [comment-only](#comment-only-edits); after a red-flags read that follows five or more changed lines, later changes adding fewer than five lines in total need no second red-flags read, only this change read after them |
 | Security | The `code-security-review` load and the last change to a security-sensitive file |
 | Commit, pull request | The last change to any project file, code or not, including changes a subagent spawned in the turn made, before or after the skill load |
 | Pull-request review | The `standards-and-spec-review` load and that last change |
@@ -1136,24 +1092,17 @@ goated-hold: <gate> | <kind>
   skip line, since no load answers it: the commit, pull-request, and
   pr-review holds name no skill (pr-review's skip line is not backticked
   either), and the closeout offers the skill only as a skip line. Once
-  `software-design-principles` has loaded, the `design` hold (asking for the
-  design-reads line or reads) and the `design-reads` hold name it only in
-  their skip line, and backtick each reference by its path,
-  `software-design-principles/references/<file>`, which is no bare name. A
-  `design` hold that asks for the line backticks its form,
-  `goated-design-reads: <file>, <file>`; the skill-usage mod reads both.
+  `software-design-principles` has loaded, the `design` hold (asking for
+  reads) and the `design-reads` hold name it only in their skip line, and
+  backtick each reference by its path,
+  `software-design-principles/references/<file>`, which is no bare name; the
+  skill-usage mod reads it.
 - The `reference-reads` hold names each skill it asks about only in its
   skip line, `goated-skip: <skill>: <reason>`, since the skill is already
   loaded, and backticks each reference by its path under the skill,
   `<skill>/references/<file>`; the skill-usage mod counts each skill's ask
   as read files once each of its references is read.
-- The closeout's Design citations item names where a citation counts, the
-  call fields without backticks, like the unseen-line advice. Its
-  commit-time text asks for the citation in a shell commit's own description
-  or, for an MCP commit tool, in an earlier call's field, not in a report not
-  yet written, and says why reply text may not be seen; its `Stop` text asks
-  for it in the reply.
-  Both Design red-flags texts repeat the question `red-flags.md` ends with;
+- Both Design red-flags texts repeat the question `red-flags.md` ends with;
   no hold reads an answer.
 
 Claude Code records a denied call as a `tool_result` with `is_error: true`
@@ -1362,8 +1311,7 @@ task, whether the session's first prompt was a brief, whether the router loaded,
 references, skill references, and spawn-brief templates were read since the
 last compaction
 (see [Loads](#loads)), digests of the first three distinct files the Read
-tool read since then, which orient a session routed by its brief, which references each edit of the latest turn
-required when the design gates judged it, which brief templates each spawn
+tool read since then, which orient a session routed by its brief, which brief templates each spawn
 of the latest turn followed when the `spawn` gate let it through (see
 [Reviewer subagents](#reviewer-subagents)), the last turn seen, the
 latest typed overrides, and the friction count behind the retrospective
@@ -1382,9 +1330,8 @@ named by a digest of the project's path, listing the skills its onboarding
 notice last named.
 The action and closeout gates keep no state of their own: they read the
 current turn, the loads, design and skill references, and templates read
-since the last compaction, and, for the closeout's citation and Review items,
-the references recorded for the turn's edits and the templates recorded for
-its spawns. Files are not pruned automatically;
+since the last compaction, and, for the closeout's Review item, the
+templates recorded for its spawns. Files are not pruned automatically;
 deleting the folder between sessions is safe.
 
 ## Latency
@@ -1458,7 +1405,7 @@ of the call's prompt, which is normally already there.
 - Claude Code can store the text of an assistant message that also makes a
   tool call as a rewritten summary, in a thinking block, that drops route and
   skip lines, so the adapter never sees a line written there, and a retry
-  cannot bring it back. The holds a line can clear, design-reads included, therefore point to the
+  cannot bring it back. The holds a line can clear therefore point to the
   call fields the adapter also reads (see [What It Holds](#what-it-holds)).
   Edit and Write calls have no `description`, so a line for one of them goes
   in a call made in an earlier message of the turn, such as the Skill call
@@ -1560,14 +1507,13 @@ of the call's prompt, which is normally already there.
     either reading counts as inside. A shell's `HOME` that differs from the
     one Claude Code passes to hooks is not seen.
 - The design gate judges size by lines added in the tool input, not by what
-  the change does, and the design gates do not see shell writes. A design-reads
-  line in the held call's own message is not visible yet, like a skip line.
+  the change does, and the design gates do not see shell writes.
   The design-reads signals are word and shape matches on lines, so a `try` in
   a string selects `errors.md`, and a `NotebookEdit` cell counts all its text
   as added. A `Write`'s file on disk, read to tell what it adds, is the one
-  design input outside the transcript. A design-reads line names files, never
-  a reason per file, so the adapter cannot tell a reference read and applied
-  from one read alone.
+  design input outside the transcript. The adapter cannot tell a reference
+  read and applied from one read alone, and nothing checks that the agent
+  connected a reference to its change.
 - The design-reads gate holds only while `software-design-principles`
   counts as loaded: in a session that has not loaded it since the last
   compaction, a turn whose edits are all small is held for no reference at
@@ -1590,13 +1536,10 @@ of the call's prompt, which is normally already there.
   path alone. The conflict-resolution gate reads git's English messages
   (`Automatic merge failed`, `could not apply`, `could not revert`), so a git
   set to another language is not seen.
-- The Design citations item fails open: with no installed
-  `software-design-principles` found, it asks for nothing, and a reference
-  whose file cannot be read, or that declares no section, needs no citation.
-  There is no closeout inside a subagent, and the parent does not record a
-  subagent's edits, so a subagent's design edits need no citation. A citation
-  in a reply that also makes a tool call can be lost the way a route line
-  is, so the item points to the call fields too.
+- The red-flags reread rule counts the lines an edit tool call writes, so
+  fixes made by shell writes or a subagent always ask for the red-flags read
+  again, and five small fixes spread over a turn ask for it as one six-line
+  fix would.
 - The `review-intake` gate sees only the turn a reviewer reported in. When
   the review reports, the turn ends to ask the user, and the fixes come in
   the next turn, those fixes are not held. A subagent's own edits are never

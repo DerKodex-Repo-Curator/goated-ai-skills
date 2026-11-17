@@ -369,9 +369,7 @@ skills:
           kind: existing-rule
           gate: design-reads
       - file: differences.md
-        signal:
-          kind: existing-rule
-          gate: design-reads
+        advisory: Two rules pulling apart is a judgment no tool call shows.
       - file: red-flags.md
         signal:
           kind: existing-rule

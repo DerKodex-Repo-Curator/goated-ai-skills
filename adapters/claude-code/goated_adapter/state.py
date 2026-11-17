@@ -4,9 +4,9 @@ State holds only what the transcript's current turn cannot answer on its own:
 the current task's route, whether missing or reset state lost the task, what
 counts until the next compaction (whether the router loaded, which GOATED
 skills loaded, which design references, skill references, and spawn-brief
-templates were read, and digests of the first distinct files read), what the
-current turn's design edits required and which template each of its spawns'
-briefs followed, the last turn seen, the latest user overrides, and the friction count (`friction.py`). Beside it, a
+templates were read, and digests of the first distinct files read), which
+template each of the current turn's spawns' briefs followed, the last turn
+seen, the latest user overrides, and the friction count (`friction.py`). Beside it, a
 marker names the turn whose hold gave the unseen-line advice in full, and a
 record per project names what its onboarding notice last named. Apart from
 the short override phrases a user typed, it holds no prompt or reply text.
@@ -53,7 +53,7 @@ class SessionState:
 
     __slots__ = (
         "router_loaded", "last_turn", "task", "task_unknown", "overrides", "policy_notice_shown",
-        "reference_reads", "design_edits", "brief_routed", "briefed", "loads", "template_reads",
+        "reference_reads", "brief_routed", "briefed", "loads", "template_reads",
         "skill_reference_reads", "spawn_templates", "open_holds", "held_gates", "friction",
         "retrospective_notice_shown", "files_read",
     )
@@ -89,11 +89,9 @@ class SessionState:
         # compaction, up to `gates.ORIENTATION_READS`: enough of them orient a
         # session routed by its brief. A digest keeps file names out of state.
         self.files_read: list[str] = []
-        # The design references each edit of one turn required when the
-        # design gates judged it: {"turn": <turn key>, "edits": {<tool_use_id>: [<file>]}}.
-        self.design_edits: dict = {}
         # The brief templates (`contracts.BriefTemplate.reference`) each spawn of
-        # one turn followed when the spawn gate let it through, in the same shape.
+        # one turn followed when the spawn gate let it through:
+        # {"turn": <turn key>, "edits": {<tool_use_id>: [<template>]}}.
         self.spawn_templates: dict = {}
         # The friction count (`friction.py`): holds still open, as
         # `friction.observe` keeps them; the gates that held in one turn,
@@ -117,17 +115,6 @@ class SessionState:
         self.skill_reference_reads = []
         self.template_reads = []
         self.files_read = []
-
-    def record_design_edit(self, turn: str, tool_use_id: str, references: list[str]) -> None:
-        """Keep what an edit the design gates let through required, for the
-        turn's closeout; an earlier turn's edits are dropped."""
-
-        self.design_edits = _with_call(self.design_edits, turn, tool_use_id, references)
-
-    def design_edits_of(self, turn: str) -> dict[str, list[str]]:
-        """What `record_design_edit` kept for `turn`'s edits, by tool_use_id."""
-
-        return _calls_of(self.design_edits, turn)
 
     def record_spawn_templates(self, turn: str, tool_use_id: str, templates: list[str]) -> None:
         """Keep which brief templates a spawn the spawn gate let through
@@ -155,7 +142,6 @@ class SessionState:
             "skill_reference_reads": self.skill_reference_reads,
             "template_reads": self.template_reads,
             "files_read": self.files_read,
-            "design_edits": self.design_edits,
             "spawn_templates": self.spawn_templates,
             "open_holds": self.open_holds,
             "held_gates": self.held_gates,
@@ -181,7 +167,6 @@ class SessionState:
         state.skill_reference_reads = _string_list(data.get("skill_reference_reads", []))
         state.template_reads = _string_list(data.get("template_reads", []))
         state.files_read = _string_list(data.get("files_read", []))
-        state.design_edits = _valid_calls(data.get("design_edits", {}))
         state.spawn_templates = _valid_calls(data.get("spawn_templates", {}))
         state.open_holds = [_valid_open_hold(h) for h in _expect(data.get("open_holds", []), list)]
         state.held_gates = _valid_held_gates(data.get("held_gates", {}))
