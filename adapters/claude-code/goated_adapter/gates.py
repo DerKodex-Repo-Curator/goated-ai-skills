@@ -16,6 +16,9 @@ gates. The rules enforce contracts defined elsewhere, never new ones
 
 from __future__ import annotations
 
+import re
+from typing import Callable
+
 from . import design_reads, shell
 from .state import SessionState, Task
 from .transcript import Turn
@@ -63,12 +66,11 @@ class Hold:
         return f"goated-hold: {self.gate} | {self.kind}\n{self.instruction}"
 
 
-# Opens the full unseen-line advice; a held result in the turn that contains it
-# shows the turn already gave the advice in full.
+# Opens the full unseen-line advice.
 FULL_ADVICE_OPENING = "in reply text may not be seen: Claude Code records a message only"
 
 
-def unseen_line_advice(line: str, way_out: str, turn: Turn) -> str:
+def unseen_line_advice(line: str, way_out: str) -> str:
     """Recovery advice for a hold that a route or skip line can clear.
 
     `line` names the line ("route line", "skip line"); `way_out` is the typed
@@ -78,18 +80,10 @@ def unseen_line_advice(line: str, way_out: str, turn: Turn) -> str:
     out. It names those fields without backticks, since the skill-usage mod
     reads every backticked bare word in a hold as a skill.
 
-    The advice is given in full once per turn: when one of `turn`'s held
-    results already carries it, a one-sentence form that keeps `way_out` is
-    returned instead. A held call made in parallel has no result yet, so it
-    does not count.
+    This is the full advice; `advice_once` shortens it on every hold of the
+    turn but one.
     """
 
-    if any(call.held and FULL_ADVICE_OPENING in call.output for call in turn.calls):
-        return (
-            f"Put the {line} on its own line in a shell or agent call's description or a "
-            "Skill call's args, as this turn's first such hold explained, or tell the user "
-            f"they can type `{way_out}` in their prompt."
-        )
     return (
         f"A {line} {FULL_ADVICE_OPENING} "
         "after this check, and can store the text of a message that makes a tool call "
@@ -100,6 +94,44 @@ def unseen_line_advice(line: str, way_out: str, turn: Turn) -> str:
         "in the same message is not seen yet), and make the call again. If that is held "
         f"again, tell the user they can type `{way_out}` in their prompt."
     )
+
+
+def _short_advice(line: str, way_out: str) -> str:
+    return (
+        f"Put the {line} on its own line in a shell or agent call's description or a "
+        "Skill call's args, as this turn's first such hold explained, or tell the user "
+        f"they can type `{way_out}` in their prompt."
+    )
+
+
+# Finds the full advice in a hold's text, built from `unseen_line_advice` itself
+# so the wording has one owner.
+_LINE, _WAY = "\x00line\x00", "\x00way\x00"
+_FULL_ADVICE_RE = re.compile(
+    re.escape(unseen_line_advice(_LINE, _WAY))
+    .replace(re.escape(_LINE), r"(?P<line>[^`.]+?)", 1)
+    .replace(re.escape(_LINE), r"(?P=line)")
+    .replace(re.escape(_WAY), r"(?P<way_out>[^`]+)")
+)
+
+
+def advice_once(hold: Hold | None, claim: Callable[[], bool]) -> Hold | None:
+    """Return `hold` with the unseen-line advice in full on one hold per turn.
+
+    `claim` claims the turn's marker and returns True only for its first
+    claim, so calls held in parallel, which see no result of each other, still
+    share one full advice. It is called only when `hold` carries the advice,
+    and it must return True when it cannot claim, so the advice is then given
+    in full. Every other such hold gets one sentence that keeps the typed
+    override.
+    """
+
+    found = _FULL_ADVICE_RE.search(hold.instruction) if hold else None
+    if found is None or claim():
+        return hold
+    short = _short_advice(found["line"], found["way_out"])
+    text = hold.instruction
+    return Hold(hold.gate, hold.kind, text[:found.start()] + short + text[found.end():])
 
 
 def goated_skill_name(raw: str, namespaces: tuple[str, ...]) -> str | None:
@@ -306,7 +338,7 @@ def check_routing(
         "no write or spawn between them are one task, corrected. A load in an "
         "earlier turn does not count, so load it again. If one does not apply, "
         "write a corrected route line without it; the last route line wins. "
-        + unseen_line_advice("route line", "skip routing", turn),
+        + unseen_line_advice("route line", "skip routing"),
     )
 
 
@@ -317,7 +349,7 @@ def _route_line_instruction(turn: Turn) -> str:
         "`goated-route: direct`, `goated-route: <intensity> | requires: <skills>`, "
         "or `goated-route: continue` when this prompt continues the current task "
         "or, in a session with no task yet, work begun elsewhere. "
-        + unseen_line_advice("route line", "skip routing", turn)
+        + unseen_line_advice("route line", "skip routing")
     )
     if turn.malformed:
         quoted = "; ".join(f"`{line}`" for line in turn.malformed)

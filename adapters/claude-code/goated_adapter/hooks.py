@@ -189,8 +189,21 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
             _project(payload, config))
         if references:
             state.record_design_edit(current.key, tool_use_id, references)
+    hold = gates.advice_once(hold, lambda: _claim_turn(store, session_id, current.key))
     warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread)]
     return _with_warnings(_deny(hold), warnings)
+
+
+def _claim_turn(
+    store: StateStore, session_id: str, turn_key: str, agent_id: str | None = None
+) -> bool:
+    """`StateStore.claim_turn`, or True when the marker cannot be claimed or
+    read: the hold then gives the advice in full, and no hook fails."""
+
+    try:
+        return store.claim_turn(session_id, turn_key, agent_id)
+    except (OSError, StateUnsafe):
+        return True
 
 
 def _subagent_pre_tool_use(
@@ -222,6 +235,9 @@ def _subagent_pre_tool_use(
         tool_name, tool_input, turns[-1], {}, config.skill_namespaces,
         _project(payload, config),
     )
+    session_id = str(payload.get("session_id"))
+    hold = gates.advice_once(hold, lambda: _claim_turn(
+        StateStore(config.state_dir), session_id, turns[-1].key, agent_id))
     return _with_warnings(_deny(hold), [])
 
 
@@ -349,6 +365,7 @@ def _session_start(payload: dict, config: Config) -> str:
         state.last_turn = None
         if state.task is not None:
             state.task.loads = []
+        store.clear_turn_markers(session_id)
 
     output: dict = {}
     notices = []

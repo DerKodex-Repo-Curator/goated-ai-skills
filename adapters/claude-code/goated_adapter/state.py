@@ -3,7 +3,8 @@
 State holds only what the transcript's current turn cannot answer on its own:
 the current task and its proof, whether missing or reset state lost the task,
 whether the router loaded since the last compaction, which design references
-were read since it, the last turn seen, and the latest user overrides. Apart from the short override phrases a user typed,
+were read since it, the last turn seen, and the latest user overrides. Beside
+it, a marker names the turn whose hold gave the unseen-line advice in full. Apart from the short override phrases a user typed,
 it holds no prompt or reply text.
 """
 
@@ -18,6 +19,12 @@ from pathlib import Path
 UNSAFE_NAME_CHARS = re.compile(r"[^A-Za-z0-9_-]")
 REPLACE_ATTEMPTS = 5
 REPLACE_RETRY_SECONDS = 0.02
+# Beside the state files: one empty file per session, and one per subagent of
+# it, named for the turn that claimed it.
+TURN_MARKERS_DIR = "turn-markers"
+# Separates a subagent's id from its session's in a marker name; no safe name
+# holds it, so a session's marker prefix never matches a subagent's.
+AGENT_SEPARATOR = "~"
 
 
 class Task:
@@ -212,19 +219,69 @@ class StateStore:
             temp.unlink(missing_ok=True)
             raise
 
-    def _ensure_private_directory(self) -> None:
-        self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    def claim_turn(self, session_id: str, turn_key: str, agent_id: str | None = None) -> bool:
+        """Claim the marker for `turn_key`; True for the first claim.
+
+        The marker belongs to the session, or to its subagent `agent_id`, so
+        each subagent's turns claim apart from the parent's. The claim is one
+        exclusive file create, so of several hooks claiming at once exactly
+        one gets True. A successful claim drops the same owner's markers of
+        earlier turns. Raises OSError, or StateUnsafe, when the marker cannot
+        be made or read.
+        """
+
+        folder = self.directory / TURN_MARKERS_DIR
+        self._ensure_private_directory(folder)
+        owner = _safe_name(session_id)
+        if agent_id is not None:
+            owner += AGENT_SEPARATOR + _safe_name(agent_id)
+        prefix = f"{owner}."
+        marker = folder / f"{prefix}{_safe_name(turn_key)}"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            os.close(os.open(marker, flags, 0o600))
+        except FileExistsError:
+            return False
+        self._drop_markers(folder, prefix, keep=marker.name)
+        return True
+
+    def clear_turn_markers(self, session_id: str) -> None:
+        """Drop the turn markers of the session and its subagents, best effort,
+        as its state is reset."""
+
+        folder = self.directory / TURN_MARKERS_DIR
+        if folder.is_dir():
+            self._drop_markers(folder, f"{_safe_name(session_id)}.")
+            self._drop_markers(folder, f"{_safe_name(session_id)}{AGENT_SEPARATOR}")
+
+    @staticmethod
+    def _drop_markers(folder: Path, prefix: str, keep: str | None = None) -> None:
+        # Safe names hold no ".", separator, or glob character, so the prefix
+        # matches only its owner's markers.
+        for old in folder.glob(f"{prefix}*"):
+            if old.name != keep:
+                try:
+                    old.unlink(missing_ok=True)
+                except OSError:
+                    pass  # A stale marker only names an old turn; the next claim retries.
+
+    def _ensure_private_directory(self, directory: Path | None = None) -> None:
+        directory = directory or self.directory
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         if os.name == "nt":
             return  # The Windows default, the per-user temp folder, is private.
-        info = self.directory.lstat()
-        if self.directory.is_symlink() or info.st_uid != os.getuid() or info.st_mode & 0o022:
+        info = directory.lstat()
+        if directory.is_symlink() or info.st_uid != os.getuid() or info.st_mode & 0o022:
             raise StateUnsafe(
-                f"its state folder {self.directory} is not private to this user"
+                f"its state folder {directory} is not private to this user"
             )
 
     def _path(self, session_id: str) -> Path:
-        safe = UNSAFE_NAME_CHARS.sub("_", session_id)[:128] or "unknown"
-        return self.directory / f"{safe}.json"
+        return self.directory / f"{_safe_name(session_id)}.json"
+
+
+def _safe_name(raw: str) -> str:
+    return UNSAFE_NAME_CHARS.sub("_", raw)[:128] or "unknown"
 
 
 def _replace(source: Path, target: Path) -> None:

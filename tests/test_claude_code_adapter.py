@@ -589,6 +589,115 @@ class UnseenLineAdviceTests(AdapterTestCase):
         self.assertNotIn(self.FULL, reason(s.call("Write", self.AUTH)))
 
 
+    def held_in_parallel(self, session: Session, count: int = 4) -> list[str]:
+        """Route-line holds on `count` edits made in one message, judged at once."""
+
+        session.prompt("Harden the login check.")
+        session.load(ROUTER)
+        outputs = session.parallel([("Edit", {}) for _ in range(count)], concurrently=True)
+        self.assertEqual([decision(o) for o in outputs], ["deny"] * count)
+        return [reason(o) for o in outputs]
+
+    def test_of_four_parallel_holds_exactly_one_gives_the_full_advice(self) -> None:
+        held = self.held_in_parallel(self.session)
+        self.assertEqual(sum(self.FULL in text for text in held), 1, held)
+        for text in held:
+            self.assertTrue(text.startswith("goated-hold: route-line | strict\n"), text)
+            self.assertIn("`skip routing`", text)
+            if self.FULL not in text:
+                self.assertIn(self.SHORT, text)
+        # Near miss: another session's parallel holds, sharing the state folder,
+        # give their own full advice once.
+        (self.root / "other").mkdir()
+        other = Session(self.root / "other", session_id="session-2")
+        other.config = self.session.config
+        self.assertEqual(sum(self.FULL in text for text in self.held_in_parallel(other)), 1)
+
+    def test_a_hold_after_parallel_holds_gives_one_sentence_and_the_override(self) -> None:
+        s = self.session
+        self.held_in_parallel(s)
+        s.say("goated-route: direct")
+        held = reason(s.call("Write", self.AUTH))
+        self.assertTrue(held.startswith("goated-hold: security | justified-skip\n"), held)
+        self.assertNotIn(self.FULL, held)
+        self.assertIn(self.SHORT, held)
+        self.assertIn("`skip code-security-review`", held)
+        # Near miss: the next turn's first such hold gives the full text again.
+        s.prompt("Also harden the logout check.")
+        s.say("goated-route: direct")
+        self.assertIn(self.FULL, reason(s.call("Write", self.AUTH)))
+
+    def test_with_the_marker_folder_unwritable_each_hold_gives_the_full_advice(self) -> None:
+        s = self.session
+        # A file where the marker folder belongs: no marker can be made or read.
+        s.config.state_dir.mkdir(parents=True, exist_ok=True)
+        (s.config.state_dir / "turn-markers").write_text("", encoding="utf-8")
+        s.prompt("Harden the login check.")
+        s.load(ROUTER)
+        outputs = s.parallel([("Edit", {}) for _ in range(4)], concurrently=True)
+        outputs.append(s.call("Edit"))
+        for output in outputs:
+            self.assertEqual(decision(output), "deny")
+            self.assertIn(self.FULL, reason(output))
+            # No hook fails open; parallel saves of session state may warn on
+            # Windows (README "Known Limits"), which is not this marker.
+            self.assertNotIn("allowed without checks", output.get("systemMessage", ""))
+        # Near miss: with the folder back, the turn's next such hold claims it
+        # and the one after is short.
+        (s.config.state_dir / "turn-markers").unlink()
+        self.assertIn(self.FULL, reason(s.call("Edit")))
+        self.assertNotIn(self.FULL, reason(s.call("Edit")))
+
+    def test_a_hold_without_the_advice_does_not_claim_the_turns_full_advice(self) -> None:
+        s = self.session
+        s.prompt("Harden the login check.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        commit = {"command": 'git commit -m "Harden login"'}
+        alone = reason(s.call("Bash", commit))
+        self.assertTrue(alone.startswith("goated-hold: commit | strict\n"), alone)
+        self.assertNotIn(self.FULL, alone)
+        self.assertNotIn(self.SHORT, alone)
+        # Near miss: the advice-carrying hold that follows still gives it in full.
+        self.assertIn(self.FULL, reason(s.call("Write", self.AUTH)))
+
+    def subagent_holds(self, agent_id: str, count: int = 2) -> list[str]:
+        """Security holds on `count` writes in a new subagent's turn."""
+
+        agent = self.session.subagent(agent_id)
+        agent.prompt("Harden the login check.", hook=False)
+        return [
+            reason(agent.call("Write", self.AUTH, agent_id=agent_id, agent_type="general-purpose"))
+            for _ in range(count)
+        ]
+
+    def test_a_subagents_first_hold_gives_the_full_advice_and_later_ones_one_sentence(self) -> None:
+        self.session.prompt("Delegate the login work.")
+        first, later = self.subagent_holds("a1")
+        self.assertTrue(first.startswith("goated-hold: security | justified-skip\n"), first)
+        self.assertIn(self.FULL, first)
+        self.assertNotIn(self.FULL, later)
+        self.assertIn(self.SHORT, later)
+        self.assertIn("`skip code-security-review`", later)
+        # Near miss: another subagent of the same session gives its own full
+        # advice once, and the parent's turn still has its own.
+        other_first, other_later = self.subagent_holds("a2")
+        self.assertIn(self.FULL, other_first)
+        self.assertNotIn(self.FULL, other_later)
+        s = self.session
+        s.load(ROUTER)
+        self.assertIn(self.FULL, reason(s.call("Edit")))
+
+    def test_clearing_the_session_drops_its_advice_marker(self) -> None:
+        s = self.session
+        self.route_line_hold()
+        self.subagent_holds("a1", count=1)
+        markers = s.config.state_dir / "turn-markers"
+        self.assertEqual(len(list(markers.iterdir())), 2)
+        s.hook("SessionStart", source="clear")
+        self.assertEqual(list(markers.iterdir()), [])
+
+
 class SpawnTests(AdapterTestCase):
     SPAWN_TOOLS = (
         "Agent",
