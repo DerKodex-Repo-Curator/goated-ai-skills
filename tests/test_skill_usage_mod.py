@@ -69,6 +69,17 @@ def _write(path: str, lines: int = 6) -> dict:
     return {"file_path": path, "content": "\n".join(f"line {n}" for n in range(lines))}
 
 
+def _edit(path: str, new: str) -> dict:
+    """An edit tool's input adding `new` in place of one line."""
+
+    return {"file_path": path, "old_string": "pass", "new_string": new}
+
+
+# Six added lines that trip no design-reads signal, and a line that declares no reference.
+PLAIN = "\n".join(f"total_{n} = {n}" for n in range(6))
+NONE_LINE = "goated-design-reads: none: only renames local names"
+
+
 def _stop_reason(s: Session) -> str:
     """The reason the closeout gate blocks `Stop` with, or "" when it lets the turn end."""
 
@@ -119,6 +130,14 @@ def _adapter_texts() -> dict[str, str]:
         texts["spawnRead"] = reason(spawn.call("Agent", {"prompt": BRIEF}))
 
         texts["design"] = reason(routed("design").call("Write", _write("src/export.py")))
+        # Once the skill loads: the design hold asks for its design-reads line and the
+        # references the edit requires, then the design-reads hold for a later edit's references.
+        designed = routed("design-reads")
+        designed.load("software-design-principles")
+        texts["designLine"] = reason(designed.call("Write", _write("src/export.py")))
+        designed.say(NONE_LINE)
+        designed.call("Edit", _edit("src/export.py", PLAIN))
+        texts["designReads"] = reason(designed.call("Edit", _edit("src/export.py", "try:\n    rate = 1")))
         texts["security"] = reason(routed("security").call("Write", _write("src/auth.py")))
         # A shell write is held like a write tool's: here, to a dependency manifest.
         texts["shellWrite"] = reason(
@@ -140,7 +159,8 @@ def _adapter_texts() -> dict[str, str]:
         # The other closeout items: a failed last check (Unfinished) and the design skill's red flags.
         unfinished = routed("closeout-unfinished")
         unfinished.load("software-design-principles")
-        unfinished.call("Write", _write("src/export.py"))
+        unfinished.say(NONE_LINE)
+        unfinished.call("Edit", _edit("src/export.py", PLAIN))
         unfinished.run("pytest -q", success=False)
         texts["closeoutUnfinished"] = _stop_reason(unfinished)
 
@@ -171,9 +191,10 @@ def _adapter_texts() -> dict[str, str]:
         texts["prReviewRead"] = reason(large.call("Bash", open_pr))
         reviewed = routed("closeout-change-read")
         reviewed.load("software-design-principles")
+        reviewed.say(NONE_LINE)
         reviewed.load("code-security-review")
         reviewed.load("doc-sync")
-        reviewed.call("Write", _write("src/auth.py"))
+        reviewed.call("Edit", _edit("src/auth.py", PLAIN))
         reviewed.run("pytest -q")
         reviewed.read("/skills/software-design-principles/references/red-flags.md")
         texts["closeoutChangeRead"] = _stop_reason(reviewed)
@@ -235,6 +256,8 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "spawn": "spawn | strict",
             "spawnRead": "spawn | strict",
             "design": "design | justified-skip",
+            "designLine": "design | justified-skip",
+            "designReads": "design-reads | justified-skip",
             "security": "security | justified-skip",
             "shellWrite": "security | justified-skip",
             "repeatedFailure": "repeated-failure | justified-skip",
@@ -262,6 +285,8 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "routeLine": "skip routing",
             "pipeline": "skip routing",
             "design": "skip software-design-principles",
+            "designLine": "skip software-design-principles",
+            "designReads": "skip software-design-principles",
             "security": "skip code-security-review",
             "shellWrite": "skip code-security-review",
             "securityNoExtension": "skip code-security-review",

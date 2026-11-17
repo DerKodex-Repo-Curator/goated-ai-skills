@@ -10,6 +10,8 @@ export const ROUTE_LINE = '(route line)'
 
 /** The adapter's gate for a route's required skills. */
 const PIPELINE_GATE = 'pipeline'
+/** The adapter's design gate, which, once its skill loaded, asks for a design-reads line and the reads it requires. */
+const DESIGN_GATE = 'design'
 /** Gates whose named skills are alternatives, one of which answers the hold: the spawn hold's `handoff` or `subagent-driven-development`. */
 const ALTERNATIVE_GATES = new Set(['spawn'])
 /**
@@ -279,6 +281,10 @@ export function holdSettlement(): HoldSettlement {
         break
       case 'read':
         settle(n => n.anyOf.some(s => e.skills.includes(s)), 'read files', e, e.skills.find(s => open.some(n => n.anyOf.includes(s))))
+        break
+      case 'design-reads':
+        // A design hold that names its skill only as a skip line asks, the skill being loaded, for this line (and reads).
+        settle(n => n.hook === DESIGN_GATE && n.isSkipOnly === true && n.agent === e.agent, 'followed', e)
         break
       case 'body':
         // A subagent reading a skill's body settles only what was asked of that subagent.

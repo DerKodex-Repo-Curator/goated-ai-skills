@@ -2,8 +2,8 @@
 
 State holds only what the transcript's current turn cannot answer on its own:
 the current task and its proof, whether missing or reset state lost the task,
-whether the router loaded since the last compaction, the last turn seen, and
-the latest user overrides. Apart from the short override phrases a user typed,
+whether the router loaded since the last compaction, which design references
+were read since it, the last turn seen, and the latest user overrides. Apart from the short override phrases a user typed,
 it holds no prompt or reply text.
 """
 
@@ -39,6 +39,7 @@ class SessionState:
 
     __slots__ = (
         "router_loaded", "last_turn", "task", "task_unknown", "overrides", "policy_notice_shown",
+        "reference_reads",
     )
 
     def __init__(self) -> None:
@@ -51,6 +52,8 @@ class SessionState:
         self.task_unknown = False
         self.overrides: dict = {}
         self.policy_notice_shown = False
+        # The design references (`errors.md`) read since the last compaction.
+        self.reference_reads: list[str] = []
 
     def to_json(self) -> dict:
         return {
@@ -60,6 +63,7 @@ class SessionState:
             "task_unknown": self.task_unknown,
             "overrides": self.overrides,
             "policy_notice_shown": self.policy_notice_shown,
+            "reference_reads": self.reference_reads,
         }
 
     @classmethod
@@ -73,6 +77,7 @@ class SessionState:
         state.policy_notice_shown = _expect(data.get("policy_notice_shown", False), bool)
         state.last_turn = _expect(data.get("last_turn"), (str, type(None)))
         state.task_unknown = _expect(data.get("task_unknown", False), bool)
+        state.reference_reads = _string_list(data.get("reference_reads", []))
         task = _expect(data.get("task"), (dict, type(None)))
         if task is not None:
             state.task = Task(

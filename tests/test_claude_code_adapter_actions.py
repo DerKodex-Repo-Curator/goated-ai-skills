@@ -592,17 +592,42 @@ def write(path: str, lines: int = 6) -> dict:
     return {"file_path": path, "content": "\n".join(f"line {n}" for n in range(lines))}
 
 
+REFERENCES = "/opt/goated/skills/software-design-principles/references/"
+NONE_LINE = "goated-design-reads: none: only renames local names"
+# Six added lines that trip no design-reads signal.
+PLAIN = "\n".join(f"total_{n} = {n}" for n in range(6))
+
+
+def edit(path: str, new: str, old: str = "pass") -> dict:
+    return {"file_path": path, "old_string": old, "new_string": new}
+
+
 class DesignHoldTests(AdapterTestCase):
     def test_a_substantial_code_edit_is_held_until_design_loads(self) -> None:
         s = self.routed()
 
-        held = s.call("Write", write("src/export.py"))
+        held = s.call("Edit", edit("src/export.py", PLAIN))
         self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
-        self.assertEqual(decision(s.call("Write", write("src/export.py"))), "deny")
+        self.assertIn("`software-design-principles`", reason(held))
+        self.assertEqual(decision(s.call("Edit", edit("src/export.py", PLAIN))), "deny")
 
         s.load("software-design-principles")
-        self.assertEqual(decision(s.call("Write", write("src/export.py"))), "pass")
-        self.assertEqual(decision(s.call("Write", write("src/other.py"))), "pass")
+        held = s.call("Edit", edit("src/export.py", PLAIN))
+        self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
+        self.assertIn("goated-design-reads: none: <reason>", reason(held))
+        s.say(NONE_LINE)
+        self.assertEqual(decision(s.call("Edit", edit("src/export.py", PLAIN))), "pass")
+        self.assertEqual(decision(s.call("Edit", edit("src/other.py", PLAIN))), "pass")
+
+    def test_a_malformed_design_reads_line_does_not_count_and_is_quoted(self) -> None:
+        s = self.routed()
+        s.load("software-design-principles")
+        s.say("goated-design-reads: references/process.md")
+
+        held = s.call("Edit", edit("src/export.py", PLAIN))
+        self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
+        self.assertIn("references/process.md", reason(held))
+        self.assertIn("do not match the grammar", reason(held))
 
     def test_a_skip_line_passes_the_design_hold(self) -> None:
         s = self.routed()
@@ -626,11 +651,171 @@ class DesignHoldTests(AdapterTestCase):
     def test_a_load_in_an_earlier_turn_does_not_count(self) -> None:
         s = self.routed()
         s.load("software-design-principles")
-        self.assertEqual(decision(s.call("Write", write("src/export.py"))), "pass")
+        s.say(NONE_LINE)
+        self.assertEqual(decision(s.call("Edit", edit("src/export.py", PLAIN))), "pass")
 
         s.prompt("Now the importer.")
         s.say("goated-route: continue")
-        self.assertEqual(decision(s.call("Write", write("src/import.py"))), "deny")
+        s.say(NONE_LINE)
+        self.assertEqual(decision(s.call("Edit", edit("src/import.py", PLAIN))), "deny")
+
+
+class DesignReferenceReadTests(AdapterTestCase):
+    """The design hold's references, the design-reads hold, and their cooldown (Ticket 051)."""
+
+    def designing(self, line: str = NONE_LINE, s: Session | None = None) -> Session:
+        s = s or self.routed()
+        s.load("software-design-principles")
+        s.say(line)
+        return s
+
+    def test_with_the_line_an_unread_required_reference_holds_naming_it(self) -> None:
+        s = self.designing()
+
+        held = s.call("Write", write("src/export.py"))
+        self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
+        self.assertIn("`software-design-principles/references/process.md` (a new code file)", reason(held))
+        self.assertIn("`software-design-principles/references/complexity-and-modules.md`", reason(held))
+        s.read(REFERENCES + "process.md")
+        held = s.call("Write", write("src/export.py"))
+        self.assertNotIn("references/process.md", reason(held))
+        self.assertIn("references/complexity-and-modules.md", reason(held))
+        s.read(REFERENCES + "complexity-and-modules.md")
+        self.assertEqual(decision(s.call("Write", write("src/export.py"))), "pass")
+
+    def test_the_line_declares_references_that_are_required_too(self) -> None:
+        s = self.designing("goated-design-reads: differences.md, red-flags.md, unknown-file.md")
+
+        held = s.call("Edit", edit("src/export.py", PLAIN))
+        self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
+        self.assertIn("references/differences.md` (named in your design-reads line)", reason(held))
+        # red-flags.md stays with the closeout, and an unknown name requires nothing.
+        self.assertNotIn("red-flags.md", reason(held))
+        self.assertNotIn("unknown-file.md", reason(held))
+        s.read(REFERENCES + "differences.md")
+        self.assertEqual(decision(s.call("Edit", edit("src/export.py", PLAIN))), "pass")
+
+    def test_each_signal_selects_its_reference_and_a_near_miss_does_not(self) -> None:
+        cases = (
+            # (name, tool, input, references it selects, near-miss tool, near-miss input)
+            ("top-level definition", "Edit", edit("src/a.py", "def export(rows):\n    return rows"),
+             {"process.md", "complexity-and-modules.md", "readability.md"},
+             "Edit", edit("src/a.py", "    def export(self):\n        return 1")),
+            ("definition kept as context", "Edit",
+             edit("src/a.py", "function load() {\n  return 1", old="function load() {"),
+             set(), "Edit", edit("src/a.py", "  return 2")),
+            ("exported definition", "Edit", edit("src/a.ts", "export const rate = 1"),
+             {"process.md", "complexity-and-modules.md", "readability.md"},
+             "Edit", edit("src/a.ts", "const exported = 1")),
+            ("new code file", "Write", {"file_path": "src/fresh.py", "content": "x = 1"},
+             {"process.md", "complexity-and-modules.md"},
+             "Write", {"file_path": "{project}/src/existing.py", "content": "x = 1"}),
+            ("comment", "Edit", edit("src/a.py", "rate = 1  # per second"),
+             {"readability.md"}, "Edit", edit("src/a.py", "rate = a // b")),
+            ("docstring", "Edit", edit("src/a.py", '    """Return the rate."""'),
+             {"readability.md"}, "Edit", edit("src/a.py", '    name = "rate"')),
+            ("error handling", "Edit", edit("src/a.py", "try:\n    rate = 1"),
+             {"errors.md"}, "Edit", edit("src/a.py", "retry = 1")),
+            ("file resource", "Edit", edit("src/a.py", "    with open(path) as f:"),
+             {"errors.md"}, "Edit", edit("src/a.py", "    opened = path")),
+            ("test file", "Edit", edit("tests/test_export.py", "x = 1"),
+             {"coding.md"}, "Edit", edit("src/contest.py", "x = 1")),
+            ("concurrency", "Edit", edit("src/a.py", "guard = threading.Lock()"),
+             {"concurrency.md"}, "Edit", edit("src/a.py", "clock = 1")),
+            ("configuration file", "Edit", edit("config/app.yaml", "rate: 1"),
+             {"decoupling.md"}, "Edit", edit("docs/app.md", "rate: 1")),
+        )
+        for name, tool, tool_input, selects, near_tool, near_input in cases:
+            with self.subTest(name=name):
+                s = self.designing(s=self.fresh_routed())
+                (s.project / "src").mkdir(parents=True, exist_ok=True)
+                (s.project / "src" / "existing.py").write_text("x = 0\n", encoding="utf-8")
+                near_input = {
+                    k: v.replace("{project}", str(s.project)) for k, v in near_input.items()
+                }
+                self.assertEqual(decision(s.call(near_tool, near_input)), "pass")
+                held = s.call(tool, tool_input)
+                if not selects:
+                    self.assertEqual(decision(held), "pass")
+                    continue
+                self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
+                named = set(re.findall(r"references/([a-z-]+\.md)`", reason(held)))
+                self.assertEqual(named, selects, reason(held))
+
+    def test_a_third_code_file_selects_decoupling(self) -> None:
+        s = self.designing()
+        for path in ("src/a.py", "src/b.py", "src/a.py"):
+            self.assertEqual(decision(s.call("Edit", edit(path, "x = 1"))), "pass")
+        held = s.call("Edit", edit("src/c.py", "x = 1"))
+        self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
+        self.assertIn("references/decoupling.md` (the third code file", reason(held))
+
+    def test_a_later_edit_is_held_only_for_an_unread_reference_it_trips(self) -> None:
+        s = self.designing()
+        self.assertEqual(decision(s.call("Edit", edit("src/export.py", PLAIN))), "pass")
+
+        held = s.call("Edit", edit("src/export.py", "try:\n    rate = 1"))
+        self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
+        self.assertIn("`software-design-principles/references/errors.md` (adds error handling", reason(held))
+        self.assertIn("\"export.py\"", reason(held))
+        s.read(REFERENCES + "errors.md")
+        self.assertEqual(decision(s.call("Edit", edit("src/export.py", "try:\n    rate = 1"))), "pass")
+        # One tripping only read references, or none, is not held.
+        self.assertEqual(decision(s.call("Edit", edit("src/export.py", "except ValueError:"))), "pass")
+        self.assertEqual(decision(s.call("Edit", edit("src/export.py", "rate = 2"))), "pass")
+
+    def test_small_edits_without_the_skill_are_not_held_for_references(self) -> None:
+        s = self.routed()
+        self.assertEqual(decision(s.call("Edit", edit("src/export.py", "try:\n    rate = 1"))), "pass")
+
+    def test_a_read_counts_until_the_next_compaction(self) -> None:
+        s = self.designing()
+        s.read(REFERENCES + "errors.md")
+        self.assertEqual(decision(s.call("Edit", edit("src/a.py", "try:\n    x = 1"))), "pass")
+
+        # A later turn, before any compaction: the read still counts.
+        s.prompt("Now the importer.")
+        s.say("goated-route: continue")
+        self.designing(s=s)
+        self.assertEqual(decision(s.call("Edit", edit("src/b.py", "try:\n    x = 1"))), "pass")
+
+        s.compact()
+        s.load(ROUTER)
+        s.say("goated-route: continue")
+        self.designing(s=s)
+        held = s.call("Edit", edit("src/b.py", "try:\n    x = 1"))
+        self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
+        self.assertIn("references/errors.md", reason(held))
+        s.read(REFERENCES + "errors.md")
+        self.assertEqual(decision(s.call("Edit", edit("src/b.py", "try:\n    x = 1"))), "pass")
+
+    def test_a_skip_line_clears_both_holds(self) -> None:
+        s = self.routed()
+        s.load("software-design-principles")
+        s.say("goated-skip: software-design-principles: this is a mechanical rename only")
+        self.assertEqual(decision(s.call("Write", write("src/export.py"))), "pass")
+        self.assertEqual(decision(s.call("Edit", edit("src/export.py", "try:\n    x = 1"))), "pass")
+
+    def test_an_override_clears_both_holds(self) -> None:
+        s = self.routed(prompt="Fix it, and skip software-design-principles.")
+        self.assertEqual(decision(s.call("Write", write("src/export.py"))), "pass")
+        s.load("software-design-principles")
+        self.assertEqual(decision(s.call("Edit", edit("src/export.py", "try:\n    x = 1"))), "pass")
+
+    def test_files_outside_the_project_are_not_held(self) -> None:
+        s = self.designing()
+        outside = str(self.root / "scratch")
+        self.assertEqual(decision(s.call("Write", write(f"{outside}/probe.py", lines=40))), "pass")
+        self.assertEqual(decision(s.call("Edit", edit(f"{outside}/probe.py", "try:\n    x = 1"))), "pass")
+        held = s.call("Edit", edit(f"{s.project}/src/probe.py", "try:\n    x = 1"))
+        self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
+
+    def fresh_routed(self) -> Session:
+        s = self.fresh()
+        s.prompt("Do the task.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        return s
 
 
 class SecurityHoldTests(AdapterTestCase):
@@ -1658,9 +1843,10 @@ class CloseoutTests(AdapterTestCase):
     def test_applied_design_needs_the_red_flags_read_after_the_last_change(self) -> None:
         s = self.routed()
         s.load("software-design-principles")
+        s.say(NONE_LINE)
         red_flags = "/opt/goated/skills/software-design-principles/references/red-flags.md"
         s.read(red_flags)
-        s.call("Write", write("src/export.py"))
+        s.call("Edit", edit("src/export.py", PLAIN))
         s.run("pytest -q")
         s.load("doc-sync")
 
@@ -1935,7 +2121,8 @@ class ChangeReadTests(AdapterTestCase):
 
         s = self.routed()
         s.load("software-design-principles")
-        s.call("Write", write("src/export.py"))
+        s.say(NONE_LINE)
+        s.call("Edit", edit("src/export.py", PLAIN))
         s.run("pytest -q")
         s.say("goated-skip: doc-sync: internal constant with no documented behavior")
         s.read(RED_FLAGS)
@@ -1953,7 +2140,8 @@ class ChangeReadTests(AdapterTestCase):
     def test_a_change_read_before_the_red_flags_read_does_not_count(self) -> None:
         s = self.routed()
         s.load("software-design-principles")
-        s.call("Write", write("src/export.py"))
+        s.say(NONE_LINE)
+        s.call("Edit", edit("src/export.py", PLAIN))
         s.run("pytest -q")
         s.say("goated-skip: doc-sync: internal constant with no documented behavior")
         s.run(DIFF)
