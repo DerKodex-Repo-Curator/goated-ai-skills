@@ -437,14 +437,15 @@ class Session:
         return run_hook(json.dumps(payload), self.config)
 
     def call(self, tool: str, tool_input: dict | None = None, *, result: str = "ok",
-             **fields) -> dict:
+             failed: bool = False, **fields) -> dict:
         """Run PreToolUse for a new call and record it; return the parsed output.
-        `result` is the text a call that is not held finishes with."""
+        `result` is the text a call that is not held finishes with, as an
+        error result when `failed`."""
 
         tool_use_id, output = self._judge(tool, tool_input or default_input(tool), **fields)
         # Claude Code records a held call as an error result carrying the reason.
         held = reason(output)
-        self._tool_result(tool_use_id, held or result, is_error=bool(held))
+        self._tool_result(tool_use_id, held or result, is_error=bool(held) or failed)
         return output
 
 

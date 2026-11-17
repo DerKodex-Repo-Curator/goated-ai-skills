@@ -1,6 +1,6 @@
 ---
 name: diagnose
-description: Use when investigating bugs, failing behavior, flaky tests, build failures, integration failures, performance regressions, or unexpected behavior before proposing or implementing fixes.
+description: Use when investigating bugs, failing behavior, a check that keeps failing, flaky tests, build failures, integration failures, performance regressions, or unexpected behavior before proposing or implementing fixes.
 metadata:
   goated-category: engineering
 ---

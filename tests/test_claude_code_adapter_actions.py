@@ -2013,6 +2013,26 @@ class ConflictResolutionHoldTests(AdapterTestCase):
 
 CHECK = "uv run python -m unittest discover -s tests"
 FIX = {"file_path": "src/export.py", "old_string": "a", "new_string": "b"}
+TEST_EDIT = {"file_path": "tests/test_export.py", "old_string": "a", "new_string": "b"}
+# Each runner's summary of a failed run with `n` failed or errored tests, as
+# the runner prints it.
+RUNNER_SUMMARIES = {
+    "pytest": lambda n: f"FAILED tests/test_export.py::test_round\n{n} failed, 2 passed in 0.31s",
+    "pytest-errors": lambda n: (
+        f"===== {n - 1} failed, 4 passed, 1 error in 1.02s =====" if n > 1
+        else "===== 4 passed, 1 error in 1.02s ====="
+    ),
+    "unittest": lambda n: f"Ran 9 tests in 0.004s\n\nFAILED (failures={n})",
+    "unittest-errors": lambda n: (
+        f"Ran 9 tests in 0.004s\n\nFAILED (failures={n - 1}, errors=1)" if n > 1
+        else "Ran 9 tests in 0.004s\n\nFAILED (errors=1)"
+    ),
+    "jest": lambda n: (
+        "Test Suites: 1 failed, 1 total\n"
+        f"Tests:       {n} failed, 4 passed, {n + 4} total"
+    ),
+    "cargo": lambda n: f"test result: FAILED. 4 passed; {n} failed; 0 ignored; 0 measured",
+}
 RUNNER_OUTPUT = Path(__file__).parent / "fixtures" / "claude_code_adapter" / "runner-output"
 
 
@@ -2290,6 +2310,212 @@ class RepeatedFailureTests(AdapterTestCase):
 
         s.say("goated-skip: diagnose: the failure is a known typo I just introduced")
         self.assertEqual(decision(s.call("Edit", FIX)), "pass")
+
+    def test_the_first_run_after_a_test_edit_does_not_count(self) -> None:
+        # Spec R1: in TDD the first run after writing a test is meant to fail.
+        s = self.routed()
+        s.call("Edit", TEST_EDIT)
+        s.run(CHECK, success=False)
+        s.call("Edit", FIX)
+        s.run(CHECK, success=False)
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass", "red, then one counted failure")
+
+        s.run(CHECK, success=False)
+        held = s.call("Edit", FIX)
+        self.assertEqual(hold_line(held), "goated-hold: repeated-failure | justified-skip",
+                         "a second counted failure holds")
+
+    def test_the_red_run_does_not_reset_the_count(self) -> None:
+        s = self.routed()
+        s.run(CHECK, success=False)
+        s.call("Edit", TEST_EDIT)
+        s.run(CHECK, success=False)
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass", "the red run is not counted")
+
+        s.run(CHECK, success=False)
+        held = s.call("Edit", FIX)
+        self.assertEqual(hold_line(held), "goated-hold: repeated-failure | justified-skip",
+                         "the failure before the red run still counts")
+
+    def test_a_shell_write_to_a_test_file_excuses_the_next_run(self) -> None:
+        s = self.routed()
+        s.run(CHECK, success=False)
+        s.run("echo 'def test_x(): assert 0' >> tests/test_export.py")
+        s.run(CHECK, success=False)
+
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass")
+
+    def test_only_the_first_run_after_a_test_edit_is_excused(self) -> None:
+        # Near miss: the excuse is used once, by the first run after the test edit.
+        s = self.routed()
+        s.call("Edit", TEST_EDIT)
+        s.run(CHECK, success=False)
+        s.run(CHECK, success=False)
+        s.run(CHECK, success=False)
+        held = s.call("Edit", FIX)
+        self.assertEqual(hold_line(held), "goated-hold: repeated-failure | justified-skip")
+
+    def test_a_held_or_failed_test_edit_excuses_nothing(self) -> None:
+        for how in ("failed", "held"):
+            with self.subTest(how=how):
+                self.session = s = self.fresh()
+                s.prompt("Fix the exporter.")
+                if how == "failed":
+                    s.load(ROUTER)
+                    s.say("goated-route: direct")
+                    s.call("Edit", TEST_EDIT, result="String to replace not found in file.",
+                           failed=True)
+                else:
+                    # Held by the route-line gate, so the edit never ran.
+                    self.assertEqual(decision(s.call("Edit", TEST_EDIT)), "deny")
+                    s.load(ROUTER)
+                    s.say("goated-route: direct")
+                s.run(CHECK, success=False)
+                s.run(CHECK, success=False)
+                held = s.call("Edit", FIX)
+                self.assertEqual(hold_line(held),
+                                 "goated-hold: repeated-failure | justified-skip")
+
+    def test_runs_with_fewer_failures_do_not_count(self) -> None:
+        # Spec R1: 5, 3, 1 failures is progress; 3 and 3 is not.
+        for runner, summary in RUNNER_SUMMARIES.items():
+            with self.subTest(runner=runner):
+                self.session = s = self.fresh()
+                s.prompt("Fix the exporter.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                for failures in (5, 3, 1):
+                    s.run(CHECK, success=False, output=summary(failures))
+                    self.assertEqual(decision(s.call("Edit", FIX)), "pass", failures)
+
+                s.run(CHECK, success=False, output=summary(1))
+                held = s.call("Edit", FIX)
+                self.assertEqual(hold_line(held),
+                                 "goated-hold: repeated-failure | justified-skip", "1 then 1")
+
+    def test_runs_with_the_same_failures_hold(self) -> None:
+        for runner, summary in RUNNER_SUMMARIES.items():
+            with self.subTest(runner=runner):
+                self.session = s = self.fresh()
+                s.prompt("Fix the exporter.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.run(CHECK, success=False, output=summary(3))
+                s.run(CHECK, success=False, output=summary(3))
+                held = s.call("Edit", FIX)
+                self.assertEqual(hold_line(held),
+                                 "goated-hold: repeated-failure | justified-skip")
+
+    def test_a_run_whose_count_cannot_be_read_counts(self) -> None:
+        for first, second in (
+            ("Exit code 1\nfailed", "Exit code 1\nfailed"),
+            (RUNNER_SUMMARIES["pytest"](5), "Exit code 1\nfailed"),
+            ("Exit code 1\nfailed", RUNNER_SUMMARIES["pytest"](1)),
+            # Two runners' summaries in one run: which count is the check's is unknown.
+            (RUNNER_SUMMARIES["pytest"](5),
+             RUNNER_SUMMARIES["pytest"](1) + "\n" + RUNNER_SUMMARIES["jest"](1)),
+        ):
+            with self.subTest(first=first, second=second):
+                self.session = s = self.fresh()
+                s.prompt("Fix the exporter.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.run(CHECK, success=False, output=first)
+                s.run(CHECK, success=False, output=second)
+                held = s.call("Edit", FIX)
+                self.assertEqual(hold_line(held),
+                                 "goated-hold: repeated-failure | justified-skip")
+
+    def test_a_cd_to_the_session_folder_is_the_same_check(self) -> None:
+        # Spec R2: `cd <folder> && pytest -q` is `pytest -q` run from that folder.
+        for spell in (str, lambda p: p.as_posix(), lambda p: p.as_posix() + "/"):
+            with self.subTest(spell=spell(Path("x/y"))):
+                self.session = s = self.fresh()
+                folder = spell(s.cwd)
+                s.prompt("Fix the exporter.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.run(f'cd "{folder}" && pytest -q', success=False)
+                s.run("pytest -q", success=False)
+                held = s.call("Edit", FIX)
+                self.assertEqual(hold_line(held),
+                                 "goated-hold: repeated-failure | justified-skip")
+                self.assertIn('The check "pytest -q" has failed', reason(held))
+
+    def test_the_hold_shows_the_check_without_its_cd(self) -> None:
+        folder = "build/" + "a-very-long-folder-name/" * 4
+        for cd in (f'cd "{folder}" && ', f"cd {folder}; ", f"cd '{folder}' &&"):
+            with self.subTest(cd=cd):
+                self.session = s = self.fresh()
+                s.prompt("Fix the exporter.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.run(f"{cd}pytest -q", success=False)
+                s.run(f'cd "{folder}" && pytest -q', success=False)
+                held = s.call("Edit", FIX)
+                self.assertEqual(hold_line(held),
+                                 "goated-hold: repeated-failure | justified-skip")
+                self.assertIn('The check "pytest -q" has failed', reason(held))
+
+    def test_checks_run_from_different_folders_are_different_checks(self) -> None:
+        # Near miss: the cd's folder stays part of the check, and so do its counts.
+        s = self.routed()
+        s.run("cd pkg_a && pytest -q", success=False, output="5 failed in 0.1s")
+        s.run("cd pkg_b && pytest -q", success=False, output="1 failed in 0.1s")
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass", "a, then b")
+        s.run("pytest -q", success=False)
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass", "a, b, then the session folder")
+
+        s.run("cd pkg_a && pytest -q", success=False, output="5 failed in 0.1s")
+        held = s.call("Edit", FIX)
+        self.assertEqual(hold_line(held), "goated-hold: repeated-failure | justified-skip",
+                         "a failed twice with 5 failures, b's 1 between them aside")
+
+    def test_a_crash_after_failures_is_not_progress(self) -> None:
+        # A run that could not load its tests reports fewer failures, but shows no progress.
+        for before, crash in (
+            ("Tests:       3 failed, 2 passed, 5 total", sample("jest-broken")),
+            ("Tests:       3 failed, 2 passed, 5 total",
+             "Test Suites: 1 failed, 1 total\nTests:       0 total"),
+            ("5 failed, 2 passed in 0.31s", sample("pytest-syntax")),
+            ("5 failed, 2 passed in 0.31s",
+             "!!! Interrupted: 1 error during collection !!!\n1 error in 0.05s"),
+            ("Ran 9 tests in 0.004s\n\nFAILED (failures=3)", sample("unittest-syntax")),
+        ):
+            with self.subTest(crash=crash[-40:]):
+                self.session = s = self.fresh()
+                s.prompt("Fix the exporter.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.run(CHECK, success=False, output=before)
+                s.run(CHECK, success=False, output=crash)
+                held = s.call("Edit", FIX)
+                self.assertEqual(hold_line(held),
+                                 "goated-hold: repeated-failure | justified-skip")
+
+    def test_only_a_pytest_summary_line_is_read_as_one(self) -> None:
+        # Near miss: "3 files in 2 dirs" is not a second summary that makes the count unreadable.
+        s = self.routed()
+        s.run(CHECK, success=False, output="3 failed, 2 passed in 0.31s")
+        s.run(CHECK, success=False, output="3 files in 2 dirs\n1 failed, 4 passed in 0.31s")
+
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass")
+
+    def test_a_cd_within_the_command_still_makes_another_check(self) -> None:
+        # Near miss: only a leading cd joined by && or ; is dropped.
+        for first, second in (
+            ("pytest -q && cd docs", "pytest -q"),
+            ("cd tests || pytest -q", "pytest -q"),
+            ("cd tests && pytest -q", "cd tests && pytest -q -k export"),
+        ):
+            with self.subTest(first=first, second=second):
+                self.session = s = self.fresh()
+                s.prompt("Fix the exporter.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                s.run(first, success=False)
+                s.run(second, success=False)
+                self.assertEqual(decision(s.call("Edit", FIX)), "pass")
 
     def test_a_typed_skip_diagnose_override_clears_it(self) -> None:
         s = self.session

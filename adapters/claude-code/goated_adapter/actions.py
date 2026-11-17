@@ -62,7 +62,7 @@ from .gates import (
     COMMAND_TOOLS, STRICT, Hold, goated_skill_name, spawns_a_reader, unseen_line_advice,
 )
 from .markers import declared_files, parse_reply
-from .transcript import Turn, skill_name
+from .transcript import Call, Turn, skill_name
 
 JUSTIFIED_SKIP = "justified-skip"
 
@@ -84,6 +84,26 @@ PIPE_TAIL_RE = re.compile(
     re.IGNORECASE,
 )
 STDERR_MERGE_RE = re.compile(r"\s*(?:2|\*)>&1$")
+# A leading `cd` to one folder, joined to the rest by `&&` or `;` (spec R2).
+LEADING_CD_RE = re.compile(
+    r"""^cd\s+(?:"(?P<dq>[^"]*)"|'(?P<sq>[^']*)'|(?P<bare>[^\s;&|"']+))\s*(?:&&|;)\s*"""
+)
+# pytest's line saying collection errors stopped the run before any test ran.
+COLLECTION_INTERRUPTED_RE = re.compile(r"^!+ Interrupted: \d+ errors? during collection",
+                                       re.MULTILINE)
+# Each test runner's run summary, and in it the counts of tests that failed
+# or errored (spec R1): pytest's last line, unittest's `FAILED (...)`, jest's
+# `Tests:` line, and cargo's `test result:`. Other runners the gate reads,
+# such as go test, print no count.
+FAILURE_COUNT_SIGNS = tuple(
+    (re.compile(summary, re.MULTILINE), re.compile(counted)) for summary, counted in (
+        (r"^=*\s*(\d+ (?:passed|failed|errors?|skipped|xfailed|xpassed|warnings?|deselected"
+         r"|rerun)(?:, \d+ \w+)*) in \d+(?:\.\d+)?s\b", r"\b(\d+) (?:failed|errors?)\b"),
+        (r"^FAILED \((.*)\)\s*$", r"\b(?:failures|errors)=(\d+)"),
+        (r"^Tests:\s+(.*\btotal)\s*$", r"\b(\d+) failed\b"),
+        (r"^test result: FAILED\. (.*)$", r"\b(\d+) failed\b"),
+    )
+)
 # A failed call that never ran: a permission refusal, another hook's denial, or an interruption.
 NOT_RUN_RE = re.compile(
     r"(?:The user doesn[’']t want to|Permission for this \w+ was denied|PreToolUse:\S+ hook error"
@@ -431,7 +451,7 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
                 # repeated-failure gate holds it.
                 hold = hold or _reference_reads_hold(None, None, proof, project, references,
                                                      changes)
-            hold = hold or _repeated_failure_hold(proof)
+            hold = hold or _repeated_failure_hold(proof, project)
         return hold
     if PR_TOOL_RE.match(tool_name):
         return _pr_hold(proof, changes, by_tool=True) or _pr_review_hold(
@@ -460,7 +480,7 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         elif hold is None:
             # Only the turn's gate signals reach it, as the repeated-failure gate does.
             hold = _reference_reads_hold(None, None, proof, project, references, changes)
-        return hold or _repeated_failure_hold(proof)
+        return hold or _repeated_failure_hold(proof, project)
     return None
 
 
@@ -1056,7 +1076,7 @@ def _reference_reads_hold(path: str | None, tool_input: dict | None, proof: _Pro
     if not declared:
         return None
     # `repeated-failure` is the one gate in `reference_reads.OBSERVED_GATES`.
-    gates = frozenset({"repeated-failure"} if _repeated_check(proof.turn) else ())
+    gates = frozenset({"repeated-failure"} if _repeated_check(proof.turn, project) else ())
     if path is None:
         edit = reference_reads.Edit(is_code=False, is_test=False, added_code=[], gates=gates)
     else:
@@ -1144,13 +1164,13 @@ def _project_code_writes(turn: Turn, project: Project | None) -> list[tuple[str,
     return writes
 
 
-def _repeated_failure_hold(proof: _Proof) -> Hold | None:
+def _repeated_failure_hold(proof: _Proof, project: Project | None) -> Hold | None:
     """Hold a write once one check command has failed twice in a row in the
     turn (`_repeated_check`), until `diagnose` loads or is skipped."""
 
     if proof.loaded_or_skipped(DIAGNOSE_SKILL):
         return None
-    repeated = _repeated_check(proof.turn)
+    repeated = _repeated_check(proof.turn, project)
     if repeated is None:
         return None
     shown = repeated if len(repeated) <= 80 else repeated[:77] + "..."
@@ -1166,27 +1186,45 @@ def _repeated_failure_hold(proof: _Proof) -> Hold | None:
     )
 
 
-def _repeated_check(turn: Turn) -> str | None:
+def _repeated_check(turn: Turn, project: Project | None) -> str | None:
     """The check command that has failed `REPEATED_FAILURES` times in a row in
-    `turn` with no pass since, whitespace aside, or None.
+    `turn` with no pass since, as `_check_key` gives it, or None.
 
     "The same check" is the same command text, whitespace aside (spec G2),
-    without a trailing pipe into output filters (`| tail -20`): a narrowed
-    rerun, such as one test file of a failing suite, is another command. A
-    pass of that check resets its count; other commands between runs do not.
-    Only runs count: a call held, refused, or interrupted never ran. A run
-    whose only failures are test modules missing a module (`LOAD_ERROR_SIGNS`)
-    neither adds to the count nor resets it, failed or not, since a pipe can
-    cut the failure signs from its output.
+    without a leading `cd` or a trailing pipe into output filters
+    (`| tail -20`): a narrowed rerun, such as one test file of a failing
+    suite, is another command. A pass of that check resets its count; other
+    commands between runs do not. Only runs count: a call held, refused, or
+    interrupted never ran.
+
+    Some runs neither add to the count nor reset it (low-signal holds spec,
+    R1): one whose only failures are test modules missing a module
+    (`LOAD_ERROR_SIGNS`), failed or not, since a pipe can cut the failure
+    signs from its output; a failed run that is the check's first since a
+    finished write to a `project` test file, the red run TDD expects; and a
+    failed run reporting fewer failures than the check's run before it
+    (`_failure_count`), when both counts can be read.
     """
 
+    cwd = project.cwd if project else None
     in_a_row: dict[str, int] = {}
+    shown: dict[str, str] = {}
     is_check: dict[str, bool] = {}
+    failures: dict[str, int | None] = {}  # Each check's failure count at its last run.
+    test_writes = 0  # Finished writes to a test file so far in the turn.
+    test_writes_seen: dict[str, int] = {}  # `test_writes` at each check's last run.
     for call in turn.calls:
+        # A shell command's own test write comes after its run, never before.
+        test_writes_before = test_writes
+        test_writes += _writes_a_test(call, project)
         if call.name not in COMMAND_TOOLS or call.held or NOT_RUN_RE.match(call.output):
             continue
         command = str(call.input.get("command") or "")
-        key, piped = _check_key(command)
+        check = _check_key(command, cwd)
+        key, piped = check.key, check.piped
+        shown[key] = check.shown
+        red_run = test_writes_seen.get(key, 0) < test_writes_before
+        test_writes_seen[key] = test_writes_before
         load_errors = _load_errors(call.output)
         if load_errors == "missing-module":
             continue
@@ -1194,13 +1232,17 @@ def _repeated_check(turn: Turn) -> str | None:
         failed = (
             bool(load_errors or FAILURE_SIGNS_RE.search(call.output)) if piped else not call.ok
         )
+        count, earlier = _failure_count(call.output), failures.get(key)
+        failures[key] = count
+        if failed and (red_run or None not in (count, earlier) and count < earlier):
+            continue  # The run TDD expects to fail, or a run that shows progress.
         if not failed and key not in in_a_row:
             continue  # A pass of a command that never failed changes nothing.
         if key not in is_check:
             is_check[key] = shell.analyze(command).is_check
         if is_check[key]:
             in_a_row[key] = in_a_row.get(key, 0) + 1 if failed else 0
-    return next((k for k, n in in_a_row.items() if n >= REPEATED_FAILURES), None)
+    return next((shown[k] for k, n in in_a_row.items() if n >= REPEATED_FAILURES), None)
 
 
 def _load_errors(output: str) -> str | None:
@@ -1230,16 +1272,81 @@ def _load_errors(output: str) -> str | None:
     return "missing-module" if found else None
 
 
-def _check_key(command: str) -> tuple[str, bool]:
-    """A check command's identity, whitespace aside and without a trailing pipe
-    into output filters, and whether such a pipe was removed."""
+def _writes_a_test(call: Call, project: Project | None) -> bool:
+    """Whether `call` is a finished write, by an edit tool or a shell command,
+    to a file `is_test` places as a project test file."""
 
-    key = " ".join(command.split())
-    bare = key
+    if not call.ok or call.held:
+        return False
+    if call.name in FILE_WRITE_TOOLS:
+        targets = [str(call.input.get(FILE_WRITE_TOOLS[call.name]) or "")]
+    elif call.name in COMMAND_TOOLS:
+        command = shell.analyze(str(call.input.get("command") or ""), call.name)
+        targets = [t for t in command.write_targets if t not in command.unplaced_targets]
+    else:
+        return False
+    return any(is_test(_norm(target), project) for target in targets)
+
+
+def _failure_count(output: str) -> int | None:
+    """How many tests failed or errored by the run summary in `output`, or
+    None when that says nothing of the tests: it shows no summary
+    `FAILURE_COUNT_SIGNS` reads, or more than one, such as two runners' in
+    one command; it shows a test module or suite that could not load, whose
+    tests are missing from the count; or it counts no failure, so the run
+    failed outside the tests."""
+
+    if (any(signs.start.search(output) for signs in LOAD_ERROR_SIGNS)
+            or COLLECTION_INTERRUPTED_RE.search(output)):
+        return None
+    summaries = [(found[1], counted) for summary, counted in FAILURE_COUNT_SIGNS
+                 for found in summary.finditer(output)]
+    if len(summaries) != 1:
+        return None
+    text, counted = summaries[0]
+    return sum(int(n) for n in counted.findall(text)) or None
+
+
+class _CheckKey(NamedTuple):
+    """A check command's identity (`key`), the command as a hold shows it
+    (`shown`), and whether a trailing pipe into output filters was removed."""
+
+    key: str
+    shown: str
+    piped: bool
+
+
+def _check_key(command: str, cwd: str | None) -> _CheckKey:
+    """Identify a check command run from the session folder `cwd`.
+
+    The command is compared whitespace aside, without a trailing pipe into
+    output filters or a leading `cd` to a folder (spec R2), which `shown`
+    leaves out. The folder the `cd` reaches stays in `key`, so one command
+    run in two folders is two checks, unless it is `cwd` itself: `cd <cwd>
+    && pytest -q` is `pytest -q`. With no `cwd`, the folder is kept relative.
+    """
+
+    shown = " ".join(command.split())
+    start = cwd or ""
+    folder = start
+    while found := LEADING_CD_RE.match(shown):
+        folder = os.path.join(folder, found["dq"] or found["sq"] or found["bare"] or "")
+        shown = shown[found.end():]
+    bare = shown
     while (shorter := PIPE_TAIL_RE.sub("", bare)) != bare:
         bare = shorter
-    piped = bare != key
-    return (STDERR_MERGE_RE.sub("", bare) if piped else bare), piped
+    piped = bare != shown
+    shown = STDERR_MERGE_RE.sub("", bare) if piped else bare
+    if folder == start or _folder_key(folder) == _folder_key(start):
+        return _CheckKey(shown, shown, piped)
+    return _CheckKey(f"cd {_folder_key(folder)} && {shown}", shown, piped)
+
+
+def _folder_key(folder: str) -> str:
+    """`folder` in comparable form: normalized, case-folded where the system
+    folds case, with `/` separators."""
+
+    return os.path.normcase(os.path.normpath(folder)).replace("\\", "/")
 
 
 # Closeout ---------------------------------------------------------------------
