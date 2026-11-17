@@ -1,4 +1,4 @@
-# Ticket 059: Closeout Ignores Setup And Scratch Files Outside The Project
+# Ticket 058: Closeout Ignores Setup And Scratch Files Outside The Project
 
 ## Parent Spec
 

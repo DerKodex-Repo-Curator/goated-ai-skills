@@ -1,4 +1,4 @@
-# Ticket 063: The Unseen-Line Advice Is Given In Full Once Per Turn
+# Ticket 060: The Unseen-Line Advice Is Given In Full Once Per Turn
 
 ## Parent Spec
 
@@ -57,12 +57,9 @@ it three times.
 ## Blocked By
 
 - `tickets/054-adapter-overrides-pasted-text-and-commit-skip.md`
-- `tickets/055-adapter-router-first-read-only-commands.md`
-- `tickets/057-adapter-repeated-failure-ignores-import-errors.md`
-- `tickets/058-adapter-design-gate-skips-test-files.md`
-- `tickets/060-adapter-read-only-subagents-pass-spawn-gates.md`
-- `tickets/061-adapter-change-reads-without-rereads.md`
-- `tickets/062-adapter-closeout-items-at-commit.md`
+- `tickets/055-adapter-routing-lets-reads-through.md`
+- `tickets/057-adapter-tdd-friction.md`
+- `tickets/059-adapter-closeout-reads-and-commit-timing.md`
 
 These change hold texts and their callers, so this ticket runs last.
 
