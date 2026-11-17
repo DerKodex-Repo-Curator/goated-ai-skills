@@ -13,7 +13,11 @@ import re
 
 SKILL = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 ROUTING_RE = re.compile(r"\bskip\s+(?:the\s+)?(?:routing|router)\b", re.IGNORECASE)
-SKILL_SKIP_RE = re.compile(rf"\bskip\s+(?:the\s+)?`?({SKILL})`?(?:\s+skill)?\b", re.IGNORECASE)
+# A closing backtick ends the name itself: requiring a word boundary after it
+# failed at the end of "skip `doc-sync`" and dropped the backtick from the match.
+SKILL_SKIP_RE = re.compile(
+    rf"\bskip\s+(?:the\s+)?`?({SKILL})(?:`|\b)(?:\s+skill\b)?", re.IGNORECASE
+)
 # A directive negated just before it ("don't skip routing", "never skip tdd",
 # "no need to skip doc-sync") asks for the opposite. One adverb may sit between,
 # as in "do not ever skip".
@@ -91,9 +95,11 @@ def parse_overrides(prompt: str, known_skills: frozenset[str] = GOATED_SKILLS) -
         ):
             continue
         skills.append(skill)
-        phrases.append(match.group(0))
+        # Recorded without backticks, so "skip `tdd`" counts as "skip tdd".
+        phrases.append(match.group(0).replace("`", ""))
     message = _commit_message(text)
     if message is not None:
+        # The phrase names the override; the message text stays out of the record.
         phrases.append("commit message")
     return {
         "routing": bool(routing),
