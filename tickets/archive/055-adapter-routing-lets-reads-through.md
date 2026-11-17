@@ -44,8 +44,9 @@ Both are the same rule, applied in the same routing function.
   Pipes between such commands are fine. A redirect, a write, a command
   substitution, or any other command in the call keeps the hold. When the
   shell analysis can't tell, the call is held.
-- **Read-only subagents.** A spawn of a read-only subagent type (`Explore`,
-  `Plan`, `claude-code-guide`) passes `pipeline` and `spawn`. It still needs
+- **Read-only subagents.** A spawn of a read-only subagent type passes
+  `pipeline` and `spawn`; after review only `claude-code-guide` qualifies,
+  since `Explore` and `Plan` have shell tools. It still needs
   a route line, as any first spawn does. Any other subagent type, including
   `general-purpose` and a missing type, is unchanged, and so are side
   sessions.
@@ -76,10 +77,11 @@ Both are the same rule, applied in the same routing function.
 - [ ] `cat a > b`, `find . -delete`, `find . -exec rm {} +`, `pytest`,
       `git push` and ``cat $(make-it)`` are held.
 - [ ] Once the router loads, routing behaves as before.
-- [ ] An `Explore` spawn with required skills not loaded and no handoff
-      template passes `pipeline` and `spawn`.
-- [ ] A `general-purpose` spawn with the same brief is still held.
-- [ ] An `Explore` spawn with no route line in the turn is held by
+- [ ] A `claude-code-guide` spawn with required skills not loaded and no
+      handoff template passes `pipeline` and `spawn`.
+- [ ] An `Explore` or `general-purpose` spawn with the same brief is still
+      held.
+- [ ] A `claude-code-guide` spawn with no route line in the turn is held by
       `route-line`.
 - [ ] Known Limits names stdin-fed interpreters.
 
@@ -97,3 +99,22 @@ Both are the same rule, applied in the same routing function.
 - Exempting commands or read-only subagents from `route-line`.
 - Side sessions.
 - Treating stdin-fed interpreters as writes.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-17.
+
+- Merged in `b98e85b` (`e8631d7`, `d2bcd8c`, review fixes `57e17bf`,
+  `7d67838`, `6950a7a`, `0deb68c`), with the integration fix `4f5cc75` that
+  judges a plain read by the calling shell tool.
+- Three review rounds probed real Git Bash and PowerShell 5.1. A plain read
+  now allows only printable ASCII, a bare command word, no `$`, backslash,
+  `<<<`, `[[`, `<#`, output redirect, UNC path, or program-running option;
+  every bypass found was held by the final round, and common reads still
+  pass.
+- Only `claude-code-guide` counts as a read-only subagent: `Explore` and
+  `Plan` have shell tools and no routing applies inside a subagent. The spec
+  (R13, AC15) and this ticket were amended to match.
+- Every check passed on the integrated branch fast-forwarded into main (`4f5cc75`): the validator, 606 unit tests on Python 3.14 and 3.11, the V1/V2 context comparison, `claude plugin test` (165 pass), and the TypeScript check with only the 5 known errors in `tests/register.test.tsx`.
+- Known limit, in the README: repository git config (`diff.external`,
+  textconv, `core.fsmonitor`) can run programs under a passing git read.

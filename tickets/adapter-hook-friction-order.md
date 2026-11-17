@@ -2,26 +2,32 @@
 
 Source spec: `docs/specs/2026-11-17-adapter-hook-friction.md`
 
-1. `tickets/054-adapter-overrides-pasted-text-and-commit-skip.md`
+1. `tickets/archive/054-adapter-overrides-pasted-text-and-commit-skip.md`
+   - Status: Completed, merged and archived on 2026-11-17.
    - Blocked by: None
    - Enables: overrides only from the user's own words; a typed
      `skip commit-message` that works.
-2. `tickets/055-adapter-routing-lets-reads-through.md`
+2. `tickets/archive/055-adapter-routing-lets-reads-through.md`
+   - Status: Completed, merged and archived on 2026-11-17.
    - Blocked by: None
    - Enables: shell reads before routing and cheap read-only research
      subagents.
 3. `tickets/056-adapter-route-from-side-session-brief.md`
+   - Status: Merged on 2026-11-17 (`a32c217`); its live check in one side
+     session is still to run before it is archived.
    - Blocked by: None
    - Enables: briefed side sessions with no router round trip.
-4. `tickets/057-adapter-tdd-friction.md`
+4. `tickets/archive/057-adapter-tdd-friction.md`
+   - Status: Completed, merged and archived on 2026-11-17.
    - Blocked by: None
    - Enables: TDD's planned red runs and test-first edits with no hold meant
      for other work.
-5. `tickets/058-adapter-closeout-outside-project-files.md`
+5. `tickets/archive/058-adapter-closeout-outside-project-files.md`
+   - Status: Completed, merged and archived on 2026-11-17.
    - Blocked by: None
    - Enables: no closeout items for files outside the project.
 6. `tickets/059-adapter-closeout-reads-and-commit-timing.md`
-   - Blocked by: `tickets/054-adapter-overrides-pasted-text-and-commit-skip.md`,
+   - Blocked by: `tickets/archive/054-adapter-overrides-pasted-text-and-commit-skip.md`,
      `tickets/052-adapter-design-citations-at-closeout.md`
    - Enables: closeout work before the final report, with no re-reads after
      a load or a comment-only fix.
@@ -43,13 +49,13 @@ runs last.
 
 ## Ready Frontier
 
-- `tickets/054-adapter-overrides-pasted-text-and-commit-skip.md`
-- `tickets/055-adapter-routing-lets-reads-through.md`
-- `tickets/056-adapter-route-from-side-session-brief.md`
-- `tickets/057-adapter-tdd-friction.md`
-- `tickets/058-adapter-closeout-outside-project-files.md`
-- Outside this order, `tickets/052-adapter-design-citations-at-closeout.md`
-  is also ready, and it blocks 059.
+- `tickets/059-adapter-closeout-reads-and-commit-timing.md`: its blockers'
+  code is on main (054 archived; 052 merged, awaiting only its live check).
+- `tickets/056-adapter-route-from-side-session-brief.md` and
+  `tickets/052-adapter-design-citations-at-closeout.md`: merged; only their
+  live checks remain.
+
+Ticket 060 follows 059.
 
 ## Coverage
 

@@ -103,7 +103,7 @@ change together.
 
 ## Blocked By
 
-- `tickets/054-adapter-overrides-pasted-text-and-commit-skip.md` (the commit
+- `tickets/archive/054-adapter-overrides-pasted-text-and-commit-skip.md` (the commit
   hold).
 - `tickets/052-adapter-design-citations-at-closeout.md` (the Design item; its
   item joins the commit-time list).

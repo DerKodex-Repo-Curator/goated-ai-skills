@@ -62,3 +62,22 @@ Two closeouts fired on files outside the project:
 ## Scope Exclusions
 
 - Reading other Git Bash mounts or `CDPATH`.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-17.
+
+- Merged as `744ca13` (`f3b2f43`, review fixes `c1031dd`, `9c31ac8`,
+  `105bd64`, `ff91c6b`). The maintainer approved fixing the cause the session
+  found instead of stopping, since it explained the closeout.
+- The Setup item counts only setup files inside the project; a package
+  install counts wherever it runs. Git Bash `/tmp` is read as the temp
+  folder, and a `cd` through `..` counts as inside.
+- The scratch-file closeout came mainly from .NET write text read as an
+  unnamed write. In Bash, .NET text is now data unless the command runs
+  PowerShell (`pwsh`, `powershell`, `iex`, a `.ps1`); in the PowerShell tool
+  any .NET write text still counts. Scratch Writes and
+  `git checkout --theirs` edits now count as outside.
+- Every check passed on the integrated branch fast-forwarded into main (`4f5cc75`): the validator, 606 unit tests on Python 3.14 and 3.11, the V1/V2 context comparison, `claude plugin test` (165 pass), and the TypeScript check with only the 5 known errors in `tests/register.test.tsx`.
+- Known limits, in the README: a script or text file written in one call and
+  run in a later one.

@@ -56,9 +56,9 @@ it three times.
 
 ## Blocked By
 
-- `tickets/054-adapter-overrides-pasted-text-and-commit-skip.md`
-- `tickets/055-adapter-routing-lets-reads-through.md`
-- `tickets/057-adapter-tdd-friction.md`
+- `tickets/archive/054-adapter-overrides-pasted-text-and-commit-skip.md`
+- `tickets/archive/055-adapter-routing-lets-reads-through.md`
+- `tickets/archive/057-adapter-tdd-friction.md`
 - `tickets/059-adapter-closeout-reads-and-commit-timing.md`
 
 These change hold texts and their callers, so this ticket runs last.

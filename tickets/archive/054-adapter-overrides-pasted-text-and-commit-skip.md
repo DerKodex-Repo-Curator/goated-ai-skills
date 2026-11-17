@@ -61,3 +61,17 @@ skill. The pull request and spawn holds already check skips first.
 
 - Overrides from anything but a typed prompt (Ticket 047 stands).
 - Other harness wrappers.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-17.
+
+- Merged in `74a0f6c` (`65b5456`, review fixes `d15a677`). A paste block
+  ends only at a close tag carrying its own id, as Claude Code writes it
+  (`</pasted_content id="…">`), so a forged or nested close inside a paste
+  cannot end it; an unclosed block runs to the end of the prompt.
+- R12: the review showed a typed `skip commit-message` already stood down the
+  load step, so the no-op change was reverted. The case the maintainer hit
+  came from the skill name `commit-message` being read as a commit message
+  in pasted text; that is fixed.
+- Every check passed on the integrated branch fast-forwarded into main (`4f5cc75`): the validator, 606 unit tests on Python 3.14 and 3.11, the V1/V2 context comparison, `claude plugin test` (165 pass), and the TypeScript check with only the 5 known errors in `tests/register.test.tsx`.

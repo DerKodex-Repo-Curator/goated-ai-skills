@@ -128,8 +128,10 @@ Design citations are already Ticket 052.
 - **R12, a typed commit skip.** A typed `skip commit-message` stands down the
   whole commit hold, its load step included, as the README's override table
   says.
-- **R13, read-only subagents.** A spawn of a read-only subagent type
-  (`Explore`, `Plan`, `claude-code-guide`) passes `pipeline` and `spawn`.
+- **R13, read-only subagents.** A spawn of a read-only subagent type passes
+  `pipeline` and `spawn`. Only `claude-code-guide` qualifies: `Explore` and
+  `Plan` have shell tools, and no routing applies inside a subagent, so
+  their shell writes would run unrouted (settled in Ticket 055's review).
   Other subagent types and side sessions are unchanged.
 - **R14, documentation.** The adapter README's What It Holds, Hold messages,
   User Overrides and Known Limits sections match the behaviour. Known Limits
@@ -174,8 +176,9 @@ Design citations are already Ticket 052.
       `commit-message` load.
 - [ ] AC14: Ticket 052 notes that its citation item joins the commit-time
       list from R1.
-- [ ] AC15: An `Explore` spawn passes `pipeline` and `spawn` while a
-      `general-purpose` spawn with the same brief is still held.
+- [ ] AC15: A `claude-code-guide` spawn passes `pipeline` and `spawn` while
+      an `Explore` or `general-purpose` spawn with the same brief is still
+      held.
 - [ ] AC16: The kept holds behave as before. Existing tests pass unchanged
       except where a test asserted friction this spec removes, and each such
       change is named in its ticket's closeout.

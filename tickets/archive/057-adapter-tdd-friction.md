@@ -82,3 +82,15 @@ Both are small changes, verified in the same red-green run.
   fail is the thrashing the gate exists to catch.
 - Raising the threshold.
 - Exempting test files from `design-reads` or the closeout's Design item.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-17.
+
+- Merged as `8451732` (`c0fe202`, review fixes `1322d47`). Only the runners'
+  own collection and import lines for `ImportError` or `ModuleNotFoundError`
+  make a failing run neutral; a run that also shows a real failure counts,
+  and a broken module under test still counts.
+- A test file, judged by its path inside the project, does not trigger the
+  `design` gate; it still meets `design-reads` once the skill is loaded.
+- Every check passed on the integrated branch fast-forwarded into main (`4f5cc75`): the validator, 606 unit tests on Python 3.14 and 3.11, the V1/V2 context comparison, `claude plugin test` (165 pass), and the TypeScript check with only the 5 known errors in `tests/register.test.tsx`.

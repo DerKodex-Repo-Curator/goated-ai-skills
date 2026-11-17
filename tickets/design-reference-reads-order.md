@@ -27,6 +27,8 @@ Source spec: `docs/specs/2026-11-16-design-reference-reads.md`
    - Enables: required design references read before and during the edit,
      with a cooldown until compaction.
 5. `tickets/052-adapter-design-citations-at-closeout.md`
+   - Status: Merged on 2026-11-17 (`401088f`); its live check in one real
+     session is still to run before it is archived.
    - Blocked by: `tickets/051-adapter-design-reference-reads.md`
    - Enables: a closeout that needs a cited id from each required reference.
      It also unblocks Ticket 059 in
@@ -40,10 +42,9 @@ so they run after 046 and before Ticket 035 in
 
 ## Ready Frontier
 
-- `tickets/051-adapter-design-reference-reads.md`: merged; only its live
-  check in one real session remains.
-- `tickets/052-adapter-design-citations-at-closeout.md`: can start now, since
-  051's code is on main.
+- `tickets/051-adapter-design-reference-reads.md` and
+  `tickets/052-adapter-design-citations-at-closeout.md`: merged; only their
+  live checks in one real session remain.
 
 ## Coverage
 
