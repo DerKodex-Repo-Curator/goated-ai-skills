@@ -30,6 +30,15 @@ SPAWN_TOOLS = frozenset(
 COMMAND_TOOLS = frozenset({"Bash", "PowerShell"})
 HELD_LIKE_WRITES = WRITE_TOOLS | SPAWN_TOOLS
 GATED_TOOLS = HELD_LIKE_WRITES | COMMAND_TOOLS
+# Subagent types Claude Code ships with no edit, write, or shell tool, so a
+# spawn of one only delegates reads: `claude-code-guide` has Glob, Grep, Read,
+# WebFetch, and WebSearch. The holds that guard writes and handed-off work
+# (`pipeline`, and `spawn` in actions.py) do not apply to it; it still needs
+# the router and a route line. `Explore` and `Plan` are not here: they keep
+# Bash and PowerShell, and a subagent's own calls meet no routing gate. The
+# name is trusted: a project or user agent file of the same name replaces the
+# built-in. Names match exactly, so any other type, or none, is held as before.
+READ_ONLY_SUBAGENTS = frozenset({"claude-code-guide"})
 
 STRICT = "strict"
 
@@ -174,6 +183,15 @@ def writes_like_an_edit(tool_name: str, tool_input: dict) -> bool:
     return False
 
 
+def spawns_a_reader(tool_name: str, tool_input: dict) -> bool:
+    """True for a subagent spawn whose type is in `READ_ONLY_SUBAGENTS`.
+
+    Side sessions are never readers: they run with every tool.
+    """
+
+    return tool_name in ("Agent", "Task") and tool_input.get("subagent_type") in READ_ONLY_SUBAGENTS
+
+
 def check_routing(
     state: SessionState, tool_name: str, tool_input: dict, turn: Turn, overrides: dict
 ) -> Hold | None:
@@ -181,19 +199,25 @@ def check_routing(
 
     `turn` is the current turn, already folded into `state`. `overrides` are
     the ones the user typed for this turn (see `overrides.parse_overrides`).
-    Commands meet only router-first unless they write files.
+    Commands meet only router-first unless they write files, and a command
+    made only of plain reads (`shell.ShellCommand.read_only`) passes it too.
+    A spawn of a read-only subagent type passes pipeline.
     """
 
     if tool_name not in GATED_TOOLS or overrides.get("routing"):
         return None
     user_skipped = set(overrides.get("skills") or ())
     if not state.router_loaded and ROUTER_SKILL not in user_skipped:
+        if tool_name in COMMAND_TOOLS and shell.analyze(str(tool_input.get("command") or "")).read_only:
+            return None
         return Hold(
             "router-first",
             STRICT,
             f"Load the `{ROUTER_SKILL}` skill with the Skill tool before the first "
             "write, spawn, or command of a task, and follow the route it selects. "
-            "Reads stay free. If that skill is not installed, tell the user: they "
+            "Reads stay free, and so does a shell command made only of read-only "
+            "commands, such as cat, grep, ls, or git diff, with no output "
+            "redirect. If that skill is not installed, tell the user: they "
             "can type `skip routing` in their prompt to proceed without it.",
         )
     if not writes_like_an_edit(tool_name, tool_input):
@@ -213,6 +237,8 @@ def check_routing(
     task = state.task
     if task is None or task.route["form"] != "route":
         return None  # `direct` exempts the task.
+    if spawns_a_reader(tool_name, tool_input):
+        return None
     missing = [
         skill
         for skill in task.route["requires"]

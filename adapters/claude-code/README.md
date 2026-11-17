@@ -106,13 +106,13 @@ so file text, edit text, and commands never carry a line, and no typed
 
 | Gate | Kind | Holds | Clears when |
 | --- | --- | --- | --- |
-| `router-first` | strict | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction | `using-goated-ai-skills` loads |
+| `router-first` | strict | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction; a command made only of [plain reads](#plain-reads) passes | `using-goated-ai-skills` loads |
 | `route-line` | strict | The first write or spawn after each user prompt until the current turn has a valid `goated-route:` line; also `goated-route: continue` when [missing or reset state](#failing-open) lost the task | A valid route line appears in the turn |
-| `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded | Each listed skill loads, or a corrected route line drops it |
+| `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded; a spawn of a [read-only subagent](#plain-reads) passes | Each listed skill loads, or a corrected route line drops it |
 | `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` loads in the turn, and an inline message (or the tool's `message`) passes the [content check](#content-checks); then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
 | `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` loads in the turn; then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
 | `pr-review` | justified-skip | A pull-request command or tool the `pull-request` gate holds, once that gate passes, when the pull request is [large](#large-pull-requests): 400 or more changed lines against its base | `standards-and-spec-review` loads in the turn; then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
-| `spawn` | strict | Starting an agent or session with a brief | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, all in the turn; and the brief passes the [content check](#content-checks) |
+| `spawn` | strict | Starting an agent or session with a brief, except a [read-only subagent](#plain-reads) | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, all in the turn; and the brief passes the [content check](#content-checks) |
 | `design` | justified-skip | The turn's first write adding five or more lines to a code file inside the project folder (or any such write while the skill has not loaded) | `software-design-principles` loads in the turn, a valid [design-reads line](#design-references) is in the turn, and every [reference the edit requires](#design-references) has been read since the last compaction |
 | `design-reads` | justified-skip | Any later write to a code or configuration file inside the project folder, once `software-design-principles` has loaded in the turn, whose [signals or the turn's design-reads lines](#design-references) require a reference not read since the last compaction. The hold names each file and what selected it | Each required reference is read with the Read tool |
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` loads in the turn |
@@ -397,7 +397,7 @@ real command word past wrappers (`sudo -u <user>`, `env`, `timeout <n>`,
 backtick in PowerShell). A `Bash` or `PowerShell` command meets the
 `route-line` and `pipeline` gates, like an edit, when one of its commands:
 
-- redirects output into a file (`>`, `>>`, `&>`, `2>`), except into a null
+- redirects output into a file (`>`, `>>`, `&>`, `>&file`, `2>`), except into a null
   device (`/dev/null`, `$null`, `NUL`) or another stream (`2>&1`);
 - runs `tee`, `Tee-Object`, `cp`, `mv`, `rm`, `rmdir`, `touch`, `truncate`,
   `ln`, `unlink`, `shred`, or `patch`;
@@ -415,8 +415,10 @@ backtick in PowerShell). A `Bash` or `PowerShell` command meets the
   `git stash pop|apply`.
 
 Text inside quotes, heredoc bodies, PowerShell here-strings, and comments is
-ignored, as are comparisons inside `[[ ]]` and arithmetic in `$(( ))`, so
-`echo "a > b"`, `[[ $a > $b ]]`, and `ls # a > b` write nothing. Reads, test
+ignored, as are comparisons inside a `[[ ]]` test that is the command (after
+any `if`, `!`, or other keyword) and arithmetic in `$(( ))`, so
+`echo "a > b"`, `[[ $a > $b ]]`, and `ls # a > b` write nothing. Elsewhere
+`[[` is a plain word, so `cat [[ a > c ]]` writes `c`. Reads, test
 runs, `git status`, and `git checkout <branch>` stay free. Commit and
 pull-request commands are recognized the same way, per command, so
 `echo gh pr create` opens nothing.
@@ -457,6 +459,63 @@ PowerShell 5.1 has no `&&`, and `;` is not a safe chain, so there a
 `Set-Location` before a write leaves the write's relative targets counted as
 inside; in PowerShell 7, `Set-Location <absolute path> && …` is followed. Only
 a `cd` in the same command is followed, not one in an earlier call.
+
+### Plain reads
+
+Before the router loads, `router-first` passes a `Bash` or `PowerShell`
+command made only of plain reads, as it passes Read and Grep, so an agent can
+look around before it routes. Each simple command must be one of:
+
+- `cat`, `head`, `tail`, `ls`, `dir`, `grep`, `rg` (without `--pre` or
+  `--hostname-bin`), or `wc`;
+- `find` without `-exec`, `-execdir`, `-ok`, `-okdir`, `-delete`, `-fprint`,
+  `-fprint0`, `-fprintf`, or `-fls`;
+- `git status`, `git diff`, `git log`, or `git show`, without `--output`,
+  `--ext-diff`, `--textconv`, or `--show-signature`, and with no option before
+  the subcommand but `-C <path>`, `--no-pager`, or `-P`;
+- `Get-Content`, `Get-ChildItem`, or `Select-String`, or their aliases `gc`,
+  `gci`, and `sls`.
+
+The command word must be the bare name, in any case: `./cat`, `/bin/cat`,
+or `cat.cmd` may be any program, so it is held. The commands may be joined by
+pipes, `&&`, `||`, `;`, or newlines. The call is held when any part of it is
+something else: another or unknown command, a wrapper such as `sudo` or
+`xargs` or a variable assignment before the command, any output redirect, a
+heredoc, a subshell, group, or script block, a process substitution, or a
+background `&`. A redirect into a null device is held too, since a null
+device in one shell is a real file in another: `nul` in bash, `/dev/null` in
+PowerShell. Duplicating a descriptor (`2>&1`) and an input redirect
+(`< a.py`) are fine.
+
+The call is also held when its text holds anything the lexical reading may
+not follow as the shell does, even inside quotes: a `$` (variables,
+`$(…)` inside double quotes, `${x:=…}`, arithmetic), a backtick, a backslash
+(an escape in bash, where `-del\ete` is `-delete`, but a plain character in
+PowerShell), `<<<`, a `>&` not followed by a whole descriptor (`>&2` is
+fine, `>&2x` writes the file `2x`), any character but printable ASCII, a
+newline, or a tab (curly quotes, which PowerShell reads as quotes; a lone
+carriage return or U+2028, which it reads as a line break), a PowerShell
+block comment `<#`, a PowerShell here-string, `[[` or `]]` (outside command
+position a plain word, so a `>` after it redirects), or `//`, which starts a
+UNC path read over the network, where Windows may send the user's
+credentials. So a Windows path with backslashes, such as
+`Get-Content src\a.py`, is held; Read or a forward-slash path passes. When
+the analysis cannot tell, the call is held. The lists are
+`READ_ONLY_COMMANDS`, `READ_ONLY_REFUSED_ARGS`, `GIT_READ_SUBCOMMANDS`,
+`GIT_READ_REFUSED_ARGS`, and `NOT_PLAINLY_SPELLED_RE` in `shell.py`. Once the
+router loads, commands are judged as before.
+
+A spawn of a read-only subagent type, `claude-code-guide` (the
+`subagent_type` of an `Agent` or `Task` call, matched exactly), delegates
+reads, so it passes `pipeline` and `spawn`: Claude Code ships it with Glob,
+Grep, Read, WebFetch, and WebSearch only. It still meets `router-first` and
+needs a route line in the turn. `Explore` and `Plan` are held like any other
+spawn: they keep Bash and PowerShell, and a subagent's own calls meet no
+routing gate (see [Subagents](#subagents)). Any other type, a spawn with no
+type, and side sessions are held as before. The exemption trusts the name: a
+project or user agent file named `claude-code-guide` replaces the built-in,
+with whatever tools it lists, and is exempt too. The list is
+`READ_ONLY_SUBAGENTS` in `gates.py`.
 
 ### Change reads
 
@@ -797,7 +856,9 @@ of the call's prompt, which is normally already there.
     `pwsh -Command` line is a check is read;
   - command substitution with backticks, or `$(…)` inside double quotes;
   - a write inside an interpreter or script (`python -c "open(...)"`,
-    `node build.js`), or by an archive tool (`tar -x`, `unzip`);
+    `node build.js`), including an interpreter fed a script on stdin
+    (`python - <<'EOF'`, `node < build.js`), or by an archive tool
+    (`tar -x`, `unzip`);
   - git aliases (`git ci`), and `gh api` calls that create a pull request
     (`gh api repos/<owner>/<repo>/pulls`);
   - MCP tools that commit or open pull requests under names other than those
@@ -805,6 +866,12 @@ of the call's prompt, which is normally already there.
 
   An agent working around the holds this way is the case the next item
   describes.
+- A [plain read](#plain-reads) can still run a program that git config
+  names, such as `core.fsmonitor` under `git status`, or `diff.external` and
+  a `textconv` driver set for the repository, which a plain `git diff`,
+  `git show`, or `git log -p` runs too. Refusing the `--ext-diff` and
+  `--textconv` options does not stop them. A passing read can also hang:
+  `tail -f` never ends on its own.
 - A shell call's result stands for the whole command, not for each command
   in it. A check in the same command as a write proves that write even when
   the command hid the check's failure (`pytest || true`, `pytest; echo done`,
