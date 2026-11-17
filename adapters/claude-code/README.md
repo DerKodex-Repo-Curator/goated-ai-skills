@@ -605,20 +605,6 @@ no change between, needs no second read.
 | Commit, pull request | The last change to any project file, code or not, including changes a subagent spawned in the turn made, before or after the skill load |
 | Pull-request review | The `standards-and-spec-review` load and that last change |
 
-#### Comment-only edits
-
-An `Edit` or `MultiEdit` whose added and removed text is only comments and
-docstrings does not move the change point the Design red-flags read must
-follow, so fixing a comment the red-flags scan found does not reopen the
-item. It is judged by the comment rules of the design-reads rules
-([Design references](#design-references)): each replaced text must hold the
-same code lines as the text replacing it once comment lines, docstring
-lines, and trailing comments after two spaces are removed. Indentation is
-code. An edit those rules cannot read so counts as a change: a `Write`,
-even of a file that is now only a comment, a notebook edit, and a shell
-write. Proof, Docs, and every other step still count a comment-only edit as
-a change.
-
 A change read is one of:
 
 - a command that prints the changes' content to the agent: `git diff`, `git
@@ -656,6 +642,39 @@ the agent reviewed it. Some forms are counted although they print nothing to
 the agent, because the analysis sees the diff but not where its output ends
 up: `> /dev/null`, `| Out-Null`, `| wc -l`, `| cat > file`, and
 `x=$(git diff)`.
+
+#### Comment-only edits
+
+An `Edit` or `MultiEdit` whose added and removed text is only comments and
+docstrings does not move the change point the Design red-flags read must
+follow, so fixing a comment the red-flags scan found does not reopen the
+item. The rules (`comment_only` in
+[`goated_adapter/design_reads.py`](goated_adapter/design_reads.py)) err
+toward a change:
+
+- The comment syntax comes from the file's extension. `#` comments: `.py`
+  and `.pyi` (with three-quote docstrings), `.rb`, `.sh`, `.bash`, `.zsh`,
+  `.pl`, `.r`, `.ps1`, `.psm1`. `//` line comments and `/* */` blocks: `.c`,
+  `.h`, `.cc`, `.cpp`, `.cxx`, `.hpp`, `.cs`, `.java`, `.js`, `.jsx`, `.mjs`,
+  `.cjs`, `.ts`, `.tsx`, `.go`, `.rs`, `.swift`, `.kt`, `.kts`, `.scala`,
+  `.dart`. No edit of any other file is comment-only. So `#define` or
+  `#[derive]` in a C-family file, and `a // 2` in Python, are code.
+- Each replaced text must hold the same code lines, indentation included,
+  as the text replacing it, once comments are left out: a whole line opening
+  with the line marker, a `/* */` block with nothing after its close, a
+  docstring line opening with three quotes with nothing after its close, and
+  a trailing comment after two or more spaces (`x = 1  # note`).
+- Text it cannot read for certain counts as a change: a quote before a
+  trailing comment, a lone three-quote line (a fragment cannot say whether
+  it opens or closes a docstring), code after a block's or docstring's
+  close, and any code line holding three quotes or a backtick, which may
+  open a string spanning lines. A line opening with `*` outside a block it
+  saw is code.
+- A `Write`, even of a file that is now only a comment, a notebook edit,
+  and a shell write always count as a change.
+
+Proof, Docs, and every other step still count a comment-only edit as a
+change.
 
 ### Content checks
 

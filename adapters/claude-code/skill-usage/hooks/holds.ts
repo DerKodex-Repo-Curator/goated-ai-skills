@@ -12,6 +12,11 @@ export const ROUTE_LINE = '(route line)'
 const PIPELINE_GATE = 'pipeline'
 /** The adapter's closeout gate, which holds a commit (Ticket 059) as well as a `Stop`, asking for the same items. */
 const CLOSEOUT_GATE = 'closeout'
+/**
+ * Whether a hold is the adapter's closeout, on a `Stop` or a commit. The adapter judged every skip line it could see
+ * before either, so an item it still asks for after a skip line was not declined by that line.
+ */
+const isCloseoutHold = (e: UsageEvent & { kind: 'nudge' }) => e.isStop === true || (e.holdKind !== undefined && e.hook === CLOSEOUT_GATE && !e.agent)
 /** Gates whose named skills are alternatives, one of which answers the hold: the spawn hold's `handoff` or `subagent-driven-development`. */
 const ALTERNATIVE_GATES = new Set(['spawn'])
 /**
@@ -69,7 +74,7 @@ export function holdSettlement(): HoldSettlement {
   // `row`: the nudge's log row, which a repeat of the same hold in the turn joins.
   // `isCloseout`: a closeout item, on a `Stop` or a commit, which the `Stop` that ends the turn judges again.
   // `isSkipOnly`: a skill the hold offers only as a skip line, which no load answers.
-  // `isSkipRejected`: a blocked `Stop` asked for it after a skip line, so that skip line did not clear it.
+  // `isSkipRejected`: a closeout hold asked for it after a skip line, so that skip line did not clear it.
   // `refs`, `needsLine`: what a design hold that offers its skill only as a skip line asks instead: a Read of each
   // design reference still unread, and a design-reads line. It is followed once both are in, as the adapter judges.
   type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; isCloseout?: true; isSkipOnly?: true; isSkipRejected?: true; refs?: Set<string>; needsLine?: boolean; mark: NudgedSkill; row: NudgeRow }
@@ -156,7 +161,7 @@ export function holdSettlement(): HoldSettlement {
       settle(m => m === n, reason !== undefined ? 'declined' : isMet ? 'followed' : 'ignored', by)
     }
   }
-  /** A new ask on a gate's row, open until something answers it. A blocked `Stop` has judged every skip line before it. */
+  /** A new ask on a gate's row, open until something answers it. A closeout hold has judged every skip line before it. */
   const addAsk = (held: GateRow, e: UsageEvent & { kind: 'nudge' }, ask: string[]): Open => {
     const mark: NudgedSkill = { skill: ask.join(' or '), status: 'pending' }
     held.row.skills.push(mark)
@@ -166,8 +171,7 @@ export function holdSettlement(): HoldSettlement {
       anyOf: ask,
       ...(e.agent ? { agent: e.agent } : {}),
       ...(e.holdKind === 'strict' ? { isStrict: true as const } : {}),
-      ...(e.isStop ? { isSkipRejected: true as const } : {}),
-      ...(e.holdKind && e.hook === CLOSEOUT_GATE && !e.agent ? { isCloseout: true as const } : {}),
+      ...(isCloseoutHold(e) ? { isCloseout: true as const, isSkipRejected: true as const } : {}),
       ...(isSkipOnly ? { isSkipOnly: true as const } : {}),
       ...(isSkipOnly && e.refs?.length ? { refs: new Set(e.refs) } : {}),
       ...(isSkipOnly && e.needsLine ? { needsLine: true } : {}),
@@ -234,7 +238,7 @@ export function holdSettlement(): HoldSettlement {
     for (const ask of asks) {
       const n = addAsk(held, e, ask)
       const inReply = e.isStop ? undefined : answeredInReply(ask, e)
-      const reason = e.holdKind === 'strict' || e.isStop ? undefined : skipReason(ask, e.agent)
+      const reason = e.holdKind === 'strict' || isCloseoutHold(e) ? undefined : skipReason(ask, e.agent)
       if (inReply !== undefined) settle(m => m === n, 'followed', e, inReply)
       else if (reason !== undefined) {
         // Declined before it was asked, earlier in the same turn.

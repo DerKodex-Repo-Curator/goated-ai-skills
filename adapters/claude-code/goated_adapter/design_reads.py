@@ -23,6 +23,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 SKILL_REFERENCES = "software-design-principles/references/"
 # The references a design-reads line can require, in the skill's order.
@@ -234,14 +235,50 @@ class _Added:
                 self.definitions.append(name)
 
 
-def comment_only(tool_input: dict) -> bool:
-    """Whether an edit's added and removed text is only comments and docstrings:
-    each text it replaces holds the same code, line by line, as the text it
-    writes, by the comment rules `_Added` uses. Only an edit's old and new
-    text pairs can be judged so; a Write or a notebook edit replaces text this
-    cannot see, so it is never comment-only, nor is an input with no pair."""
+class _CommentSyntax(NamedTuple):
+    """How a language writes comments, as `comment_only` reads them: the
+    marker of a line comment, a trailing comment after code (two or more
+    spaces, then the marker), whether `/* */` blocks exist, and whether
+    three-quote docstrings do."""
 
-    if "content" in tool_input or "new_source" in tool_input:
+    line: str
+    trailing: re.Pattern
+    blocks: bool
+    docstrings: bool
+
+
+_HASH = _CommentSyntax("#", re.compile(r"\S {2,}#"), blocks=False, docstrings=False)
+_SLASH = _CommentSyntax("//", re.compile(r"\S {2,}//"), blocks=True, docstrings=False)
+# The languages `comment_only` reads, by file extension. Any other file has no
+# comment syntax it knows, so no edit of it is comment-only.
+COMMENT_SYNTAX = {
+    **{ext: _HASH for ext in ("rb", "sh", "bash", "zsh", "pl", "r", "ps1", "psm1")},
+    **{ext: _HASH._replace(docstrings=True) for ext in ("py", "pyi")},
+    **{ext: _SLASH for ext in ("c", "h", "cc", "cpp", "cxx", "hpp", "cs", "java", "js", "jsx",
+                               "mjs", "cjs", "ts", "tsx", "go", "rs", "swift", "kt", "kts",
+                               "scala", "dart")},
+}
+# Code holding one of these may open a string that spans lines, whose lines
+# could look like comments, so `comment_only` cannot read the text after it.
+MULTILINE_STRING_MARKS = ('"""', "'''", "`")
+QUOTE_MARKS = ('"', "'", "`")
+
+
+def comment_only(path: str, tool_input: dict) -> bool:
+    """Whether an edit of `path` adds and removes only comments and docstrings:
+    each text it replaces holds the same code lines, indentation included, as
+    the text it writes. The comment syntax is the one `COMMENT_SYNTAX` gives
+    the file's extension.
+
+    It errs toward "a change": a file of another language, a Write or a
+    notebook edit (they replace text this cannot see), an input with no old
+    and new text, and any text it cannot read for certain (`_code_lines`) is
+    not comment-only. These rules are stricter than `_Added`'s, which lean
+    toward selecting a reference rather than toward finding no change.
+    """
+
+    syntax = COMMENT_SYNTAX.get(os.path.splitext(path)[1].lstrip(".").lower())
+    if syntax is None or "content" in tool_input or "new_source" in tool_input:
         return False
     pairs = [(tool_input["old_string"], tool_input.get("new_string"))] if "old_string" in tool_input else []
     edits = tool_input.get("edits")
@@ -249,16 +286,58 @@ def comment_only(tool_input: dict) -> bool:
         pairs += [(e.get("old_string"), e.get("new_string")) if isinstance(e, dict) else (None, None)
                   for e in edits]
     return bool(pairs) and all(
-        isinstance(old, str) and isinstance(new, str) and _code_lines(old) == _code_lines(new)
+        isinstance(old, str) and isinstance(new, str)
+        and (code := _code_lines(old, syntax)) is not None and code == _code_lines(new, syntax)
         for old, new in pairs
     )
 
 
-def _code_lines(text: str) -> list[str]:
-    """The code of `text`, without comments, docstrings, or blank lines. Indentation
-    stays: in some languages it is code."""
+def _code_lines(text: str, syntax: _CommentSyntax) -> list[str] | None:
+    """The code lines of `text`, comments, docstrings, and blank lines left out
+    and trailing space removed; None when it cannot be read for certain.
 
-    return [part.rstrip() for part in _code_parts(text.split("\n")) if part.strip()]
+    A comment is a whole line opening with the line marker, a `/* */` block
+    (where the language has them) with nothing after its close, a docstring
+    opening a line with three quotes (where the language has them) with
+    nothing after its close, or a trailing comment after two or more spaces
+    with no quote before it. Uncertain: a block or docstring with code after
+    its close, a lone three-quote line (opening or closing, a fragment cannot
+    say), and code holding a quote before a trailing comment or a mark of a
+    string that may span lines (`MULTILINE_STRING_MARKS`).
+    """
+
+    lines: list[str] = []
+    closer = None  # The mark that ends the block comment or docstring being read.
+    for line in text.split("\n"):
+        body = line.strip()
+        if closer is not None:
+            if closer in body:
+                if not body.endswith(closer) or body.count(closer) > 1:
+                    return None
+                closer = None
+            continue
+        opener = ("/*" if syntax.blocks and body.startswith("/*") else
+                  body[:3] if syntax.docstrings and body.startswith(DOCSTRING_QUOTES) else None)
+        if opener is not None:
+            close = "*/" if opener == "/*" else opener
+            rest = body[len(opener):]
+            if not rest and opener != "/*":
+                return None
+            if close not in rest:
+                closer = close
+            elif not rest.endswith(close) or rest.count(close) > 1:
+                return None
+            continue
+        if not body or body.startswith(syntax.line):
+            continue
+        trailing = syntax.trailing.search(line)
+        code = line[: trailing.start() + 1] if trailing else line
+        if trailing and any(q in code for q in QUOTE_MARKS):
+            return None
+        if any(mark in code for mark in MULTILINE_STRING_MARKS):
+            return None
+        lines.append(code.rstrip())
+    return lines
 
 
 def _signals(path: str, added: _Added, *, new_file: bool, is_test: bool,

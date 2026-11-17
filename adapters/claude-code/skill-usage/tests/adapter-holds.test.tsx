@@ -348,6 +348,17 @@ test('a closeout hold on a commit counts as one on a Stop: a turn that then ends
   expect(stopped.timeline.filter(e => e.kind === 'nudge')).toHaveLength(1)
 })
 
+test('a closeout hold on a commit, like one on a Stop, has judged the skip lines before it: one it still asks past is no decline', async () => {
+  // The adapter held past this skip line (it may not have seen it: reply text can be stored as a summary), so the
+  // item it names is still unmet.
+  const skip = markerEvents('goated-skip: verification-before-completion: no test suite here', 2)
+  const held = summarize([prompt(), response(1), ...skip, ...preHold('Bash', ADAPTER_TEXTS.closeoutCommit, 3), results(3), { kind: 'turn-end', t: 4, reason: 'aborted' }])
+  expect(held.nudges).toEqual({ closeout: { ignored: 2 } })
+  // Another gate's call hold still counts an earlier skip line as its decline.
+  const design = summarize([prompt(), response(1), ...markerEvents('goated-skip: software-design-principles: one mechanical constant change', 2), ...preHold('Write', ADAPTER_TEXTS.design, 3), turnEnd(4)])
+  expect(design.nudges).toEqual({ design: { declined: 1 } })
+})
+
 test('closeout items that ask for a read of the change offer their skills only as skip lines, and a passed Stop meets them', async () => {
   // The skills are loaded, so each item asks for a read of the change, which no load answers.
   const named = ['doc-sync', 'software-design-principles', 'code-security-review']

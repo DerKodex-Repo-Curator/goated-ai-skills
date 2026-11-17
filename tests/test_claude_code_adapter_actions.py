@@ -3684,6 +3684,9 @@ class DesignCitationTests(AdapterTestCase):
 CLOSEOUT_HOLD = "goated-hold: closeout | justified-skip"
 PROOF_SKIP = "goated-skip: verification-before-completion: no test suite covers this file"
 DESIGN_SKIP = "goated-skip: software-design-principles: one mechanical constant change"
+# Every design reference a design-reads line can require, read so no design-reads hold applies.
+REFERENCE_FILES = ("process.md", "complexity-and-modules.md", "decoupling.md", "readability.md",
+                   "errors.md", "coding.md", "concurrency.md", "differences.md")
 # Edits whose added and removed text is only comments or docstrings (Ticket 059).
 COMMENT_EDITS = (
     {"file_path": "src/export.py", "old_string": "total_0 = 0", "new_string": "total_0 = 0  # the first"},
@@ -3790,6 +3793,49 @@ class CommentOnlyEditTests(AdapterTestCase):
         s.run("pytest -q")
 
         self.assertIn("- Design:", stop(s)["reason"])
+
+    def test_code_changes_that_look_like_comments_reopen_it(self) -> None:
+        # Review of Ticket 059: each of these changes code, or text the comment rules cannot
+        # read for certain, so each counts as a change and reopens the Design item.
+        for path, old, new in (
+            ("src/export.py", "x = a // 2", "x = a // 3"),  # Floor division, not a comment.
+            ("src/export.py", 'label = "a # b"', 'label = "a # c"'),
+            ("src/export.py", 'label = "a  # b"', 'label = "a  # c"'),
+            ("src/lib.c", "#define MAX 1", "#define MAX 2"),
+            ("src/lib.c", "#include <a.h>", "#include <b.h>"),
+            ("src/lib.rs", "#[derive(Debug)]", "#[derive(Debug, Clone)]"),
+            ("src/export.py", "*rest,", "*other,"),
+            ("src/lib.c", "*rest,", "*other,"),
+            ("src/lib.c", "/* a */ f(1);", "/* a */ f(2);"),
+            ("src/export.py", '"""\ntotal = 1', '"""\ntotal = 2'),
+            ("src/export.py", 'text = """\n# one', 'text = """\n# two'),
+            ("src/app.js", "const s = `a\n// one", "const s = `a\n// two"),
+            ("src/notes.lua", "-- one", "-- two"),  # A language with no known comment syntax.
+        ):
+            with self.subTest(path=path, old=old):
+                self.session = self.fresh()
+                s = self.designed()
+                for name in REFERENCE_FILES:  # No design-reads hold, so every edit applies.
+                    s.read(REFERENCES + name)
+                self.assertEqual(decision(s.call("Edit", {"file_path": path, "old_string": old,
+                                                          "new_string": new})), "pass")
+                s.run("pytest -q")
+                self.assertIn("- Design:", stop(s)["reason"])
+
+    def test_comment_changes_in_c_family_files_do_not_reopen_it(self) -> None:
+        for path, old, new in (
+            ("src/lib.c", "f(1);  // one", "f(1);  // two"),
+            ("src/lib.rs", "/// Old doc.\nfn f() {}", "/// New doc.\nfn f() {}"),
+            ("src/app.js", "/* old\n * note */\nf(1);", "/* new\n * note */\nf(1);"),
+        ):
+            with self.subTest(path=path):
+                self.session = self.fresh()
+                s = self.designed()
+                for name in REFERENCE_FILES:
+                    s.read(REFERENCES + name)
+                s.call("Edit", {"file_path": path, "old_string": old, "new_string": new})
+                s.run("pytest -q")
+                self.assertEqual(stop(s), {})
 
     def test_an_indentation_change_beside_a_comment_reopens_it(self) -> None:
         # Indentation is code in Python, so the comment rules do not read it as a comment change.
@@ -3932,6 +3978,18 @@ class CloseoutAtCommitTests(AdapterTestCase):
         self.assertIn("- Setup:", reason(held))
         s.load("setup-scribe")
         self.assertEqual(decision(s.call("Bash", commit("Add httpx"))), "pass")
+
+    def test_a_subagent_unread_at_commit_is_left_out_with_a_warning(self) -> None:
+        s = self.routed()
+        s.brief_with_handoff()
+        self.assertEqual(decision(s.spawn("gone1", BRIEF)), "pass")  # Its transcript is never written.
+        s.load("commit-message")
+        s.run(DIFF)
+
+        output = s.call("Bash", commit("Add export"))
+        self.assertEqual(decision(output), "pass")
+        self.assertIn("could not read the transcript of subagent gone1", output.get("systemMessage", ""))
+        self.assertNotIn("subagent", s.call("Bash", {"command": "git status"}).get("systemMessage", ""))
 
     def test_a_subagents_commit_meets_no_closeout(self) -> None:
         s = self.routed()

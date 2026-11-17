@@ -164,13 +164,19 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
     gates.fold_turns(state, turns, config.skill_namespaces)
     current = turns[-1]
     overrides = _overrides_for(state, current, payload.get("prompt_id"))
+    unread: list[str] = []
+
+    def spawned() -> dict:
+        # Unreadable subagent transcripts count as no changes, with a warning, as at closeout.
+        found, missed = _spawned_subagents(current, transcript_path)
+        unread.extend(missed)
+        return found
+
     hold = gates.check_routing(state, tool_name, tool_input, current, overrides)
     if hold is None:
         hold = actions.check_action(
             tool_name, tool_input, current, overrides, config.skill_namespaces,
-            _project(payload, config),
-            # Unreadable subagent transcripts count as no changes, as at closeout.
-            lambda: _spawned_subagents(current, transcript_path)[0],
+            _project(payload, config), spawned,
             references_read=frozenset(state.reference_reads),
             closeout=actions.Closeout(state.design_edits_of(current.key),
                                       _design_ids(payload, config)),
@@ -183,7 +189,7 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
             _project(payload, config))
         if references:
             state.record_design_edit(current.key, tool_use_id, references)
-    warnings = [state_warning, _save(store, session_id, state)]
+    warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread)]
     return _with_warnings(_deny(hold), warnings)
 
 
@@ -279,14 +285,19 @@ def _stop(payload: dict, config: Config) -> str:
         state.design_edits_of(current.key),
         _design_ids(payload, config),
     )
-    warnings = [state_warning, _save(store, session_id, state)]
-    if unread:
-        warnings.append(
-            "could not read the transcript of subagent "
-            + ", ".join(unread) + ", so its changes were not checked at closeout"
-        )
+    warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread)]
     output = {"decision": "block", "reason": hold.message()} if hold else {}
     return _with_warnings(output, warnings)
+
+
+def _unread_warning(unread: list[str]) -> str | None:
+    """The warning for subagents whose transcripts could not be read, whose
+    changes the action and closeout gates therefore left out; None for none."""
+
+    if not unread:
+        return None
+    return ("could not read the transcript of subagent " + ", ".join(unread)
+            + ", so its changes were not checked")
 
 
 def _design_ids(payload: dict, config: Config):

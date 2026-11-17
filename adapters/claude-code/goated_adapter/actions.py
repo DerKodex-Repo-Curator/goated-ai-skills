@@ -378,8 +378,9 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
 def _commit_hold(message: str | None, proof: _Proof, changes: Callable[[], "_Changes"],
                  by_tool: bool = False) -> Hold | None:
     """Hold a commit until `commit-message` loads, its inline message (`message`,
-    if known) keeps the contract, and the change is read after the load;
-    `by_tool`: an MCP tool records it, not a git command."""
+    if known) keeps the contract, and the change is read after the turn's last
+    project change, before or after the load; `by_tool`: an MCP tool records
+    it, not a git command."""
 
     supplied = proof.overrides.get("commit_message")
     if supplied and message is not None and (
@@ -1031,7 +1032,8 @@ def _code_items(changes: "_Changes", proof: _Proof, edit_references: dict[str, l
         if flags is None:
             items.append(
                 f"- Design: read `{RED_FLAGS_REFERENCE}` with the Read tool after your last "
-                f"change, then read the change itself and scan it against them: {CHANGE_READ}. "
+                f"code change (an edit of comments only aside), then read the change itself "
+                f"and scan it against them: {CHANGE_READ}. "
                 f"Or write `goated-skip: {DESIGN_SKILL}: <reason>`."
             )
         elif not changes.read_after(flags):
@@ -1221,7 +1223,8 @@ def _changes(turn: Turn, subagents: dict, project: Project | None):
         paths = _changed_paths(call, project)
         if paths:
             yield _Change(index, paths, _proves_itself(call, project),
-                          call.name in FILE_WRITE_TOOLS and design_reads.comment_only(call.input))
+                          call.name in FILE_WRITE_TOOLS and design_reads.comment_only(
+                              str(call.input.get(FILE_WRITE_TOOLS[call.name]) or ""), call.input))
 
 
 def _changed_paths(call, project: Project | None) -> list[str]:
