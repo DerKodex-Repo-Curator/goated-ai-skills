@@ -436,14 +436,24 @@ class ReviewItemMetTests(ReviewTestCase):
         self.assertIn("reviewer-prompt.md", reason(held))
 
     def test_the_skill_load_and_a_later_change_read_meet_it_and_the_load_alone_does_not(self) -> None:
+        # `large` read the diff after the last change and before this load, which counts (Ticket 092).
         s = self.large()
         s.load(REVIEW)
-        held = commit_call(s)
-        self.assertIn("- Review:", reason(held))
-        self.assertIn(f"goated-skip: {REVIEW}: <reason>", reason(held))
-
-        s.run("git diff main")
         self.assertEqual(decision(commit_call(s)), "pass")
+
+        # The near miss: the load with no change read after the last change.
+        s = self.session()
+        self.branch(s, 400)
+        self.write(s, "src/export.py", 20)
+        s.load(VERIFY)
+        s.run("pytest -q")
+        s.say(DOC_SKIP)
+        s.load(REVIEW)
+        held = stop(s)
+        self.assertIn("- Review:", held["reason"])
+        self.assertIn(f"goated-skip: {REVIEW}: <reason>", held["reason"])
+        s.run("git diff main")
+        self.assertEqual(stop(s), {})
 
     def test_a_skip_line_naming_the_review_skill_meets_it(self) -> None:
         s = self.large()

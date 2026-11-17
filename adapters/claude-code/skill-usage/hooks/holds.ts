@@ -478,8 +478,9 @@ export function holdSettlement(): HoldSettlement {
         filesRead = new Set()
         break
       case 'ref':
-        // Only the Read tool counts as a reference read, as the adapter counts it; a subagent's reads are its own.
-        if (!e.isReadTool || e.isSubagent) break
+        // Only a whole read by the Read tool counts as a reference read, as the adapter counts it; a subagent's reads
+        // are its own.
+        if (!e.isReadTool || e.isPartialRead || e.isSubagent) break
         if (e.file.startsWith('references/') && unreadOf().get(e.skill)?.delete(e.file.slice('references/'.length))) countRef(e.skill, e.file.slice('references/'.length), 'read')
         for (const n of open.filter(n => !n.agent && n.refs !== undefined && n.anyOf.includes(e.skill))) {
           if (n.refs?.delete(e.file.split('/').pop() ?? '')) settleDesign(n, 'read files', e)

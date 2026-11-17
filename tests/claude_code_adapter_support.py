@@ -370,10 +370,12 @@ class Session:
                 is_error=True,
             )
 
-    def read(self, path: str, *, success: bool = True, content: str | None = None) -> None:
-        """Record a finished Read tool call, as Claude Code does."""
+    def read(self, path: str, *, success: bool = True, content: str | None = None,
+             **read_range) -> None:
+        """Record a finished Read tool call, as Claude Code does. `read_range`
+        adds the call's range fields, such as `limit=20` or `offset=10`."""
 
-        tool_use_id = self._tool_use("Read", {"file_path": path})
+        tool_use_id = self._tool_use("Read", {"file_path": path, **read_range})
         self._tool_result(tool_use_id, (content or "file text") if success else "File does not exist.",
                           is_error=not success)
 

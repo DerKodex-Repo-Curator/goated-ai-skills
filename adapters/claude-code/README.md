@@ -153,11 +153,11 @@ item (see the closeout table below).
 | `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded, or, in a session routed by its brief, on a `standard` or `full` route, orientation is unmet while `session-start-progressive-disclosure` is installed (see above); a spawn of a [read-only subagent](#plain-reads) passes, and so does a write whose every file is a scratch file outside the project (see below) | Each listed skill loads, or a corrected route line drops it; the brief's orientation skill loads or three distinct files are read, or a corrected `goated-route: direct` or `lightweight` route line drops it |
 | `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` [counts as loaded](#loads), and an inline message (or the tool's `message`) passes the [content check](#content-checks); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file. Once these are met, the commit meets the [closeout](#closeout-at-commit) |
 | `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` [counts as loaded](#loads); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file |
-| `pr-review` | justified-skip | A pull-request command or tool the `pull-request` gate holds, once that gate passes, when the pull request is [large](#large-pull-requests): 400 or more changed lines of non-test code against its base | `standards-and-spec-review` [counts as loaded](#loads); then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
-| `spawn` | strict | Starting an agent or session with a brief, except a [read-only subagent](#plain-reads) | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, each in this turn or an earlier one since the last compaction (see [Loads](#loads)); and the brief, on every spawn, passes the [content check](#content-checks) |
-| `design` | justified-skip | The turn's first write adding five or more lines to a non-test code file inside the project folder (or any such write while the skill does not count as loaded). A test file never triggers it and is not counted when finding the turn's first such write: in TDD the test comes first and the design happens in the code after it | `software-design-principles` [counts as loaded](#loads), and every [reference the edit's signals select](#design-references) has been read since the last compaction |
-| `design-reads` | justified-skip | Any later write to a code or configuration file inside the project folder, once `software-design-principles` [counts as loaded](#loads), whose [signals](#design-references) select a reference not read since the last compaction; a test file edit selects `coding.md` only when it creates the file or adds twenty or more lines. The hold names each file and what selected it | Each required reference is read with the Read tool |
-| `reference-reads` | justified-skip | A write by a write tool or a shell command that is not a check, inside the project folder or, for a `gate-fires` signal, anywhere, that fires a signal the installed registry declares for a reference of a skill that [counts as loaded](#loads) (see [Registry references](#registry-references)); `tdd`'s `test-design.md` is required by a test edit that creates the file or adds twenty or more lines, and a shell write meets only the signals that need no added text. The hold names each file by its path under the skill, `<skill>/references/<file>`, and what selected it | Each reference it names is read with the Read tool, in this turn or an earlier one since the last compaction; or a skip line naming its skill, for the turn |
+| `pr-review` | justified-skip | A pull-request command or tool the `pull-request` gate holds, once that gate passes, when the pull request is [large](#large-pull-requests): 400 or more changed lines of non-test code against its base | `standards-and-spec-review` [counts as loaded](#loads); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file. The `pull-request` gate before it asks for the same read, so this read is asked for only when you typed `skip pr-description` |
+| `spawn` | strict | Starting an agent or session with a brief, except a [read-only subagent](#plain-reads) | `handoff` loads and `references/spawn-brief.md` is [read whole](#whole-reads), or `subagent-driven-development` loads and its implementer or reviewer prompt is read whole, each in this turn or an earlier one since the last compaction (see [Loads](#loads)); and the brief, on every spawn, passes the [content check](#content-checks) |
+| `design` | justified-skip | The turn's first write adding five or more lines to a non-test code file inside the project folder (or any such write while the skill does not count as loaded). A test file never triggers it and is not counted when finding the turn's first such write: in TDD the test comes first and the design happens in the code after it | `software-design-principles` [counts as loaded](#loads), and every [reference the edit's signals select](#design-references) has been [read whole](#whole-reads) since the last compaction |
+| `design-reads` | justified-skip | Any later write to a code or configuration file inside the project folder, once `software-design-principles` [counts as loaded](#loads), whose [signals](#design-references) select a reference not read since the last compaction; a test file edit selects `coding.md` only when it creates the file or adds twenty or more lines. The hold names each file and what selected it | Each required reference is [read whole](#whole-reads) with the Read tool |
+| `reference-reads` | justified-skip | A write by a write tool or a shell command that is not a check, inside the project folder or, for a `gate-fires` signal, anywhere, that fires a signal the installed registry declares for a reference of a skill that [counts as loaded](#loads) (see [Registry references](#registry-references)); `tdd`'s `test-design.md` is required by a test edit that creates the file or adds twenty or more lines, and a shell write meets only the signals that need no added text. The hold names each file by its path under the skill, `<skill>/references/<file>`, and what selected it | Each reference it names is [read whole](#whole-reads) with the Read tool, in this turn or an earlier one since the last compaction; or a skip line naming its skill, for the turn |
 | `review-intake` | justified-skip | A write, by a write tool or a shell command, to a code file inside the project folder, once a [reviewer subagent](#reviewer-subagents) started by `Agent` or `Task` has reported in the turn: its result arrived, or, started in the background, its completion did. A held or failed spawn, any other brief, and a side session trigger nothing. A test file is held like other code; a docs or config file is not | `receiving-code-review` [counts as loaded](#loads), in this turn or an earlier one since the last compaction; or a skip line naming it, for the turn |
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` [counts as loaded](#loads) |
 | `scripted-edit` | justified-skip | A shell command whose [inline script](#inline-scripts) (`python -c`, `node -e`, a heredoc on `python -`) writes a code file inside the project folder, test files included, or writes a file it names only at run time, which counts as code wherever the command runs. A path through a name the script binds once to one literal is judged as that literal's file. The hold asks for the change to be made with a file edit tool, where the `design`, `design-reads`, and `reference-reads` gates can judge it; a script suits only a mechanical rewrite across many files. It comes after the `security` and `review-intake` gates for the same file. Once cleared, the script runs and its files count as changed | A `goated-skip: software-design-principles: <reason>` line in the turn, or the typed override `skip software-design-principles`; loading the skill does not clear it |
@@ -231,10 +231,10 @@ check after its own last change, that change is already proved.
 | Proof | A change not already proved | A check command run after the last code change: a test runner, linter, type checker, or build tool (`pytest`, `python -m unittest`, `npm test`, `cargo test`, `go vet`, `tsc`, `make check`, and the like, also through `uv run` or `npx`), or a script whose name says test, check, lint, verify, validate, or build (`scripts/validate_skills.py`). The check may be a later call, or later in the same shell command as the write (`cp a.py src/a.py && pytest`): every command from the write to the check must be joined by `&&`, `;`, or a newline, none of them an `exit`, `return`, or the like, and neither inside a branch, loop, function, or group (`if`, `( )`, `{ }`); the check must not run in the background (`pytest &`), though a pipe or `\|\|` after it is fine (`pytest 2>&1 \| tee log.txt`). A code file written after the check, or by a .NET call (`[IO.File]::WriteAllText`) anywhere in the command, is not proved by it; another file written after it, such as a log, does not matter. Inline interpreter code (`python -c`, `python -Bc`, `node -pe`, `perl -e`) is not a check; a shell's inline command line (`bash -c`, `pwsh -Command`) is read as a command line, so `bash -c 'npm test'` is a check and `bash -c 'echo tests ok'` is not | `verification-before-completion` |
 | Unfinished work | The last check after the change failed | `handoff` counts as loaded | `handoff` |
 | Docs | A code file outside the tests changed | `doc-sync` counts as loaded, and a [change read](#change-reads) follows the last code change, before or after the load | `doc-sync` |
-| Design red flags | `software-design-principles` loaded in the turn, or counts as loaded and the turn made an edit the `design` gate triggers on (five or more lines added to a non-test code file), so a later turn of small edits meets no Design item | `software-design-principles/references/red-flags.md` is read after the last code change that is not [comment-only](#comment-only-edits), then a [change read](#change-reads) after that read and that change. After a red-flags read in the turn that follows code changes adding five or more lines, later code changes that add fewer than five lines in total, comment-only ones aside, need no second red-flags read, only the change read after the last of them; a read before any such change covers no later change; a change whose added lines are unknown, a shell write or a subagent's, counts as five or more. The item repeats the question `red-flags.md` ends with (name one input that would break this change, and say what happens); no answer is checked | `software-design-principles` |
-| Review | The turn changed code, the session was not started from a brief, and the branch's work is [large](#large-branches): 400 or more changed lines against its base in code files outside test paths, counting committed, staged, unstaged, and untracked files that git does not ignore. A session whose first prompt was a brief with a route line from the session that started it meets no Review item for the whole session, typed prompts and compactions included: the starting session reviews the work when it inspects the report and the changed paths (`handoff`'s spawn-brief template). Missing state counts as not briefed | A [reviewer subagent](#reviewer-subagents) that finished after the last code change; or `standards-and-spec-review` counts as loaded and a [change read](#change-reads) follows the load and the last code change | `standards-and-spec-review` |
+| Design red flags | `software-design-principles` loaded in the turn, or counts as loaded and the turn made an edit the `design` gate triggers on (five or more lines added to a non-test code file), so a later turn of small edits meets no Design item | `software-design-principles/references/red-flags.md` is [read whole](#whole-reads) after the last code change that is not [comment-only](#comment-only-edits), then a [change read](#change-reads) after that read and that change. After a red-flags read in the turn that follows code changes adding five or more lines, later code changes that add fewer than five lines in total, comment-only ones aside, need no second red-flags read, only the change read after the last of them; a read before any such change covers no later change; a change whose added lines are unknown, a shell write or a subagent's, counts as five or more. The item repeats the question `red-flags.md` ends with (name one input that would break this change, and say what happens); no answer is checked | `software-design-principles` |
+| Review | The turn changed code, the session was not started from a brief, and the branch's work is [large](#large-branches): 400 or more changed lines against its base in code files outside test paths, counting committed, staged, unstaged, and untracked files that git does not ignore. A session whose first prompt was a brief with a route line from the session that started it meets no Review item for the whole session, typed prompts and compactions included: the starting session reviews the work when it inspects the report and the changed paths (`handoff`'s spawn-brief template). Missing state counts as not briefed | A [reviewer subagent](#reviewer-subagents) that finished after the last code change; or `standards-and-spec-review` counts as loaded and a [change read](#change-reads) follows the last code change, before or after the load | `standards-and-spec-review` |
 | Verification | The turn changed code or a security-sensitive file, and one of these holds: the task's route is `full`; a subagent the turn spawned changed code; a security-sensitive file changed; or the branch's work is [large](#large-branches) | `verification-before-completion` counts as loaded | `verification-before-completion`, the Proof item's skip line, so one line answers both |
-| Security | `code-security-review` counts as loaded and a security-sensitive file (the `security` gate's paths, code or not) changed | A [change read](#change-reads) after the load and the last sensitive change | `code-security-review` |
+| Security | `code-security-review` counts as loaded and a security-sensitive file (the `security` gate's paths, code or not) changed | A [change read](#change-reads) after the last sensitive change, before or after the load | `code-security-review` |
 | Setup | The turn installed or added a dependency or tool by a command that names a package, in the project or globally, or wrote an env or settings file (see below) | `setup-scribe` counts as loaded, the load before or after the change | `setup-scribe` |
 
 The Setup item is not judged against code changes. A **package install** is a
@@ -548,9 +548,9 @@ handling, its caller, and its test, requires five: `process.md`,
 `complexity-and-modules.md`, `readability.md`, `errors.md`, and `coding.md`.
 Tune the signals from the skill-usage mod's counts.
 
-A reference counts as read after a finished `Read` of a path ending in
-`software-design-principles/references/<file>`, in this turn or an earlier
-one, until the next compaction: the [state](#state) keeps the names read, a
+A reference counts as read after a finished [whole](#whole-reads) `Read` of a
+path ending in `software-design-principles/references/<file>`, in this turn
+or an earlier one, until the next compaction: the [state](#state) keeps the names read, a
 resumed session keeps them, and a compaction's or `/clear`'s `SessionStart`
 clears them, so each reference is required at most once per context window.
 The skill's load counts the same way (see [Loads](#loads)).
@@ -632,9 +632,9 @@ here. References declared `existing-rule` keep their own gates
 (`design-reads`, `spawn`, and the closeout), and `spawn-with-brief` asks for
 nothing yet.
 
-A reference counts as read after a finished `Read` of a path ending in
-`<skill>/references/<file>`, in this turn or an earlier one, until the next
-compaction, as design references do: the [state](#state) keeps the paths
+A reference counts as read after a finished [whole](#whole-reads) `Read` of a
+path ending in `<skill>/references/<file>`, in this turn or an earlier one,
+until the next compaction, as design references do: the [state](#state) keeps the paths
 read. A shell command printing one does not count, nor does a file of the
 same name under another skill. A skip line naming the skill, or a typed
 `skip <skill>`, clears that skill's references for the turn. A skill that
@@ -926,25 +926,39 @@ item met before the commit stays met at `Stop`; a turn that never commits
 meets the closeout only at `Stop`. A subagent's commit meets no closeout,
 since a subagent has none (see [Subagents](#subagents)).
 
+### Whole reads
+
+A hold that asks for a file to be read asks for all of it: a required
+[design reference](#design-references), a [registry reference](#registry-references),
+a spawn template (`handoff`'s `references/spawn-brief.md`, and
+`subagent-driven-development`'s implementer and reviewer prompts), and
+`red-flags.md` for the closeout's Design item, wherever its read is judged.
+A finished `Read` counts only when its input has no `limit`, `offset`, or
+`pages` field, whatever the field's value, since a range the call does not
+show is taken as partial (Ticket 092). The hold says to read the whole file.
+A whole read in an earlier turn counts until the next compaction, as any
+read of these does; partial reads never add up to a whole one. A
+[change read](#change-reads) is not judged this way: a `Read` of part of a
+changed file still counts as one.
+
 ### Change reads
 
 A hold whose step reviews or describes the change needs the change itself in
 front of the agent, not only the skill: the closeout's Docs, Design, and
 Security items, the commit, the pull request, and its review. A **change read** is a
-finished call, made after the last change the step covers, and, for the
-steps that review the change with a skill or against the red flags, after
-that load or read too. For Docs, the commit, and the pull request, a read
-before the skill load counts: a diff read, then a `commit-message` load with
-no change between, needs no second read.
+finished call, made after the last change the step covers. For every step
+that asks for one, a read before the skill load counts (Tickets 059 and
+092): a diff read, then a `commit-message` or `standards-and-spec-review`
+load with no change between, needs no second read. The Design step alone
+also orders the change read after its red-flags read.
 
 | Step | The change read must follow |
 | --- | --- |
-| Docs | The last code change, before or after the `doc-sync` load |
+| Docs | The last code change |
 | Design | The red-flags read and the last code change that is not [comment-only](#comment-only-edits); after a red-flags read that follows five or more changed lines, later changes adding fewer than five lines in total need no second red-flags read, only this change read after them |
-| Security | The `code-security-review` load and the last change to a security-sensitive file |
-| Commit, pull request | The last change to any project file, code or not, including changes a subagent spawned in the turn made, before or after the skill load |
-| Pull-request review | The `standards-and-spec-review` load and that last change |
-| Review | The `standards-and-spec-review` load and the last code change |
+| Security | The last change to a security-sensitive file |
+| Commit, pull request, pull-request review | The last change to any project file, code or not, including changes a subagent spawned in the turn made |
+| Review | The last code change |
 
 A change read is one of:
 
@@ -1574,6 +1588,9 @@ of the call's prompt, which is normally already there.
   fixes made by shell writes or a subagent always ask for the red-flags read
   again, and five small fixes spread over a turn ask for it as one six-line
   fix would.
+- A [whole read](#whole-reads) is judged by the `Read` call's input alone: a
+  `Read` with no range counts as whole even when the tool cuts a long file
+  short, and partial reads that together cover a file still do not count.
 - The `review-intake` gate sees only the turn a reviewer reported in. When
   the review reports, the turn ends to ask the user, and the fixes come in
   the next turn, those fixes are not held. A subagent's own edits are never

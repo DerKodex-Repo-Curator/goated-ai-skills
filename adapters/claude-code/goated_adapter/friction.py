@@ -190,9 +190,10 @@ def _outcome(hold: dict, turns: list[Turn], skill_name) -> str | None:
     declined = False
     for turn, seen in _after(hold, turns):
         loaded |= {skill_name(raw) for raw in turn.loads[seen["loads"]:]}
+        # Only a whole read answers a hold's reference, as the gates judge it (Ticket 092).
         read += [
-            str(call.input.get("file_path") or "").replace("\\", "/").lower()
-            for call in turn.calls[seen["calls"]:] if call.name == "Read" and call.ok
+            path.replace("\\", "/").lower()
+            for call in turn.calls[seen["calls"]:] if (path := call.whole_read_path())
         ]
         if not hold["strict"] and any(
             skip["skill"] in hold["skippable"] for skip in turn.skips[seen["skips"]:]

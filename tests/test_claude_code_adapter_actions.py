@@ -418,7 +418,13 @@ class PullRequestReviewTests(AdapterTestCase):
         self.assertEqual(hold_line(s.call("Bash", OPEN_PR)), "goated-hold: pull-request | strict")
 
     def test_loading_the_review_skill_then_reading_the_change_clears_it(self) -> None:
-        s = self.described(450)
+        # A diff read before the load counts (Ticket 092), and the pull-request gate asks for one,
+        # so only a turn whose user skipped that gate's skill reaches this hold with the skill loaded.
+        s = self.fresh()
+        s.prompt("Open the pull request; skip pr-description.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        git_branch_with_change(s.project, 450)
         s.load(REVIEW)
 
         held = s.call("Bash", OPEN_PR)
@@ -3977,7 +3983,7 @@ class DesignRedFlagsItemTests(AdapterTestCase):
 
         held = stop(s)
         self.assertIn(
-            "- Design: read `software-design-principles/references/red-flags.md` with the Read tool",
+            "- Design: read `software-design-principles/references/red-flags.md` whole with the Read tool",
             held["reason"],
         )
         self.assertNotIn("file#id", held["reason"])

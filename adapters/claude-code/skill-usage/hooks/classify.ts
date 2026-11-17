@@ -284,6 +284,8 @@ function sideSessionKind(name: string, input: Record<string, unknown>): SideSess
 const CODE_EXTENSIONS = new Set(
   '.py .js .jsx .ts .tsx .mjs .cjs .go .rs .java .kt .kts .swift .c .h .cpp .hpp .cc .cs .rb .php .scala .ps1 .psm1 .sh .bash .lua .dart .vue .svelte .sql .ex .exs .clj .fs .zig .r .jl .ipynb'.split(' '),
 )
+// The fields of a Read call's input that ask for part of a file, as the adapter's `READ_RANGE_FIELDS` lists them.
+const READ_RANGE_FIELDS = ['limit', 'offset', 'pages']
 // The edit tools and the input naming the file each changes: the adapter's `FILE_WRITE_TOOLS`.
 const FILE_EDIT_TOOLS: Record<string, string> = { Edit: 'file_path', Write: 'file_path', MultiEdit: 'file_path', NotebookEdit: 'notebook_path' }
 
@@ -341,7 +343,9 @@ export function toolUseEvents(
     const edited = FILE_EDIT_TOOLS[name]
     if (edited && isCodeFile(String(input[edited] ?? ''))) events.push({ kind: 'change', t, ...ofCall, ...(isSubagent ? { isSubagent: true as const } : {}) })
     const target = String((name === 'Read' ? input.file_path : input.command) ?? '')
-    const refs: UsageEvent[] = skillFiles(target).map(f => ({ kind: 'ref', t, ...f, ...(name === 'Read' ? { isReadTool: true as const } : {}), ...(isSubagent ? { isSubagent: true as const } : {}) }))
+    // A Read with a range read part of the file, which answers no hold asking for it, as the adapter judges it (Ticket 092).
+    const partial = name === 'Read' && READ_RANGE_FIELDS.some(field => field in input)
+    const refs: UsageEvent[] = skillFiles(target).map(f => ({ kind: 'ref', t, ...f, ...(name === 'Read' ? { isReadTool: true as const } : {}), ...(partial ? { isPartialRead: true as const } : {}), ...(isSubagent ? { isSubagent: true as const } : {}) }))
     if (isSubagent) {
       for (const skill of skillBodies(target)) events.push({ kind: 'body', t, skill, isSubagent: true, ...ofAgent })
       events.push(...refs)

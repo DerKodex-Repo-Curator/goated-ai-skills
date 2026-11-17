@@ -140,6 +140,10 @@ class TranscriptUnreadable(Exception):
     """The transcript cannot be read well enough to judge the current call."""
 
 
+# The fields of a Read call's input that ask for part of a file.
+READ_RANGE_FIELDS = frozenset({"limit", "offset", "pages"})
+
+
 class Call:
     """A tool call that has finished in the turn: its name, input, and outcome.
 
@@ -175,6 +179,19 @@ class Call:
         self.output = output
         self.tool_id = tool_id
         self.launched_async = launched_async
+
+    def whole_read_path(self) -> str | None:
+        """The `file_path` a finished Read call read whole, else None.
+
+        A Read whose input carries a range field (`READ_RANGE_FIELDS`), whatever
+        its value, read part of the file or a part the call cannot show, so it
+        is partial (Ticket 092): a required reference, template, or the red
+        flags count only when read whole. Change reads are judged elsewhere.
+        """
+
+        if self.name != "Read" or not self.ok or READ_RANGE_FIELDS & self.input.keys():
+            return None
+        return str(self.input.get("file_path") or "") or None
 
 
 class Turn:

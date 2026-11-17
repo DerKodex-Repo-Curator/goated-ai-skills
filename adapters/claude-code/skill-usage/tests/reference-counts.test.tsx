@@ -34,6 +34,17 @@ test('near miss: a shell read, or a Read of another file, is not the read the ho
   }
 })
 
+test('near miss: a Read with a limit or an offset is not the whole read the hold asked for (Ticket 092)', async () => {
+  for (const range of [{ limit: 20 }, { offset: 10 }, { limit: 20, offset: 10 }]) {
+    const partial = toolUseEvents([{ name: 'Read', input: { file_path: SEAMS, ...range } }], false, 3)
+    const s = summarize([prompt(), ...held(2), ...partial, turnEnd(4)])
+    expect(s.refAsks?.tdd).toEqual({ 'references/mocking-and-seams.md': { fired: 1 } })
+    // The whole read after it is the read.
+    const whole = summarize([prompt(), ...held(2), ...partial, ...readTool(SEAMS, 4), turnEnd(5)])
+    expect(whole.refAsks?.tdd).toEqual({ 'references/mocking-and-seams.md': { fired: 1, read: 1 } })
+  }
+})
+
 test('near miss: the hold repeated on a retry in the same turn fires once', async () => {
   const s = summarize([prompt(), ...held(2), ...held(3), ...readTool(SEAMS, 4), ...readTool(WAITING, 5), turnEnd(6)])
   expect(s.refAsks).toEqual({
