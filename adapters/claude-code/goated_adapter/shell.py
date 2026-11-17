@@ -532,18 +532,31 @@ FD_DUPLICATE_RE = re.compile(FD_DUPLICATE)
 # - `[[` or `]]`: outside command position they are plain words, and a `>`
 #   after them redirects, while this reading would take it for a comparison;
 # - `//`, which starts a UNC path (`//host/share`) read over the network,
-#   where Windows may send the user's credentials.
+#   where Windows may send the user's credentials;
+# - PowerShell's stop-parsing token `--%`, after which the rest of the line
+#   goes to a native program unparsed, quotes included;
+# - `::` before a separator, a PowerShell provider path
+#   (`FileSystem::\\host\share`), which can reach the network too.
 # A backslash and `//` inside a whole single-quoted argument are exempt; see
 # `_outside_quoted_arguments`.
 NOT_PLAINLY_SPELLED_RE = re.compile(
-    rf"[$`\\]|<<<|>(?=&)(?!{FD_DUPLICATE})|[^\t\n\x20-\x7e]|<#|@[\"']|\[\[|\]\]|//"
+    rf"[$`\\]|<<<|>(?=&)(?!{FD_DUPLICATE})|[^\t\n\x20-\x7e]|<#|@[\"']|\[\[|\]\]|//|--%"
+    r"|::[\\/]"
 )
 # Characters before a word starts, and after one ends, for a whole quoted argument.
 BEFORE_WORD = frozenset(" \t\n|;&(")
 AFTER_WORD = frozenset(" \t\n|;&()<>")
-# Two path separators that start a path, or start a value after `=`, `,`,
-# or `;` (`--ignore-file=//host/a`): a UNC path, even inside quotes.
-UNC_START_RE = re.compile(r"(?:^|[=,;])[\\/]{2}")
+# Inside quoted text, two path separators may start a UNC path anywhere a
+# program splits a value off (`-f//host/p`, `--file=\\host\p`), so they
+# pass only right after a URL scheme (`https://`): its own word's letters,
+# digits, `+`, `.`, or `-`, opening with a letter, then `:`.
+SEPARATOR_PAIR_RE = re.compile(r"[\\/]{2}")
+URL_SCHEME_END_RE = re.compile(r"(?:^|[^\w+.-])[A-Za-z][\w+.-]*:$")
+# A provider path, kept unblanked so NOT_PLAINLY_SPELLED_RE sees it.
+PROVIDER_PATH_RE = re.compile(r"::[\\/]")
+# Characters bash expands into file names, even when this reading saw them
+# quoted: it keeps no record of the quotes.
+GLOB_CHARS = frozenset("*?[")
 # The one redirect a read may make in Bash, where it is the null device.
 BASH_NULL_DEVICE = "/dev/null"
 
@@ -573,7 +586,7 @@ def _outside_quoted_arguments(command: str) -> str:
                 break
             text = command[i + 1 : end]
             whole = word_start and command[end + 1 : end + 2] in AFTER_WORD | {""}
-            if c == "'" and whole and not UNC_START_RE.search(text):
+            if c == "'" and whole and not _may_name_network_path(text):
                 text = re.sub(r"[\\/]", "_", text)
             out.append(c + text + c)  # A backslash in double quotes is kept, and held.
             i, word_start = end + 1, False
@@ -586,6 +599,16 @@ def _outside_quoted_arguments(command: str) -> str:
             out.append(c)
             i, word_start = i + 1, c in BEFORE_WORD
     return "".join(out)
+
+
+def _may_name_network_path(text: str) -> bool:
+    """True when quoted `text` may hold a UNC or provider path: two
+    separators anywhere but right after a URL scheme, or `::` before one."""
+
+    if PROVIDER_PATH_RE.search(text):
+        return True
+    return any(not URL_SCHEME_END_RE.search(text[: pair.start()])
+               for pair in SEPARATOR_PAIR_RE.finditer(text))
 
 
 def _reads_only(segment: "_Segment", first: bool, tool: str) -> bool:
@@ -619,7 +642,10 @@ def _reads_only(segment: "_Segment", first: bool, tool: str) -> bool:
         return _git_reads_only(args)
     if name not in READ_ONLY_COMMANDS:
         return False
-    if name == "uniq" and len(_positional(_drop_values(args, UNIQ_VALUE_OPTIONS))) > 1:
+    if name == "uniq" and (
+        len(_positional(_drop_values(args, UNIQ_VALUE_OPTIONS))) > 1
+        or any(GLOB_CHARS.intersection(arg) for arg in args)  # `uniq *.txt` names two.
+    ):
         return False
     return not any(_refused_argument(name, arg) for arg in args)
 
@@ -672,8 +698,14 @@ def _git_branch_lists(args: list[str]) -> bool:
         option = arg.split("=", 1)[0]
         if arg == "--list":
             listing = True
+        elif option in GIT_BRANCH_VALUE_OPTIONS and "=" not in arg:
+            # git takes the next word as the value; a glob there expands into
+            # several, and a name left over is a branch to create.
+            index += 1
+            if GLOB_CHARS.intersection(args[index] if index < len(args) else ""):
+                return False
         elif option in GIT_BRANCH_VALUE_OPTIONS:
-            index += 0 if "=" in arg else 1  # git takes the next word as the value.
+            pass
         elif option in ("--color", "--abbrev") and "=" in arg:
             pass
         elif arg.startswith("-"):

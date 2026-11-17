@@ -74,9 +74,10 @@ WIDER_READS = [
     ("PowerShell", "echo hi"),
     # A backslash or `//` inside a single-quoted argument.
     ("Bash", "grep -rn 'http://example.com' src"),
+    ("Bash", "grep -rn 'see https://a.b/c and git+ssh://h/r' src"),
+    ("Bash", "git branch --format='%(refname)' --sort=-committerdate"),
     ("Bash", r"rg 'a\b' src"),
     ("Bash", r"tr '\n' ' ' < a.txt"),
-    ("Bash", r"grep -c 'a\\b' a.py"),
     ("PowerShell", r"Get-Content 'src\a.py'"),
     ("Bash", r"cat 'a b' 'c\d'"),
     ("Bash", r"grep -e 'a\b' -e 'c\d' a.py # it's a note"),
@@ -152,6 +153,18 @@ WIDER_HELD = [
     # uniq writes its second file argument.
     ("Bash", "uniq a.txt out.txt"),
     ("Bash", "uniq -c a.txt out.txt"),
+    # Review fixes: bash expands a glob into several files, so uniq may
+    # write the last one; quoted or not, the adapter cannot tell.
+    ("Bash", "uniq *.txt"),
+    ("Bash", "uniq a?"),
+    ("Bash", "uniq [ab]"),
+    ("Bash", "uniq -c '*.txt'"),
+    # A glob as a separate-word value expands into names, and the last one
+    # left over is a branch to create (`git branch --format a b`).
+    ("Bash", "git branch --format *"),
+    ("Bash", "git branch --sort *"),
+    ("Bash", "git branch --contains a?"),
+    ("Bash", "git branch --merged [ab]"),
     # diff's `--paginate` pipes the output through `pr`.
     ("Bash", "diff -l a b"),
     ("Bash", "diff -ql a b"),
@@ -187,6 +200,24 @@ WIDER_HELD = [
     ("PowerShell", r"cat 'x '\' '; Remove-Item b; ''"),
     ("Bash", r"cat 'x '\' '; rm b; ''"),
     ("PowerShell", r"cat 'x '\'' '; Remove-Item b; ''"),
+    # Review fixes: two separators anywhere in a quoted argument may start a
+    # network path (`-f//host/p` is `-f` with `//host/p`), unless they
+    # follow a URL scheme; `::` before a separator names a provider path;
+    # PowerShell's `--%` passes the rest of the line on unparsed.
+    ("Bash", "grep '-f//host/share/p' a.txt"),
+    ("Bash", r"grep '-f\\host\share\p' a.txt"),
+    ("Bash", "rg '-f//h/s/x' a"),
+    ("Bash", "file '-f//h/s/x'"),
+    ("Bash", "grep 'a //host/share/p' a.txt"),
+    # Two backslashes are held too, even in a pattern: the adapter cannot
+    # tell a pattern from a path.
+    ("Bash", r"grep -c 'a\\b' a.py"),
+    ("PowerShell", r"Get-Content 'FileSystem::\\host\share\x'"),
+    ("PowerShell", r"Get-Content 'Microsoft.PowerShell.Core\FileSystem::\\host\share\x'"),
+    ("PowerShell", r"Select-String -Path 'FileSystem::\\h\s\x' -Pattern x"),
+    ("PowerShell", "Get-Content 'FileSystem::/x'"),
+    ("PowerShell", "grep --% 'x //host/share/f'"),
+    ("PowerShell", "grep --% x a.txt"),
     # A redirect other than standard error into the null device.
     ("Bash", "ls 2> errors.txt"),
     ("Bash", "ls 2>> errors.txt"),

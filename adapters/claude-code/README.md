@@ -731,7 +731,9 @@ look around before it routes. Each simple command must be one of:
 - `pwd`, `echo`, `cut`, `tr`, `stat`, `which`, `true`, or `:`;
 - `sort` without `-o`, `-T`, `--output`, `--temporary-directory`, or
   `--compress-program`, which write files or run a program;
-- `uniq` with at most one file, since it writes its second;
+- `uniq` with at most one file, since it writes its second, and no `*`,
+  `?`, or `[` in any argument, quoted or not, since bash may expand one
+  into several files (`uniq *.txt` overwrote the second);
 - `diff` without `-l` or `--paginate`, which pipe its output through `pr`;
 - `file` without `-C` or `--compile` (which write a magic file), `-z`, `-Z`,
   or `--uncompress` (which run decompressors), or `-m` and `--magic-file`;
@@ -742,7 +744,10 @@ look around before it routes. Each simple command must be one of:
 - `git branch` with only listing options (`-a`, `-r`, `-v`, `-vv`,
   `--show-current`, `--contains`, `--merged`, `--sort`, `--format`, and the
   like) and a pattern only after `--list`, so no name to create (`-l`
-  meant `--create-reflog` before git 2.23);
+  meant `--create-reflog` before git 2.23); an option value given as the
+  next word holds no `*`, `?`, or `[`, since a glob there expands into
+  several words and one left over is a branch to create
+  (`git branch --format *`), while `--format=*` passes;
 - `git worktree list`, and `git remote` bare, with `-v`, or as `get-url`;
 - `Get-Content`, `Get-ChildItem`, or `Select-String`, or their aliases `gc`,
   `gci`, and `sls`.
@@ -783,14 +788,18 @@ fine, `>&2x` writes the file `2x`), any character but printable ASCII, a
 newline, or a tab (curly quotes, which PowerShell reads as quotes; a lone
 carriage return or U+2028, which it reads as a line break), a PowerShell
 block comment `<#`, a PowerShell here-string, `[[` or `]]` (outside command
-position a plain word, so a `>` after it redirects), or `//`, which starts a
+position a plain word, so a `>` after it redirects), `//`, which starts a
 UNC path read over the network, where Windows may send the user's
-credentials. A backslash and `//` are fine inside a whole single-quoted
+credentials, `::` before a slash or backslash, a PowerShell provider path
+(`FileSystem::\\host\share`) that can do the same, or PowerShell's
+stop-parsing token `--%`, after which the rest of the line goes to a native
+program unparsed. A backslash and `//` are fine inside a whole single-quoted
 argument, which both shells read literally (`grep -n 'def\s+x' a.py`,
-`grep 'http://x' src`), unless two slashes or backslashes start it or start
-a value in it after `=`, `,`, or `;` (`'//host/a'`, `'--file=\\host\a'`):
-the adapter cannot tell a pattern from a path, so `grep '// TODO' a.c` is
-held. A quote inside a word (`x'\s'`) and double quotes get no exemption. So
+`grep 'http://x' src`), unless two slashes or backslashes, in any mix,
+appear anywhere in it but right after a URL scheme such as `https:`: a
+program may split a path off anywhere (`'-f//host/p'` is `-f` with
+`//host/p`), and the adapter cannot tell a pattern from a path, so
+`grep '// TODO' a.c` and `grep 'a\\b' a.py` are held. A quote inside a word (`x'\s'`) and double quotes get no exemption. So
 a Windows path with backslashes, such as `Get-Content src\a.py`, is held;
 `Get-Content 'src\a.py'`, Read, or a forward-slash path passes. When the
 analysis cannot tell, the call is held. The lists are
