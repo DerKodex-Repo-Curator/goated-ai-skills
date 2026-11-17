@@ -633,6 +633,8 @@ REFERENCES = "/opt/goated/skills/software-design-principles/references/"
 NONE_LINE = "goated-design-reads: none: only renames local names"
 # Six added lines that trip no design-reads signal.
 PLAIN = "\n".join(f"total_{n} = {n}" for n in range(6))
+# A 20-line test, the first edit of a TDD turn.
+TEST_CODE = "def test_totals():\n" + "\n".join(f"    assert total_{n} == {n}" for n in range(19))
 
 
 def edit(path: str, new: str, old: str = "pass") -> dict:
@@ -684,6 +686,67 @@ class DesignHoldTests(AdapterTestCase):
 
         self.assertEqual(decision(s.call("Write", write("src/export.py", lines=2))), "pass")
         self.assertEqual(decision(s.call("Write", write("docs/guide.md", lines=40))), "pass")
+
+    def test_a_test_file_edit_does_not_trigger_the_design_gate(self) -> None:
+        # TDD writes the test first; the design happens in the code after it (Ticket 057).
+        s = self.routed()
+
+        self.assertEqual(decision(s.call("Edit", edit("tests/test_export.py", TEST_CODE))), "pass")
+        self.assertEqual(decision(s.call("Write", write("src/export.test.ts", lines=20))), "pass")
+        held = s.call("Edit", edit("src/export.py", "\n".join(f"total_{n} = {n}" for n in range(20))))
+        self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
+
+    def test_a_test_file_edit_is_not_the_turns_first_substantial_edit(self) -> None:
+        s = self.routed()
+        s.load("software-design-principles")
+        s.say(NONE_LINE)
+        s.read(REFERENCES + "coding.md")
+        self.assertEqual(decision(s.call("Edit", edit("tests/test_export.py", TEST_CODE))), "pass")
+
+        # The first non-test edit is still the design hold, not the later-edit one.
+        held = s.call("Edit", edit("src/export.py", "def export(rows):\n" + PLAIN))
+        self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
+
+    def test_a_test_file_is_judged_by_its_path_inside_the_project(self) -> None:
+        # A folder above the project named like a test folder makes nothing a test.
+        s = self.session
+        s.project = s.cwd = self.root / "home" / "tests" / "spec" / "myapp"
+        s.project.mkdir(parents=True)
+        self.routed()
+        for path in ("src/export.py", str(s.project / "src" / "export.py")):
+            with self.subTest(path):
+                held = s.call("Edit", edit(path, TEST_CODE))
+                self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
+        self.assertEqual(decision(s.call("Edit", edit(str(s.project / "tests" / "test_export.py"), TEST_CODE))),
+                         "pass")
+
+    def test_which_paths_are_test_files(self) -> None:
+        tests = ("tests/helpers/factory.py", "packages/api/test/load.py", "web/__tests__/load.js",
+                 "spec/support/helpers.rb", "src/app/test_runner.py", "src/export_test.go",
+                 "src/models/user_spec.rb", "src/export.test.ts", "src/export.spec.js")
+        not_tests = ("src/spec/parser.py", "src/testing.py", "src/contest/score.py",
+                     "lib/latest/load.py", "src/tests_util.py")
+        for path in tests + not_tests:
+            with self.subTest(path):
+                self.session = self.fresh()
+                s = self.routed()
+                expected = "pass" if path in tests else "deny"
+                self.assertEqual(decision(s.call("Edit", edit(path, TEST_CODE))), expected)
+
+    def test_with_no_known_project_no_file_is_a_test(self) -> None:
+        s = self.routed()
+        held = s.call("Edit", edit("/work/tests/test_export.py", TEST_CODE), cwd="")
+        self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
+
+    def test_with_the_skill_loaded_a_test_edit_still_needs_coding(self) -> None:
+        s = self.routed()
+        s.load("software-design-principles")
+
+        held = s.call("Edit", edit("tests/test_export.py", TEST_CODE))
+        self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
+        self.assertIn("`software-design-principles/references/coding.md` (edits a test file)", reason(held))
+        s.read(REFERENCES + "coding.md")
+        self.assertEqual(decision(s.call("Edit", edit("tests/test_export.py", TEST_CODE))), "pass")
 
     def test_a_load_in_an_earlier_turn_does_not_count(self) -> None:
         s = self.routed()
@@ -1619,6 +1682,34 @@ class ConflictResolutionHoldTests(AdapterTestCase):
 
 CHECK = "uv run python -m unittest discover -s tests"
 FIX = {"file_path": "src/export.py", "old_string": "a", "new_string": "b"}
+RUNNER_OUTPUT = Path(__file__).parent / "fixtures" / "claude_code_adapter" / "runner-output"
+
+
+def sample(name: str) -> str:
+    """Runner output as the runner printed it (Ticket 057): pytest 9.2 and
+    unittest on Python 3.14, machine paths neutralized; jest in its
+    documented format."""
+
+    return (RUNNER_OUTPUT / f"{name}.txt").read_text(encoding="utf-8")
+
+
+# Runs that failed only because a test module could not import a module.
+IMPORT_ERRORS = ("pytest-imp", "unittest-imp", "jest-imp")
+# Runs that show an import or load error but are real failures: a real test
+# failure beside the import error, a broken module under test, or a test
+# that prints import-error text.
+COUNTED_FAILURES = (
+    "pytest-mixed", "pytest-syntax", "pytest-name", "pytest-printed",
+    "unittest-mixed", "unittest-syntax", "unittest-printed",
+    "jest-mixed", "jest-broken", "jest-printed",
+)
+# A Python traceback ending in a missing module, with no runner's own line.
+BARE_IMPORT_FAILURE = (
+    "Traceback (most recent call last):\n"
+    "  File \"/repo/scripts/check.py\", line 2, in <module>\n"
+    "    import exporter\n"
+    "ModuleNotFoundError: No module named 'exporter'"
+)
 
 
 class RepeatedFailureTests(AdapterTestCase):
@@ -1737,6 +1828,81 @@ class RepeatedFailureTests(AdapterTestCase):
 
         s.run(CHECK, success=False)
         self.assertEqual(decision(s.call("Edit", FIX)), "deny", "then a second failure in a row")
+
+    def test_an_import_error_run_does_not_count(self) -> None:
+        for name in IMPORT_ERRORS:
+            with self.subTest(name):
+                self.session = self.fresh()
+                s = self.routed()
+                s.run(CHECK, success=False, output=sample(name))
+                s.run(CHECK, success=False)
+                self.assertEqual(decision(s.call("Edit", FIX)), "pass")
+
+    def test_a_run_with_a_real_failure_beside_the_load_error_counts(self) -> None:
+        # Mixed runs, broken modules under test, and tests printing import text.
+        for name in COUNTED_FAILURES:
+            with self.subTest(name):
+                self.session = self.fresh()
+                s = self.routed()
+                s.run(CHECK, success=False, output=sample(name))
+                s.run(CHECK, success=False)
+                held = s.call("Edit", FIX)
+                self.assertEqual(hold_line(held), "goated-hold: repeated-failure | justified-skip")
+
+    def test_a_bare_import_traceback_counts(self) -> None:
+        # No runner says a test module failed to import, so it is a real failure.
+        s = self.routed()
+        s.run(CHECK, success=False, output=BARE_IMPORT_FAILURE)
+        s.run(CHECK, success=False, output=BARE_IMPORT_FAILURE)
+        held = s.call("Edit", FIX)
+        self.assertEqual(hold_line(held), "goated-hold: repeated-failure | justified-skip")
+
+    def test_an_import_error_run_does_not_reset_the_count(self) -> None:
+        for name in IMPORT_ERRORS:
+            with self.subTest(name):
+                self.session = self.fresh()
+                s = self.routed()
+                s.run(CHECK, success=False)
+                s.run(CHECK, success=False, output=sample(name))
+                s.run(CHECK, success=False)
+                held = s.call("Edit", FIX)
+                self.assertEqual(hold_line(held), "goated-hold: repeated-failure | justified-skip")
+
+    def test_a_piped_import_error_run_is_judged_the_same_way(self) -> None:
+        piped = "pytest -q 2>&1 | tail -20"
+        failure = "FAILED tests/test_export.py::test_round\n1 failed, 3 passed in 0.2s"
+        s = self.routed()
+        # The pipe's exit code is the filter's, so these runs record as successes.
+        s.run(piped, output=sample("pytest-imp"))
+        s.run(piped, output=failure)
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass", "import error, then a failure")
+
+        s.run(piped, output=sample("pytest-imp"))
+        s.run(piped, output=failure)
+        held = s.call("Edit", FIX)
+        self.assertEqual(hold_line(held), "goated-hold: repeated-failure | justified-skip",
+                         "the import error between two failures does not reset the count")
+
+    def test_a_truncated_import_error_run_does_not_reset_the_count(self) -> None:
+        # `| head -8` keeps only the collection header and prints no failure sign.
+        s = self.routed()
+        s.run("pytest -q 2>&1 | head -8", output=sample("pytest-imp-head8"))
+        s.run("pytest -q 2>&1 | head -8", output=sample("pytest-imp-head8"))
+        self.assertEqual(decision(s.call("Edit", FIX)), "pass", "neither run is a failure")
+
+        s.run("pytest -q", success=False)
+        s.run("pytest -q 2>&1 | head -8", output=sample("pytest-imp-head8"))
+        s.run("pytest -q", success=False)
+        held = s.call("Edit", FIX)
+        self.assertEqual(hold_line(held), "goated-hold: repeated-failure | justified-skip")
+
+    def test_a_truncated_collection_error_is_a_failure(self) -> None:
+        header = "\n".join(sample("pytest-syntax").splitlines()[:8])
+        s = self.routed()
+        s.run("pytest -q 2>&1 | head -8", output=header)
+        s.run("pytest -q 2>&1 | head -8", output=header)
+        held = s.call("Edit", FIX)
+        self.assertEqual(hold_line(held), "goated-hold: repeated-failure | justified-skip")
 
     def test_another_check_passing_does_not_reset_the_count(self) -> None:
         s = self.routed()

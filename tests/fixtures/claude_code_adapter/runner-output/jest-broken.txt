@@ -1,0 +1,17 @@
+ FAIL  src/export.test.js
+  ● Test suite failed to run
+
+    ReferenceError: load is not defined
+
+      1 | const rows = load();
+        |              ^
+      2 | module.exports = { exportRows: (r) => r };
+
+      at Object.<anonymous> (src/export.js:1:14)
+      at Object.require (src/export.test.js:1:24)
+
+Test Suites: 1 failed, 1 total
+Tests:       0 total
+Snapshots:   0 total
+Time:        0.398 s
+Ran all test suites.

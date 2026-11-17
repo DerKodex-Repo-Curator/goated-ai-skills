@@ -1,0 +1,16 @@
+F
+======================================================================
+FAIL: test_message (test_loader.LoaderTests.test_message)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\repo\test_loader.py", line 6, in test_message
+    self.fail("wrong message")
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+AssertionError: wrong message
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
+ImportError: Failed to import test module: test_x
+ModuleNotFoundError: No module named 'x'

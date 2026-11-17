@@ -1,0 +1,30 @@
+ FAIL  src/total.test.js
+  ● adds rows
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 3
+    Received: 2
+
+      1 | test('adds rows', () => {
+    > 2 |   expect(1 + 1).toBe(3);
+        |                 ^
+      3 | });
+
+      at Object.toBe (src/total.test.js:2:17)
+
+ FAIL  src/export.test.js
+  ● Test suite failed to run
+
+    Cannot find module './export' from 'src/export.test.js'
+
+    > 1 | const { exportRows } = require('./export');
+        |                        ^
+
+      at Resolver._throwModNotFoundError (node_modules/jest-resolve/build/resolver.js:427:11)
+
+Test Suites: 2 failed, 2 total
+Tests:       1 failed, 1 total
+Snapshots:   0 total
+Time:        0.523 s
+Ran all test suites.
