@@ -1023,8 +1023,9 @@ override recorded for the turn.
 
 Overrides come only from prompts a person typed. The user-prompt hook records
 the phrases below, and the gates apply them only to the turn that prompt
-opened, after checking the transcript's record of who wrote it. Text an agent
-writes never counts. Matching ignores case, harness `<system-reminder>`
+opened, after checking the transcript's record of who wrote it, and only until
+that turn ends with `Stop` (see Subagents for a report arriving later). Text
+an agent writes never counts. Matching ignores case, harness `<system-reminder>`
 blocks, and text you pasted, which Claude Code wraps as
 `<pasted_content id="…">` … `</pasted_content id="…">`: a phrase inside a
 pasted report is not an override, while one you type before or after the block
@@ -1112,7 +1113,13 @@ Then the turn's route line, skip lines, overrides, checks and change reads
 all stand, a brief's route does not end, the closeout judges the whole turn,
 and the user-prompt hook announces no override and resets nothing.
 `review-intake` sees a reviewer's report either way. A report carries no
-override of its own. A prompt the adapter cannot tie to one of its spawns,
+override of its own. A report that arrives after the turn ended, once the
+adapter's `Stop` hook let it end, still continues the turn's route, route and
+skip lines, checks and change reads, but the overrides typed in that turn no
+longer apply. The user-prompt hook sees no `origin`, so it takes typed text
+shaped like such a report for one and records nothing; the gates read the
+typed origin from the transcript and open a new turn, to which no override
+applies. A prompt the adapter cannot tie to one of its spawns,
 such as another session's message, a scheduler's prompt, a report naming an
 agent this session never spawned, or a shape the adapter does not know,
 opens a new turn as before.

@@ -372,6 +372,12 @@ def _stop(payload: dict, config: Config) -> str:
         intensity=_route_intensity(state),
     )
     friction.observe(state, current, friction.STOP, hold)
+    if hold is None:
+        # The turn ends here, and so do its typed overrides: a subagent's
+        # report arriving later continues the turn (see `is_own_report`)
+        # without them. Another hook may still block this Stop, so the turn
+        # then goes on without its overrides, which only holds more.
+        state.overrides = {}
     warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread)]
     output = {"decision": "block", "reason": hold.message()} if hold else {}
     return _with_warnings(output, warnings)
@@ -521,6 +527,13 @@ def _user_prompt_submit(payload: dict, config: Config) -> str:
     with none. The gates check again against the transcript, which shows who
     wrote the prompt, so a message this text check misses still applies no
     override.
+
+    The hook input carries no origin, so this check cannot match the
+    transcript reader's tie, which also needs the entry's `origin.from` to
+    name the agent. Typed text shaped like a report naming a spawned agent is
+    taken here for a report: it records nothing and keeps the earlier
+    prompt's overrides. The reader sees a typed origin and opens a machine
+    turn, to which those overrides never apply, so none leaks.
     """
 
     session_id = payload.get("session_id")
