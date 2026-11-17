@@ -12,7 +12,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 CONCERN_CASES = {
     "skill_packages": ("validate_skill_packages", {"shared"}),
-    "registry": ("validate_registry", {"shared", "skill_packages"}),
+    "registry": (
+        "validate_registry",
+        {"shared", "skill_packages", "references"},
+    ),
+    "references": ("validate_reference_fixtures", {"shared"}),
     "routing": ("validate_route_fixtures", {"shared"}),
     "onboarding": ("validate_onboarding_fixtures", {"shared"}),
     "planning": ("validate_planning_fixtures", {"shared"}),

@@ -91,6 +91,22 @@ When a skill has support files:
 - tell the agent when to read or use each support file;
 - avoid duplicating the same guidance in both places.
 
+### Reference Declarations
+
+The registry, `stack/goated-stack.yaml`, declares every file under each
+skill's `references/` folder in that skill's `references` list. Each entry has
+either a `signal`, which makes its read enforced by an adapter, or `advisory`
+with a short reason no signal kind fits the skill's "read when" sentence.
+`stack/fixtures/reference-reads/README.md` lists the signal kinds.
+
+Adding, renaming, or removing a reference file updates its registry entry in
+the same change. `SKILL.md` keeps the "read when" sentence and stays the owner
+of when to read; the entry is its enforceable form. The validator fails when
+a reference file is undeclared, a declared file is missing, a kind is
+unknown, an advisory entry has no reason, `SKILL.md` links a reference the
+registry lacks, or the registry declares one `SKILL.md` never links. Installed
+skills never read the registry.
+
 ## Discipline Contract
 
 Discipline-heavy skills should include concrete stop rules, proof gates, rationalization counters or tables, red flags, or anti-pattern references when generic reminders would be easy to rationalize away.

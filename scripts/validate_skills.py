@@ -26,6 +26,7 @@ if __package__:
     from .validation import onboarding as onboarding_validation
     from .validation import operations as operations_validation
     from .validation import planning as planning_validation
+    from .validation import references as reference_validation
     from .validation import research as research_validation
     from .validation import reporting as reporting_validation
     from .validation import routing as routing_validation
@@ -43,6 +44,7 @@ else:
     from validation import onboarding as onboarding_validation
     from validation import operations as operations_validation
     from validation import planning as planning_validation
+    from validation import references as reference_validation
     from validation import research as research_validation
     from validation import reporting as reporting_validation
     from validation import routing as routing_validation
@@ -128,6 +130,10 @@ validate_wayfinding_fixtures = operations_validation.validate_wayfinding_fixture
 # The markers module owns the route-line and skip-line reference grammar.
 validate_marker_fixtures = marker_validation.validate_marker_fixtures
 
+# The references module owns the reference-reads fixture checks; the registry
+# check calls it for each skill's declared references.
+validate_reference_fixtures = reference_validation.validate_reference_fixtures
+
 # The adapters module owns the opt-in adapter boundary checks (ADR 0003).
 validate_adapter_boundary = adapter_validation.validate_adapter_boundary
 
@@ -157,6 +163,7 @@ def validate_skills(repo: Path) -> tuple[list[Finding], list[Finding], list[Find
     errors.extend(validate_setup_scribe_fixtures(repo))
     errors.extend(validate_wayfinding_fixtures(repo))
     errors.extend(validate_marker_fixtures(repo))
+    errors.extend(validate_reference_fixtures(repo))
     errors.extend(validate_adapter_boundary(repo))
 
     return (

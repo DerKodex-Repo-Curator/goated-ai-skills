@@ -134,6 +134,10 @@ Public docs may mention private forks or private deployments generically, but th
 - When adding or renaming a skill, update `stack/goated-stack.yaml`, the
   relevant `stack/fixtures/`, and the catalog lists in `README.md` and the
   category READMEs in the same change.
+- When adding, renaming, or removing a file under a skill's `references/`,
+  update that skill's `references` entry in `stack/goated-stack.yaml` in the
+  same change, with a signal or an advisory reason, as `skills/README.md`
+  describes.
 - Keep this file the single root instruction file. Add a tool-specific root
   file only when a tool cannot read `AGENTS.md`, and make it import this file
   instead of copying it.

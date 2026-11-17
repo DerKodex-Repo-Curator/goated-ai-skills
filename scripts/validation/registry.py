@@ -7,6 +7,7 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
+from .references import validate_skill_references
 from .shared import Finding, load_mapping, read_text, relative
 from .skill_packages import find_skill_files, split_frontmatter
 
@@ -210,6 +211,12 @@ def validate_registry(repo: Path) -> list[Finding]:
                     "a canonical skill name",
                 )
             )
+
+    errors.extend(
+        validate_skill_references(
+            repo, skill_entries, registry.get("reference_patterns", [])
+        )
+    )
 
     implemented_skills, _ = find_skill_files(repo)
     implemented_paths = {

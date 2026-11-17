@@ -22,6 +22,12 @@ route_signals:
   - name: reproducibility-impact
     description: Durable project setup knowledge is missing, changed, stale, or ready for automation.
 
+reference_patterns:
+  - name: mock-or-patch
+    description: Added text introduces a mock, fake, stub, spy, or patch of a collaborator.
+  - name: sleep-retry-or-timeout
+    description: Added text introduces or changes a sleep, retry, poll, or timeout.
+
 skills:
   - name: agent-instructions-integrator
     path: skills/agent-workflows/agent-instructions-integrator/SKILL.md
@@ -52,6 +58,17 @@ skills:
     profile_eligibility: [standard, full]
     accepts_signals: [scope-changed, evidence-stale]
     emits_signals: [documentation-impact, refinement-debt]
+    references:
+      - file: create-or-revise.md
+        advisory: Whether behavior is new or revised is a choice no tool call shows; skill paths vary by framework.
+      - file: port-workflow.md
+        advisory: Porting an existing source is a choice no tool call shows; skill paths vary by framework.
+      - file: source-package-audit.md
+        advisory: Whether the source has adjacent support files is judged by reading, not shown by a tool call.
+      - file: skill-evaluation.md
+        advisory: Whether a skill is substantially changed or discipline-heavy is a judgment no tool call shows.
+      - file: proposal-and-report-templates.md
+        advisory: Proposals and reports are reply text, not a write to a known path.
 
   - name: handoff
     path: skills/agent-workflows/handoff/SKILL.md
@@ -62,6 +79,11 @@ skills:
     profile_eligibility: [lightweight, standard, full]
     accepts_signals: [scope-changed, evidence-stale]
     emits_signals: []
+    references:
+      - file: spawn-brief.md
+        signal:
+          kind: existing-rule
+          gate: spawn
 
   - name: retrospective
     path: skills/agent-workflows/retrospective/SKILL.md
@@ -122,6 +144,11 @@ skills:
     profile_eligibility: [standard, full]
     accepts_signals: [scope-changed, evidence-stale]
     emits_signals: [scope-changed, documentation-impact]
+    references:
+      - file: artifact-templates.md
+        signal:
+          kind: write-under-path
+          path: docs/wayfinding/
 
   - name: architecture-design-map
     path: skills/engineering/architecture-design-map/SKILL.md
@@ -132,6 +159,9 @@ skills:
     profile_eligibility: [standard, full]
     accepts_signals: [scope-changed, evidence-stale]
     emits_signals: [documentation-impact]
+    references:
+      - file: diagram-patterns.md
+        advisory: Choosing map vocabulary or diagram syntax is a judgment no tool call shows.
 
   - name: code-refinement
     path: skills/engineering/code-refinement/SKILL.md
@@ -142,6 +172,9 @@ skills:
     profile_eligibility: [lightweight, standard, full]
     accepts_signals: [refinement-debt]
     emits_signals: [documentation-impact]
+    references:
+      - file: refinement-patterns.md
+        advisory: A refinement edit looks like any other edit to a tool call.
 
   - name: code-security-review
     path: skills/engineering/code-security-review/SKILL.md
@@ -152,6 +185,11 @@ skills:
     profile_eligibility: [standard, full]
     accepts_signals: [security-impact, scope-changed, evidence-stale]
     emits_signals: [security-impact, scope-changed]
+    references:
+      - file: security-review-checklist.md
+        signal:
+          kind: sensitive-category-count
+          min_categories: 2
 
   - name: commit-message
     path: skills/engineering/commit-message/SKILL.md
@@ -162,6 +200,9 @@ skills:
     profile_eligibility: [lightweight, standard, full]
     accepts_signals: [scope-changed]
     emits_signals: []
+    references:
+      - file: commit-output-variants.md
+        advisory: Only the user asking for commands selects it, and no tool call shows that.
 
   - name: pr-description
     path: skills/engineering/pr-description/SKILL.md
@@ -172,6 +213,9 @@ skills:
     profile_eligibility: [lightweight, standard, full]
     accepts_signals: [scope-changed, evidence-stale]
     emits_signals: []
+    references:
+      - file: summary-views.md
+        advisory: Choosing a summary view happens while drafting text, before any tool call.
 
   - name: diagnose
     path: skills/engineering/diagnose/SKILL.md
@@ -182,6 +226,19 @@ skills:
     profile_eligibility: [lightweight, standard, full]
     accepts_signals: [scope-changed, evidence-stale, security-impact]
     emits_signals: [scope-changed, evidence-stale, security-impact]
+    references:
+      - file: root-cause-tracing.md
+        signal:
+          kind: gate-fires
+          gate: repeated-failure
+      - file: pressure-scenarios.md
+        advisory: Pressure and skill evaluation are not visible in a tool call.
+      - file: condition-based-waiting.md
+        signal:
+          kind: edit-adds-pattern
+          pattern: sleep-retry-or-timeout
+      - file: defense-in-depth.md
+        advisory: A proven root cause is a judgment no tool call shows.
 
   - name: doc-sync
     path: skills/engineering/doc-sync/SKILL.md
@@ -192,6 +249,11 @@ skills:
     profile_eligibility: [lightweight, standard, full]
     accepts_signals: [documentation-impact, scope-changed, evidence-stale]
     emits_signals: [scope-changed]
+    references:
+      - file: external-docs-lookup-notes.md
+        signal:
+          kind: write-under-path
+          path: docs/agents/external-docs/
 
   - name: documentation-cleanup
     path: skills/engineering/documentation-cleanup/SKILL.md
@@ -202,6 +264,13 @@ skills:
     profile_eligibility: [standard, full]
     accepts_signals: [documentation-impact, scope-changed, evidence-stale]
     emits_signals: [documentation-impact, refinement-debt]
+    references:
+      - file: doc-role-taxonomy.md
+        advisory: Unclear document roles are a judgment no tool call shows.
+      - file: cleanup-audit-checklist.md
+        advisory: An audit is reading, and reads are not a signal.
+      - file: cleanup-report-template.md
+        advisory: The report is reply text or goes to a path the project chooses.
 
   - name: documentation-writer
     path: skills/engineering/documentation-writer/SKILL.md
@@ -212,6 +281,9 @@ skills:
     profile_eligibility: [lightweight, standard, full]
     accepts_signals: [documentation-impact, scope-changed, evidence-stale]
     emits_signals: [documentation-impact]
+    references:
+      - file: manual-patterns-and-qa.md
+        advisory: Choosing a doc type or running doc QA is a judgment no tool call shows; doc paths vary.
 
   - name: grill-with-docs
     path: skills/engineering/grill-with-docs/SKILL.md
@@ -222,6 +294,15 @@ skills:
     profile_eligibility: [standard, full]
     accepts_signals: [scope-changed, evidence-stale]
     emits_signals: [scope-changed, evidence-stale]
+    references:
+      - file: context-docs.md
+        advisory: Whether project language affects the grill is a judgment no tool call shows.
+      - file: adr-capture.md
+        signal:
+          kind: write-under-path
+          path: docs/adr/
+      - file: stakeholder-questionnaire.md
+        advisory: Whether a decision belongs to someone outside the session is a judgment no tool call shows.
 
   - name: review-codebase-architecture
     path: skills/engineering/review-codebase-architecture/SKILL.md
@@ -232,6 +313,9 @@ skills:
     profile_eligibility: [standard, full]
     accepts_signals: [scope-changed, evidence-stale, refinement-debt]
     emits_signals: [scope-changed, documentation-impact, refinement-debt]
+    references:
+      - file: deepening-interface-patterns.md
+        advisory: Review vocabulary and seam classification are judgments no tool call shows.
 
   - name: design-codebase-architecture
     path: skills/engineering/design-codebase-architecture/SKILL.md
@@ -242,6 +326,9 @@ skills:
     profile_eligibility: [standard, full]
     accepts_signals: [scope-changed, evidence-stale, security-impact]
     emits_signals: [scope-changed, security-impact, documentation-impact]
+    references:
+      - file: architecture-blueprint-patterns.md
+        advisory: Choosing blueprint mode or interface shape is a judgment no tool call shows.
 
   - name: software-design-principles
     path: skills/engineering/software-design-principles/SKILL.md
@@ -252,6 +339,43 @@ skills:
     profile_eligibility: [lightweight, standard, full]
     accepts_signals: [scope-changed, refinement-debt]
     emits_signals: [scope-changed, refinement-debt]
+    references:
+      - file: process.md
+        signal:
+          kind: existing-rule
+          gate: design-reads
+      - file: complexity-and-modules.md
+        signal:
+          kind: existing-rule
+          gate: design-reads
+      - file: decoupling.md
+        signal:
+          kind: existing-rule
+          gate: design-reads
+      - file: readability.md
+        signal:
+          kind: existing-rule
+          gate: design-reads
+      - file: errors.md
+        signal:
+          kind: existing-rule
+          gate: design-reads
+      - file: concurrency.md
+        signal:
+          kind: existing-rule
+          gate: design-reads
+      - file: coding.md
+        signal:
+          kind: existing-rule
+          gate: design-reads
+      - file: differences.md
+        signal:
+          kind: existing-rule
+          gate: design-reads
+      - file: red-flags.md
+        signal:
+          kind: existing-rule
+          gate: closeout
 
   - name: spec-to-tickets
     path: skills/engineering/spec-to-tickets/SKILL.md
@@ -262,6 +386,11 @@ skills:
     profile_eligibility: [standard, full]
     accepts_signals: [scope-changed, evidence-stale]
     emits_signals: [scope-changed, documentation-impact]
+    references:
+      - file: ticket-slicing-templates.md
+        signal:
+          kind: write-under-path
+          path: tickets/
 
   - name: prototype
     path: skills/engineering/prototype/SKILL.md
@@ -272,6 +401,11 @@ skills:
     profile_eligibility: [standard, full]
     accepts_signals: [scope-changed, evidence-stale, security-impact]
     emits_signals: [scope-changed, evidence-stale, security-impact]
+    references:
+      - file: logic-prototype.md
+        advisory: The kind of prototype is a choice no tool call shows; prototype paths vary.
+      - file: ui-prototype.md
+        advisory: The kind of prototype is a choice no tool call shows; prototype paths vary.
 
   - name: receiving-code-review
     path: skills/engineering/receiving-code-review/SKILL.md
@@ -292,6 +426,9 @@ skills:
     profile_eligibility: [lightweight, standard, full]
     accepts_signals: [scope-changed, evidence-stale, security-impact]
     emits_signals: [scope-changed, evidence-stale, security-impact, refinement-debt]
+    references:
+      - file: pressure-scenarios.md
+        advisory: Pressure and skill evaluation are not visible in a tool call.
 
   - name: source-grounded-research
     path: skills/engineering/source-grounded-research/SKILL.md
@@ -302,6 +439,9 @@ skills:
     profile_eligibility: [lightweight, standard, full]
     accepts_signals: [scope-changed, evidence-stale, security-impact]
     emits_signals: [scope-changed, evidence-stale, security-impact, documentation-impact]
+    references:
+      - file: pressure-scenarios.md
+        advisory: Pressure and skill evaluation are not visible in a tool call.
 
   - name: standards-and-spec-review
     path: skills/engineering/standards-and-spec-review/SKILL.md
@@ -322,6 +462,15 @@ skills:
     profile_eligibility: [standard, full]
     accepts_signals: [scope-changed, evidence-stale, security-impact, documentation-impact, refinement-debt]
     emits_signals: [scope-changed, evidence-stale, security-impact, documentation-impact, refinement-debt]
+    references:
+      - file: implementer-prompt.md
+        signal:
+          kind: existing-rule
+          gate: spawn
+      - file: reviewer-prompt.md
+        signal:
+          kind: existing-rule
+          gate: spawn
 
   - name: tdd
     path: skills/engineering/tdd/SKILL.md
@@ -332,6 +481,23 @@ skills:
     profile_eligibility: [lightweight, standard, full]
     accepts_signals: [scope-changed, evidence-stale, security-impact]
     emits_signals: [scope-changed, security-impact, documentation-impact, refinement-debt]
+    references:
+      - file: test-design.md
+        signal:
+          kind: edit-of-file-kind
+          file_kind: test
+          min_added_lines: 5
+      - file: mocking-and-seams.md
+        signal:
+          kind: edit-adds-pattern
+          pattern: mock-or-patch
+          file_kind: test
+      - file: deep-modules.md
+        advisory: An interface that feels wide or awkward is a judgment no tool call shows.
+      - file: testing-anti-patterns.md
+        advisory: Its triggers, such as skipping RED or weakening a test, are not visible in a tool call; mocking-and-seams.md covers the mock edit.
+      - file: refactor-after-green.md
+        advisory: A cleanup edit looks like any other edit to a tool call.
 
   - name: verification-before-completion
     path: skills/engineering/verification-before-completion/SKILL.md
@@ -342,6 +508,9 @@ skills:
     profile_eligibility: [standard, full]
     accepts_signals: [scope-changed, evidence-stale, security-impact, documentation-impact, refinement-debt]
     emits_signals: [evidence-stale, scope-changed]
+    references:
+      - file: evidence-map.md
+        advisory: Choosing proof is a judgment no tool call shows.
 
   - name: write-a-spec
     path: skills/engineering/write-a-spec/SKILL.md
@@ -352,6 +521,11 @@ skills:
     profile_eligibility: [standard, full]
     accepts_signals: [scope-changed, evidence-stale]
     emits_signals: [scope-changed, documentation-impact]
+    references:
+      - file: spec-template.md
+        signal:
+          kind: write-under-path
+          path: docs/specs/
 
   - name: writing-plans
     path: skills/engineering/writing-plans/SKILL.md
@@ -362,6 +536,9 @@ skills:
     profile_eligibility: [standard, full]
     accepts_signals: [scope-changed, evidence-stale, security-impact]
     emits_signals: [scope-changed, security-impact, documentation-impact]
+    references:
+      - file: plan-review-checklist.md
+        advisory: Whether a plan is non-trivial, risky or durable is a judgment, and plan paths vary.
 
   - name: caveman
     path: skills/productivity/caveman/SKILL.md
@@ -382,6 +559,15 @@ skills:
     profile_eligibility: [lightweight, standard, full]
     accepts_signals: [scope-changed, evidence-stale]
     emits_signals: [scope-changed]
+    references:
+      - file: prompt-type-router.md
+        advisory: An unclear prompt type is a judgment no tool call shows; the output is reply text.
+      - file: prompt-templates.md
+        advisory: Whether a template would help is a judgment no tool call shows; the output is reply text.
+      - file: idk-glossary.md
+        advisory: Choosing precise verbs is a judgment no tool call shows; the output is reply text.
+      - file: prompt-review-checklist.md
+        advisory: Whether a prompt is non-trivial or reusable is a judgment no tool call shows; the output is reply text.
 
   - name: grill-me
     path: skills/productivity/grill-me/SKILL.md
@@ -392,6 +578,9 @@ skills:
     profile_eligibility: [lightweight, standard, full]
     accepts_signals: [scope-changed]
     emits_signals: [scope-changed]
+    references:
+      - file: stakeholder-questionnaire.md
+        advisory: Whether a decision belongs to someone outside the conversation is a judgment no tool call shows.
 
   - name: knowledge-retrieval
     path: skills/productivity/knowledge-retrieval/SKILL.md
@@ -402,6 +591,9 @@ skills:
     profile_eligibility: [lightweight, standard, full]
     accepts_signals: [scope-changed, evidence-stale]
     emits_signals: [evidence-stale]
+    references:
+      - file: ranking-and-conflict-rules.md
+        advisory: Conflicting sources are found by reading, and reads are not a signal.
 
   - name: learning-capture
     path: skills/productivity/learning-capture/SKILL.md
@@ -412,6 +604,13 @@ skills:
     profile_eligibility: [standard, full]
     accepts_signals: [scope-changed, evidence-stale]
     emits_signals: [documentation-impact]
+    references:
+      - file: source-type-taxonomy.md
+        advisory: The note destination is configurable, so no path signal fits.
+      - file: lesson-note-template.md
+        advisory: Candidate cards are reply text and the note destination is configurable.
+      - file: examples.md
+        advisory: Worked examples have no read-when moment a tool call shows.
 
   - name: setup-scribe
     path: skills/productivity/setup-scribe/SKILL.md
@@ -422,3 +621,14 @@ skills:
     profile_eligibility: [lightweight, standard, full]
     accepts_signals: [reproducibility-impact, scope-changed, evidence-stale, security-impact]
     emits_signals: [documentation-impact, evidence-stale, security-impact]
+    references:
+      - file: setup-recipe-template.md
+        signal:
+          kind: write-under-path
+          path: docs/setup/
+      - file: automation-and-safety.md
+        advisory: Automation scripts go to paths the project chooses, so no path signal fits.
+      - file: guided-manual-procedure.md
+        advisory: Whether only a human can perform the steps is a judgment no tool call shows.
+      - file: pressure-scenarios.md
+        advisory: Pressure and skill evaluation are not visible in a tool call.
