@@ -31,6 +31,7 @@ Hard: None.
 
 Soft:
 - tdd when the cause is proven and a public-interface seam can carry the regression test
+- software-design-principles when the proven fix changes a module, interface, or error-handling path, or where the fix belongs is in question
 - review-codebase-architecture when no correct seam exists or repeated fixes fail
 - code-security-review when the symptom touches a trust boundary or sensitive data
 - doc-sync when the diagnosis changes docs or runbooks

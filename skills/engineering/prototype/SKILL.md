@@ -31,6 +31,7 @@ Soft:
 - write-a-spec when the prototype verdict should feed a broader product or delivery spec
 - spec-to-tickets when the prototype is exploring one focused delivery ticket
 - tdd when validated behavior is absorbed into production code after the prototype
+- software-design-principles when absorption shapes the production interface around validated behavior
 - verification-before-completion before prototype verdict, cleanup, or absorption-complete claims
 
 Fallback: If companion skills or docs are unavailable, inspect minimal local evidence, state assumptions, and keep the prototype disposable.

@@ -67,3 +67,41 @@ None.
 - Hard dependencies.
 - Changing `software-design-principles` itself.
 - Adapter changes.
+
+## Closeout
+
+Maintainer decision, 2026-11-17: six skills now name
+`software-design-principles` as a soft dependency, each with the moment it
+applies. Their existing fallbacks already cover a missing companion skill.
+
+- `verification-before-completion`: a claim covers a changed module,
+  interface, error-handling path, or configuration surface.
+- `standards-and-spec-review`: the review judges design quality.
+- `receiving-code-review`: classifying feedback about interfaces, naming,
+  knowledge ownership, or error handling.
+- `diagnose`: the proven fix changes a module, interface, or error path, or
+  where the fix belongs is in question.
+- `subagent-driven-development`: implementer and reviewer briefs for
+  delegated design changes.
+- `prototype`: absorption shapes the production interface. First proposed
+  as excluded; the maintainer accepted adding it after the review.
+
+Left out, with the maintainer's agreement:
+
+- `code-security-review`: it judges trust boundaries, and
+  `software-design-principles` already points to it.
+- `write-a-spec`, `spec-to-tickets`, `grill-with-docs`: each defers module
+  and interface strategy to `design-codebase-architecture`, which names it.
+  They sit on the `product-idea-to-vertical-slice` comparison route, which
+  has no word headroom. The maintainer allowed going over the budget where
+  the value justifies it, and judged a direct pointer not worth that here.
+- `architecture-design-map` (describes, not judges),
+  `resolving-merge-conflicts` (keeps both sides' intent), and the docs,
+  commit, PR, onboarding, research, prompt, productivity, and agent-workflow
+  skills (no code design).
+- Already named before this ticket: the router, `tdd`, `writing-plans`,
+  `code-refinement`, `design-codebase-architecture`,
+  `review-codebase-architecture`.
+
+The registry, fixtures, and catalogs record no dependencies, so they are
+unchanged.

@@ -46,6 +46,7 @@ Hard: None.
 Soft:
 - tdd for missing behavior, regression, or test-surface proof
 - code-refinement for scoped behavior-preserving cleanup before a review-ready or closeout claim
+- software-design-principles when a claim covers a changed module, interface, error-handling path, or configuration surface
 - standards-and-spec-review for issue fit, acceptance, or standards
 - code-security-review for security-relevant behavior or trust boundaries
 - doc-sync for possible documentation drift

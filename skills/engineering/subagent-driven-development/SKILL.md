@@ -32,6 +32,7 @@ Soft:
 - grill-with-docs when behavior, scope, intent, language, or review constraints are unclear
 - prototype when risky implementation choices need disposable evidence before delegation
 - design-codebase-architecture when module, interface, dependency, or architecture strategy is unsettled
+- software-design-principles in implementer and reviewer briefs when delegated work changes module, interface, error-handling, or configuration design
 - tdd when delegated work changes behavior, public interfaces, or regressions
 - code-refinement after delegated implementation only for an explicit request or observed refinement debt
 - standards-and-spec-review for spec fit, acceptance coverage, and project standards after delegated work
