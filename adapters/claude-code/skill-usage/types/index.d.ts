@@ -19,7 +19,8 @@ export type UsageEvent = Stamp &
     /** `skipOnly`: the named skills the hold offers only as a skip line, which no load answers. */
     /** `refs`: the design references (`errors.md`) a design hold asks to Read; `needsLine`: it asks for a design-reads line. */
     /** `items`: the items a closeout hold lists, each with the skill it names. */
-    | { kind: 'nudge'; hook: string; named: string[]; holdKind?: HoldKind; isStop?: true; skipOnly?: string[]; refs?: string[]; needsLine?: true; items?: CloseoutItem[]; isSubagent?: true; agent?: string }
+    /** `briefAdded`: the skills a pipeline hold asks for because the session started from a brief, not because its route named them. */
+    | { kind: 'nudge'; hook: string; named: string[]; holdKind?: HoldKind; isStop?: true; skipOnly?: string[]; refs?: string[]; needsLine?: true; items?: CloseoutItem[]; briefAdded?: string[]; isSubagent?: true; agent?: string }
     /** A `goated-skip: <skill>: <reason>` line in a reply: the agent (or the subagent `agent`) declined a skill for this turn. */
     | { kind: 'skip'; skill: string; reason: string; isSubagent?: true; agent?: string }
     /**

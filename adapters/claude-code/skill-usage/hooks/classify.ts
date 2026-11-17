@@ -129,6 +129,8 @@ const SKILL_REFERENCE = /`([a-z0-9]+(?:-[a-z0-9]+)*\/references\/[a-z0-9]+(?:-[a
 const OFFERED_SKIP = /`goated-skip: ([a-z0-9]+(?:-[a-z0-9]+)*): /g
 // A closeout item's line, `- <Label>: <what it asks>`, whose label the adapter keeps stable (adapters/claude-code/README.md).
 const CLOSEOUT_ITEM = /^- ([A-Z][A-Za-z ]*): (.*)$/
+/** The pipeline hold's sentence for the skill a session started from a brief loads, which its route line never named (Ticket 072). */
+const BRIEF_ADDED = /A session started from a brief loads `([a-z0-9]+(?:-[a-z0-9]+)*)`/
 /** The grammar's own words, which adapters before Ticket 034 backticked in hold texts; they are no skills. */
 const MARKER_WORDS = new Set(['goated-hold', 'goated-route', 'goated-skip'])
 /**
@@ -138,9 +140,13 @@ const MARKER_WORDS = new Set(['goated-hold', 'goated-route', 'goated-skip'])
  * so the names are taken as they stand, whether or not the session's skill
  * listing has loaded.
  */
-function adapterHoldNamed(gate: string, body: string): { named: string[]; skipOnly: string[]; refs?: string[]; needsLine?: true; items?: CloseoutItem[] } {
+function adapterHoldNamed(gate: string, body: string): { named: string[]; skipOnly: string[]; refs?: string[]; needsLine?: true; items?: CloseoutItem[]; briefAdded?: string[] } {
   if (gate === 'router-first') return { named: [ROUTER], skipOnly: [] }
   if (gate === 'route-line') return { named: [ROUTE_LINE], skipOnly: [] }
+  if (gate === 'pipeline') {
+    const brief = BRIEF_ADDED.exec(body)?.[1]
+    if (brief) return { ...namedIn(gate, body), briefAdded: [brief] }
+  }
   if (gate === 'closeout') {
     const items = itemsListed(body)
     if (items.length > 0) return { ...namedIn(gate, body), items }
@@ -207,7 +213,7 @@ function adapterHold(text: string, isErrorResult: boolean): { gate: string; kind
  * skill references a reference-reads hold asks for, by path under the skill.
  * `holdsOnly`: the text is an errored tool result.
  */
-export function hookNudges(text: string, holdsOnly = false): { hook: string; named: string[]; holdKind: HoldKind; isStop?: true; skipOnly?: string[]; refs?: string[]; needsLine?: true; items?: CloseoutItem[] }[] {
+export function hookNudges(text: string, holdsOnly = false): { hook: string; named: string[]; holdKind: HoldKind; isStop?: true; skipOnly?: string[]; refs?: string[]; needsLine?: true; items?: CloseoutItem[]; briefAdded?: string[] }[] {
   const hold = adapterHold(text, holdsOnly)
   if (!hold) return []
   const { named, skipOnly, ...design } = adapterHoldNamed(hold.gate, hold.body)

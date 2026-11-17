@@ -31,8 +31,7 @@ Hard: None.
 
 Soft:
 - shared integrated policy and registry for common behavior and skill metadata
-- `session-start-progressive-disclosure` when the project, source area,
-  boundary, or evidence is unfamiliar, cross-area, or stale
+- `session-start-progressive-disclosure` for orientation, on its gate below
 - specialist skills selected as gates below
 - `wayfinder` when uncertainty is branching and exceeds one focused session
 
@@ -74,13 +73,13 @@ skill map, approval, evidence, checkpoint, and route-line rules in this file.
 
 | Gate | Select when | Skills |
 | --- | --- | --- |
-| Proportional orientation | Always; near-zero ceremony for fresh tiny work | `session-start-progressive-disclosure` |
+| Proportional orientation | Unfamiliar, cross-area, stale, or boundary-uncertain work, or a `standard` or `full` route from a brief | `session-start-progressive-disclosure` |
 | Clarification or diagnosis | Intent or root cause materially blocks action | `grill-with-docs`; `diagnose` for failures |
 | External research | Current external claims need cited, freshness-aware evidence | `source-grounded-research` |
 | Knowledge retrieval | Durable project knowledge must answer a question, especially when authority, freshness, conflict, or provenance matters | `knowledge-retrieval` |
 | Wayfinder | Uncertainty branches across focused sessions and later decisions depend on earlier evidence | `wayfinder` |
 | Spec, architecture, or tickets | Durable intent, module strategy, or multiple resumable slices must be settled | `write-a-spec`, `design-codebase-architecture`, `spec-to-tickets` |
-| Writing plan | A scoped task still needs executable steps | `writing-plans` |
+| Writing plan | A `standard` or `full` task needs executable steps or implements a ticket | `writing-plans` |
 | TDD or equivalent proof | Behavior, a public interface, or regression risk changes | `tdd` |
 | Design principles | A module, interface, abstraction, error path, or configuration surface is designed, changed, or reviewed | `software-design-principles` |
 | Standards/spec review | Diff size, risk, acceptance, scope, or convention uncertainty warrants specialist review | `standards-and-spec-review` |
@@ -89,9 +88,7 @@ skill map, approval, evidence, checkpoint, and route-line rules in this file.
 | Full verification | Work is complex, high-risk, delegated, multi-surface, or explicitly audited | `verification-before-completion` |
 | Handoff | Work is resumable, interrupted, cross-session delegated, or unfinished | `handoff` |
 
-   - Load full orientation only for unfamiliar, cross-area, stale, or
-     boundary-uncertain work; load code refinement only for observed debt or
-     explicit cleanup.
+   - Load code refinement only for observed debt or explicit cleanup.
    - Other specialists load on their own triggers: `documentation-writer` or
      `documentation-cleanup` when docs are the work, `goated-prompt` for
      prompt work, `prototype` for cheap evidence, and `setup-scribe` for setup

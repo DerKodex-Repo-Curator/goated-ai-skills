@@ -1,0 +1,53 @@
+schema_version: 1.0.0
+identifier: briefed-side-session
+title: A session started from a brief orients before its first write
+request: Implement the exporter ticket that the starting session's brief hands over.
+project_context:
+  - Another session started this one with a brief that ends with a standard route line.
+  - The brief names the ticket, its files, and what done means; this session has not seen the area.
+expected:
+  profile:
+    task_size: standard
+    intent_maturity: implementation-ready
+    workflow_intensity: standard
+    domain: software
+    risk_flags: []
+    continuity: single-session
+    execution: delegated
+  data_sensitivity: public
+  action_reach: project-changing
+  started_from_brief: true
+  implements_ticket: true
+  route_signals: []
+  proof_strategy: Orient in the briefed area, then use test-first proof and report evidence back to the starting session.
+  route:
+    required_gates:
+      - proportional-orientation
+      - session-start-progressive-disclosure
+      - writing-plans
+      - tdd
+      - direct-proof
+      - consolidated-closeout
+    conditional_gates:
+      - verification-before-completion
+    skipped_gates:
+      - grill-with-docs
+  checkpoint_events: []
+  approval:
+    mode: approve-batch
+    consent_reused: true
+    fresh_approval_required: false
+    scope_or_reach_changed: false
+    reason: The brief's scope covers the ticket's files and tests.
+  evidence:
+    reuse:
+      - brief-scope
+      - approved-ticket
+    invalidate:
+      - pre-change-exporter-source
+  closeout:
+    skill_reports_internal_deltas: true
+    main_agent_consolidates: true
+prohibited_behaviors:
+  - Write before orienting in an area the brief only summarizes.
+  - Treat the brief's summary as fresh evidence about the source.

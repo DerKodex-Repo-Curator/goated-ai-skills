@@ -61,6 +61,7 @@ REQUIRED_IDENTIFIERS = {
     "evidence-invalidation",
     "conflicting-skill-triggers",
     "individual-skill-fallback",
+    "briefed-side-session",
 }
 REQUIRED_END_TO_END_FIXTURES = {
     "feature-brief-to-verified-change",
@@ -230,6 +231,80 @@ def validate_route(
                     )
                 )
             selected_gates.add(gate)
+    return errors
+
+
+# A flag a fixture sets, and the skill the router then requires at `standard`
+# or `full` intensity: the Writing plan and Proportional orientation gates.
+PROFILE_FLAG_GATES = (
+    ("implements_ticket", "writing-plans", "a ticket implementation"),
+    ("started_from_brief", "session-start-progressive-disclosure", "a route from a brief"),
+)
+
+
+def validate_profile_gates(
+    expected: dict[str, object],
+    fixture_label: str,
+    eligibility: dict[str, list[str]],
+) -> list[Finding]:
+    """Check the required gates against the fixture's flags and intensity.
+
+    A flag in `PROFILE_FLAG_GATES` requires its skill at `standard` or `full`
+    intensity. A fixture that reuses ticket evidence must set
+    `implements_ticket`. A required registry skill must list the fixture's
+    intensity in its `profile_eligibility` (`eligibility`, by skill name), so
+    lightweight work never requires `writing-plans` or orientation.
+    """
+
+    errors: list[Finding] = []
+    flags: dict[str, bool] = {}
+    for flag, _, _ in PROFILE_FLAG_GATES:
+        value = expected.get(flag, False)
+        if isinstance(value, bool):
+            flags[flag] = value
+        else:
+            errors.append(
+                Finding(fixture_label, f"routing fixture expected.{flag} must be a boolean")
+            )
+    profile = expected.get("profile")
+    route = expected.get("route")
+    if errors or not isinstance(profile, dict) or not isinstance(route, dict):
+        return errors  # A malformed profile or route is reported by its own check.
+    required = route.get("required_gates")
+    required = required if isinstance(required, list) else []
+    intensity = profile.get("workflow_intensity")
+
+    for flag, skill, label in PROFILE_FLAG_GATES:
+        if flags[flag] and intensity in ("standard", "full") and skill not in required:
+            errors.append(
+                Finding(
+                    fixture_label,
+                    f"{label} at standard or full intensity must require {skill}",
+                )
+            )
+    evidence = expected.get("evidence")
+    reused = evidence.get("reuse") if isinstance(evidence, dict) else None
+    if (
+        isinstance(reused, list)
+        and any("ticket" in str(item) for item in reused)
+        and not flags["implements_ticket"]
+    ):
+        errors.append(
+            Finding(
+                fixture_label,
+                "routing fixture reuses ticket evidence but does not set "
+                "implements_ticket",
+            )
+        )
+    errors.extend(
+        Finding(
+            fixture_label,
+            f"routing fixture requires {gate}, which the registry does not "
+            f"list for {intensity} work",
+        )
+        for gate in required
+        if gate in eligibility and intensity not in eligibility[gate]
+    )
     return errors
 
 
@@ -453,6 +528,13 @@ def validate_route_fixtures(repo: Path) -> list[Finding]:
     )
     if vocabulary_errors:
         return vocabulary_errors
+    eligibility = {
+        entry["name"]: entry["profile_eligibility"]
+        for entry in registry["skills"]
+        if isinstance(entry, dict)
+        and isinstance(entry.get("name"), str)
+        and isinstance(entry.get("profile_eligibility"), list)
+    }
 
     fixture_root = repo / "stack" / "fixtures" / "routing"
     fixture_paths = sorted(fixture_root.glob("*.yaml"))
@@ -521,6 +603,7 @@ def validate_route_fixtures(repo: Path) -> list[Finding]:
             continue
         errors.extend(validate_route_fixture_profile(expected, fixture_label))
         errors.extend(validate_route(expected, fixture_label, registered_gates))
+        errors.extend(validate_profile_gates(expected, fixture_label, eligibility))
         errors.extend(
             validate_checkpoints(
                 expected,

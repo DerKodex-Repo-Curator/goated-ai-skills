@@ -2066,6 +2066,131 @@ class RouteFixtureValidationTests(unittest.TestCase):
             messages,
         )
 
+    def route_fixture_messages(self, name: str, change) -> list[str]:
+        """Validate the routing fixtures after `change` edits fixture `name`."""
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fixture_root = Path(temporary_directory)
+            copy_registry_fixture(fixture_root)
+            fixture_path = fixture_root / "stack" / "fixtures" / "routing" / name
+            fixture = yaml.safe_load(fixture_path.read_text(encoding="utf-8"))
+            change(fixture)
+            fixture_path.write_text(
+                yaml.safe_dump(fixture, sort_keys=False),
+                encoding="utf-8",
+            )
+            return [
+                finding.message for finding in validate_route_fixtures(fixture_root)
+            ]
+
+    def test_a_standard_ticket_implementation_must_require_writing_plans(self) -> None:
+        def drop_plan(fixture: dict) -> None:
+            fixture["expected"]["route"]["required_gates"].remove("writing-plans")
+
+        self.assertIn(
+            "a ticket implementation at standard or full intensity must "
+            "require writing-plans",
+            self.route_fixture_messages("standard-work.yaml", drop_plan),
+        )
+
+    def test_standard_work_that_implements_no_ticket_may_skip_writing_plans(self) -> None:
+        def drop_plan_and_ticket(fixture: dict) -> None:
+            fixture["expected"]["route"]["required_gates"].remove("writing-plans")
+            del fixture["expected"]["implements_ticket"]
+            fixture["expected"]["evidence"]["reuse"].remove("approved-ticket")
+
+        self.assertEqual(
+            [], self.route_fixture_messages("standard-work.yaml", drop_plan_and_ticket)
+        )
+
+    def test_a_lightweight_task_must_not_require_writing_plans(self) -> None:
+        def require_plan(fixture: dict) -> None:
+            route = fixture["expected"]["route"]
+            route["skipped_gates"].remove("writing-plans")
+            route["required_gates"].append("writing-plans")
+
+        self.assertIn(
+            "routing fixture requires writing-plans, which the registry does "
+            "not list for lightweight work",
+            self.route_fixture_messages("tiny-task-bypass.yaml", require_plan),
+        )
+
+    def test_a_lightweight_task_must_not_require_orientation(self) -> None:
+        def require_orientation(fixture: dict) -> None:
+            fixture["expected"]["route"]["required_gates"].append(
+                "session-start-progressive-disclosure"
+            )
+
+        self.assertIn(
+            "routing fixture requires session-start-progressive-disclosure, which "
+            "the registry does not list for lightweight work",
+            self.route_fixture_messages("tiny-task-bypass.yaml", require_orientation),
+        )
+
+    def test_a_full_ticket_implementation_must_require_writing_plans(self) -> None:
+        def mark_ticket(fixture: dict) -> None:
+            fixture["expected"]["implements_ticket"] = True
+
+        self.assertIn(
+            "a ticket implementation at standard or full intensity must "
+            "require writing-plans",
+            self.route_fixture_messages("external-changing-action.yaml", mark_ticket),
+        )
+
+    def test_ticket_evidence_needs_implements_ticket(self) -> None:
+        def unmark(fixture: dict) -> None:
+            del fixture["expected"]["implements_ticket"]
+
+        self.assertIn(
+            "routing fixture reuses ticket evidence but does not set "
+            "implements_ticket",
+            self.route_fixture_messages("evidence-invalidation.yaml", unmark),
+        )
+
+    def test_a_standard_route_from_a_brief_must_require_orientation(self) -> None:
+        def drop_orientation(fixture: dict) -> None:
+            fixture["expected"]["route"]["required_gates"].remove(
+                "session-start-progressive-disclosure"
+            )
+
+        self.assertIn(
+            "a route from a brief at standard or full intensity must require "
+            "session-start-progressive-disclosure",
+            self.route_fixture_messages("briefed-side-session.yaml", drop_orientation),
+        )
+
+    def test_a_route_not_from_a_brief_may_leave_orientation_out(self) -> None:
+        def drop_orientation_and_brief(fixture: dict) -> None:
+            fixture["expected"]["route"]["required_gates"].remove(
+                "session-start-progressive-disclosure"
+            )
+            fixture["expected"]["started_from_brief"] = False
+
+        self.assertEqual(
+            [],
+            self.route_fixture_messages(
+                "briefed-side-session.yaml", drop_orientation_and_brief
+            ),
+        )
+
+    def test_started_from_brief_must_be_a_boolean(self) -> None:
+        def set_text(fixture: dict) -> None:
+            fixture["expected"]["started_from_brief"] = "yes"
+
+        self.assertIn(
+            "routing fixture expected.started_from_brief must be a boolean",
+            self.route_fixture_messages("standard-work.yaml", set_text),
+        )
+
+    def test_implements_ticket_must_be_a_boolean(self) -> None:
+        def set_text(fixture: dict) -> None:
+            fixture["expected"]["implements_ticket"] = "yes"
+
+        self.assertIn(
+            "routing fixture expected.implements_ticket must be a boolean",
+            self.route_fixture_messages("standard-work.yaml", set_text),
+        )
+
     def test_route_fixture_gate_must_resolve_to_shared_or_registered_gate(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             fixture_root = Path(temporary_directory)

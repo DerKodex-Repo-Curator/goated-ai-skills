@@ -30,6 +30,7 @@ REMINDER = (
     "</system-reminder>\n"
 )
 BACKGROUND = "Background (from the session that started this one)"
+ORIENTATION = "session-start-progressive-disclosure"
 
 
 def hold_line(output: dict) -> str:
@@ -96,6 +97,7 @@ class BriefRouteTests(BriefTestCase):
         self.assertEqual(hold_line(held), "goated-hold: pipeline | strict")
         self.assertIn("`tdd`", reason(held))
         s.load("tdd")
+        s.load(ORIENTATION)
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
     def test_a_later_route_line_corrects_the_brief_route(self) -> None:
@@ -125,6 +127,156 @@ class BriefRouteTests(BriefTestCase):
         s = self.brief("skip routing\nskip tdd\n\ngoated-route: standard | requires: tdd")
 
         self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: pipeline | strict")
+
+
+class BriefOrientationTests(BriefTestCase):
+    """A session routed by its brief orients first on a `standard` or `full`
+    route, when the orientation skill is installed (Ticket 072, spec R4)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.orientation_folder = self.session.config.home / ".claude" / "skills" / ORIENTATION
+        self.orientation_folder.mkdir(parents=True)
+        (self.orientation_folder / "SKILL.md").write_text("---\nname: x\n---\n", encoding="utf-8")
+
+    def test_a_routed_brief_holds_the_first_write_until_orientation_loads(self) -> None:
+        s = self.brief("goated-route: standard | requires: tdd")
+        s.load("tdd")
+
+        held = s.call("Edit", EDIT)
+        self.assertEqual(hold_line(held), "goated-hold: pipeline | strict")
+        self.assertIn(f"A session started from a brief loads `{ORIENTATION}`", reason(held))
+        # The route line never named it, so the hold does not say the route requires it,
+        # and names the lines that do drop it.
+        self.assertNotIn("The current route requires", reason(held))
+        self.assertNotIn("If one does not apply", reason(held))
+        self.assertIn("Only a corrected `goated-route: direct` line", reason(held))
+        self.assertNotIn("`tdd`", reason(held))
+        s.load(ORIENTATION)
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_a_full_brief_is_held_for_orientation_too(self) -> None:
+        s = self.brief("goated-route: full | requires: tdd")
+        s.load("tdd")
+
+        held = s.call("Edit", EDIT)
+        self.assertEqual(hold_line(held), "goated-hold: pipeline | strict")
+        self.assertIn(f"`{ORIENTATION}`", reason(held))
+
+    def test_orientation_alone_does_not_meet_the_routes_own_skills(self) -> None:
+        s = self.brief("goated-route: standard | requires: tdd")
+        s.load(ORIENTATION)
+
+        held = s.call("Edit", EDIT)
+        self.assertEqual(hold_line(held), "goated-hold: pipeline | strict")
+        self.assertIn("The current route requires `tdd` before", reason(held))
+        self.assertIn("If one does not apply", reason(held))
+        self.assertNotIn(f"`{ORIENTATION}`", reason(held))
+        self.assertNotIn("started from a brief", reason(held))
+
+    def test_a_hold_for_both_keeps_the_route_skills_apart_from_orientation(self) -> None:
+        s = self.brief("goated-route: standard | requires: tdd")
+
+        text = reason(s.call("Edit", EDIT))
+        self.assertIn("The current route requires `tdd` before", text)
+        self.assertIn(f"A session started from a brief loads `{ORIENTATION}`", text)
+        self.assertIn("If a route skill does not apply", text)
+
+    def test_a_routed_brief_that_requires_orientation_names_it_once(self) -> None:
+        s = self.brief(f"goated-route: standard | requires: {ORIENTATION}, tdd")
+
+        text = reason(s.call("Edit", EDIT))
+        self.assertIn("The current route requires `tdd` before", text)
+        self.assertEqual(text.count(f"`{ORIENTATION}`"), 1)
+
+    def test_a_direct_brief_is_not_held_for_orientation(self) -> None:
+        s = self.brief("goated-route: direct")
+
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_a_lightweight_brief_is_not_held_for_orientation(self) -> None:
+        s = self.brief("goated-route: lightweight | requires: tdd")
+        s.load("tdd")
+
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_a_corrected_direct_route_line_drops_orientation(self) -> None:
+        s = self.brief("goated-route: standard | requires: tdd")
+        s.load("tdd")
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: pipeline | strict")
+
+        s.say("goated-route: direct")
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_a_corrected_lightweight_route_line_drops_orientation(self) -> None:
+        s = self.brief("goated-route: standard | requires: tdd")
+        s.load("tdd")
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: pipeline | strict")
+
+        s.say("goated-route: lightweight | requires: tdd")
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_a_later_standard_route_line_keeps_orientation(self) -> None:
+        s = self.brief("goated-route: direct")
+        s.say("goated-route: standard | requires: tdd")
+        s.load("tdd")
+
+        held = s.call("Edit", EDIT)
+        self.assertEqual(hold_line(held), "goated-hold: pipeline | strict")
+        self.assertIn(f"`{ORIENTATION}`", reason(held))
+
+    def test_a_corrected_standard_route_line_does_not_drop_orientation(self) -> None:
+        s = self.brief("goated-route: standard | requires: tdd")
+        s.load("tdd")
+        s.say("goated-route: standard | requires: doc-sync")
+        s.load("doc-sync")
+
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: pipeline | strict")
+
+    def test_orientation_is_not_required_when_it_is_not_installed(self) -> None:
+        (self.orientation_folder / "SKILL.md").unlink()
+        s = self.brief("goated-route: standard | requires: tdd")
+        s.load("tdd")
+
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_a_project_installed_orientation_skill_counts(self) -> None:
+        (self.orientation_folder / "SKILL.md").unlink()
+        project_skill = self.session.project / ".claude" / "skills" / ORIENTATION
+        project_skill.mkdir(parents=True)
+        (project_skill / "SKILL.md").write_text("---\nname: x\n---\n", encoding="utf-8")
+        s = self.brief("goated-route: standard | requires: tdd")
+        s.load("tdd")
+
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: pipeline | strict")
+
+    def test_a_read_only_subagent_spawn_is_not_held_for_orientation(self) -> None:
+        s = self.brief("goated-route: standard | requires: tdd")
+        s.load("tdd")
+
+        self.assertEqual(
+            decision(s.call("Agent", {"prompt": "List the files.", "subagent_type": "claude-code-guide"})),
+            "pass",
+        )
+
+    def test_a_session_not_started_from_a_brief_is_not_held_for_orientation(self) -> None:
+        s = self.session
+        s.prompt("Add the CSV exporter.")
+        s.load(ROUTER)
+        s.say("goated-route: standard | requires: tdd")
+        s.load("tdd")
+
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_a_typed_prompt_after_the_brief_ends_the_requirement(self) -> None:
+        s = self.brief("goated-route: standard | requires: tdd")
+        s.load("tdd")
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: pipeline | strict")
+        s.prompt("Now add the importer.")
+        s.load(ROUTER)
+        s.say("goated-route: standard | requires: tdd")
+
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
 
 class NotABriefTests(BriefTestCase):
@@ -210,6 +362,7 @@ class HostRetryTests(BriefTestCase):
 
         self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: pipeline | strict")
         s.load("tdd")
+        s.load(ORIENTATION)
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
     def test_a_host_retry_after_a_call_keeps_the_brief_route(self) -> None:
