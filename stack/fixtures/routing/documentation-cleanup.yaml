@@ -1,0 +1,48 @@
+schema_version: 1.0.0
+identifier: documentation-cleanup
+title: Tidying a docs tree routes to documentation cleanup
+request: Audit our docs tree, consolidate the three overlapping setup guides, and tidy the docs/agents artifacts.
+project_context:
+  - Several guides repeat setup steps with small differences.
+  - The docs/agents folder holds routing notes of unclear status.
+expected:
+  profile:
+    task_size: standard
+    intent_maturity: scoped
+    workflow_intensity: standard
+    domain: documentation
+    risk_flags: []
+    continuity: single-session
+    execution: single-agent
+  data_sensitivity: public
+  action_reach: project-changing
+  route_signals: []
+  proof_strategy: List each moved, merged, or removed document with where its content went, and check links.
+  route:
+    required_gates:
+      - proportional-orientation
+      - documentation-cleanup
+      - direct-proof
+      - consolidated-closeout
+    conditional_gates: []
+    skipped_gates:
+      - documentation-writer
+      - tdd
+  checkpoint_events: []
+  approval:
+    mode: approve-batch
+    consent_reused: true
+    fresh_approval_required: false
+    scope_or_reach_changed: false
+    reason: The request covers reorganizing the named docs; deletions stay recoverable in version control.
+  evidence:
+    reuse:
+      - current-docs-tree
+    invalidate:
+      - current-docs-tree
+  closeout:
+    skill_reports_internal_deltas: true
+    main_agent_consolidates: true
+prohibited_behaviors:
+  - Rewrite every guide from scratch instead of consolidating.
+  - Drop content without saying where it went.

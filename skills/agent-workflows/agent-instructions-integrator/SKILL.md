@@ -15,6 +15,11 @@ Use this skill whenever the selected onboarding budget includes thin policy or
 framework routing. Lightweight onboarding may stop here after reusing existing
 docs; context, source-map, and standards artifacts do not need to exist.
 
+A project with no agent instruction file at its root, `AGENTS.md`,
+`CLAUDE.md`, or `.claude/CLAUDE.md`, is a candidate for this skill, not a
+reason to activate it; an installed enforcement adapter may name it once per
+project as a notice that never blocks.
+
 ## Inputs
 
 - User request, target-project root path, and chosen agent framework, if already known.

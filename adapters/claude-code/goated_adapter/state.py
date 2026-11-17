@@ -5,14 +5,16 @@ the current task's route, whether missing or reset state lost the task, what
 counts until the next compaction (whether the router loaded, which GOATED
 skills loaded, which design references, skill references, and spawn-brief
 templates were read), what the current turn's design edits required and which
-template each of its spawns' briefs followed, the last turn seen, and the
-latest user overrides. Beside it, a marker names
-the turn whose hold gave the unseen-line advice in full. Apart from the short
-override phrases a user typed, it holds no prompt or reply text.
+template each of its spawns' briefs followed, the last turn seen, the
+latest user overrides, and the friction count (`friction.py`). Beside it, a
+marker names the turn whose hold gave the unseen-line advice in full, and a
+record per project names what its onboarding notice last named. Apart from
+the short override phrases a user typed, it holds no prompt or reply text.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -28,6 +30,9 @@ TURN_MARKERS_DIR = "turn-markers"
 # Separates a subagent's id from its session's in a marker name; no safe name
 # holds it, so a session's marker prefix never matches a subagent's.
 AGENT_SEPARATOR = "~"
+# Beside the state files: per project, which onboarding skills its notice
+# last named.
+ONBOARDING_DIR = "onboarding-notices"
 
 
 class Task:
@@ -49,7 +54,8 @@ class SessionState:
     __slots__ = (
         "router_loaded", "last_turn", "task", "task_unknown", "overrides", "policy_notice_shown",
         "reference_reads", "design_edits", "brief_routed", "loads", "template_reads",
-        "skill_reference_reads", "spawn_templates",
+        "skill_reference_reads", "spawn_templates", "open_holds", "held_gates", "friction",
+        "retrospective_notice_shown",
     )
 
     def __init__(self) -> None:
@@ -81,6 +87,14 @@ class SessionState:
         # The brief templates (`contracts.BriefTemplate.reference`) each spawn of
         # one turn followed when the spawn gate let it through, in the same shape.
         self.spawn_templates: dict = {}
+        # The friction count (`friction.py`): holds still open, as
+        # `friction.observe` keeps them; the gates that held in one turn,
+        # {"turn": <turn key>, "gates": [<gate>]}; how many holds were declined
+        # or left unanswered; and whether the retrospective notice was shown.
+        self.open_holds: list[dict] = []
+        self.held_gates: dict = {}
+        self.friction = 0
+        self.retrospective_notice_shown = False
 
     def forget_context(self) -> None:
         """Drop what counted only while its text was in the agent's context: the
@@ -132,6 +146,10 @@ class SessionState:
             "template_reads": self.template_reads,
             "design_edits": self.design_edits,
             "spawn_templates": self.spawn_templates,
+            "open_holds": self.open_holds,
+            "held_gates": self.held_gates,
+            "friction": self.friction,
+            "retrospective_notice_shown": self.retrospective_notice_shown,
         }
 
     @classmethod
@@ -152,6 +170,11 @@ class SessionState:
         state.template_reads = _string_list(data.get("template_reads", []))
         state.design_edits = _valid_calls(data.get("design_edits", {}))
         state.spawn_templates = _valid_calls(data.get("spawn_templates", {}))
+        state.open_holds = [_valid_open_hold(h) for h in _expect(data.get("open_holds", []), list)]
+        state.held_gates = _valid_held_gates(data.get("held_gates", {}))
+        state.friction = _expect(data.get("friction", 0), int)
+        state.retrospective_notice_shown = _expect(
+            data.get("retrospective_notice_shown", False), bool)
         task = _expect(data.get("task"), (dict, type(None)))
         if task is not None:
             state.task = Task(
@@ -198,6 +221,30 @@ def _valid_calls(data) -> dict:
         "turn": _expect(record.get("turn"), str),
         "edits": {_expect(k, str): _string_list(v) for k, v in edits.items()},
     }
+
+
+def _valid_open_hold(data) -> dict:
+    """An open hold as `friction.observe` saved it; ValueError on any other shape."""
+
+    hold = _expect(data, dict)
+    seen = _expect(hold.get("seen"), dict)
+    return {
+        "gate": _expect(hold.get("gate"), str),
+        "turn": _expect(hold.get("turn"), str),
+        "action": _expect(hold.get("action", ""), str),
+        "strict": _expect(hold.get("strict"), bool),
+        "skills": _string_list(hold.get("skills")),
+        "references": _string_list(hold.get("references")),
+        "skippable": _string_list(hold.get("skippable")),
+        "seen": {_expect(k, str): _expect(v, int) for k, v in seen.items()},
+    }
+
+
+def _valid_held_gates(data) -> dict:
+    record = _expect(data, dict)
+    if not record:
+        return {}
+    return {"turn": _expect(record.get("turn"), str), "gates": _string_list(record.get("gates"))}
 
 
 def _expect(value, kinds):
@@ -271,20 +318,26 @@ class StateStore:
         """Write state atomically so a concurrent hook never reads half a file."""
 
         self._ensure_private_directory()
-        path = self._path(session_id)
-        # Unique per process, created exclusively and never through a link.
-        # `tempfile` is avoided because importing it costs every hook call
-        # several milliseconds.
-        temp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-        temp.unlink(missing_ok=True)
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        _write_json(self._path(session_id), state.to_json())
+
+    def onboarding_shown(self, project_key: str) -> list[str] | None:
+        """The skills the onboarding notice last named for the project
+        `project_key`, or None when it was never shown or its record is unreadable."""
+
+        path = self._onboarding_path(project_key)
+        self._ensure_private_directory(path.parent)
         try:
-            with os.fdopen(os.open(temp, flags, 0o600), "w", encoding="utf-8") as stream:
-                json.dump(state.to_json(), stream)
-            _replace(temp, path)
-        except BaseException:
-            temp.unlink(missing_ok=True)
-            raise
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return _string_list(_expect(data, dict).get("skills"))
+        except (OSError, ValueError):
+            return None
+
+    def record_onboarding_shown(self, project_key: str, skills: list[str]) -> None:
+        """Record which skills the project's onboarding notice now names, atomically."""
+
+        path = self._onboarding_path(project_key)
+        self._ensure_private_directory(path.parent)
+        _write_json(path, {"skills": list(skills)})
 
     def claim_turn(self, session_id: str, turn_key: str, agent_id: str | None = None) -> bool:
         """Claim the marker for `turn_key`; True for the first claim.
@@ -346,9 +399,32 @@ class StateStore:
     def _path(self, session_id: str) -> Path:
         return self.directory / f"{_safe_name(session_id)}.json"
 
+    def _onboarding_path(self, project_key: str) -> Path:
+        # A digest: a project path can be long and holds characters no file name may.
+        digest = hashlib.sha256(project_key.encode("utf-8")).hexdigest()[:32]
+        return self.directory / ONBOARDING_DIR / f"{digest}.json"
+
 
 def _safe_name(raw: str) -> str:
     return UNSAFE_NAME_CHARS.sub("_", raw)[:128] or "unknown"
+
+
+def _write_json(path: Path, data) -> None:
+    """Write `data` to `path` atomically so a concurrent hook never reads half a file."""
+
+    # Unique per process, created exclusively and never through a link.
+    # `tempfile` is avoided because importing it costs every hook call
+    # several milliseconds.
+    temp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    temp.unlink(missing_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        with os.fdopen(os.open(temp, flags, 0o600), "w", encoding="utf-8") as stream:
+            json.dump(data, stream)
+        _replace(temp, path)
+    except BaseException:
+        temp.unlink(missing_ok=True)
+        raise
 
 
 def _replace(source: Path, target: Path) -> None:

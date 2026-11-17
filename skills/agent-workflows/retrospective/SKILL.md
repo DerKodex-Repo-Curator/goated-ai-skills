@@ -1,6 +1,6 @@
 ---
 name: retrospective
-description: Use when the user asks for a retrospective on an agent work session, or wants recurring agent mistakes or friction turned into improvements to the project's checks, standards, or instructions.
+description: Use when the user asks for a retrospective on an agent work session, after a wave of delegated tickets is merged, or when recurring agent mistakes or friction should become improvements to the project's checks, standards, or instructions.
 metadata:
   goated-category: agent-workflows
 ---
@@ -16,12 +16,17 @@ aids, tooling, and access to information.
 
 This skill proposes. It makes no project change itself.
 
+An installed enforcement adapter may suggest it once per session, at the
+prompt after three holds were declined by a skip line or left unanswered:
+neither obeyed nor stood down by the user before their next prompt.
+
 ## Inputs
 
 - The session to review: the current conversation by default, or a session, log, or transcript the user names.
 - What went wrong or was slow: corrections from the user, failed checks, rework, long searches, expensive tool calls.
 - The project's check commands, CI configuration, standards profile, and agent instruction files.
 - Review findings or feedback from the same work, when available.
+- Usage numbers from a skill-usage tool, when one recorded the sessions: which holds were followed, declined, or left unanswered, and the skip reasons given.
 
 ## Dependencies
 

@@ -16,6 +16,10 @@ Activate it only when the onboarding artifact budget includes a source map
 because retrieval is repeated, cross-area, stale, or unreliable. A lightweight
 project can stop at thin policy and routing without this artifact.
 
+A project with no `docs/agents/context-matrix.md` is a candidate for this
+skill, not a reason to activate it; an installed enforcement adapter may name
+it once per project as a notice that never blocks.
+
 ## Inputs
 
 - User request or onboarding goal, and the target-project root path.

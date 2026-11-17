@@ -105,7 +105,7 @@ EXPECTED_SUCCESS_OUTPUT = "\n".join(
     (
         "GOATED skill validation passed for 40 implemented skills.",
         "Integrated registry validation passed for 40 catalog entries.",
-        "Adaptive routing fixture validation passed for 10 scenarios.",
+        "Adaptive routing fixture validation passed for 14 scenarios.",
         "End-to-end fixture validation passed for 4 scenarios.",
         "Onboarding fixture validation passed for 4 scenarios.",
         "Clarification fixture validation passed for 6 scenarios.",
@@ -603,9 +603,9 @@ class ReportingConcernTests(unittest.TestCase):
             exit_code = render_validation_report(report)
 
         self.assertEqual(exit_code, 0)
-        self.assertEqual(report.fixture_counts["routing"], 10)
+        self.assertEqual(report.fixture_counts["routing"], 14)
         self.assertIn(
-            "Adaptive routing fixture validation passed for 10 scenarios.",
+            "Adaptive routing fixture validation passed for 14 scenarios.",
             output.getvalue(),
         )
 

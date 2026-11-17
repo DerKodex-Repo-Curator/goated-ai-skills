@@ -1109,6 +1109,41 @@ the agent's context, when:
   plugin skills. Without it, router-first never clears; type `skip routing` in
   a prompt to proceed, or install the router.
 
+At a session start it also says, once per project, which agent files the
+project lacks at its root, naming the onboarding skill that writes each, as
+those skills state:
+
+| Missing file | Skill named |
+| --- | --- |
+| `AGENTS.md`, `CLAUDE.md`, or `.claude/CLAUDE.md` | `agent-instructions-integrator` |
+| `docs/agents/context-matrix.md` | `context-matrix-map` |
+| `docs/agents/project-standards.md` | `project-standards-calibration` |
+
+The project root is `CLAUDE_PROJECT_DIR` when Claude Code sets it, else the
+nearest folder at or above the session's folder holding `.git`, else that
+folder. Which skills the notice last named is recorded beside the session
+state (see [State](#state)), never inside the project. The notice shows again
+only when a file goes missing that it did not name before; a file added back
+brings none.
+
+At the next prompt after a session's third declined or unanswered hold, it
+says once per session that the `retrospective` skill can turn that friction
+into improvements, as that skill states. A hold is declined when a skip
+line naming its skill follows it, and unanswered when it is still open at the
+next typed prompt. It is answered, and counts as neither, when the same gate
+later lets the same action through: an edit of the same file, the same
+command, a commit or pull request whatever its message, or a spawn of the
+same tool. A closeout hold is answered by any later `Stop` or commit the
+closeout lets through. A hold is also answered once every skill it names is
+loaded and every reference it names is read. One the next typed prompt's
+override stands down counts as neither too. A gate counts once per turn,
+however often it holds in that turn, and only the main agent's holds count.
+Holds still open at a compaction or `/clear` are dropped uncounted, since
+reading restarts after the boundary. The notice waits for a prompt you type;
+a message from another session or agent does not bring it.
+
+Neither notice blocks a call or a `Stop`.
+
 ## Failing Open
 
 The adapter never blocks because of its own failure. It lets the call through
@@ -1154,14 +1189,21 @@ last compaction
 (see [Loads](#loads)), which references each edit of the latest turn
 required when the design gates judged it, which brief templates each spawn
 of the latest turn followed when the `spawn` gate let it through (see
-[Reviewer subagents](#reviewer-subagents)), the last turn seen, and the
-latest typed overrides. It holds no prompt or reply
+[Reviewer subagents](#reviewer-subagents)), the last turn seen, the
+latest typed overrides, and the friction count behind the retrospective
+notice (see [Session Start Notices](#session-start-notices)): the holds still
+open, with the action each held, the skills, references, and skip lines it
+names, and how much of its turn came before it, the gates that held in the latest turn, how many
+holds were declined or left unanswered, and whether the notice was shown. It
+holds no prompt or reply
 text beyond the short override phrases and a commit message the user typed.
 Beside the state files, a `turn-markers/` folder holds one empty file per
 session, and one per subagent of it, named for the turn whose hold gave the
 [unseen-line advice](#hold-messages) in full. A new turn's claim replaces it,
 and a `SessionStart` after compaction or `/clear` deletes the session's and
-its subagents'.
+its subagents'. An `onboarding-notices/` folder holds one file per project,
+named by a digest of the project's path, listing the skills its onboarding
+notice last named.
 The action and closeout gates keep no state of their own: they read the
 current turn, the loads, design and skill references, and templates read
 since the last compaction, and, for the closeout's citation and Review items,

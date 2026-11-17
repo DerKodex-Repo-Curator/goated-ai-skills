@@ -1462,6 +1462,16 @@ class SharedPolicyNoticeTests(AdapterTestCase):
     def start(self, source: str = "startup") -> dict:
         return parse(self.session.hook("SessionStart", source=source))
 
+    def onboarded(self) -> None:
+        """Give the project the agent files whose absence the onboarding notice names,
+        none of them carrying the policy, so a start's output is about the policy alone."""
+
+        for path in (".claude/CLAUDE.md", "docs/agents/context-matrix.md",
+                     "docs/agents/project-standards.md"):
+            target = self.session.project / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("# Project notes\n", encoding="utf-8")
+
     def test_missing_policy_is_noticed_once_per_session(self) -> None:
         first = self.start()
         self.assertIn("shared policy", first["systemMessage"])
@@ -1481,6 +1491,7 @@ class SharedPolicyNoticeTests(AdapterTestCase):
     def test_policy_merged_into_a_parent_agents_file_is_detected(self) -> None:
         project = self.session.project
         project.mkdir(parents=True)
+        self.onboarded()
         (project.parent / "AGENTS.md").write_text("# Repo\n\n" + self.POLICY, encoding="utf-8")
 
         self.assertEqual(self.start(), {})
@@ -1561,6 +1572,7 @@ class SharedPolicyNoticeTests(AdapterTestCase):
     def test_policy_imported_from_claude_md_is_detected(self) -> None:
         project = self.session.project
         (project / "goated").mkdir(parents=True)
+        self.onboarded()
         (project / "goated" / "policy.md").write_text(self.POLICY, encoding="utf-8")
         (project / "CLAUDE.md").write_text("@goated/policy.md\n", encoding="utf-8")
 

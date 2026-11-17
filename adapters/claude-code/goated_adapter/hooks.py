@@ -13,7 +13,7 @@ import os
 import re
 from pathlib import Path
 
-from . import actions, design_reads, gates, reference_reads
+from . import actions, design_reads, friction, gates, onboarding, reference_reads
 from .overrides import GOATED_SKILLS, parse_overrides
 from .policy import (
     installed_skill_names, router_skill_installed, shared_policy_loaded, skill_folder,
@@ -47,6 +47,12 @@ POLICY_NOTICE = (
     "the GOATED shared policy is not loaded in this session, so the "
     "`using-goated-ai-skills` router runs from its standalone fallback. To load "
     "it, follow the Claude Code steps in the GOATED install guide."
+)
+RETROSPECTIVE_NOTICE = (
+    "{count} GOATED holds this session were declined or left unanswered. The "
+    "`retrospective` skill can turn that friction into improvements to the "
+    "project's checks, standards, or instructions, such as after a wave of "
+    "delegated tickets is merged. This is a notice; nothing is held."
 )
 ROUTER_NOTICE = (
     f"could not find the `{gates.ROUTER_SKILL}` skill among your user, project, "
@@ -177,6 +183,7 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
     except TranscriptUnreadable as exc:
         raise _FailOpen(str(exc)) from exc
     gates.fold_turns(state, turns, config.skill_namespaces)
+    _settle_holds(state, turns, config)
     current = turns[-1]
     overrides = _overrides_for(state, current, payload.get("prompt_id"))
     unread: list[str] = []
@@ -217,6 +224,7 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
             tool_name, tool_input, current, overrides, config.skill_namespaces, earlier)
         if templates:
             state.record_spawn_templates(current.key, tool_use_id, templates)
+    friction.observe(state, current, friction.action_of(tool_name, tool_input), hold)
     hold = gates.advice_once(hold, lambda: _claim_turn(store, session_id, current.key))
     warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread),
                 *registry_warnings]
@@ -346,6 +354,7 @@ def _stop(payload: dict, config: Config) -> str:
     except TranscriptUnreadable as exc:
         raise _FailOpen(str(exc)) from exc
     gates.fold_turns(state, turns, config.skill_namespaces)
+    _settle_holds(state, turns, config)
     current = turns[-1]
     subagents, unread = _spawned_subagents(current, transcript_path)
     hold = actions.check_closeout(
@@ -361,9 +370,33 @@ def _stop(payload: dict, config: Config) -> str:
         spawn_templates=state.spawn_templates_of(current.key),
         intensity=_route_intensity(state),
     )
+    friction.observe(state, current, friction.STOP, hold)
     warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread)]
     output = {"decision": "block", "reason": hold.message()} if hold else {}
     return _with_warnings(output, warnings)
+
+
+def _settle_holds(state, turns, config: Config) -> None:
+    """Settle the friction count's open holds against the turns just read."""
+
+    friction.settle(state, turns, lambda raw: gates.goated_skill_name(raw, config.skill_namespaces))
+
+
+def _settle_unseen(state, payload: dict, config: Config) -> None:
+    """Settle open holds against the turns since the last one seen, before a
+    typed prompt closes them: a read or skip line after the last hook call,
+    such as in a turn the user interrupted, answers a hold too. Reading never
+    crosses a compaction, so what came before one stays unseen. Best effort:
+    an unreadable transcript leaves the holds to count as unanswered."""
+
+    path = payload.get("transcript_path")
+    if not state.open_holds or not isinstance(path, str) or not path:
+        return
+    try:
+        turns = read_recent_turns(path, since_key=state.last_turn, wait_seconds=0.0)
+    except TranscriptUnreadable:
+        return
+    _settle_holds(state, turns, config)
 
 
 def _unread_warning(unread: list[str]) -> str | None:
@@ -402,7 +435,8 @@ def _deny(hold) -> dict:
 
 
 def _session_start(payload: dict, config: Config) -> str:
-    """Reset skill proof after compaction; note a missing policy or router once.
+    """Reset skill proof after compaction; note a missing policy or router once
+    per session, and missing agent files once per project.
 
     After compaction or `/clear` every skill must load again, and the design
     references and spawn-brief templates be read again, because their text
@@ -420,6 +454,7 @@ def _session_start(payload: dict, config: Config) -> str:
         state.task_unknown = False
     if payload.get("source") in {"compact", "clear"}:
         state.forget_context()
+        friction.forget_open(state)
         state.last_turn = None
         store.clear_turn_markers(session_id)
 
@@ -432,13 +467,46 @@ def _session_start(payload: dict, config: Config) -> str:
             notices.append(POLICY_NOTICE)
         if not router_skill_installed(cwd, config.home, gates.ROUTER_SKILL):
             notices.append(ROUTER_NOTICE)
+    record_warnings: list[str] = []
+    try:
+        onboarding_notice = _onboarding_notice(store, payload, config, record_warnings)
+    except (OSError, StateUnsafe) as exc:
+        # The notice is advice: losing it must not lose this start's reset.
+        onboarding_notice = None
+        record_warnings.append(f"could not check its onboarding notice ({exc})")
+    if onboarding_notice:
+        notices.append(onboarding_notice)
     if notices:
         output["hookSpecificOutput"] = {
             "hookEventName": "SessionStart",
             "additionalContext": " ".join(notices),
         }
-    warnings = [*notices, state_warning, _save(store, session_id, state)]
+    warnings = [*notices, state_warning, _save(store, session_id, state), *record_warnings]
     return _with_warnings(output, warnings)
+
+
+def _onboarding_notice(
+    store: StateStore, payload: dict, config: Config, warnings: list[str]
+) -> str | None:
+    """The onboarding notice when it is due for the session's project, else
+    None; records what it names beside the session state, outside the project
+    folder. A record that cannot be saved adds a warning to `warnings`: the
+    notice may then show again at the next start."""
+
+    root = onboarding.project_root(str(payload.get("cwd") or "") or None, config.project_dir)
+    if root is None or not root.is_dir():
+        return None
+    key = onboarding.project_key(root)
+    missing = onboarding.missing_files(root)
+    last_shown = store.onboarding_shown(key)
+    skills = [f.skill for f in missing]
+    if last_shown is None or set(last_shown) != set(skills):
+        try:
+            store.record_onboarding_shown(key, skills)
+        except OSError as exc:
+            warnings.append("could not record its onboarding notice "
+                            f"({exc.strerror or type(exc).__name__})")
+    return onboarding.notice(missing) if onboarding.notice_due(missing, last_shown) else None
 
 
 def _user_prompt_submit(payload: dict, config: Config) -> str:
@@ -467,21 +535,28 @@ def _user_prompt_submit(payload: dict, config: Config) -> str:
         cwd = Path(str(payload.get("cwd") or "."))
         known = installed_skill_names(cwd, config.home) or GOATED_SKILLS
         found = parse_overrides(prompt, known)
+        # Holds the last turn left open are unanswered, unless what followed
+        # them, which no hook may have seen, or this prompt's overrides settle them.
+        _settle_unseen(state, payload, config)
+        friction.close_turn(state, found)
     else:
         found = parse_overrides("")
     state.overrides = {"prompt_id": payload.get("prompt_id"), **found}
-
-    notes = [state_warning, _save(store, session_id, state)]
-    output: dict = {}
+    notices = []
     if found["phrases"]:
         typed = ", ".join(f'"{phrase}"' for phrase in found["phrases"])
-        recorded = f"recorded your override for this prompt: {typed}"
-        notes.insert(0, recorded)
-        # The notice above reaches a mod with no text; hook context arrives with
-        # it, so the skill-usage mod reads the same sentence from here.
+        notices.append(f"recorded your override for this prompt: {typed}")
+    if kind == TYPED and friction.claim_retrospective_notice(state):
+        notices.append(RETROSPECTIVE_NOTICE.format(count=state.friction))
+
+    notes = [*notices, state_warning, _save(store, session_id, state)]
+    output: dict = {}
+    if notices:
+        # The notices above reach a mod with no text; hook context arrives with
+        # them, so the skill-usage mod reads the same sentence from here.
         output["hookSpecificOutput"] = {
             "hookEventName": "UserPromptSubmit",
-            "additionalContext": _sentence([recorded]),
+            "additionalContext": _sentence(notices),
         }
     return _with_warnings(output, notes)
 
