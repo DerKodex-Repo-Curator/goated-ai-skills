@@ -43,7 +43,9 @@ NOT_PROMPT_PREFIXES = (
 # Results of background work: they continue the current turn.
 CONTINUATION_PREFIXES = ("<task-notification>", "<side-sessions-event>")
 # Requests written by another agent, another session, or the app: they start a
-# turn, but nobody typed them here, so they never carry overrides. Claude Code
+# turn, except the report of a subagent this session spawned, which continues
+# it (see `_OwnReports` and `is_own_report`); nobody typed them here, so they
+# never carry overrides. Claude Code
 # 2.1.3xx opens a subagent's hand-back and another session's message alike with
 # the first line below, then an `<agent-message>` or `<cross-session-message>`
 # tag; the hook input carries no field saying where a prompt came from, so the
@@ -327,21 +329,31 @@ def read_recent_turns(
 
 
 def _read_turns_once(path: Path, since_key: str | None, sidechain: bool) -> list[Turn]:
+    # Each chunk is one turn's entries, oldest first, with its opener kind;
+    # chunks are collected newest first and built into turns at the end, once
+    # every own-report candidate is settled (see `_OwnReports`).
+    chunks: list[tuple[str | None, list[dict]]] = []
+    pending: list[dict] = []
+    reports = _OwnReports()
+    # Set once the current turn is read without `since_key`, or once a turn
+    # opened by a brief with a route line ends the read: the reader then
+    # only looks for an earlier turn's opener, collecting nothing.
+    probing = False
+    # Set once the turns wanted are read: the reader then only looks for the
+    # spawns that own-report candidates name.
+    settling = False
+    # The oldest chunk read so far when its opener is such a brief: its route
+    # counts only if no earlier turn exists.
+    brief_chunk: list[dict] | None = None
+    # An opener was found before the oldest chunk while probing.
+    earlier_opener = False
+    reached_start = False
     try:
-        turns: list[Turn] = []
-        pending: list[dict] = []
-        # Set once the current turn is read without `since_key`, or once a turn
-        # opened by a brief with a route line ends the read: the reader then
-        # only looks for an earlier turn's opener, collecting nothing.
-        probing = False
-        # The oldest turn read so far when its opener is such a brief: its
-        # route counts only if no earlier turn exists.
-        brief_turn: Turn | None = None
         for line in _lines_backward(path):
             if line is None:
                 # Read limit reached. Older unseen turns are given up, as if
                 # `since_key` were not found; the current turn must be whole.
-                if not turns:
+                if not chunks:
                     raise TranscriptUnreadable(
                         "the current turn is too large to read quickly"
                     )
@@ -354,39 +366,63 @@ def _read_turns_once(path: Path, since_key: str | None, sidechain: bool) -> list
                 continue
             if not isinstance(entry, dict):
                 continue
+            if not sidechain:
+                reports.see(entry)
             kind = _opener_kind(entry, sidechain)
+            if settling:
+                if kind == "compaction" or reports.settled:
+                    break
+                continue
+            if kind == MACHINE and not sidechain and reports.hold(entry, probing):
+                kind = None
             is_opener = kind in (TYPED, MACHINE, "compaction")
             if probing:
                 if is_opener:
-                    break  # An earlier turn exists.
+                    earlier_opener = True
+                    settling = True
+                    if reports.settled:
+                        break
                 continue
             pending.append(entry)
             if not is_opener:
                 continue
-            turn = _build_turn(list(reversed(pending)), kind, sidechain)
-            turns.append(turn)
+            entries = list(reversed(pending))
+            chunks.append((kind, entries))
             pending = []
-            brief_turn = turn if turn._brief_candidate is not None else None
-            if turn.is_compaction:
+            brief = kind == MACHINE and not sidechain and _brief_route(entries[0]) is not None
+            brief_chunk = entries if brief else None
+            if kind == "compaction":
                 break
-            done = turn.key == since_key or len(turns) >= MAX_TURNS
-            if done and brief_turn is None:
-                break
-            if done or since_key is None:
+            done = (str(entries[0].get("uuid") or "transcript-start") == since_key
+                    or len(chunks) >= MAX_TURNS)
+            if done and brief_chunk is None:
+                settling = True
+                if reports.settled:
+                    break
+            elif done or since_key is None:
                 probing = True
         else:
-            if brief_turn is not None:
-                brief_turn.confirm_brief()
-            # Reached the start of the file. Without `since_key`, entries before
-            # the first prompt are session-start attachments and are dropped;
-            # otherwise they (or a transcript with no prompt yet) form a turn of
-            # their own.
-            if not probing and (pending or not turns):
-                turns.append(_build_turn(list(reversed(pending)), None, sidechain))
-            turns[-1].opens_transcript = True
+            reached_start = not settling
     except OSError as exc:
         raise TranscriptUnreadable(f"the transcript could not be read ({exc.strerror})")
-    return list(reversed(turns))
+
+    if reached_start and not probing and (pending or not chunks):
+        # Without `since_key`, entries before the first prompt are
+        # session-start attachments and are dropped; otherwise they (or a
+        # transcript with no prompt yet) form a turn of their own.
+        chunks.append((None, list(reversed(pending))))
+    turns: list[Turn] = []
+    brief_turn: Turn | None = None
+    for kind, entries in reversed(chunks):
+        for index, (part_kind, part) in enumerate(reports.split(kind, entries)):
+            turns.append(_build_turn(part, part_kind, sidechain))
+            if index == 0 and entries is brief_chunk:
+                brief_turn = turns[-1]
+    if reached_start and not earlier_opener and not reports.opened_earlier_turn:
+        if brief_turn is not None:
+            brief_turn.confirm_brief()
+        turns[0].opens_transcript = True
+    return turns
 
 
 def _lines_backward(path: Path):
@@ -432,7 +468,9 @@ def _opener_kind(entry: dict, sidechain: bool = False) -> str | None:
     if (entry.get("origin") or {}).get("kind") == "peer" or entry.get("turnOrigin") == "peer":
         # A subagent's hand-back or another session's message. Claude Code
         # records it `isMeta` but starts a new turn with it, as the adapter
-        # does: whatever its text says, nobody typed it here.
+        # does: whatever its text says, nobody typed it here. The reader
+        # still folds the report of a subagent this session spawned into the
+        # current turn (see `_OwnReports`).
         return MACHINE
     if entry.get("isMeta"):
         return None
@@ -588,6 +626,135 @@ def _finished_agents(entry: dict) -> set[str]:
     if not isinstance(text, str) or "<" not in text:
         return set()
     return set(FINISHED_TASK_RE.findall(text)) | set(HAND_BACK_RE.findall(text))
+
+
+# A subagent's final report delivered as a prompt, as Claude Code 2.1.3xx
+# records it: after any reminders, an optional fixed first line, then the
+# report's tag naming the agent.
+REPORT_RE = re.compile(
+    r'\A(?:Another Claude session sent a message:[ \t]*\r?\n\s*)?<agent-message from="([^"\s]+)">'
+)
+
+
+def is_own_report(path: str | os.PathLike, text: str) -> bool:
+    """True when prompt text is the report of a subagent this session spawned.
+
+    For the prompt hook, which runs before the prompt is recorded: the
+    transcript must already show a spawn result naming the report's agent
+    (see `_spawned_agent`), after the last compaction and within the read
+    limit. Any doubt, an unreadable transcript included, answers False, so the
+    prompt opens a turn as any other machine-written prompt does.
+    """
+
+    sender = _report_sender(text)
+    if sender is None:
+        return False
+    try:
+        for line in _lines_backward(Path(path)):
+            if line is None:
+                return False
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(entry, dict):
+                continue
+            if _spawned_agent(entry) == sender:
+                return True
+            if _opener_kind(entry) == "compaction":
+                return False
+    except OSError:
+        return False
+    return False
+
+
+def _report_sender(text: str) -> str | None:
+    """The agent id a subagent's report names, from prompt text alone, or None."""
+
+    match = REPORT_RE.match(REMINDER_RE.sub("", text, count=1).lstrip())
+    return match.group(1) if match else None
+
+
+def _spawned_agent(entry: dict) -> str | None:
+    """The agent id a main-transcript spawn result records, or None.
+
+    Claude Code records it as `toolUseResult.agentId` on the result of an
+    `Agent` (or `Task`) call, foreground or background alike.
+    """
+
+    if entry.get("type") != "user" or entry.get("isSidechain"):
+        return None
+    result = entry.get("toolUseResult")
+    agent = result.get("agentId") if isinstance(result, dict) else None
+    return agent if isinstance(agent, str) and agent else None
+
+
+class _OwnReports:
+    """Ties reports delivered as prompts to the spawns of this session.
+
+    The reader goes backward, so it meets a report before the spawn that
+    started its agent. A report candidate, a peer prompt whose `origin.from`
+    is the agent its `<agent-message>` tag names, is held as part of the turn
+    until reading meets an older spawn result naming that agent. One left
+    untied, because reading stopped at a compaction, the read limit, or the
+    start of the file first, opens a turn after all (`split`).
+    """
+
+    def __init__(self) -> None:
+        # Agent id -> uuids of the reports naming it, not yet tied to a spawn.
+        self._waiting: dict[str, list[str]] = {}
+        # Reports held while the reader only looked for an earlier turn.
+        self._probed: set[str] = set()
+
+    @property
+    def settled(self) -> bool:
+        return not self._waiting
+
+    @property
+    def opened_earlier_turn(self) -> bool:
+        """An untied report was read while only looking for an earlier turn."""
+
+        return any(uuid in self._probed for uuids in self._waiting.values() for uuid in uuids)
+
+    def hold(self, entry: dict, probing: bool) -> bool:
+        """Hold `entry` as a report candidate; False when it is not one."""
+
+        origin = entry.get("origin")
+        sender = origin.get("from") if isinstance(origin, dict) else None
+        uuid = entry.get("uuid")
+        if not isinstance(sender, str) or not isinstance(uuid, str):
+            return False
+        if _report_sender(_prompt_text(entry) or "") != sender:
+            return False
+        self._waiting.setdefault(sender, []).append(uuid)
+        if probing:
+            self._probed.add(uuid)
+        return True
+
+    def see(self, entry: dict) -> None:
+        """Tie every waiting report to the spawn `entry` records, if any."""
+
+        agent = _spawned_agent(entry)
+        if agent is not None:
+            self._waiting.pop(agent, None)
+
+    def split(self, kind: str | None, entries: list[dict]):
+        """Yield `(kind, entries)` for each turn in one chunk, oldest first.
+
+        An untied report starts a turn of its own, written by a machine.
+        """
+
+        untied = {uuid for uuids in self._waiting.values() for uuid in uuids}
+        start = 0
+        for index, entry in enumerate(entries):
+            if entry.get("uuid") not in untied:
+                continue
+            if index:
+                yield kind, entries[start:index]
+            # Only the start-of-file chunk, which has no opener, can begin
+            # with one.
+            kind, start = MACHINE, index
+        yield kind, entries[start:]
 
 
 def _brief_route(opener: dict) -> dict | None:

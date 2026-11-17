@@ -1122,8 +1122,9 @@ override recorded for the turn.
 
 Overrides come only from prompts a person typed. The user-prompt hook records
 the phrases below, and the gates apply them only to the turn that prompt
-opened, after checking the transcript's record of who wrote it. Text an agent
-writes never counts. Matching ignores case, harness `<system-reminder>`
+opened, after checking the transcript's record of who wrote it, and only until
+that turn ends with `Stop` (see Subagents for a report arriving later). Text
+an agent writes never counts. Matching ignores case, harness `<system-reminder>`
 blocks, and text you pasted, which Claude Code wraps as
 `<pasted_content id="…">` … `</pasted_content id="…">`: a phrase inside a
 pasted report is not an override, while one you type before or after the block
@@ -1198,6 +1199,30 @@ A hook call from inside a subagent carries `agent_id`. There:
 
 If the subagent's transcript cannot be found, the call fails open with a
 warning; at closeout, its changes are left out, with a warning.
+
+A background subagent's final report can reach the parent in two ways: as a
+queued attachment inside the turn, or as a prompt that Claude Code records as
+a message from another session (an `isMeta` entry with `turnOrigin: peer`, an
+`origin` of kind `peer` whose `from` is the agent's id, and text opening
+`Another Claude session sent a message:` then `<agent-message from="<id>">`).
+Either way the report continues the turn when the adapter can tie it to a
+spawn of this session: the prompt's `origin.from` and its tag name the same
+agent, and an earlier spawn result in the main transcript, after the last
+compaction and within the read limit, records that agent as its `agentId`.
+Then the turn's route line, skip lines, overrides, checks and change reads
+all stand, a brief's route does not end, the closeout judges the whole turn,
+and the user-prompt hook announces no override and resets nothing.
+`review-intake` sees a reviewer's report either way. A report carries no
+override of its own. A report that arrives after the turn ended, once the
+adapter's `Stop` hook let it end, still continues the turn's route, route and
+skip lines, checks and change reads, but the overrides typed in that turn no
+longer apply. The user-prompt hook sees no `origin`, so it takes typed text
+shaped like such a report for one and records nothing; the gates read the
+typed origin from the transcript and open a new turn, to which no override
+applies. A prompt the adapter cannot tie to one of its spawns,
+such as another session's message, a scheduler's prompt, a report naming an
+agent this session never spawned, or a shape the adapter does not know,
+opens a new turn as before.
 
 ## Session Start Notices
 
@@ -1558,7 +1583,13 @@ of the call's prompt, which is normally already there.
   machine-written prompt with no `origin` and an unknown wrapper would be
   treated as typed. A new wrapper alone, on a prompt the transcript marks with
   a non-person origin, still applies no override, but the user-prompt hook
-  would announce one.
+  would announce one. A subagent's report continues the turn only in the shape
+  Subagents describes; a new shape, or a report whose spawn lies before a
+  compaction or beyond the read limit, opens a turn, as any machine-written
+  prompt does. Until it finds the spawn, the reader goes on reading back for
+  it, so a report naming an agent this session never spawned makes each hook
+  call of the turns it opens read back to the last compaction or the read
+  limit.
 - Shared-policy detection looks for the policy's title in the instruction
   files Claude Code reads and in their one-level `@` imports. It does not model
   the setting under which a `CLAUDE.md` stops `AGENTS.md` from loading, it
