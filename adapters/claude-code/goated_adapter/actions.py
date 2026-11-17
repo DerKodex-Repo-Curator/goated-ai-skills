@@ -132,6 +132,18 @@ MISSING_MODULE_EXCEPTIONS = frozenset({"ImportError", "ModuleNotFoundError"})
 SETUP_SKILL = "setup-scribe"
 REVIEW_SKILL = "standards-and-spec-review"
 RED_FLAGS_REFERENCE = "software-design-principles/references/red-flags.md"
+# The question `red-flags.md` ends with, which the closeout's red-flags item
+# repeats. No hold checks an answer.
+RED_FLAGS_QUESTION = "Name one input that would break this change, and say what happens."
+# Where a design citation counts besides reply text: the call fields that carry
+# route and skip lines (`transcript.LINE_FIELDS`). Named without backticks, so
+# the skill-usage mod reads no skill from them.
+CITATION_FIELDS = "a shell or agent call's description or a Skill call's args"
+# Why a commit-time citation belongs in those fields rather than reply text.
+UNSEEN_AT_COMMIT = (
+    "Reply text may not be seen at commit: text in the commit's own message is recorded "
+    "only after this check, and earlier text can be stored as a summary that drops it."
+)
 
 # Tools that start another agent, each with the input field that carries the
 # brief. A call without a brief (an offer card, or starting a saved proposal)
@@ -329,10 +341,10 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     proof = _Proof(turn, overrides, namespaces)
     spawned = functools.cache(subagents) if subagents else dict
     changes = lambda: _Changes(turn, spawned(), project)
-    at_commit = lambda: closeout and check_closeout(
+    at_commit = lambda by_tool=False: closeout and check_closeout(
         turn, overrides, namespaces, subagents=spawned(), project=project,
         edit_references=closeout.edit_references, design_ids=closeout.design_ids,
-        at_commit=True,
+        at_commit=True, by_tool=by_tool,
     )
     cwd = project.cwd if project else None  # Where git measures a pull request's size.
     if tool_name in COMMAND_TOOLS:
@@ -355,7 +367,7 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     if COMMIT_TOOL_RE.match(tool_name):
         message = tool_input.get("message")
         return _commit_hold(message if isinstance(message, str) else None, proof, changes,
-                            by_tool=True) or at_commit()
+                            by_tool=True) or at_commit(by_tool=True)
     if tool_name in SPAWN_BRIEF_FIELDS:
         brief = str(tool_input.get(SPAWN_BRIEF_FIELDS[tool_name]) or "")
         if not brief.strip() or spawns_a_reader(tool_name, tool_input):
@@ -912,9 +924,11 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
                    project: Project | None = None,
                    edit_references: dict[str, list[str]] | None = None,
                    design_ids: Callable[[], dict[str, tuple[str, ...]]] | None = None,
-                   at_commit: bool = False) -> Hold | None:
+                   at_commit: bool = False, by_tool: bool = False) -> Hold | None:
     """Return the closeout hold for a turn about to end, if any; `at_commit`:
-    for a commit the turn is about to make, which must meet it first.
+    for a commit the turn is about to make, which must meet it first, made by
+    an MCP commit tool when `by_tool`, which has no command to rerun and no
+    field that carries a citation.
 
     A turn that changed code needs, after its last code change, a check
     command (proof), in a later call or later in the same shell command. It
@@ -949,7 +963,10 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
 
     changes = _Changes(turn, subagents or {}, project)
     proof = _Proof(turn, overrides, namespaces, final_text)
-    items = _code_items(changes, proof, edit_references or {}, design_ids) if changes.code else []
+    items = (
+        _code_items(changes, proof, edit_references or {}, design_ids, at_commit, by_tool)
+        if changes.code else []
+    )
     sensitive = changes.sensitive
     if sensitive and SECURITY_SKILL in proof.loads and not proof.skipped(SECURITY_SKILL):
         last_sensitive = sensitive[-1][0]
@@ -974,7 +991,7 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     rerun = (
         "\nThe whole command was held, so rerun any steps chained before it too. A check "
         "chained before the commit in the same command has not run yet, so it does not count."
-    ) if at_commit else ""
+    ) if at_commit and not by_tool else ""
     return Hold(
         "closeout", JUSTIFIED_SKIP,
         f"Before {when} this turn, which {what}:\n" + "\n".join(items)
@@ -983,10 +1000,12 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
 
 
 def _code_items(changes: "_Changes", proof: _Proof, edit_references: dict[str, list[str]],
-                design_ids: Callable[[], dict[str, tuple[str, ...]]] | None) -> list[str]:
+                design_ids: Callable[[], dict[str, tuple[str, ...]]] | None,
+                at_commit: bool, by_tool: bool) -> list[str]:
     """The closeout items a code change needs: proof, a handoff for a failed
     check, doc-sync, the design red flags, and the design citations, each with
-    what is missing."""
+    what is missing; `at_commit` and `by_tool`, as `check_closeout` takes
+    them, say where a citation can still be written."""
 
     code = changes.code
     last = code[-1].index
@@ -1033,21 +1052,36 @@ def _code_items(changes: "_Changes", proof: _Proof, edit_references: dict[str, l
             items.append(
                 f"- Design: read `{RED_FLAGS_REFERENCE}` with the Read tool after your last "
                 f"code change (an edit of comments only aside), then read the change itself "
-                f"and scan it against them: {CHANGE_READ}. "
+                f"and scan it against them: {CHANGE_READ}. Then answer their closing "
+                f"question: {RED_FLAGS_QUESTION} "
                 f"Or write `goated-skip: {DESIGN_SKILL}: <reason>`."
             )
         elif not changes.read_after(flags):
             items.append(
                 "- Design: after reading the red flags, read the change itself and scan it "
-                f"against them, not your memory of it: {CHANGE_READ}. Or write "
+                f"against them, not your memory of it: {CHANGE_READ}. Then answer their "
+                f"closing question: {RED_FLAGS_QUESTION} Or write "
                 f"`goated-skip: {DESIGN_SKILL}: <reason>`."
             )
         uncited = _uncited_references(proof, edit_references, design_ids)
         if uncited:
+            if not at_commit:
+                where = f"Put the citations in your reply, or in {CITATION_FIELDS}."
+            elif by_tool:
+                where = (
+                    f"This tool's fields carry no citation, so put them in {CITATION_FIELDS} "
+                    f"made in an earlier message, then make the commit again. {UNSEEN_AT_COMMIT}"
+                )
+            else:
+                where = (
+                    "Put the citations in this commit call's description and make the call "
+                    f"again, or in {CITATION_FIELDS} made in an earlier message. "
+                    + UNSEEN_AT_COMMIT
+                )
             items.append(
-                "- Design: in your report, cite a section of each design reference this turn "
-                "required, as file#id, with how it shaped the change or why it did not apply; "
-                "the Section Index in the skill's SKILL.md lists each file's ids. Not yet "
+                "- Design: cite a section of each design reference this turn required, as "
+                "file#id, with how it shaped the change or why it did not apply; the Section "
+                f"Index in the skill's SKILL.md lists each file's ids. {where} Not yet "
                 f"cited: {', '.join(uncited)}. Or write `goated-skip: {DESIGN_SKILL}: <reason>`."
             )
     return items
@@ -1055,9 +1089,10 @@ def _code_items(changes: "_Changes", proof: _Proof, edit_references: dict[str, l
 
 def _uncited_references(proof: _Proof, edit_references: dict[str, list[str]],
                         design_ids: Callable[[], dict[str, tuple[str, ...]]] | None) -> list[str]:
-    """The references the turn's finished design edits required that its
-    text, the reply being finished included, cites no section of, in the
-    skill's order."""
+    """The references the turn's finished design edits required that it
+    cites no section of, in the skill's order. A citation counts in reply
+    text, the reply being finished included, and in the call fields that
+    carry route and skip lines, held calls and the call being judged included."""
 
     required = {
         name for call in proof.turn.calls if call.ok
@@ -1066,7 +1101,7 @@ def _uncited_references(proof: _Proof, edit_references: dict[str, list[str]],
     if not required or design_ids is None:
         return []
     ids = design_ids()
-    cited = design_reads.citations([*proof.turn.texts, proof.extra_text])
+    cited = design_reads.citations([*proof.turn.texts, *proof.turn.call_texts, proof.extra_text])
     return [
         name for name in design_reads.REFERENCES
         if name in required and name in ids

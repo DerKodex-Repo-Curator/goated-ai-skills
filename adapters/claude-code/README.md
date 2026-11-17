@@ -188,8 +188,8 @@ check after its own last change, that change is already proved.
 | Proof | A change not already proved | A check command run after the last code change: a test runner, linter, type checker, or build tool (`pytest`, `python -m unittest`, `npm test`, `cargo test`, `go vet`, `tsc`, `make check`, and the like, also through `uv run` or `npx`), or a script whose name says test, check, lint, verify, validate, or build (`scripts/validate_skills.py`). The check may be a later call, or later in the same shell command as the write (`cp a.py src/a.py && pytest`): every command from the write to the check must be joined by `&&`, `;`, or a newline, none of them an `exit`, `return`, or the like, and neither inside a branch, loop, function, or group (`if`, `( )`, `{ }`); the check must not run in the background (`pytest &`), though a pipe or `\|\|` after it is fine (`pytest 2>&1 \| tee log.txt`). A code file written after the check, or by a .NET call (`[IO.File]::WriteAllText`) anywhere in the command, is not proved by it; another file written after it, such as a log, does not matter. Inline interpreter code (`python -c`, `python -Bc`, `node -pe`, `perl -e`) is not a check; a shell's inline command line (`bash -c`, `pwsh -Command`) is read as a command line, so `bash -c 'npm test'` is a check and `bash -c 'echo tests ok'` is not | `verification-before-completion` |
 | Unfinished work | The last check after the change failed | `handoff` loads | `handoff` |
 | Docs | A code file outside the tests changed | `doc-sync` loads, and a [change read](#change-reads) follows the last code change, before or after the load | `doc-sync` |
-| Design red flags | `software-design-principles` loaded in the turn | `software-design-principles/references/red-flags.md` is read after the last code change that is not [comment-only](#comment-only-edits), then a [change read](#change-reads) after that read | `software-design-principles` |
-| Design citations | `software-design-principles` loaded in the turn, and the turn's edits required a [design reference](#design-references) | The turn's reply text, the reply being finished included, cites a section of each required reference as `file#id`, such as `errors.md#crash-early` (see [Design references](#design-references)) | `software-design-principles` |
+| Design red flags | `software-design-principles` loaded in the turn | `software-design-principles/references/red-flags.md` is read after the last code change that is not [comment-only](#comment-only-edits), then a [change read](#change-reads) after that read. The item repeats the question `red-flags.md` ends with (name one input that would break this change, and say what happens); no answer is checked | `software-design-principles` |
+| Design citations | `software-design-principles` loaded in the turn, and the turn's edits required a [design reference](#design-references) | The turn cites a section of each required reference as `file#id`, such as `errors.md#crash-early`, in its reply text, the reply being finished included, or in a call field that carries route and skip lines: a shell or agent call's `description` or a Skill call's `args`, the commit call being judged included (see [Design references](#design-references)) | `software-design-principles` |
 | Security | `code-security-review` loaded in the turn and a security-sensitive file (the `security` gate's paths, code or not) changed | A [change read](#change-reads) after the load and the last sensitive change | `code-security-review` |
 | Setup | The turn installed or added a dependency or tool by a command that names a package, or wrote an env or settings file (see below) | `setup-scribe` loads in the turn, before or after the change | `setup-scribe` |
 
@@ -420,9 +420,9 @@ only for reads; a test file edit that is not small still requires
 `coding.md`. A small edit before the skill loads is not held, as before.
 
 At closeout, the Design citations item asks for a citation of each reference
-the turn required, whether read in this turn or an earlier one: the turn's
-reply text cites at least one section id of each, with how it shaped the
-change or why it did not apply, as the skill's citation convention asks.
+the turn required, whether read in this turn or an earlier one: the turn
+cites at least one section id of each, with how it shaped the change or why
+it did not apply, as the skill's citation convention asks.
 The turn's required set is what the `design` and `design-reads` gates
 required of its edits: when the skill is loaded and a gate lets an edit of a
 project file through, the adapter records that edit's required references in
@@ -433,7 +433,16 @@ names no `tool_use_id` add nothing.
 
 A citation is `<file>#<id>`, bare, backticked, or after a path
 (`references/errors.md#crash-early`), anywhere in the turn's reply text,
-inside a quote or a code block too. Its id must be a section id that file
+inside a quote or a code block too, or in the call fields that carry
+[route and skip lines](#what-it-holds): the `description` of a shell or
+agent call and the `args` of a Skill call. Any call of the turn counts, a
+held call and the commit call being judged included, so a commit held for a
+missing citation passes when made again with the citation in its
+`description`. Claude Code can store the text of a message that makes a
+tool call as a summary that drops the citation (see
+[Known Limits](#known-limits)), and before a commit every message makes one.
+No other field counts: a command, an edit's or a file's text, and an MCP
+tool's `description` carry no citation. Its id must be a section id that file
 declares in an `<!-- id: #name -->` comment in the installed skill's
 `references/`, so an id of another reference, or a bare `#crash-early`, does
 not count. An id whose `##` heading groups `###` sections, such as
@@ -441,8 +450,13 @@ not count. An id whose `##` heading groups `###` sections, such as
 either; the remaining ids are the ones the skill's Section Index lists, which
 a test checks. The ids come from those files, not from a copy in the adapter:
 a user skill is looked for first, then project skills, then plugin skills,
-the newest cached version first. The item names each uncited reference and
-points to the Section Index for its ids. Whether a citation says anything
+the newest cached version first. The item names each uncited reference,
+points to the Section Index for its ids, and names the call fields without
+backticks, as the unseen-line advice does. At commit the report is not
+written yet, and reply text may not be seen, so a shell commit is asked for
+the citation in its own description, or in a call made in an earlier
+message. An MCP commit tool carries no citation in any field, so it is asked
+for one in such an earlier call. At `Stop` the item asks for it in the reply. Whether a citation says anything
 useful is not judged.
 
 ### Shell writes
@@ -600,9 +614,10 @@ has an unmet closeout item: Proof, Unfinished work, Docs, Design red flags,
 Design citations, Security, or Setup. The hold's first line is the
 closeout's, `goated-hold: closeout | justified-skip`, its items are the
 closeout's texts, and each item accepts its usual skip line. It opens
-`Before committing in this turn` and adds that the whole command was held,
-so a check chained before the commit in the same command has not run yet
-and does not count. An unmet `commit` hold comes first, unchanged.
+`Before committing in this turn`; for a shell commit it adds that the whole
+command was held, so a check chained before the commit in the same command
+has not run yet and does not count. An MCP commit tool has no command, so
+its hold leaves that out. An unmet `commit` hold comes first, unchanged.
 
 The `Stop` closeout stays as a backstop. A commit changes no file, so an
 item met before the commit stays met at `Stop`; a turn that never commits
@@ -789,6 +804,14 @@ goated-hold: <gate> | <kind>
   `software-design-principles/references/<file>`, which is no bare name. A
   `design` hold that asks for the line backticks its form,
   `goated-design-reads: <file>, <file>`; the skill-usage mod reads both.
+- The closeout's Design citations item names where a citation counts, the
+  call fields without backticks, like the unseen-line advice. Its
+  commit-time text asks for the citation in a shell commit's own description
+  or, for an MCP commit tool, in an earlier call's field, not in a report not
+  yet written, and says why reply text may not be seen; its `Stop` text asks
+  for it in the reply.
+  Both Design red-flags texts repeat the question `red-flags.md` ends with;
+  no hold reads an answer.
 
 Claude Code records a denied call as a `tool_result` with `is_error: true`
 whose content carries this reason, and a blocked `Stop` as the reason shown
@@ -1109,8 +1132,13 @@ of the call's prompt, which is normally already there.
   whose file cannot be read, or that declares no section, needs no citation.
   There is no closeout inside a subagent, and the parent does not record a
   subagent's edits, so a subagent's design edits need no citation. A citation
-  in a call's description does not count, and one in a reply that also makes
-  a tool call can be lost the way a route line is.
+  in a reply that also makes a tool call can be lost the way a route line
+  is, so the item points to the call fields too.
+- A restore command, such as `git checkout -- <file>` or `git restore`,
+  counts as a change whatever it restores, even content identical to what
+  the last check ran on, since the adapter reads commands, not file content.
+  So the Proof item asks for a check after it; a rerun of the check, or a
+  `goated-skip: verification-before-completion: <reason>` line, answers it.
 - The adapter guards against agents skipping skills, not against an agent
   working to defeat it. An agent with shell access could edit the transcript,
   the state file, or the settings that install the hooks. Defending against

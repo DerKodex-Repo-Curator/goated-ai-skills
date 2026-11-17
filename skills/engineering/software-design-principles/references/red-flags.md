@@ -57,3 +57,7 @@ Warning signs you can spot in real code, with the usual fix. A red flag is a pro
 | **Prototype in production** [PP] | Throw-away code quietly became the real thing. | Rewrite it properly using what it taught you. | `#prototypes` |
 | **Manual step** [PP] | A build or release needs a person to follow a list. | Script it and put the script in version control. | `#starter-kit` |
 | **Ritual without reason** [PP] | A practice followed because a famous company does it. | Ask what it achieves here. Keep what works. | `#agility` |
+
+After the scan, answer one question about the change itself, not about the code in general:
+
+Name one input that would break this change, and say what happens.
