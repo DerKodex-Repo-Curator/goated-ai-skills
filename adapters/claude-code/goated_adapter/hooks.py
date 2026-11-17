@@ -24,6 +24,7 @@ from .transcript import (
     NOT_PROMPT,
     TYPED,
     TranscriptUnreadable,
+    is_host_retry,
     prompt_text_kind,
     read_recent_turns,
 )
@@ -323,6 +324,7 @@ def _session_start(payload: dict, config: Config) -> str:
         state.task_unknown = False
     if payload.get("source") in {"compact", "clear"}:
         state.router_loaded = False
+        state.brief_routed = False
         state.reference_reads = []
         state.last_turn = None
         if state.task is not None:
@@ -362,7 +364,9 @@ def _user_prompt_submit(payload: dict, config: Config) -> str:
         raise _FailOpen("the hook input has no session_id")
     prompt = str(payload.get("prompt") or "")
     kind = prompt_text_kind(prompt)
-    if kind in (CONTINUATION, NOT_PROMPT):
+    if kind in (CONTINUATION, NOT_PROMPT) or is_host_retry(prompt):
+        # An app retry continues the turn. A typed "Try again" opens a new
+        # turn, whose prompt id never matches the overrides kept here.
         return ""
     store = StateStore(config.state_dir)
     state, state_warning = store.load(session_id)

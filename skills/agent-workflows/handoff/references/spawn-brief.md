@@ -21,6 +21,10 @@ write ownership and review statuses. Use this template for everything else.
 - Write in your own words. "Based on the findings above" points at context the
   agent does not have.
 - Leave out credentials, private data, and content the agent should not see.
+- If you already routed the task, end the brief with its route line, such as
+  `goated-route: standard | requires: tdd`, on its own line outside code
+  blocks. A new session takes it as its route, and still loads those skills.
+  A route line anywhere in the brief counts, so quote no other.
 
 ## Template
 
@@ -61,6 +65,8 @@ write ownership and review statuses. Use this template for everything else.
 - Changed paths and paths inspected
 - Commands run and their results
 - Assumptions, concerns, and checks skipped
+
+<Route line, when you routed the task.>
 ```
 
 Drop sections that carry nothing for this task. Keep the brief short enough

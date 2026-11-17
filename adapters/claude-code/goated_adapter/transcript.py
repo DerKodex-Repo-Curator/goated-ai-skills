@@ -50,12 +50,18 @@ CONTINUATION_PREFIXES = ("<task-notification>", "<side-sessions-event>")
 # tag; the hook input carries no field saying where a prompt came from, so the
 # first line is the prompt hook's only sign. The bare tags count too, in case
 # a prompt arrives without that line.
+#
+# A session started from another session gets that session's brief as its
+# first prompt, opening with one of `BRIEF_PREFIXES` (see `_brief_route`).
+BRIEF_PREFIXES = (
+    "Background (from the session that started this one)",
+    "Task (from the session that started this one)",
+)
 MACHINE_PREFIXES = (
     "Another Claude session sent a message:",
     "<agent-message",
     "<cross-session-message",
-    "Background (from the session that started this one)",
-    "Task (from the session that started this one)",
+    *BRIEF_PREFIXES,
 )
 
 TYPED = "typed"
@@ -63,7 +69,12 @@ MACHINE = "machine"
 CONTINUATION = "continuation"
 NOT_PROMPT = "not-prompt"
 
+# After an API error the desktop app resubmits the turn with this exact text,
+# after any reminder blocks (see `is_host_retry`).
+HOST_RETRY_TEXT = "Try again"
+
 REMINDER_RE = re.compile(r"\A\s*(?:<system-reminder>.*?</system-reminder>\s*)+", re.DOTALL)
+ANY_REMINDER_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
 COMMAND_NAME_RE = re.compile(r"<command-name>/([^<\s]+)</command-name>")
 SKILL_BODY_PREFIX = "Base directory for this skill:"
 # A call this adapter held: Claude Code 2.1.3xx records the deny reason as
@@ -111,6 +122,17 @@ def prompt_text_kind(text: str) -> str:
     if body.startswith(MACHINE_PREFIXES):
         return MACHINE
     return TYPED
+
+
+def is_host_retry(text: str) -> bool:
+    """True when prompt text, after any leading reminders, is the app's retry.
+
+    Text alone cannot show who wrote it, so the transcript reader also checks
+    that the entry is host-written (see `_opener_kind`). The text carries no
+    override, so the prompt hook leaves the turn's overrides in place.
+    """
+
+    return REMINDER_RE.sub("", text, count=1).strip() == HOST_RETRY_TEXT
 
 
 class TranscriptUnreadable(Exception):
@@ -173,14 +195,16 @@ class Turn:
     turn, oldest first, and `unfinished` the `(name, input)` of recorded calls
     with no result yet, oldest first. `opens_transcript` is set on the oldest
     turn read when reading reached the start of the transcript, so no earlier
-    turn exists.
+    turn exists. `brief_route` is the route line of the brief that opened the
+    session, set only on the session's first turn when another session
+    started it (see `_brief_route`); it is also the turn's first route mark.
     """
 
     __slots__ = (
         "key", "is_compaction", "typed", "prompt_id", "loads", "invoked_load",
         "route", "route_marks", "malformed", "skips", "calls", "prompt_ids",
         "opens_transcript", "design_reads", "malformed_design_reads", "call_ids",
-        "unfinished", "texts",
+        "unfinished", "texts", "brief_route", "_brief_candidate",
     )
 
     def __init__(self, key: str) -> None:
@@ -202,6 +226,23 @@ class Turn:
         self.call_ids: set[str] = set()
         self.unfinished: list[tuple[str, dict]] = []
         self.texts: list[str] = []
+        self.brief_route: dict | None = None
+        # The opener's brief route, until reading shows this turn is the first.
+        self._brief_candidate: dict | None = None
+
+    def confirm_brief(self) -> None:
+        """Make the opener's brief route this turn's oldest route line, if any.
+
+        Call it only once reading shows no prompt opened a turn before this one.
+        """
+
+        route = self._brief_candidate
+        if route is None:
+            return
+        self.brief_route = route
+        self.route_marks.insert(0, RouteMark(route, 0, 0))
+        if self.route is None:
+            self.route = route
 
     def add_markers(self, markers: ReplyMarkers) -> None:
         """Count the marker lines of one reply text or one tool call, in order."""
@@ -285,9 +326,13 @@ def _read_turns_once(path: Path, since_key: str | None, sidechain: bool) -> list
     try:
         turns: list[Turn] = []
         pending: list[dict] = []
-        # Set once the current turn is read without `since_key`: the reader
-        # then only looks for an earlier turn's opener, collecting nothing.
+        # Set once the current turn is read without `since_key`, or once a turn
+        # opened by a brief with a route line ends the read: the reader then
+        # only looks for an earlier turn's opener, collecting nothing.
         probing = False
+        # The oldest turn read so far when its opener is such a brief: its
+        # route counts only if no earlier turn exists.
+        brief_turn: Turn | None = None
         for line in _lines_backward(path):
             if line is None:
                 # Read limit reached. Older unseen turns are given up, as if
@@ -317,11 +362,17 @@ def _read_turns_once(path: Path, since_key: str | None, sidechain: bool) -> list
             turn = _build_turn(list(reversed(pending)), kind, sidechain)
             turns.append(turn)
             pending = []
-            if turn.is_compaction or turn.key == since_key or len(turns) >= MAX_TURNS:
+            brief_turn = turn if turn._brief_candidate is not None else None
+            if turn.is_compaction:
                 break
-            if since_key is None:
+            done = turn.key == since_key or len(turns) >= MAX_TURNS
+            if done and brief_turn is None:
+                break
+            if done or since_key is None:
                 probing = True
         else:
+            if brief_turn is not None:
+                brief_turn.confirm_brief()
             # Reached the start of the file. Without `since_key`, entries before
             # the first prompt are session-start attachments and are dropped;
             # otherwise they (or a transcript with no prompt yet) form a turn of
@@ -392,6 +443,10 @@ def _opener_kind(entry: dict, sidechain: bool = False) -> str | None:
         return by_text
     origin = (entry.get("origin") or {}).get("kind")
     turn_origin = entry.get("turnOrigin")
+    if turn_origin == "host_synthetic" and "origin" not in entry and is_host_retry(text):
+        # The app retrying the turn after an API error: the turn, its route,
+        # and its overrides go on. A person's "Try again" has a `human` origin.
+        return CONTINUATION
     if origin == "task-notification" or turn_origin == "task_notification":
         return CONTINUATION
     if origin is not None:
@@ -436,6 +491,8 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
     if opener is not None and kind in (TYPED, MACHINE):
         match = COMMAND_NAME_RE.search(_prompt_text(opener) or "")
         invoked = match.group(1) if match else None
+    if opener is not None and kind == MACHINE and not sidechain:
+        turn._brief_candidate = _brief_route(opener)
 
     skill_calls: dict[str, str] = {}
     pending: dict[str, tuple[str, dict]] = {}
@@ -495,6 +552,31 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                     turn.loads.append(skill)
     turn.unfinished = list(pending.values())
     return turn
+
+
+def _brief_route(opener: dict) -> dict | None:
+    """The route line of a brief from the session that started this one, or None.
+
+    Desktop-app builds seen in November 2026 submit that brief as the new
+    session's first prompt: one or more `<system-reminder>` blocks, then text
+    opening with one of `BRIEF_PREFIXES`, recorded with
+    `turnOrigin: host_synthetic`, no `origin`, and no `isMeta`. Older builds
+    recorded `turnOrigin: sdk`, which is not recognized. A typed prompt carries
+    `origin.kind: human`, and another session's message is `isMeta` with a
+    `peer` origin, so neither matches. The route is the last valid route line
+    on its own line anywhere in the brief; lines inside reminder blocks, which
+    quote instruction files, never count. The caller confirms the prompt was
+    the session's first.
+    """
+
+    if opener.get("turnOrigin") != "host_synthetic" or "origin" in opener:
+        return None
+    if opener.get("isMeta"):
+        return None
+    body = REMINDER_RE.sub("", _prompt_text(opener) or "", count=1).lstrip()
+    if not body.startswith(BRIEF_PREFIXES):
+        return None
+    return parse_reply(ANY_REMINDER_RE.sub("\n", body)).route
 
 
 def _starts_skill_body(content: list) -> bool:
