@@ -22,10 +22,19 @@ REGISTRY_LABEL = "stack/goated-stack.yaml"
 FIXTURE_PATH = Path("stack") / "fixtures" / "reference-reads" / "entries.yaml"
 SCHEMA_PATH = Path("stack") / "schemas" / "stack-registry.schema.json"
 
-# A Markdown link target inside the skill's own references folder, such as
-# `](references/test-design.md)` or `](./references/test-design.md#id)`.
-# A path in backticks is not a link, so prose about the folder never counts.
-_REFERENCE_LINK_RE = re.compile(r"\]\((?:\./)?references/([^)#\s]+)")
+# A Markdown link target inside the skill's own references folder: inline,
+# as `](references/test-design.md)`, `](./references/test-design.md#id)` or
+# `](<references/test-design.md>)`, or a reference-style definition line, as
+# `[label]: references/test-design.md`. A path in backticks is not a link, so
+# prose about the folder never counts.
+_REFERENCE_LINK_RE = re.compile(
+    r"(?:\]\(|^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*)<?(?:\./)?references/([^)>#\s]+)",
+    re.MULTILINE,
+)
+
+# Files an operating system or editor drops into a folder. They are never
+# references, and the schema cannot declare them, so they are not reported.
+_IGNORED_FILE_NAMES = {"Thumbs.db", "desktop.ini"}
 
 
 def _files_on_disk(references_dir: Path) -> set[str]:
@@ -35,21 +44,37 @@ def _files_on_disk(references_dir: Path) -> set[str]:
         path.relative_to(references_dir).as_posix()
         for path in references_dir.rglob("*")
         if path.is_file()
+        and path.name not in _IGNORED_FILE_NAMES
+        and not any(
+            part.startswith(".")
+            for part in path.relative_to(references_dir).parts
+        )
     }
 
 
 def validate_skill_references(
     repo: Path,
     skill_entries: list[dict],
-    pattern_names: set[str],
+    reference_patterns: list[dict],
 ) -> list[Finding]:
-    """Compare each skill's declared references with its folder and links.
+    """Check the registry's reference patterns and each skill's references.
 
-    Expects schema-valid entries. A skill whose `SKILL.md` is missing is
-    skipped, because the registry check already reports it.
+    Reports a pattern defined twice, then compares each skill's declared
+    references with its folder and links. Expects schema-valid entries. A
+    skill whose `SKILL.md` is missing is skipped, because the registry check
+    already reports it.
     """
 
     errors: list[Finding] = []
+    pattern_names: set[str] = set()
+    for pattern in reference_patterns:
+        name = str(pattern["name"])
+        if name in pattern_names:
+            errors.append(
+                Finding(REGISTRY_LABEL, f"duplicate reference pattern: {name}")
+            )
+        pattern_names.add(name)
+
     for skill in skill_entries:
         skill_path = repo / str(skill["path"])
         if not skill_path.exists():

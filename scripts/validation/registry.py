@@ -212,10 +212,11 @@ def validate_registry(repo: Path) -> list[Finding]:
                 )
             )
 
-    pattern_names = {
-        str(pattern["name"]) for pattern in registry.get("reference_patterns", [])
-    }
-    errors.extend(validate_skill_references(repo, skill_entries, pattern_names))
+    errors.extend(
+        validate_skill_references(
+            repo, skill_entries, registry.get("reference_patterns", [])
+        )
+    )
 
     implemented_skills, _ = find_skill_files(repo)
     implemented_paths = {

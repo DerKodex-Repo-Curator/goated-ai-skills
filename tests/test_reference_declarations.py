@@ -343,6 +343,92 @@ class ReferenceDeclarationFailureTests(unittest.TestCase):
         )
 
 
+    def test_gate_fires_with_an_unknown_gate_fails(self) -> None:
+        messages = run_with(
+            add_linked_and_declare(
+                {
+                    "file": "new-ref.md",
+                    "signal": {"kind": "gate-fires", "gate": "repeated-failur"},
+                }
+            )
+        )
+        self.assertEqual(1, len(messages), messages)
+        self.assertIn("'repeated-failur' is not one of", messages[0])
+
+    def test_near_miss_gate_fires_with_a_real_gate_passes(self) -> None:
+        messages = run_with(
+            add_linked_and_declare(
+                {
+                    "file": "new-ref.md",
+                    "signal": {"kind": "gate-fires", "gate": "repeated-failure"},
+                }
+            )
+        )
+        self.assertEqual([], messages)
+
+    def test_reference_style_and_angle_bracket_links_are_checked(self) -> None:
+        for link in (
+            "[ghost]: references/ghost.md",
+            "[ghost]: ./references/ghost.md",
+            "Read [Ghost](<references/ghost.md>) first.",
+        ):
+            with self.subTest(link=link):
+
+                def change(root: Path, registry: dict, link: str = link) -> None:
+                    skill_path = root / TDD_DIR / "SKILL.md"
+                    text = skill_path.read_text(encoding="utf-8")
+                    skill_path.write_text(text + f"\n{link}\n", encoding="utf-8")
+
+                self.assertEqual(
+                    [
+                        "SKILL.md links a reference the registry does not declare: "
+                        "skills/engineering/tdd/references/ghost.md"
+                    ],
+                    run_with(change),
+                )
+
+    def test_near_miss_reference_style_link_to_a_declared_file_passes(self) -> None:
+        def change(root: Path, registry: dict) -> None:
+            add_reference_file(root, "new-ref.md")
+            skill_path = root / TDD_DIR / "SKILL.md"
+            text = skill_path.read_text(encoding="utf-8")
+            skill_path.write_text(
+                text + "\n[new]: references/new-ref.md\n", encoding="utf-8"
+            )
+            declare(registry, dict(ADVISORY))
+
+        self.assertEqual([], run_with(change))
+
+    def test_os_junk_and_dotfiles_in_references_are_ignored(self) -> None:
+        def change(root: Path, registry: dict) -> None:
+            for name in (".DS_Store", "Thumbs.db", "desktop.ini", ".hidden.md"):
+                add_reference_file(root, name)
+
+        self.assertEqual([], run_with(change))
+
+    def test_near_miss_ordinary_undeclared_file_is_still_reported(self) -> None:
+        def change(root: Path, registry: dict) -> None:
+            add_reference_file(root, "notes.txt")
+
+        self.assertEqual(
+            [
+                "reference file is not declared in the registry: "
+                "skills/engineering/tdd/references/notes.txt"
+            ],
+            run_with(change),
+        )
+
+    def test_duplicate_reference_pattern_fails(self) -> None:
+        def change(root: Path, registry: dict) -> None:
+            registry["reference_patterns"].append(
+                {"name": "mock-or-patch", "description": "Defined twice by mistake."}
+            )
+
+        self.assertEqual(
+            ["duplicate reference pattern: mock-or-patch"], run_with(change)
+        )
+
+
 class ReferenceFixtureTests(unittest.TestCase):
     def test_current_reference_fixtures_are_valid(self) -> None:
         self.assertEqual([], validate_reference_fixtures(REPO_ROOT))

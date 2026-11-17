@@ -118,3 +118,10 @@ cases:
       signal:
         kind: existing-rule
         gate: design-twice
+  - name: gate-fires-naming-an-unknown-gate
+    valid: false
+    entry:
+      file: root-cause-tracing.md
+      signal:
+        kind: gate-fires
+        gate: repeated-failur

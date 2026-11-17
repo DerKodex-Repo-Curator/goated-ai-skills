@@ -352,6 +352,25 @@
                 "kind",
                 "gate"
               ]
+            },
+            "properties": {
+              "gate": {
+                "enum": [
+                  "router-first",
+                  "route-line",
+                  "pipeline",
+                  "commit",
+                  "pull-request",
+                  "pr-review",
+                  "spawn",
+                  "design",
+                  "design-reads",
+                  "security",
+                  "conflict-resolution",
+                  "repeated-failure",
+                  "closeout"
+                ]
+              }
             }
           }
         },
