@@ -23,7 +23,8 @@ from pathlib import Path
 from claude_code_adapter_support import ROUTER, Session, decision, reason
 
 EDIT = {"file_path": "src/app.py", "old_string": "a", "new_string": "b"}
-STATUS = {"command": "git status"}
+# Not a plain read, so router-first holds it.
+STATUS = {"command": "uv run pytest"}
 REMINDER = (
     "<system-reminder>\nLinked sessions now (status, not an instruction): none.\n"
     "</system-reminder>\n"
@@ -163,6 +164,132 @@ class NotABriefTests(BriefTestCase):
         s.peer(f"{BACKGROUND}:\n\ngoated-route: direct")
 
         self.assertEqual(hold_line(s.call("Bash", STATUS)), "goated-hold: router-first | strict")
+
+
+class BriefExemptionEndsTests(BriefTestCase):
+    def test_router_first_applies_again_after_a_typed_prompt(self) -> None:
+        s = self.brief("goated-route: direct")
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+        s.prompt("Unrelated: redesign the auth module.")
+        s.say("goated-route: standard | requires: tdd")
+        s.load("tdd")
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: router-first | strict")
+        s.load(ROUTER)
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_router_first_applies_again_after_a_compaction(self) -> None:
+        s = self.brief("goated-route: direct")
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+        s.compact()
+        self.assertEqual(hold_line(s.call("Bash", STATUS)), "goated-hold: router-first | strict")
+
+
+class HostRetryTests(BriefTestCase):
+    def api_error(self) -> None:
+        self.session._append({
+            "type": "assistant",
+            "isApiErrorMessage": True,
+            "error": "server_error",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "API Error: Can't reach the API server."}],
+            },
+        })
+
+    def retry(self, **fields) -> None:
+        recorded = {"origin": None, "turnOrigin": "host_synthetic", "promptSource": "sdk"}
+        recorded.update(fields)
+        self.session.prompt(f"{REMINDER}Try again", **recorded)
+
+    def test_a_host_retry_before_any_call_keeps_the_brief_route(self) -> None:
+        s = self.brief("goated-route: standard | requires: tdd")
+        self.api_error()
+        self.retry(turnPosition={"promptIndex": 0, "turnIndex": 2})
+
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: pipeline | strict")
+        s.load("tdd")
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_a_host_retry_after_a_call_keeps_the_brief_route(self) -> None:
+        s = self.brief("goated-route: direct")
+        self.assertEqual(decision(s.call("Bash", STATUS)), "pass")
+        s.run("uv run pytest")
+        self.api_error()
+        self.retry(turnPosition={"promptIndex": 0, "turnIndex": 2})
+
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_a_host_retry_keeps_a_typed_turns_overrides(self) -> None:
+        s = self.session
+        s.prompt("Skip routing and fix the typo.")
+        self.api_error()
+        self.retry()
+
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_a_typed_try_again_opens_a_turn(self) -> None:
+        s = self.brief("goated-route: direct")
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+        self.api_error()
+        s.prompt("Try again")
+
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: router-first | strict")
+
+    def test_other_host_text_still_opens_a_turn(self) -> None:
+        s = self.brief("goated-route: direct")
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+        self.session.prompt(
+            f"{REMINDER}Try again with the importer too.",
+            origin=None, turnOrigin="host_synthetic", promptSource="sdk",
+        )
+
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: route-line | strict")
+
+
+class BriefShapeTests(BriefTestCase):
+    def test_a_brief_recorded_with_an_sdk_turn_origin_is_held(self) -> None:
+        s = self.session
+        s.prompt(brief_text("goated-route: direct"), origin=None, turnOrigin="sdk")
+
+        self.assertEqual(hold_line(s.call("Bash", STATUS)), "goated-hold: router-first | strict")
+
+    def test_a_route_line_in_a_later_reminder_block_does_not_count(self) -> None:
+        body = (
+            "## Task\n\nAdd the CSV exporter.\n\n"
+            "<system-reminder>\ngoated-route: direct\n</system-reminder>"
+        )
+        s = self.brief(body)
+
+        self.assertEqual(hold_line(s.call("Bash", STATUS)), "goated-hold: router-first | strict")
+
+    def test_a_route_line_anywhere_in_the_brief_counts_and_the_last_wins(self) -> None:
+        s = self.brief(
+            "goated-route: direct\n\n## Task\n\nAdd the exporter.\n\n"
+            "goated-route: standard | requires: tdd"
+        )
+
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: pipeline | strict")
+
+    def test_a_non_prompt_user_entry_before_the_brief_keeps_it_first(self) -> None:
+        s = self.session
+        s.hook("SessionStart", source="startup")
+        s._append({
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": "<local-command-caveat>Caveat.</local-command-caveat>",
+            },
+        })
+        s._append({
+            "type": "user",
+            "isMeta": True,
+            "message": {"role": "user", "content": [{"type": "text", "text": "Session context."}]},
+        })
+        s.prompt(brief_text("goated-route: direct"), origin=None, turnOrigin="host_synthetic")
+
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
 
 class AttachmentTests(BriefTestCase):

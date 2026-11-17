@@ -23,7 +23,8 @@ write ownership and review statuses. Use this template for everything else.
 - Leave out credentials, private data, and content the agent should not see.
 - If you already routed the task, end the brief with its route line, such as
   `goated-route: standard | requires: tdd`, on its own line outside code
-  blocks. A new session takes it as its route; it still loads those skills.
+  blocks. A new session takes it as its route, and still loads those skills.
+  A route line anywhere in the brief counts, so quote no other.
 
 ## Template
 

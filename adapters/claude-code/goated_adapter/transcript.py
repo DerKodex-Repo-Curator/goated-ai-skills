@@ -69,7 +69,12 @@ MACHINE = "machine"
 CONTINUATION = "continuation"
 NOT_PROMPT = "not-prompt"
 
+# After an API error the desktop app resubmits the turn with this exact text,
+# after any reminder blocks (see `is_host_retry`).
+HOST_RETRY_TEXT = "Try again"
+
 REMINDER_RE = re.compile(r"\A\s*(?:<system-reminder>.*?</system-reminder>\s*)+", re.DOTALL)
+ANY_REMINDER_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
 COMMAND_NAME_RE = re.compile(r"<command-name>/([^<\s]+)</command-name>")
 SKILL_BODY_PREFIX = "Base directory for this skill:"
 # A call this adapter held: Claude Code 2.1.3xx records the deny reason as
@@ -117,6 +122,17 @@ def prompt_text_kind(text: str) -> str:
     if body.startswith(MACHINE_PREFIXES):
         return MACHINE
     return TYPED
+
+
+def is_host_retry(text: str) -> bool:
+    """True when prompt text, after any leading reminders, is the app's retry.
+
+    Text alone cannot show who wrote it, so the transcript reader also checks
+    that the entry is host-written (see `_opener_kind`). The text carries no
+    override, so the prompt hook leaves the turn's overrides in place.
+    """
+
+    return REMINDER_RE.sub("", text, count=1).strip() == HOST_RETRY_TEXT
 
 
 class TranscriptUnreadable(Exception):
@@ -423,6 +439,10 @@ def _opener_kind(entry: dict, sidechain: bool = False) -> str | None:
         return by_text
     origin = (entry.get("origin") or {}).get("kind")
     turn_origin = entry.get("turnOrigin")
+    if turn_origin == "host_synthetic" and "origin" not in entry and is_host_retry(text):
+        # The app retrying the turn after an API error: the turn, its route,
+        # and its overrides go on. A person's "Try again" has a `human` origin.
+        return CONTINUATION
     if origin == "task-notification" or turn_origin == "task_notification":
         return CONTINUATION
     if origin is not None:
@@ -529,14 +549,16 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
 def _brief_route(opener: dict) -> dict | None:
     """The route line of a brief from the session that started this one, or None.
 
-    The desktop app (2.1.3xx) submits that brief as the new session's first
-    prompt: one or more `<system-reminder>` blocks, then text opening with one
-    of `BRIEF_PREFIXES`, recorded with `turnOrigin: host_synthetic`, no
-    `origin`, and no `isMeta`. A typed prompt carries `origin.kind: human`, and
-    another session's message is `isMeta` with a `peer` origin, so neither
-    matches. The route is the brief's winning valid route line on its own
-    line; lines inside the reminders, which quote instruction files, never
-    count. The caller confirms the prompt was the session's first.
+    Desktop-app builds seen in November 2026 submit that brief as the new
+    session's first prompt: one or more `<system-reminder>` blocks, then text
+    opening with one of `BRIEF_PREFIXES`, recorded with
+    `turnOrigin: host_synthetic`, no `origin`, and no `isMeta`. Older builds
+    recorded `turnOrigin: sdk`, which is not recognized. A typed prompt carries
+    `origin.kind: human`, and another session's message is `isMeta` with a
+    `peer` origin, so neither matches. The route is the last valid route line
+    on its own line anywhere in the brief; lines inside reminder blocks, which
+    quote instruction files, never count. The caller confirms the prompt was
+    the session's first.
     """
 
     if opener.get("turnOrigin") != "host_synthetic" or "origin" in opener:
@@ -546,7 +568,7 @@ def _brief_route(opener: dict) -> dict | None:
     body = REMINDER_RE.sub("", _prompt_text(opener) or "", count=1).lstrip()
     if not body.startswith(BRIEF_PREFIXES):
         return None
-    return parse_reply(body).route
+    return parse_reply(ANY_REMINDER_RE.sub("\n", body)).route
 
 
 def _starts_skill_body(content: list) -> bool:
