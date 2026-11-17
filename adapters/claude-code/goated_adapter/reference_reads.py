@@ -38,6 +38,10 @@ from typing import NamedTuple
 
 # The signal kinds judged on the code a write adds; they apply to code files only.
 EDIT_KINDS = ("edit-adds-pattern", "edit-of-file-kind")
+# The gates a `gate-fires` signal can name: the ones whose condition the adapter
+# observes at a write (`Edit.gates`). The schema allows any gate, so
+# `validate_skills.py` rejects a registry entry naming another.
+OBSERVED_GATES = frozenset({"repeated-failure"})
 MAX_REGISTRY_BYTES = 1024 * 1024
 
 

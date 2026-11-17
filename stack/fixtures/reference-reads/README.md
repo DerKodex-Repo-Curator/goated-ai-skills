@@ -19,13 +19,16 @@ in its `references/` folder, and the files its `SKILL.md` links are one set.
 | `edit-adds-pattern` | `pattern`, optional `file_kind` | an edit adds text matching a pattern named in the registry's `reference_patterns`, in a file of that kind if one is given |
 | `edit-of-file-kind` | `file_kind`, optional `min_added_lines` | an edit of a file of that kind adds at least that many lines |
 | `write-under-path` | `path`, ending in `/` | a write under that project-relative folder |
-| `gate-fires` | `gate`: one of the adapter gate names the schema lists | another gate of the adapter fires, such as `repeated-failure` |
+| `gate-fires` | `gate`: one of the adapter gate names the schema lists, and one the Claude Code adapter observes, which today is `repeated-failure` only | another gate of the adapter fires, such as `repeated-failure` |
 | `sensitive-category-count` | `min_categories` | the turn's security-sensitive changes span at least that many categories |
 | `spawn-with-brief` | none | an agent or session is started with a brief |
 | `existing-rule` | `gate`: `closeout`, `design-reads`, or `spawn` | an adapter rule that enforces the read today, unchanged |
 
 A new kind needs a schema change and an adapter change. A new reference of an
-existing kind needs only its registry entry. A signal applies only once its
+existing kind needs only its registry entry. A `gate-fires` entry is the exception: the schema
+allows every gate name, but `validate_skills.py` fails on a gate the Claude
+Code adapter does not observe, since that entry would never be enforced.
+Observing another gate is an adapter change. A signal applies only once its
 skill counts as loaded; a framework adapter decides how it observes each kind.
 
 Installed skills never read the registry. A skill installed alone keeps its

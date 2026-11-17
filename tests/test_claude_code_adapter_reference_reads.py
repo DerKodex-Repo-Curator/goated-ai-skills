@@ -381,10 +381,6 @@ class RegistryEntries(ReferenceReadsTestCase):
             "        signal:\n"
             "          kind: gate-fires\n"
             "          gate: repeated-failure\n"
-            "      - file: unobserved-gate.md\n"
-            "        signal:\n"
-            "          kind: gate-fires\n"
-            "          gate: pr-review\n"
             "      - file: wide-change.md\n"
             "        signal:\n"
             "          kind: sensitive-category-count\n"
@@ -424,12 +420,21 @@ class RegistryEntries(ReferenceReadsTestCase):
         self.assertPasses(s.call("Edit", edit("package.json", '"a": "1"')))
         self.assertHeldFor(s.call("Edit", edit(".env", "KEY=1")), "tdd/references/wide-change.md")
 
-    def test_advisory_entries_and_unobserved_gates_ask_for_nothing_here(self) -> None:
+    def test_advisory_entries_ask_for_nothing(self) -> None:
         s = self.first_turn("tdd", "prototype", registry=self.fixture_registry())
         self.assertPasses(s.call("Edit", edit("docs/notes.md", "Some notes.")))
         held = s.call("Write", {"file_path": "docs/decisions/x.md", "content": "# X\n"})
         self.assertNotIn("spike-notes.md", reason(held))
-        self.assertNotIn("unobserved-gate.md", reason(held))
+
+    def test_a_gate_the_adapter_does_not_observe_fails_open(self) -> None:
+        # Not a way to declare a reference: validate_skills rejects such an entry
+        # (tests/test_validate_adapters.py). This guards an installed registry the
+        # validator never saw, which must not hold every write.
+        self.assertEqual(reference_reads.OBSERVED_GATES, frozenset({"repeated-failure"}))
+        reference = reference_reads.Reference(
+            "tdd", "x.md", {"kind": "gate-fires", "gate": "pr-review"})
+        edit_ = reference_reads.Edit(True, False, [], gates=frozenset({"repeated-failure"}))
+        self.assertEqual(reference_reads.selected([reference], edit_), [])
 
     def test_a_path_signal_naming_no_path_selects_nothing(self) -> None:
         reference = reference_reads.Reference("tdd", "x.md", {"kind": "write-under-path"})
@@ -497,6 +502,37 @@ class TicketTemplates(ReferenceReadsTestCase):
         s.read(TICKET_TEMPLATES)
         self.assertPasses(s.call("Write", {"file_path": "tickets/080-export.md", "content": "# T\n"}))
 
+    def test_the_hold_names_the_write(self) -> None:
+        s = self.first_turn("spec-to-tickets")
+        held = s.call("Write", {"file_path": "tickets/080-export.md", "content": "# T\n"})
+        self.assertIn('This write to "080-export.md" needs', reason(held))
+        self.assertIn("This write was not applied.", reason(held))
+
+    def test_a_shell_write_from_an_unknown_folder_is_not_judged(self) -> None:
+        s = self.first_turn("spec-to-tickets")
+        self.assertPasses(s.call("Bash", {"command": "cd $DIR && echo x > tickets/a.md"}))
+
+    def test_a_session_below_the_checkout_judges_from_each_project_root(self) -> None:
+        (self.root / "s1").mkdir()
+        s = Session(self.root / "s1", session_id="session-below")
+        s.project.mkdir(parents=True)
+        (s.project / ".git").mkdir()
+        s.cwd = s.project / "web"
+        s.cwd.mkdir()
+        s.config.registry_path = REGISTRY
+        s.prompt("Slice the spec.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        s.load("spec-to-tickets")
+        # The checkout's own tickets folder, reached from the session's folder.
+        self.assertHeldFor(s.call("Write", {"file_path": str(s.project / "tickets" / "x.md"),
+                                            "content": "# T\n"}),
+                           "spec-to-tickets/references/ticket-slicing-templates.md")
+        # The session's folder is a project root too, so its own `tickets/` counts.
+        self.assertHeldFor(s.call("Write", {"file_path": "tickets/y.md", "content": "# T\n"}),
+                           "spec-to-tickets/references/ticket-slicing-templates.md")
+        self.assertPasses(s.call("Write", {"file_path": "docs/tickets/z.md", "content": "# T\n"}))
+
     def test_a_tickets_folder_outside_the_project_is_not_held(self) -> None:
         s = self.first_turn("spec-to-tickets")
         outside = self.root / "elsewhere" / "tickets" / "x.md"
@@ -538,6 +574,21 @@ class RootCauseTracing(ReferenceReadsTestCase):
         s.run(CHECK, success=False)
         self.assertPasses(s.run(f"{CHECK} > test-output.txt", success=False))
 
+    def test_a_write_naming_no_file_or_outside_the_project_is_held_too(self) -> None:
+        # The same writes the repeated-failure gate holds, wherever they land.
+        for call in (("Bash", {"command": "git apply fix.patch"}),
+                     ("Bash", {"command": "patch -p1 < fix.patch"}),
+                     ("Edit", edit(str(self.root / "scratch" / "export.py"), "total = 2"))):
+            with self.subTest(call=call):
+                s = self.first_turn("diagnose")
+                s.run(CHECK, success=False)
+                s.run(CHECK, success=False)
+                held = s.call(*call)
+                self.assertHeldFor(held, "diagnose/references/root-cause-tracing.md")
+                if call[0] == "Bash":
+                    self.assertTrue(reason(held).split("\n")[1].startswith("This write needs"),
+                                    reason(held))
+
     def test_one_failure_or_a_pass_between_is_not_held(self) -> None:
         s = self.first_turn("diagnose")
         s.run(CHECK, success=False)
@@ -578,6 +629,19 @@ class SecurityChecklist(ReferenceReadsTestCase):
         s.call("Edit", edit("src/auth/login.py", "check()"))
         s.call("Bash", {"command": "echo x > .env"})
         self.assertPasses(s.call("Edit", edit(CODE_FILE, "total = 1")))
+
+    def test_a_subagents_sensitive_write_counts_as_a_category(self) -> None:
+        s = self.first_turn("code-security-review", "handoff")
+        s.read(f"{SKILLS}/handoff/references/spawn-brief.md")
+        agent = s.subagent("c1")
+        agent.prompt("Update the lockfile.", hook=False)
+        agent.load("code-security-review")
+        agent.call("Edit", edit("package.json", '"a": "1"'), agent_id="c1",
+                   agent_type="general-purpose")
+        self.assertPasses(s.spawn("c1", BRIEF))
+        held = s.call("Edit", edit("src/auth/login.py", "check()"))
+        self.assertHeldFor(held, "code-security-review/references/security-review-checklist.md")
+        self.assertIn("(auth, dependencies)", reason(held))
 
     def test_a_shell_write_counts_as_a_category(self) -> None:
         s = self.first_turn("code-security-review")

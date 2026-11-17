@@ -381,8 +381,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     own hold is met is held while the turn has unmet closeout items (Ticket 059);
     without it, as for a subagent, which has no closeout, it is not.
     `references` returns the registry's declared references
-    (`reference_reads.load`), called only for a write to a project file;
-    without it, as for a subagent, the `reference-reads` gate holds nothing.
+    (`reference_reads.load`), called only for a write; without it, as for a
+    subagent, the `reference-reads` gate holds nothing.
     `subagents` is also called for a write to a security-sensitive file when a
     loaded skill declares references, since the turn's sensitive categories
     include its subagents' changes.
@@ -406,6 +406,7 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         if hold is None and command.opens_pr:
             hold = _pr_hold(proof, changes) or _pr_review_hold(
                 lambda: changed_lines(cwd, command.pr_base, command.pr_head), proof, changes)
+        judged = False  # Whether a project file the command writes met reference-reads.
         for target in command.write_targets:
             placed = target not in command.unplaced_targets
             if _in_project(target, project, placed):
@@ -413,9 +414,16 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
                 # As for the repeated-failure gate, a check's own output is not a write
                 # the turn makes; a target written from an unknown folder has no place.
                 if placed and command.non_check_writes:
+                    judged = True
                     hold = hold or _reference_reads_hold(
                         _norm(target), None, proof, project, references, changes)
         if command.non_check_writes:
+            if not judged:
+                # A write naming no project file (`git apply`, a scratch file, an
+                # unknown folder) still meets the turn's gate signals, as the
+                # repeated-failure gate holds it.
+                hold = hold or _reference_reads_hold(None, None, proof, project, references,
+                                                     changes)
             hold = hold or _repeated_failure_hold(proof)
         return hold
     if PR_TOOL_RE.match(tool_name):
@@ -441,6 +449,9 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
             hold = (_security_hold(path, proof) or _design_hold(path, tool_input, proof, project)
                     or _reference_reads_hold(path, tool_input, proof, project, references,
                                              changes))
+        elif hold is None:
+            # Only the turn's gate signals reach it, as the repeated-failure gate does.
+            hold = _reference_reads_hold(None, None, proof, project, references, changes)
         return hold or _repeated_failure_hold(proof)
     return None
 
@@ -976,11 +987,13 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
     )
 
 
-def _reference_reads_hold(path: str, tool_input: dict | None, proof: _Proof,
+def _reference_reads_hold(path: str | None, tool_input: dict | None, proof: _Proof,
                           project: Project | None, references: Callable[[], tuple] | None,
                           changes: Callable[[], "_Changes"]) -> Hold | None:
-    """Hold a write to project file `path` until the skill references its
-    signals select are read (registry reference reads spec, R5).
+    """Hold a write until the skill references its signals select are read
+    (registry reference reads spec, R5). `path` is the project file written,
+    or None for a write naming no project file, which only the turn's gate
+    signals reach.
 
     Only references of a skill that counts as loaded and has no skip line or
     typed skip this turn are judged (`reference_reads.selected`), on what this
@@ -997,16 +1010,21 @@ def _reference_reads_hold(path: str, tool_input: dict | None, proof: _Proof,
         if references else []
     if not declared:
         return None
-    category = security_category(path)
-    edit = reference_reads.Edit(
-        is_code=is_code(path), is_test=is_test(path, project),
-        added_code=design_reads.added_code(path, tool_input, project.cwd if project else None)
-        if tool_input is not None else [],
-        project_paths=tuple(_paths_in_project(path, project)),
-        gates=frozenset({"repeated-failure"} if _repeated_check(proof.turn) else ()),
-        categories=frozenset({category, *(c for _, c in changes().sensitive)})
-        if category else frozenset(),
-    )
+    # `repeated-failure` is the one gate in `reference_reads.OBSERVED_GATES`.
+    gates = frozenset({"repeated-failure"} if _repeated_check(proof.turn) else ())
+    if path is None:
+        edit = reference_reads.Edit(is_code=False, is_test=False, added_code=[], gates=gates)
+    else:
+        category = security_category(path)
+        edit = reference_reads.Edit(
+            is_code=is_code(path), is_test=is_test(path, project),
+            added_code=design_reads.added_code(path, tool_input, project.cwd if project else None)
+            if tool_input is not None else [],
+            project_paths=tuple(_paths_in_project(path, project)),
+            gates=gates,
+            categories=frozenset({category, *(c for _, c in changes().sensitive)})
+            if category else frozenset(),
+        )
     unread = [(r, why) for r, why in reference_reads.selected(declared, edit)
               if r.path not in proof.skill_references_read]
     if not unread:
@@ -1015,13 +1033,14 @@ def _reference_reads_hold(path: str, tool_input: dict | None, proof: _Proof,
     listing = ", ".join(f"`{r.path}` ({why})" for r, why in unread)
     skip_lines = " or ".join(f"`goated-skip: {skill}: <reason>`" for skill in skills)
     way_out = f"skip {skills[0]}" if len(skills) == 1 else "skip <skill>"
+    target = f" to \"{path.rsplit('/', 1)[-1]}\"" if path else ""
     return Hold(
         "reference-reads", JUSTIFIED_SKIP,
-        f"This edit of \"{path.rsplit('/', 1)[-1]}\" needs skill references not yet read since "
-        "the last compaction; the GOATED registry declares when each is required. Read each "
-        f"with the Read tool before the edit, and apply it: {listing}. If one does not apply "
-        f"to this edit, write {skip_lines} on its own line instead, naming its skill. This edit "
-        "was not applied. " + unseen_line_advice("skip line", way_out),
+        f"This write{target} needs skill references not yet read since the last compaction; "
+        "the GOATED registry declares when each is required. Read each with the Read tool "
+        f"before the write, and apply it: {listing}. If one does not apply to this write, "
+        f"write {skip_lines} on its own line instead, naming its skill. This write was not "
+        "applied. " + unseen_line_advice("skip line", way_out),
     )
 
 
