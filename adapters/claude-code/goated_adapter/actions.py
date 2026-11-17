@@ -327,11 +327,22 @@ class _Proof:
     def read_index(self, reference: str, after: int = -1) -> int | None:
         """Where the first finished Read of `reference` after call `after` is, if any."""
 
-        return next((
+        return next((index for index in self._read_indexes(reference) if index > after), None)
+
+    def last_read_index(self, reference: str, before: int) -> int | None:
+        """Where the last finished Read of `reference` before call `before` is, if any."""
+
+        return next((index for index in reversed(self._read_indexes(reference)) if index < before), None)
+
+    def _read_indexes(self, reference: str) -> list[int]:
+        """Where each finished Read of `reference` in the turn is, in order: the
+        one predicate `read_index` and `last_read_index` share."""
+
+        return [
             index for index, call in enumerate(self.turn.calls)
-            if index > after and call.name == "Read" and call.ok
+            if call.name == "Read" and call.ok
             and _ends_with_path(str(call.input.get("file_path") or ""), reference)
-        ), None)
+        ]
 
 
 def is_action_tool(tool_name: str) -> bool:
@@ -1423,22 +1434,29 @@ def _red_flags_read(proof: _Proof, designed: list["_Change"]) -> int | None:
     code changes that are not comment-only, is in its calls, or None: the
     first read after the last of them, or else the turn's last read before
     it when the changes after that read add fewer than `DESIGN_MIN_LINES`
-    lines in total (spec R8). A change whose added lines are unknown, a shell
-    write or a subagent's, counts as large."""
+    lines in total and those before it add at least that many, so the read
+    scanned a designed change (spec R8). A change whose added lines are
+    unknown, a shell write or a subagent's, counts as large."""
 
     last = max((c.index for c in designed), default=-1)
     after = proof.read_index(RED_FLAGS_REFERENCE, after=last)
     if after is not None:
         return after
-    before = [index for index, call in enumerate(proof.turn.calls[:last])
-              if call.name == "Read" and call.ok
-              and _ends_with_path(str(call.input.get("file_path") or ""), RED_FLAGS_REFERENCE)]
-    if not before:
+    before = proof.last_read_index(RED_FLAGS_REFERENCE, before=last)
+    if before is None:
         return None
-    since = [c.added_lines for c in designed if c.index > before[-1]]
-    if None in since or sum(since) >= DESIGN_MIN_LINES:
+    scanned = [c.added_lines for c in designed if c.index < before]
+    since = [c.added_lines for c in designed if c.index > before]
+    if not _large(scanned) or _large(since):
         return None
-    return before[-1]
+    return before
+
+
+def _large(added_lines: list[int | None]) -> bool:
+    """Whether changes adding `added_lines` add `DESIGN_MIN_LINES` or more in
+    total; a change whose count is unknown (None) makes them large."""
+
+    return None in added_lines or sum(added_lines) >= DESIGN_MIN_LINES
 
 
 def _setup_item(turn: Turn, subagents: dict, proof: _Proof, project: Project | None) -> str:

@@ -223,6 +223,29 @@ class RedFlagsRereadTests(DesignTestCase):
 
         self.assertEqual(stop(s), {})
 
+    def test_a_red_flags_read_before_any_designed_change_covers_no_later_fix(self) -> None:
+        # Lead review of 089: a read with no designed change before it scanned nothing.
+        s = self.routed()
+        s.load(DESIGN)
+        s.say(DOC_SKIP)
+        s.read(RED_FLAGS)
+        self.fix(s, 2)
+        s.run("git diff")
+
+        items = design_items(stop(s))
+        self.assertEqual(len(items), 1, items)
+        self.assertIn("red-flags.md", items[0])
+
+        # The near miss: a designed change of five lines before the read lets it cover the fix.
+        s = self.routed()
+        s.load(DESIGN)
+        s.say(DOC_SKIP)
+        self.fix(s, 5, start=10)
+        s.read(RED_FLAGS)
+        self.fix(s, 2)
+        s.run("git diff")
+        self.assertEqual(stop(s), {})
+
     def test_a_fix_with_no_red_flags_read_in_the_turn_still_asks_for_it(self) -> None:
         # The rule needs an earlier red-flags read in the same turn.
         s = self.routed()
