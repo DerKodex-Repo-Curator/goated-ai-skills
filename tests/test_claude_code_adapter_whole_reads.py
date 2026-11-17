@@ -55,7 +55,7 @@ SECURITY = "code-security-review"
 DOC_SKIP = "goated-skip: doc-sync: internal constant with no documented behavior"
 DESIGN_SKIP = "goated-skip: software-design-principles: one mechanical constant change"
 OPEN_PR = {"command": "gh pr create --base main --title 'Add export' --body-file body.md"}
-WHOLE = "no limit or offset"
+WHOLE = "no limit, offset, or pages"
 
 
 def edit(path: str, new: str, old: str = "pass") -> dict:

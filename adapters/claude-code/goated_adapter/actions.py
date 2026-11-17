@@ -170,7 +170,7 @@ RED_FLAGS_REFERENCE = "software-design-principles/references/red-flags.md"
 RED_FLAGS_QUESTION = "Name one input that would break this change, and say what happens."
 # How a hold asks for a required file: a Read with a range does not count
 # (`Call.whole_read_path`).
-WHOLE_READ = "whole with the Read tool, with no limit or offset"
+WHOLE_READ = "whole with the Read tool, with no limit, offset, or pages"
 # Tools that start another agent, each with the input field that carries the
 # brief. A call without a brief (an offer card, or starting a saved proposal)
 # hands over no text, so it is not held.

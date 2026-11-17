@@ -115,6 +115,23 @@ class RetrospectiveNoticeTests(HeldTurnTestCase):
         # Two unanswered and one answered: the near miss of three.
         self.assert_no_notice(parse(s.prompt("Next task.")))
 
+    def test_a_partial_read_does_not_answer_a_hold(self) -> None:
+        # The near miss of the test above: a Read with a limit leaves the third hold
+        # unanswered, as the gates judge it (Ticket 092).
+        s = self.session
+        self.held_turn()
+        self.held_turn()
+        references = "D:\\goated\\skills\\software-design-principles\\references\\"
+        new_code = {"file_path": "src/export.py", "content": "def export(rows):\n    return rows\n" * 4}
+        s.prompt("Add the exporter.")
+        s.say("goated-route: direct")
+        s.load("software-design-principles")
+        self.assertEqual(decision(s.call("Write", new_code)), "deny")
+        for name in ("process.md", "complexity-and-modules.md"):
+            s.read(references + name)
+        s.read(references + "readability.md", limit=20)
+        self.assert_notice(parse(s.prompt("Next task.")))
+
     def test_holds_a_typed_override_stands_down_do_not_count(self) -> None:
         s = self.session
         outputs = []
