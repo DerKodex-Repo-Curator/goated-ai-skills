@@ -173,3 +173,13 @@ replies:
         - {skill: doc-sync, reason: change touches only test fixtures}
         - {skill: handoff, reason: work finishes in this turn}
       malformed: []
+  - identifier: retired-design-reads-line
+    # Ticket 089: the design-reads line left the grammar; one still written is prose.
+    text: |
+      goated-route: direct
+      goated-design-reads: process.md, errors.md
+      goated-design-reads: references/process.md
+    expect:
+      route: {form: direct}
+      skips: []
+      malformed: []

@@ -320,34 +320,5 @@ class NoOverrideFromCallTests(CallLineTestCase):
         self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: route-line | strict")
 
 
-PLAIN = "\n".join(f"total_{n} = {n}" for n in range(6))
-NONE_LINE = "goated-design-reads: none: only renames local names"
-
-
-class DesignReadsLineFromCallTests(CallLineTestCase):
-    """A design-reads line in a call's description counts as one in reply text."""
-
-    def designing(self) -> Session:
-        s = self.started("Add the exporter.")
-        s.say("goated-route: direct")
-        s.load("software-design-principles")
-        return s
-
-    def test_a_design_reads_line_in_a_description_clears_the_design_hold(self) -> None:
-        s = self.designing()
-        change = {"file_path": "src/export.py", "old_string": "pass", "new_string": PLAIN}
-        self.assertEqual(hold_line(s.call("Edit", change)), "goated-hold: design | justified-skip")
-
-        s.summarize("I checked the design conditions for the exporter.")
-        s.call("Bash", described("git status", NONE_LINE))
-        self.assertEqual(decision(s.call("Edit", change)), "pass")
-
-    def test_a_design_reads_line_in_file_content_does_not_count(self) -> None:
-        s = self.designing()
-        s.call("Write", {"file_path": "notes.md", "content": NONE_LINE})
-        change = {"file_path": "src/export.py", "old_string": "pass", "new_string": PLAIN}
-        self.assertEqual(hold_line(s.call("Edit", change)), "goated-hold: design | justified-skip")
-
-
 if __name__ == "__main__":
     unittest.main()

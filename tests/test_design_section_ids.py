@@ -173,6 +173,39 @@ class DesignSectionIdTests(unittest.TestCase):
         # Guards against the scan silently matching nothing.
         self.assertGreater(citing_files, 0)
 
+    def test_the_section_index_lists_every_section_id(self) -> None:
+        # Ticket 089: the ids stay as navigation once no reply must cite them.
+        # An id whose `##` heading groups `###` sections names a part, which
+        # the index leaves out.
+        skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+        indexed = {
+            row.group(1): {i for _, i in ID_CITATION.findall(row.group(2))}
+            for line in skill.splitlines()
+            if (row := INDEX_ROW.match(line))
+        }
+        for file_name in self.declared_by_file:
+            text = (SKILL_DIR / file_name).read_text(encoding="utf-8")
+            sections = {
+                match.group(1)
+                for match in re.finditer(r"(?m)^<!-- id: #([a-z-]+) -->\n\n(#+) ", text)
+                if not (match.group(2) == "##" and "\n### " in text[match.end():].split("\n## ")[0])
+            }
+            with self.subTest(reference=file_name):
+                self.assertTrue(sections)
+                self.assertEqual(indexed[file_name], sections)
+
+    def test_the_skill_asks_for_no_design_reads_line_and_no_citation(self) -> None:
+        # Ticket 089: the gates read the edit and the reads, not written text.
+        skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertNotIn("goated-design-reads", skill)
+        self.assertNotIn("design-reads line", skill)
+        self.assertNotRegex(skill, r"(?i)\bcit(e|es|ed|ing|ation|ations)\b")
+        self.assertNotIn("### Citations", skill)
+        # The near miss: the five-line small-edit rule and the red-flags read stay.
+        self.assertIn("fewer than five lines", skill)
+        self.assertIn("[Red Flags](references/red-flags.md)", skill)
+
     def test_checklist_cited_by_writing_plans_exists(self) -> None:
         plans = (
             REPO_ROOT / "skills" / "engineering" / "writing-plans" / "SKILL.md"

@@ -140,18 +140,17 @@ export function holdSettlement(): HoldSettlement {
   // `isCloseout`: a closeout item, on a `Stop` or a commit, which the `Stop` that ends the turn judges again.
   // `isSkipOnly`: a skill the hold offers only as a skip line, which no load answers.
   // `isSkipRejected`: a closeout hold asked for it after a skip line, so that skip line did not clear it.
-  // `refs`, `needsLine`: what a design or reference-reads hold that offers its skill only as a skip line asks instead:
-  // a Read of each of the skill's references still unread, by file name, and for a design hold a design-reads line.
-  // It is followed once both are in, as the adapter judges.
+  // `refs`: what a design or reference-reads hold that offers its skill only as a skip line asks instead: a Read of each
+  // of the skill's references still unread, by file name. It is followed once every one is in, as the adapter judges.
   // `items`: the labels of the closeout items that asked for it, whose counts follow its outcome.
   // `skip`: the skip line that declined it, kept so a reopen takes its reason back.
   type Skip = { skill: string; reason: string }
-  type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; isCloseout?: true; isSkipOnly?: true; isSkipRejected?: true; isBriefAdded?: true; refs?: Set<string>; needsLine?: boolean; items: Set<string>; skip?: Skip; mark: NudgedSkill; row: NudgeRow }
-  /** Whether an ask is a design hold's, answered by its reads and line rather than by any read of the skill's files. */
-  const asksDesign = (n: Open) => n.refs !== undefined || n.needsLine !== undefined
-  /** Settles a design hold's ask once nothing it asked is missing; `outcome` names what came last. */
+  type Open = { hook: string; anyOf: string[]; agent?: string; isStrict?: true; isCloseout?: true; isSkipOnly?: true; isSkipRejected?: true; isBriefAdded?: true; refs?: Set<string>; items: Set<string>; skip?: Skip; mark: NudgedSkill; row: NudgeRow }
+  /** Whether an ask is a design hold's, answered by its reads rather than by any read of the skill's files. */
+  const asksDesign = (n: Open) => n.refs !== undefined
+  /** Settles a design hold's ask once no read it asked for is missing; `outcome` names what came last. */
   const settleDesign = (n: Open, outcome: Outcome, by: UsageEvent) => {
-    if (!n.refs?.size && !n.needsLine) settle(m => m === n, outcome, by)
+    if (!n.refs?.size) settle(m => m === n, outcome, by)
   }
   let open: Open[] = []
   /** Whether an open ask is answered by loading `skill`. */
@@ -280,7 +279,6 @@ export function holdSettlement(): HoldSettlement {
       ...(isSkipOnly ? { isSkipOnly: true as const } : {}),
       ...(ask.some(skill => e.briefAdded?.includes(skill)) ? { isBriefAdded: true as const } : {}),
       ...(isSkipOnly && e.refs?.length ? { refs: new Set(refsOf(e.refs, ask)) } : {}),
-      ...(isSkipOnly && e.needsLine ? { needsLine: true } : {}),
       items: itemsAsking(e, ask),
       mark,
       row: held.row,
@@ -416,12 +414,6 @@ export function holdSettlement(): HoldSettlement {
         if (!e.isReadTool || e.isSubagent) break
         for (const n of open.filter(n => !n.agent && n.refs !== undefined && n.anyOf.includes(e.skill))) {
           if (n.refs?.delete(e.file.split('/').pop() ?? '')) settleDesign(n, 'read files', e)
-        }
-        break
-      case 'design-reads':
-        for (const n of open.filter(n => n.needsLine && n.agent === e.agent)) {
-          n.needsLine = false
-          settleDesign(n, 'followed', e)
         }
         break
       case 'body':

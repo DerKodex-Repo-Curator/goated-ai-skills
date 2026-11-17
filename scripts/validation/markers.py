@@ -1,9 +1,7 @@
-"""Reference checker for the `goated-route`, `goated-skip`, and
-`goated-design-reads` marker lines.
+"""Reference checker for the `goated-route` and `goated-skip` marker lines.
 
 The grammar is owned by `stack/fixtures/markers/README.md`; this module is the
-repo's executable reading of it, checked against `lines.yaml` and
-`design-reads.yaml` in that folder.
+repo's executable reading of it, checked against `lines.yaml` in that folder.
 Framework adapters may carry their own parser but must agree with the same
 fixtures.
 """
@@ -22,42 +20,19 @@ ROUTE_RE = re.compile(
     rf"[ \t]+\|[ \t]+requires:[ \t]+({SKILL}(?:[ \t]*,[ \t]*{SKILL})*))$"
 )
 SKIP_RE = re.compile(rf"^goated-skip:[ \t]+({SKILL}):[ \t]+(\S.*)$")
-REFERENCE_FILE = rf"{SKILL}\.md"
-DESIGN_READS_RE = re.compile(
-    r"^goated-design-reads:[ \t]+(?:none:[ \t]+(\S.*)|"
-    rf"({REFERENCE_FILE}(?:[ \t]*,[ \t]*{REFERENCE_FILE})*))$"
-)
 MIN_REASON_WORDS = 3
 FENCE_PREFIXES = ("```", "~~~")
 
 FIXTURE_PATH = Path("stack") / "fixtures" / "markers" / "lines.yaml"
-# Kept apart from lines.yaml, which adapters and the skill-usage mod embed whole.
-DESIGN_READS_FIXTURE_PATH = FIXTURE_PATH.with_name("design-reads.yaml")
 
 
 @dataclass
 class ReplyMarkers:
-    """Markers found in one reply: the winning route, skips, design-reads
-    lines, and malformed lines."""
+    """Markers found in one reply: the winning route, skips, and malformed lines."""
 
     route: dict[str, object] | None = None
     skips: list[dict[str, str]] = field(default_factory=list)
-    design_reads: list[dict[str, object]] = field(default_factory=list)
     malformed: list[str] = field(default_factory=list)
-
-    @property
-    def design_read_files(self) -> list[str]:
-        """Every file the design-reads lines name, first seen first.
-
-        Lines only add; a `none` line contributes nothing.
-        """
-
-        files: list[str] = []
-        for line in self.design_reads:
-            for name in line.get("files", []):
-                if name not in files:
-                    files.append(name)
-        return files
 
 
 def candidate_line(raw: str) -> str:
@@ -96,24 +71,6 @@ def parse_skip_line(line: str) -> dict[str, str] | None:
     return {"skill": skill, "reason": reason}
 
 
-def parse_design_reads_line(line: str) -> dict[str, object] | None:
-    """Return the references a candidate line declares, or None if invalid."""
-
-    match = DESIGN_READS_RE.match(line)
-    if not match:
-        return None
-    reason, files = match.groups()
-    if reason is not None:
-        reason = reason.strip()
-        if len(reason.split()) < MIN_REASON_WORDS:
-            return None
-        return {"form": "none", "reason": reason}
-    names = [name.strip() for name in files.split(",")]
-    if len(set(names)) != len(names):
-        return None
-    return {"form": "files", "files": names}
-
-
 def parse_reply(text: str) -> ReplyMarkers:
     """Collect the markers in a whole reply, ignoring fenced code blocks."""
 
@@ -139,12 +96,6 @@ def parse_reply(text: str) -> ReplyMarkers:
                 result.malformed.append(line)
             else:
                 result.skips.append(skip)
-        elif lowered.startswith("goated-design-reads:"):
-            reads = parse_design_reads_line(line)
-            if reads is None:
-                result.malformed.append(line)
-            else:
-                result.design_reads.append(reads)
     return result
 
 
@@ -184,37 +135,6 @@ def _check_lines(
     return findings
 
 
-def _check_design_reads_replies(replies: object, label: str) -> list[Finding]:
-    """Check how whole replies accumulate design-reads lines.
-
-    They live in their own fixture file, so an adapter that does not read
-    design-reads lines yet still agrees with every fixture in `lines.yaml`.
-    """
-
-    if not isinstance(replies, list) or not replies:
-        return [Finding(label, "design_reads_replies must be a non-empty list")]
-    findings: list[Finding] = []
-    for reply in replies:
-        if not isinstance(reply, dict) or not isinstance(reply.get("text"), str):
-            findings.append(Finding(label, "each reply needs an identifier and text"))
-            continue
-        parsed = parse_reply(reply["text"])
-        actual = {
-            "files": parsed.design_read_files,
-            "lines": parsed.design_reads,
-            "malformed": parsed.malformed,
-        }
-        if actual != reply.get("expect"):
-            findings.append(
-                Finding(
-                    label,
-                    f"design-reads reply {reply.get('identifier')!r} "
-                    f"parsed as {actual!r}",
-                )
-            )
-    return findings
-
-
 def _load_fixture(repo: Path, fixture: Path) -> tuple[dict | None, str, list[Finding]]:
     path = repo / fixture
     label = fixture.as_posix() if not path.exists() else relative(path, repo)
@@ -222,30 +142,10 @@ def _load_fixture(repo: Path, fixture: Path) -> tuple[dict | None, str, list[Fin
     return data, label, findings
 
 
-def _validate_design_reads_fixtures(repo: Path) -> list[Finding]:
-    data, label, findings = _load_fixture(repo, DESIGN_READS_FIXTURE_PATH)
-    if data is None:
-        return findings
-    findings.extend(
-        _check_lines(
-            data.get("design_reads_lines"),
-            parse_design_reads_line,
-            "design_reads_lines",
-            label,
-        )
-    )
-    findings.extend(
-        _check_design_reads_replies(data.get("design_reads_replies"), label)
-    )
-    return findings
-
-
 def validate_marker_fixtures(repo: Path) -> list[Finding]:
     """Check that every marker fixture agrees with the reference grammar."""
 
-    return _validate_route_and_skip_fixtures(repo) + _validate_design_reads_fixtures(
-        repo
-    )
+    return _validate_route_and_skip_fixtures(repo)
 
 
 def _validate_route_and_skip_fixtures(repo: Path) -> list[Finding]:

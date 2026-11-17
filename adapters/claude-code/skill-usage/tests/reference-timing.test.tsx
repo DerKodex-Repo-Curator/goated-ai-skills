@@ -1,6 +1,6 @@
 // When each reference is read relative to the turn's code changes (Ticket 050):
 // before the first, between two, after the last, or in a turn with none; and
-// the `goated-design-reads:` lines agents write.
+// that a `goated-design-reads:` line, which left the grammar, records nothing.
 
 import { expect, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
@@ -9,7 +9,6 @@ import type { UsageEvent } from '../types'
 import { addSession, allTimeOf, historyEvents, markerEvents, markerLines, mergeSummaries, promptEvents, rowEvents, summarize, toolUseEvents } from '../hooks/classify'
 import type { Row } from '../hooks/classify'
 import { reportText } from '../hooks/view'
-import { DESIGN_READS_FIXTURES } from './design-reads-fixtures'
 
 const SDP = 'software-design-principles'
 const ref = (t: number, file: string, rest: Partial<UsageEvent & { kind: 'ref' }> = {}): UsageEvent => ({ kind: 'ref', t, skill: SDP, file: `references/${file}`, ...rest })
@@ -135,46 +134,18 @@ test('moments add up across a resume and across sessions, and an older summary w
   expect(folded.total?.refMoments?.[SDP]).toEqual({ 'references/process.md': { before: 1 }, 'references/red-flags.md': { after: 1 } })
 })
 
-// ---------- design-reads lines, from stack/fixtures/markers/design-reads.yaml ----------
+// ---------- a design-reads line, which left the grammar (Ticket 089) ----------
 
-test('every design-reads line in the grammar fixtures reads as the fixture expects; every invalid one is reported as malformed', async () => {
-  for (const { line, expect: want } of DESIGN_READS_FIXTURES.design_reads_lines.valid) expect(markerLines(line).designReads).toEqual([want])
-  for (const { line } of DESIGN_READS_FIXTURES.design_reads_lines.invalid) {
-    const read = markerLines(line)
-    expect(read.designReads).toEqual([])
-    expect(read.malformed).toEqual([line])
-  }
-  for (const { text, expect: want } of DESIGN_READS_FIXTURES.design_reads_replies) {
-    const read = markerLines(text)
-    expect(read.designReads).toEqual(want.lines)
-    expect(read.malformed).toEqual(want.malformed)
-    // A reply declares the union of its lines' files, each once: later lines add files and never remove any.
-    const declared = markerEvents(text, 1).flatMap(e => (e.kind === 'design-reads' ? e.files : []))
-    expect(declared).toEqual(want.files)
-  }
-})
-
-test('design-reads lines are recorded per session: the files each reply declares, once each, and the none declarations', async () => {
-  const reply = 'goated-design-reads: process.md, errors.md\nThen a lock.\ngoated-design-reads: errors.md, concurrency.md'
-  const s = summarize([
-    prompt(1),
-    ...markerEvents(reply, 2),
-    ...markerEvents('`goated-design-reads: none: renames one local variable`', 3),
-    ...markerEvents('goated-design-reads: none: edits only test data', 4, 'a1'),
-    // Malformed: not recorded.
-    ...markerEvents('goated-design-reads: none: too short', 5),
+test('a design-reads line is prose: no marker, not malformed, and nothing recorded', async () => {
+  const reply = 'goated-design-reads: process.md, errors.md\n`goated-design-reads: none: renames one local variable`\ngoated-design-reads: references/process.md'
+  expect(markerLines(reply)).toEqual({ route: null, skips: [], malformed: [] })
+  expect(markerEvents(reply, 2)).toEqual([])
+  const s = summarize([prompt(1), ...markerEvents(reply, 2), ...markerEvents('goated-design-reads: errors.md', 3, 'a1')])
+  expect('designReads' in s).toBe(false)
+  // The near miss: a skip line beside it is still read.
+  expect(markerEvents(`${reply}\ngoated-skip: tdd: no test surface exists here`, 4)).toEqual([
+    { kind: 'skip', t: 4, skill: 'tdd', reason: 'no test surface exists here' },
   ])
-  expect(s.designReads).toEqual({ files: { 'process.md': 1, 'errors.md': 1, 'concurrency.md': 1 }, none: 2 })
-  expect(s.timeline.filter(e => e.kind === 'design-reads')).toEqual([
-    { kind: 'design-reads', t: 2, files: ['process.md', 'errors.md', 'concurrency.md'], noneReasons: [] },
-    { kind: 'design-reads', t: 3, files: [], noneReasons: ['renames one local variable'] },
-    { kind: 'design-reads', t: 4, files: [], noneReasons: ['edits only test data'], isSubagent: true },
-  ])
-  // They add up across a resume and across sessions; a summary stored before they were recorded still merges.
-  expect(mergeSummaries(s, s).designReads).toEqual({ files: { 'process.md': 2, 'errors.md': 2, 'concurrency.md': 2 }, none: 4 })
-  const { designReads: _, ...old } = s
-  expect(addSession(addSession(null, old), s).designReads).toEqual(s.designReads)
-  expect(mergeSummaries(old, s).designReads).toEqual(s.designReads)
 })
 
 // ---------- the pane ------------------------------------------------------------------
@@ -203,41 +174,38 @@ async function paneText(...[$, on, stored]: [...Parameters<TestBody>, Record<str
 const SESSION_EVENTS: UsageEvent[] = [
   prompt(1),
   { kind: 'load', t: 2, skill: SDP, via: 'tool', isSubagent: false },
-  { kind: 'design-reads', t: 3, files: ['process.md', 'errors.md'], noneReasons: [] },
   ref(4, 'process.md'),
   { kind: 'change', t: 5, id: 'c1' },
   ref(6, 'process.md'),
   { kind: 'change', t: 7, id: 'c2' },
   ref(8, 'red-flags.md'),
-  { kind: 'design-reads', t: 9, files: [], noneReasons: ['renames one local variable'] },
 ]
 
-test('the Session tab shows each reference by moment, and logs and counts design-reads lines', async ($, on) => {
+test('the Session tab shows each reference by moment, and no design-reads count', async ($, on) => {
   const text = await paneText($, on, { tab: 'session', events: { shape: 'events-4', value: SESSION_EVENTS } })
   expect(text).toContain('1 before code · 1 between changes')
   expect(text).toContain('1 after code')
-  expect(text).toContain('process.md, errors.md')
-  expect(text).toContain('none: renames one local variable')
-  expect(text).toContain('Design reads: errors.md 1, process.md 1, 1 none')
+  expect(text).not.toContain('Design reads')
 })
 
 test('the All time tab shows moments across sessions, and reads stored before moments were recorded as not timed', async ($, on) => {
   const text = await paneText($, on, {
     tab: 'all',
     events: { shape: 'events-4', value: SESSION_EVENTS },
-    // Stored by an earlier version: four reads of red-flags.md with no moment, and no design-reads counts.
-    allTime: { shape: 'all-time-2', value: { sessions: 1, loads: {}, nudges: {}, router: {}, lastUsed: {}, refs: { [SDP]: { 'references/red-flags.md': 4 } } } },
+    // Stored by an earlier version: four reads of red-flags.md with no moment, and design-reads counts,
+    // which no longer show (Ticket 089).
+    allTime: { shape: 'all-time-2', value: { sessions: 1, loads: {}, nudges: {}, router: {}, lastUsed: {}, refs: { [SDP]: { 'references/red-flags.md': 4 } }, designReads: { files: { 'errors.md': 3 }, none: 1 } } },
   })
   expect(text).toContain('1 after code · 4 not timed')
   expect(text).toContain('1 before code · 1 between changes')
-  expect(text).toContain('Design reads: errors.md 1, process.md 1, 1 none')
+  expect(text).not.toContain('Design reads')
 })
 
-test('the report lists each reference with its moments and the design-reads counts', async () => {
+test('the report lists each reference with its moments, and no design-reads counts', async () => {
   const s = summarize(SESSION_EVENTS)
   const { refMoments: _, ...old } = s
   const report = reportText(addSession(addSession(null, old), s), null)
   expect(report).toContain(`- ${SDP} › references/process.md: 4 (1 before code · 1 between changes · 2 not timed)`)
   expect(report).toContain(`- ${SDP} › references/red-flags.md: 2 (1 after code · 1 not timed)`)
-  expect(report).toContain('- Design reads: errors.md 2, process.md 2, 2 none')
+  expect(report).not.toContain('Design reads')
 })

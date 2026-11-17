@@ -11,8 +11,6 @@ import type {
   AllTime,
   CloseoutItem,
   Counts,
-  DesignReadCounts,
-  DesignReads,
   EarlierHolds,
   HoldKind,
   Measures,
@@ -50,8 +48,6 @@ const isEarlierVersion = (summary: SessionSummary) => (summary.version ?? 0) < C
 export const NO_SUBAGENTS: Readonly<SubagentCounts> = { spawns: 0, starts: 0, bodyReads: 0 }
 /** Writing-turn counts before any turn wrote. */
 export const NO_WRITING_TURNS: Readonly<WritingTurns> = { routed: 0, late: 0, none: 0 }
-/** Design-reads counts before any line was written, each a fresh object to add into. */
-const noDesignReads = (): DesignReadCounts => ({ files: {}, none: 0 })
 
 export const ORIGINS: readonly Origin[] = ['user-slash', 'user-named', 'hook-nudged', 'router-routed', 'self-initiated', 'subagent']
 export const OUTCOMES: readonly Outcome[] = ['followed', 'read files', 'already loaded', 'declined', 'overridden', 'new prompt', 'unanswered', 'ignored', 'pending']
@@ -120,9 +116,8 @@ const ADAPTER_HOLD = /^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-sk
 const CALL_HELD = /^\S+ hook error: /
 const STOP_BLOCKED = /^Stop hook blocking error from command: ".*": (goated-hold: .*)$/
 const BACKTICKED_SKILL = /`([a-z0-9]+(?:-[a-z0-9]+)*)`/g
-// The design references a design hold asks to read, each backticked by its path, and the design-reads line it asks for.
+// The design references a design hold asks to read, each backticked by its path.
 const DESIGN_REFERENCE = /`software-design-principles\/references\/([a-z0-9]+(?:-[a-z0-9]+)*\.md)`/g
-const ASKS_DESIGN_LINE = /`goated-design-reads: /
 // The skill references a reference-reads hold asks to read, each backticked by its path under the skill.
 const SKILL_REFERENCE = /`([a-z0-9]+(?:-[a-z0-9]+)*\/references\/[a-z0-9]+(?:-[a-z0-9]+)*\.md)`/g
 // The skip line a justified-skip hold offers, backticked whole: its skill is asked for too, as for the closeout's proof item.
@@ -140,7 +135,7 @@ const MARKER_WORDS = new Set(['goated-hold', 'goated-route', 'goated-skip'])
  * so the names are taken as they stand, whether or not the session's skill
  * listing has loaded.
  */
-function adapterHoldNamed(gate: string, body: string): { named: string[]; skipOnly: string[]; refs?: string[]; needsLine?: true; items?: CloseoutItem[]; briefAdded?: string[] } {
+function adapterHoldNamed(gate: string, body: string): { named: string[]; skipOnly: string[]; refs?: string[]; items?: CloseoutItem[]; briefAdded?: string[] } {
   if (gate === 'router-first') return { named: [ROUTER], skipOnly: [] }
   if (gate === 'route-line') return { named: [ROUTE_LINE], skipOnly: [] }
   if (gate === 'pipeline') {
@@ -156,7 +151,7 @@ function adapterHoldNamed(gate: string, body: string): { named: string[]; skipOn
 
 /**
  * The items a closeout hold's text lists, each with the skill its line names: the first it backticks, else the skill of
- * the skip line it offers. An item listed twice under one label and skill, such as the two design items, is one.
+ * the skip line it offers. An item listed twice under one label and skill is one.
  */
 function itemsListed(body: string): CloseoutItem[] {
   const items: CloseoutItem[] = []
@@ -172,12 +167,12 @@ function itemsListed(body: string): CloseoutItem[] {
 }
 
 /** What a hold's text asks for by the skills it backticks, alone or in an offered skip line, and the design reads. */
-function namedIn(gate: string, body: string): { named: string[]; skipOnly: string[]; refs?: string[]; needsLine?: true } {
+function namedIn(gate: string, body: string): { named: string[]; skipOnly: string[]; refs?: string[] } {
   // Only the design gates, by file name, and the reference-reads gate, by path under the skill, ask for reference
   // reads; the closeout's red-flags path is another kind of ask.
   const asked = gate === 'reference-reads' ? SKILL_REFERENCE : gate === 'design' || gate === 'design-reads' ? DESIGN_REFERENCE : null
   const refs = asked ? [...body.matchAll(asked)].flatMap(m => (m[1] ? [m[1]] : [])) : []
-  const design = { ...(refs.length > 0 ? { refs } : {}), ...(ASKS_DESIGN_LINE.test(body) ? { needsLine: true as const } : {}) }
+  const design = refs.length > 0 ? { refs } : {}
   const names = (re: RegExp) => [...body.matchAll(re)].flatMap(m => (m[1] && !MARKER_WORDS.has(m[1]) ? [{ skill: m[1], at: m.index ?? 0 }] : []))
   const loads = names(BACKTICKED_SKILL)
   const named = [...new Set([...loads, ...names(OFFERED_SKIP)].sort((a, b) => a.at - b.at).map(n => n.skill))]
@@ -208,12 +203,12 @@ function adapterHold(text: string, isErrorResult: boolean): { gate: string; kind
  * The adapter hold in one piece of hook output, as a nudge with the skills it
  * names; none when the output carries no hold. Its `hook` is its gate;
  * `isStop`: it held a `Stop`, not a call; `skipOnly`: the named skills it
- * offers only as a skip line, which no load answers; `refs` and `needsLine`:
- * the design references and design-reads line a design hold asks for, or the
- * skill references a reference-reads hold asks for, by path under the skill.
+ * offers only as a skip line, which no load answers; `refs`: the design
+ * references a design hold asks for, or the skill references a reference-reads
+ * hold asks for, by path under the skill.
  * `holdsOnly`: the text is an errored tool result.
  */
-export function hookNudges(text: string, holdsOnly = false): { hook: string; named: string[]; holdKind: HoldKind; isStop?: true; skipOnly?: string[]; refs?: string[]; needsLine?: true; items?: CloseoutItem[]; briefAdded?: string[] }[] {
+export function hookNudges(text: string, holdsOnly = false): { hook: string; named: string[]; holdKind: HoldKind; isStop?: true; skipOnly?: string[]; refs?: string[]; items?: CloseoutItem[]; briefAdded?: string[] }[] {
   const hold = adapterHold(text, holdsOnly)
   if (!hold) return []
   const { named, skipOnly, ...design } = adapterHoldNamed(hold.gate, hold.body)
@@ -366,10 +361,9 @@ export function toolUseEvents(
 const SKILL = '[a-z0-9]+(?:-[a-z0-9]+)*'
 const ROUTE_RE = new RegExp(`^goated-route:[ \\t]+(?:(direct|continue)|(lightweight|standard|full)[ \\t]+\\|[ \\t]+requires:[ \\t]+(${SKILL}(?:[ \\t]*,[ \\t]*${SKILL})*))$`)
 const SKIP_RE = new RegExp(`^goated-skip:[ \\t]+(${SKILL}):[ \\t]+(\\S.*)$`)
-const FILE = `${SKILL}\\.md`
-const DESIGN_READS_RE = new RegExp(`^goated-design-reads:[ \\t]+(?:none:[ \\t]+(\\S.*)|(${FILE}(?:[ \\t]*,[ \\t]*${FILE})*))$`)
-// A candidate marker line, compared case-insensitively: one that fails the grammar is malformed.
-const MARKER_PREFIX = /^goated-(route|skip|design-reads):/i
+// A candidate marker line, compared case-insensitively: one that fails the grammar is malformed. A
+// `goated-design-reads:` line left the grammar (Ticket 089), so it is prose.
+const MARKER_PREFIX = /^goated-(route|skip):/i
 const FENCE = /^(```|~~~)/
 /** The grammar's floor for a reason: at least three words. */
 const MIN_REASON_WORDS = 3
@@ -404,28 +398,15 @@ function readSkip(line: string): Skip | null {
   return { skill: m[1], reason }
 }
 
-function readDesignReads(line: string): DesignReads | null {
-  const m = DESIGN_READS_RE.exec(line)
-  if (!m) return null
-  if (m[2]) {
-    const files = m[2].split(',').map(s => s.trim())
-    return new Set(files).size === files.length ? { form: 'files', files } : null
-  }
-  const reason = m[1]?.trim() ?? ''
-  return isReason(reason) ? { form: 'none', reason } : null
-}
-
 /**
  * The marker lines of one reply, as the grammar reads them: the winning route
- * (the last valid route line), every skip line, every design-reads line, and
- * each candidate line that starts like a marker but fails the grammar. Only
+ * (the last valid route line), every skip line, and each candidate line that starts like a marker but fails the grammar. Only
  * whole lines outside fenced code count, each unwrapped from at most one pair
  * of backticks.
  */
-export function markerLines(text: string): { route: Route | null; skips: Skip[]; designReads: DesignReads[]; malformed: string[] } {
+export function markerLines(text: string): { route: Route | null; skips: Skip[]; malformed: string[] } {
   let route: Route | null = null
   const skips: Skip[] = []
-  const designReads: DesignReads[] = []
   const malformed: string[] = []
   let isInFence = false
   for (const raw of text.split(LINE_BREAK)) {
@@ -445,31 +426,22 @@ export function markerLines(text: string): { route: Route | null; skips: Skip[];
       const found = readSkip(line)
       if (found) skips.push(found)
       else malformed.push(line)
-    } else if (kind === 'design-reads') {
-      const found = readDesignReads(line)
-      if (found) designReads.push(found)
-      else malformed.push(line)
     }
   }
-  return { route, skips, designReads, malformed }
+  return { route, skips, malformed }
 }
 
 /**
- * The marker events of one reply: its winning route, then each skip line, then
- * its design-reads lines as one event, declaring the union of their files (a
- * later line adds files and never removes any). `agent`: the subagent that
- * wrote it.
+ * The marker events of one reply: its winning route, then each skip line.
+ * `agent`: the subagent that wrote it.
  */
 export function markerEvents(text: string, t: number, agent?: string): UsageEvent[] {
-  const { route, skips, designReads } = markerLines(text)
+  const { route, skips } = markerLines(text)
   const loop = agent ? { isSubagent: true as const, agent } : {}
-  const files = [...new Set(designReads.flatMap(d => (d.form === 'files' ? d.files : [])))]
-  const noneReasons = designReads.flatMap(d => (d.form === 'none' ? [d.reason] : []))
   return [
     ...(route ? [{ kind: 'route' as const, t, ...route, ...loop }] : []),
     // A reason is kept masked and cut, here where it enters the stored events, so no fuller text is kept anywhere.
     ...skips.map(k => ({ kind: 'skip' as const, t, skill: k.skill, reason: storedReason(k.reason), ...loop })),
-    ...(designReads.length > 0 ? [{ kind: 'design-reads' as const, t, files, noneReasons, ...loop }] : []),
   ]
 }
 
@@ -620,7 +592,7 @@ export function rowEvents(
  * while the session runs; once it has ended (`isFinal`) it was `unanswered`.
  * What became of each hold is the hold settlement's (`hooks/holds.ts`); this
  * keeps loads, routes, references and when in their turn each was read,
- * design-reads lines, writing turns and subagents.
+ * writing turns and subagents.
  */
 export function summarize(events: readonly UsageEvent[], isFinal = false): SessionSummary & { timeline: TimelineEntry[] } {
   const loads: SessionSummary['loads'] = {}
@@ -635,7 +607,6 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
     writingTurns: { ...NO_WRITING_TURNS },
     overrides: {},
     subagents: { ...NO_SUBAGENTS },
-    designReads: noDesignReads(),
   }
   const holds = holdSettlement()
   // The running typed-prompt turn: whether the main agent wrote a route line yet, and, once it wrote, how that write stood.
@@ -722,11 +693,6 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         timeline.push({ ...stamp(e), kind: 'route', ...route, ...(e.isSubagent ? { isSubagent: true as const } : {}) })
         break
       }
-      case 'design-reads':
-        for (const file of e.files) measures.designReads.files[file] = (measures.designReads.files[file] ?? 0) + 1
-        measures.designReads.none += e.noneReasons.length
-        timeline.push({ ...stamp(e), kind: 'design-reads', files: e.files, noneReasons: e.noneReasons, ...(e.isSubagent ? { isSubagent: true as const } : {}) })
-        break
       case 'override':
         for (const phrase of e.phrases) measures.overrides[phrase] = (measures.overrides[phrase] ?? 0) + 1
         timeline.push({ ...stamp(e), kind: 'override', phrases: e.phrases })
@@ -807,9 +773,6 @@ function addMeasures(into: Measures, from: Measures) {
   addFlat((into.holds ??= {}), from.holds)
   addFlat((into.overrides ??= {}), from.overrides)
   addFlat((into.subagents ??= { ...NO_SUBAGENTS }), from.subagents)
-  const reads = (into.designReads ??= noDesignReads())
-  addFlat(reads.files, from.designReads?.files)
-  reads.none += from.designReads?.none ?? 0
   if (from.closeoutItems) addCounts((into.closeoutItems ??= {}), from.closeoutItems)
   addSkipReasons(into, from.skipReasons)
 }

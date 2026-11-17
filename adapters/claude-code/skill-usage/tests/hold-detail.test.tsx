@@ -50,11 +50,10 @@ test('a closeout hold on a commit and one at Stop are split into items the same 
   expect(design.closeoutItems).toEqual({})
 })
 
-test('every closeout item the adapter writes is read by its label, the two design items as one', async () => {
+test('every closeout item the adapter writes is read by its label', async () => {
   const items = (text: string) => Object.keys(summarize([prompt(), response(1), ...stopHold(2, text), results(2), response(3), turnEnd(4)]).closeoutItems ?? {})
   expect(items(ADAPTER_TEXTS.closeoutUnfinished)).toEqual(['Unfinished', 'Docs', 'Design'])
   expect(items(ADAPTER_TEXTS.closeoutChangeRead)).toEqual(['Docs', 'Design', 'Security'])
-  expect(items(ADAPTER_TEXTS.closeoutCitation)).toEqual(['Design'])
 })
 
 test('the pane and the report show each closeout item with its outcomes', async ($, on) => {

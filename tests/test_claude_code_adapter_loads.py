@@ -20,7 +20,6 @@ from claude_code_adapter_support import (
 )
 
 DESIGN = "software-design-principles"
-NONE_LINE = "goated-design-reads: none: only renames local names"
 SKIP_DESIGN = f"goated-skip: {DESIGN}: one mechanical constant change"
 SKIP_DOCS = "goated-skip: doc-sync: internal constant with no documented behavior"
 CODING = "/opt/goated/skills/software-design-principles/references/coding.md"
@@ -134,13 +133,8 @@ class LoadsCountInLaterTurnsTests(LoadsTestCase):
         s = self.first_turn(DESIGN)
         self.later_turn(s)
 
-        # Near miss: the design-reads line is still per turn, but no load is asked for.
-        held = s.call("Edit", code_edit("src/export.py", 6))
-        self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
-        self.assertIn("design-reads line", reason(held))
-        self.assertNotIn(f"load `{DESIGN}`", reason(held))
-
-        s.say(NONE_LINE)
+        # The load counts in a later turn, so no load is asked for (Ticket 089:
+        # no design-reads line either).
         self.assertEqual(decision(s.call("Edit", code_edit("src/export.py", 6))), "pass")
 
     def test_docs_item(self) -> None:
@@ -240,7 +234,6 @@ class ResetsAskForTheLoadAgainTests(LoadsTestCase):
             with self.subTest(how=how):
                 s = self.first_turn(DESIGN)
                 self.reset(s, how)
-                s.say(NONE_LINE)
                 held = s.call("Edit", code_edit("src/export.py", 6))
                 self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
                 self.assertIn(f"load `{DESIGN}`", reason(held))
@@ -323,7 +316,6 @@ class UnreadableEditSizeTests(LoadsTestCase):
         s = self.first_turn(DESIGN)
         self.later_turn(s)
         s.say(SKIP_DOCS)
-        s.say(NONE_LINE)
         self.assertEqual(decision(s.call("Edit", self.UNREADABLE)), "pass")
         s.run("pytest -q")
 
@@ -408,7 +400,6 @@ class DesignCloseoutTests(LoadsTestCase):
 
     def test_a_twenty_line_non_test_edit_raises_it(self) -> None:
         s = self.later_designing()
-        s.say(NONE_LINE)
         self.assertEqual(decision(s.call("Edit", code_edit("src/export.py", 20))), "pass")
         s.run("pytest -q")
 

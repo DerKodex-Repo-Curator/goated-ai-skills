@@ -330,6 +330,17 @@ export const MARKER_FIXTURES = {
         ],
         "malformed": []
       }
+    },
+    {
+      "identifier": "retired-design-reads-line",
+      "text": "goated-route: direct\ngoated-design-reads: process.md, errors.md\ngoated-design-reads: references/process.md\n",
+      "expect": {
+        "route": {
+          "form": "direct"
+        },
+        "skips": [],
+        "malformed": []
+      }
     }
   ]
 } as const

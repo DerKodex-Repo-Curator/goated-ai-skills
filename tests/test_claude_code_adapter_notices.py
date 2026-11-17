@@ -108,7 +108,6 @@ class RetrospectiveNoticeTests(HeldTurnTestCase):
         s.prompt("Add the exporter.")
         s.say("goated-route: direct")
         s.load("software-design-principles")
-        s.say("goated-design-reads: none: no condition holds here")
         self.assertEqual(decision(s.call("Write", new_code)), "deny")
         # The reads end the turn: no hook runs after them before the next prompt.
         for name in ("process.md", "complexity-and-modules.md", "readability.md"):

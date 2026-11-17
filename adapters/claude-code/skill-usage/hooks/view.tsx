@@ -220,10 +220,6 @@ function feedRow(entry: TimelineEntry): { mark: string; kind: string; runs: Run[
       // Amber when its skill had not loaded, as the page's edge is on the picture.
       return { mark: '↳', kind: 'Ref', runs: [{ text: `${entry.skill} › ${entry.file}`, tone: 'read' }, { text: ` · ${note}`, tone: entry.isLoaded ? 'dim' : 'waiting' }], tone: 'read' }
     }
-    case 'design-reads': {
-      const declared = [...(entry.files.length > 0 ? [entry.files.join(', ')] : []), ...entry.noneReasons.map(r => `none: ${r}`)].join(' · ')
-      return { mark: '✎', kind: 'Design', runs: [{ text: `reads ${declared}` }, ...(entry.isSubagent ? [{ text: ' · by a subagent', tone: 'dim' as const }] : [])], tone: 'plain' }
-    }
     case 'load':
       // A subagent's load for another reason, such as a hook asking, still says where it happened.
       const where = entry.isSubagent && entry.origin !== 'subagent' ? ', in a subagent' : ''
@@ -267,12 +263,6 @@ const holdWords = (m: Measures) => countWords(m.holds)
 /** Writing turns by whether a route line came before the first write, only after it, or never. */
 const WRITING: Record<keyof WritingTurns, string> = { routed: 'routed', late: 'routed late', none: 'unrouted' }
 const writingWords = (m: Measures) => countWords(m.writingTurns, k => WRITING[k as keyof WritingTurns] ?? k)
-/** Design-reads lines: each file with how many replies declared it, most declared first, then the `none` declarations. */
-function designReadWords(m: Measures): string {
-  const files = Object.entries(m.designReads?.files ?? {}).sort(([a, x], [b, y]) => y - x || a.localeCompare(b))
-  const none = m.designReads?.none ?? 0
-  return [...files.map(([file, n]) => `${file} ${n}`), ...(none ? [`${none} none`] : [])].join(', ')
-}
 
 /** Rows of counts, most counted first, equal ones A to Z, so the order holds between redraws. */
 const byMostThenName = ([leftName, leftCounts]: [string, Counts<string>], [rightName, rightCounts]: [string, Counts<string>]) =>
@@ -309,7 +299,7 @@ function sideSessionToolWords(measures: Measures): string {
 }
 
 /**
- * Route lines, routed skills, side sessions, adapter holds, overrides, subagents and design-reads lines in one line of
+ * Route lines, routed skills, side sessions, adapter holds, overrides and subagents in one line of
  * words, each part only when it has a count; undefined when none has.
  */
 function measuresText(m: Measures): string | undefined {
@@ -328,7 +318,6 @@ function measuresText(m: Measures): string | undefined {
     ['Adapter holds', holdWords(m)],
     ['Overrides', overrides ? String(overrides) : ''],
     ['Subagents', subParts.join(', ')],
-    ['Design reads', designReadWords(m)],
   ].flatMap(([name, text]) => (text ? [`${name}: ${text}`] : []))
   return parts.length > 0 ? parts.join(' · ') : undefined
 }
@@ -724,7 +713,6 @@ export function reportText(all: AllTime, avail: Available | null): string {
   out.push(`- Writing turns: ${writes.routed} routed before the first write · ${writes.late} routed only after it · ${writes.none} with no route line`)
   out.push(`- Adapter holds: ${holdWords(all) || 'none'}`)
   out.push(`- Overrides: ${overrides.join(' · ') || 'none'}`)
-  out.push(`- Design reads: ${designReadWords(all) || 'none written'}`)
   out.push(`- Subagents: ${sub.spawns} started${sub.starts ? ` · ${plural(sub.starts, 'start message')}` : ''} · ${sub.bodyReads} skill bodies read`)
   const skips = skipReasonRows(all.skipReasons)
   out.push('', '## Skip reasons', '')
