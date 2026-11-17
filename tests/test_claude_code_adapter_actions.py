@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -3024,3 +3025,148 @@ class SkillSkipPhraseTests(AdapterTestCase):
             (REPO_ROOT / "stack" / "goated-stack.yaml").read_text(encoding="utf-8")
         )
         self.assertEqual(GOATED_SKILLS, {skill["name"] for skill in registry["skills"]})
+
+
+DESIGN_SKILL_SOURCE = (
+    Path(__file__).resolve().parents[1] / "skills" / "engineering" / "software-design-principles"
+)
+DOC_SKIP = "goated-skip: doc-sync: internal constant with no documented behavior"
+
+
+class DesignCitationTests(AdapterTestCase):
+    """The closeout Design item's citations of each required reference (Ticket 052)."""
+
+    def install_skill(self, s: Session) -> Path:
+        """Install the design skill where Claude Code finds user skills, so its ids can be read."""
+
+        folder = s.config.home / ".claude" / "skills" / "software-design-principles"
+        shutil.copytree(DESIGN_SKILL_SOURCE, folder)
+        return folder
+
+    def closed(self, line: str = "goated-design-reads: errors.md", install: bool = True) -> Session:
+        """A turn that met every closeout item but the citations: errors.md is required."""
+
+        s = self.routed()
+        if install:
+            self.install_skill(s)
+        s.load("software-design-principles")
+        s.say(line)
+        s.read(REFERENCES + "errors.md")
+        self.assertEqual(decision(s.call("Edit", edit("src/export.py", PLAIN))), "pass")
+        s.run("pytest -q")
+        s.say(DOC_SKIP)
+        s.read(RED_FLAGS)
+        s.run(DIFF)
+        return s
+
+    def test_an_uncited_required_reference_holds_naming_it_and_a_citation_clears_it(self) -> None:
+        s = self.closed()
+
+        held = stop(s)
+        self.assertEqual(closeout_line(held), "goated-hold: closeout | justified-skip")
+        item = next(line for line in held["reason"].split("\n") if "file#id" in line)
+        self.assertTrue(item.startswith("- Design:"), item)
+        self.assertIn("errors.md (#error-decision", item)
+        self.assertIn("goated-skip: software-design-principles: <reason>", item)
+        s.say("`errors.md#crash-early`: the parser now raises on a bad header.")
+        self.assertEqual(stop(s), {})
+
+    def test_a_citation_only_in_the_final_reply_counts(self) -> None:
+        s = self.closed()
+
+        self.assertTrue(stop(s))
+        self.assertEqual(stop(s, final="Done. errors.md#crash-early did not apply: no failures."), {})
+
+    def test_an_id_of_another_reference_does_not_count(self) -> None:
+        s = self.closed()
+        s.say("`process.md#design-twice`: one interface was enough.")
+        s.say("`errors.md#design-twice` and a bare `#crash-early` name no errors.md section.")
+
+        held = stop(s)
+        self.assertIn("errors.md (#error-decision", held["reason"])
+
+    def test_each_detected_reference_needs_its_own_citation(self) -> None:
+        s = self.routed()
+        self.install_skill(s)
+        s.load("software-design-principles")
+        s.say(NONE_LINE)
+        for name in ("process.md", "complexity-and-modules.md", "readability.md"):
+            s.read(REFERENCES + name)
+        self.assertEqual(decision(s.call("Write", write("src/new.py"))), "pass")
+        s.run("pytest -q")
+        s.say(DOC_SKIP)
+        s.read(RED_FLAGS)
+        s.run(DIFF)
+        s.say("process.md#design-twice and complexity-and-modules.md#deep-modules shaped it.")
+
+        held = stop(s)
+        item = next(line for line in held["reason"].split("\n") if "file#id" in line)
+        self.assertIn("readability.md (#obvious", item)
+        self.assertNotIn("process.md (", item)
+        self.assertNotIn("complexity-and-modules.md (", item)
+        s.say("readability.md#naming: the new names follow the module's.")
+        self.assertEqual(stop(s), {})
+
+    def test_a_later_write_of_the_same_file_counts_what_it_adds(self) -> None:
+        s = self.routed()
+        self.install_skill(s)
+        s.load("software-design-principles")
+        s.say(NONE_LINE)
+        for name in ("process.md", "complexity-and-modules.md", "readability.md", "errors.md"):
+            s.read(REFERENCES + name)
+        first = write("src/new.py")
+        s.call("Write", first)
+        s.call("Write", {"file_path": "src/new.py",
+                         "content": first["content"] + "\nraise ValueError('bad header')"})
+        s.run("pytest -q")
+        s.say(DOC_SKIP)
+        s.read(RED_FLAGS)
+        s.run(DIFF)
+        s.say("process.md#design-twice, complexity-and-modules.md#deep-modules, readability.md#naming.")
+
+        held = stop(s)
+        self.assertIn("errors.md (#error-decision", held["reason"])
+        s.say("errors.md#crash-early: a bad header raises.")
+        self.assertEqual(stop(s), {})
+
+    def test_unreadable_skill_files_leave_the_item_open(self) -> None:
+        s = self.closed(install=False)
+        self.assertEqual(stop(s), {})
+
+        s = self.fresh()
+        self.session = s
+        skill = self.install_skill(s) / "SKILL.md"
+        text = skill.read_text(encoding="utf-8")
+        skill.write_text(re.sub(r"(?m)^\| \[[^\]]*\]\(references/errors\.md\).*\n", "", text),
+                         encoding="utf-8")
+        s = self.closed(install=False)
+        self.assertEqual(stop(s), {})
+
+    def test_a_skip_line_stands_the_item_down(self) -> None:
+        s = self.closed()
+        s.say("goated-skip: software-design-principles: one mechanical constant change")
+
+        self.assertEqual(stop(s), {})
+
+    def test_the_red_flags_and_change_read_items_are_unchanged(self) -> None:
+        s = self.routed()
+        self.install_skill(s)
+        s.load("software-design-principles")
+        s.say("goated-design-reads: errors.md")
+        s.read(REFERENCES + "errors.md")
+        s.call("Edit", edit("src/export.py", PLAIN))
+        s.run("pytest -q")
+        s.say(DOC_SKIP)
+        s.say("errors.md#crash-early: no failure paths were added.")
+
+        held = stop(s)
+        self.assertIn(
+            "- Design: read `software-design-principles/references/red-flags.md` with the Read tool",
+            held["reason"],
+        )
+        self.assertNotIn("file#id", held["reason"])
+        s.read(RED_FLAGS)
+        self.assertIn("- Design: after reading the red flags, read the change itself",
+                      stop(s)["reason"])
+        s.run(DIFF)
+        self.assertEqual(stop(s), {})

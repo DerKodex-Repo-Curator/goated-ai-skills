@@ -167,6 +167,7 @@ check after its own last change, that change is already proved.
 | Unfinished work | The last check after the change failed | `handoff` loads | `handoff` |
 | Docs | A code file outside the tests changed | `doc-sync` loads, then a [change read](#change-reads) after the load and the last code change | `doc-sync` |
 | Design red flags | `software-design-principles` loaded in the turn | `software-design-principles/references/red-flags.md` is read after the last change, then a [change read](#change-reads) after that read | `software-design-principles` |
+| Design citations | `software-design-principles` loaded in the turn, and the turn's edits required a [design reference](#design-references) | The turn's reply text, the reply being finished included, cites a section of each required reference as `file#id`, such as `errors.md#crash-early` (see [Design references](#design-references)) | `software-design-principles` |
 | Security | `code-security-review` loaded in the turn and a security-sensitive file (the `security` gate's paths, code or not) changed | A [change read](#change-reads) after the load and the last sensitive change | `code-security-review` |
 | Setup | The turn installed or added a dependency or tool by a command that names a package, or wrote an env or settings file (see below) | `setup-scribe` loads in the turn, before or after the change | `setup-scribe` |
 
@@ -359,6 +360,25 @@ The first substantial code edit of a turn meets `design`, which asks for what
 is missing: the load, the line, and the reads. A later edit meets
 `design-reads`, which asks only for reads. A small edit before the skill
 loads is not held, as before.
+
+At closeout, the Design citations item asks for a citation of each reference
+the turn required, whether read in this turn or an earlier one: the turn's
+reply text cites at least one section id of each, with how it shaped the
+change or why it did not apply, as the skill's citation convention asks.
+The turn's required set is replayed from its finished edits of project files,
+by the rules above, plus its design-reads lines. The file on disk now holds
+the turn's own writes, so a `Write` is compared with the turn's earlier
+`Write` of that file instead; with none, a `Write` whose result does not
+report the file updated is a new file, and any other counts all its lines as
+added. A citation is `<file>#<id>`, bare,
+backticked, or after a path (`references/errors.md#crash-early`), anywhere in
+the turn's reply text. Its id must be one the skill's Section Index, in the
+installed `software-design-principles/SKILL.md`, lists for that file, so an id
+of another reference, a whole-file heading id, or a bare `#crash-early` does
+not count. The ids come from that index, not from a copy in the adapter: a
+user skill is looked for first, then project and plugin skills, as Claude Code
+finds them. The item names each uncited reference with its ids. Whether a
+citation says anything useful is not judged.
 
 ### Shell writes
 
@@ -819,6 +839,15 @@ of the call's prompt, which is normally already there.
   path alone. The conflict-resolution gate reads git's English messages
   (`Automatic merge failed`, `could not apply`, `could not revert`), so a git
   set to another language is not seen.
+- The Design citations item fails open: with no installed
+  `software-design-principles` found, or its `SKILL.md` unreadable, it asks
+  for nothing, and a reference with no row in the skill's Section Index needs
+  no citation. Only the turn's own edits count; a subagent's edits are left to
+  its own closeout. A `Write` over a file that existed before the turn, and
+  that the turn had not written, counts all its lines as added, so it can
+  require a reference the `design` gate did not. A citation in a call's
+  description does not count, and one in a reply that also makes a tool call
+  can be lost the way a route line is.
 - The adapter guards against agents skipping skills, not against an agent
   working to defeat it. An agent with shell access could edit the transcript,
   the state file, or the settings that install the hooks. Defending against

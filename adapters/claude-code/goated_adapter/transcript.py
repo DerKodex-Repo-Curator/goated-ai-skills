@@ -164,9 +164,9 @@ class Turn:
     the winning route line, `route_marks` every valid route line in order, and
     `malformed` the route-like lines that failed the grammar. `skips` are the
     valid `goated-skip` lines, `design_reads` the valid `goated-design-reads`
-    lines and `malformed_design_reads` those that failed the grammar. Lines
-    count from reply text and from the field `call_line_text` reads, once per
-    call id in `call_ids`. `calls` are the tool calls that finished in this
+    lines and `malformed_design_reads` those that failed the grammar, and
+    `texts` the turn's reply texts, in order. Lines count from reply text and
+    from the field `call_line_text` reads, once per call id in `call_ids`. `calls` are the tool calls that finished in this
     turn, oldest first, and `unfinished` the `(name, input)` of recorded calls
     with no result yet, oldest first. `opens_transcript` is set on the oldest
     turn read when reading reached the start of the transcript, so no earlier
@@ -177,7 +177,7 @@ class Turn:
         "key", "is_compaction", "typed", "prompt_id", "loads", "invoked_load",
         "route", "route_marks", "malformed", "skips", "calls", "prompt_ids",
         "opens_transcript", "design_reads", "malformed_design_reads", "call_ids",
-        "unfinished",
+        "unfinished", "texts",
     )
 
     def __init__(self, key: str) -> None:
@@ -198,6 +198,7 @@ class Turn:
         self.prompt_ids: set[str] = set()
         self.call_ids: set[str] = set()
         self.unfinished: list[tuple[str, dict]] = []
+        self.texts: list[str] = []
 
     def add_markers(self, markers: ReplyMarkers) -> None:
         """Count the marker lines of one reply text or one tool call, in order."""
@@ -444,7 +445,9 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                 if not isinstance(block, dict):
                     continue
                 if block.get("type") == "text":
-                    turn.add_markers(parse_reply(str(block.get("text", ""))))
+                    text = str(block.get("text", ""))
+                    turn.texts.append(text)
+                    turn.add_markers(parse_reply(text))
                 elif block.get("type") == "tool_use":
                     tool_id = str(block.get("id", ""))
                     tool_input = block.get("input")

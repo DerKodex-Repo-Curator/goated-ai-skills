@@ -13,9 +13,11 @@ import os
 import re
 from pathlib import Path
 
-from . import actions, gates
+from . import actions, design_reads, gates
 from .overrides import GOATED_SKILLS, parse_overrides
-from .policy import installed_skill_names, router_skill_installed, shared_policy_loaded
+from .policy import (
+    installed_skill_names, router_skill_installed, shared_policy_loaded, skill_folder,
+)
 from .state import StateStore, StateUnsafe
 from .transcript import (
     CONTINUATION,
@@ -263,6 +265,8 @@ def _stop(payload: dict, config: Config) -> str:
         str(payload.get("last_assistant_message") or ""),
         subagents,
         _project(payload, config),
+        lambda: design_reads.section_ids(skill_folder(
+            Path(str(payload.get("cwd") or ".")), config.home, actions.DESIGN_SKILL)),
     )
     warnings = [state_warning, _save(store, session_id, state)]
     if unread:

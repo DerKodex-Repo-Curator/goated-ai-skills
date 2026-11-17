@@ -11,12 +11,18 @@ Signals are word and shape matches on the code an edit adds, so they lean
 toward selecting; a reference read counts until the next compaction, which
 bounds the cost. What is code and what is a test file are the action gates'
 rules (`actions.is_code`, `actions.TEST_PATH_RE`); callers pass their answers.
+
+It also owns what the closeout's citation item needs (spec R6): the turn's
+required set, replayed from its edits; each reference's section ids, read
+from the installed skill's own files; and the citations a text makes.
 """
 
 from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
+from typing import NamedTuple
 
 SKILL_REFERENCES = "software-design-principles/references/"
 # The references a design-reads line can require, in the skill's order.
@@ -58,6 +64,14 @@ CONCURRENCY_RE = re.compile(
 CONFIG_PATH_RE = re.compile(
     r"\.(?:ya?ml|toml|json|env)$|(?:^|/)\.env(?:\.[^/]*)?$|(?:^|/)settings\.[^/]+$", re.IGNORECASE
 )
+# A row of the skill's Section Index: a linked reference, then its ids in the last cell.
+INDEX_ROW_RE = re.compile(r"^\|\s*\[[^\]]*\]\(references/([a-z0-9-]+\.md)\)\s*\|.*\|([^|]*)\|\s*$",
+                          re.MULTILINE)
+SECTION_ID_RE = re.compile(r"`#([a-z0-9]+(?:-[a-z0-9]+)*)`")
+# A citation, `errors.md#crash-early`, bare or after a path such as `references/`.
+CITATION_RE = re.compile(r"(?<![\w.-])([a-z0-9]+(?:-[a-z0-9]+)*\.md)#([a-z0-9]+(?:-[a-z0-9]+)*)")
+# How Claude Code's Write result reports replacing a file that existed.
+WRITE_UPDATED_RE = re.compile(r"\bhas been updated\b")
 # Lock files are written by tools, not designed.
 LOCK_FILE_RE = re.compile(r"(?:^|/)(?:[^/]*[-.]lock\.(?:json|ya?ml|toml)|npm-shrinkwrap\.json)$",
                           re.IGNORECASE)
@@ -83,12 +97,94 @@ def required(path: str, tool_input: dict, *, is_code: bool, is_test: bool,
     """
 
     on_disk = _disk_text(path, cwd) if "content" in tool_input else None
-    found = _signals(
+    found = _edit_signals(path, tool_input, on_disk, is_code=is_code, is_test=is_test,
+                          written_before=written_before, other_code_files=other_code_files)
+    return _with_declared(found, declared)
+
+
+class TurnEdit(NamedTuple):
+    """A finished edit, in the turn, of a file the design-reads rules apply to:
+    its path, tool input, the text of its result, and the code and test answers."""
+
+    path: str
+    tool_input: dict
+    result: str
+    is_code: bool
+    is_test: bool
+
+
+def turn_required(edits: list[TurnEdit], declared: list[str]) -> dict[str, str]:
+    """The references a turn's edits required, each with the first reason, in
+    the skill's order: those `required` gave each edit, replayed in order.
+
+    The file on disk now holds the turn's own writes, so a Write is not
+    compared with it. A Write is compared with the turn's earlier Write of
+    that file; with none, a file its result does not report updated is a new
+    file, and any other Write counts all its lines as added, which may select
+    more than the gate did.
+    """
+
+    found: dict[str, str] = {}
+    written: dict[str, str | None] = {}  # Each path edited so far: the text its last Write gave.
+    code_paths: set[str] = set()  # The non-test code files edited so far.
+    for edit in edits:
+        before = None
+        if "content" in edit.tool_input:
+            before = written.get(edit.path)
+            if before is None and (edit.path in written or WRITE_UPDATED_RE.search(edit.result)):
+                before = ""
+        for name, why in _edit_signals(edit.path, edit.tool_input, before, is_code=edit.is_code,
+                                       is_test=edit.is_test, written_before=edit.path in written,
+                                       other_code_files=len(code_paths - {edit.path})).items():
+            found.setdefault(name, why)
+        content = edit.tool_input.get("content")
+        written[edit.path] = content if isinstance(content, str) else written.get(edit.path)
+        if edit.is_code and not edit.is_test:
+            code_paths.add(edit.path)
+    return _with_declared(found, declared)
+
+
+def section_ids(skill_folder: Path | None) -> dict[str, tuple[str, ...]]:
+    """Each design reference's section ids, in the order the Section Index of
+    `skill_folder`'s SKILL.md lists them: the skill's own list of what to cite.
+    With no folder or no readable SKILL.md the result is empty, and a
+    reference with no row is left out, so its citation is not required."""
+
+    if skill_folder is None:
+        return {}
+    try:
+        text = (skill_folder / "SKILL.md").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {}
+    ids: dict[str, tuple[str, ...]] = {}
+    for name, cell in INDEX_ROW_RE.findall(text):
+        found = tuple(SECTION_ID_RE.findall(cell))
+        if name in REFERENCES and found:
+            ids[name] = found
+    return ids
+
+
+def citations(texts: list[str]) -> set[str]:
+    """The sections `texts` cite, each as `file#id`, such as `errors.md#crash-early`."""
+
+    return {f"{name}#{section}" for text in texts for name, section in CITATION_RE.findall(text)}
+
+
+def _edit_signals(path: str, tool_input: dict, on_disk: str | None, *, is_code: bool,
+                  is_test: bool, written_before: bool, other_code_files: int) -> dict[str, str]:
+    """The references an edit's signals select, a Write compared with `on_disk`."""
+
+    return _signals(
         path, _Added(tool_input, on_disk),
         new_file=is_code and "content" in tool_input and not written_before and on_disk is None,
         is_test=is_test,
         code_files=other_code_files + 1 if is_code and not is_test else 0,
     )
+
+
+def _with_declared(found: dict[str, str], declared: list[str]) -> dict[str, str]:
+    """`found` plus the known references `declared` names, in the skill's order."""
+
     for name in declared:
         if name in REFERENCES:
             found[name] = "named in your design-reads line"
