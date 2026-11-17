@@ -372,19 +372,21 @@ READ_ONLY_COMMANDS = frozenset(
 )
 # Arguments that turn a read into a write or make it run another program:
 # `find` runs or deletes with -exec, -ok, and -delete and writes files with
-# -fprint and -fls; `rg --pre` runs a program on every file it searches.
+# -fprint and -fls; `rg --pre` runs a program on every file it searches, and
+# `rg --hostname-bin` runs one to name the host.
 READ_ONLY_REFUSED_ARGS = {
     "find": ("-exec", "-ok", "-delete", "-fprint", "-fls"),
-    "rg": ("--pre",),
+    "rg": ("--pre", "--hostname-bin"),
 }
 # git subcommands that only print the repository's state or history.
 GIT_READ_SUBCOMMANDS = frozenset({"status", "diff", "log", "show"})
 # Their arguments refused: `--output` writes the printed text to a file, and
-# `--ext-diff` and `--textconv` ask for programs the repository's config
-# names. Refusing them does not stop those programs: a plain `git diff`,
+# `--ext-diff`, `--textconv`, and `--show-signature` (which runs
+# `gpg.program`) ask for programs the repository's config names. Refusing
+# them does not stop those programs: a plain `git diff`,
 # `git show`, or `git log -p` runs `diff.external` and textconv drivers too
 # (README "Known Limits").
-GIT_READ_REFUSED_ARGS = ("--output", "--ext-diff", "--textconv")
+GIT_READ_REFUSED_ARGS = ("--output", "--ext-diff", "--textconv", "--show-signature")
 # The only git options allowed before the subcommand: `-C` picks the folder,
 # and the others turn the pager off. `-c` can set a program to run, such as
 # a pager or external diff, so it and every other global option are refused.
@@ -409,9 +411,13 @@ FD_DUPLICATE_RE = re.compile(FD_DUPLICATE)
 #   curly quotes as quotes and a lone carriage return or U+2028 as a line
 #   break, which this reading does not;
 # - a PowerShell block comment, `<#`, which ends at `#>`, not at the line's end;
-# - a PowerShell here-string, `@"` or `@'`.
+# - a PowerShell here-string, `@"` or `@'`;
+# - `[[` or `]]`: outside command position they are plain words, and a `>`
+#   after them redirects, while this reading would take it for a comparison;
+# - `//`, which starts a UNC path (`//host/share`) read over the network,
+#   where Windows may send the user's credentials.
 NOT_PLAINLY_SPELLED_RE = re.compile(
-    rf"[$`\\]|<<<|>(?=&)(?!{FD_DUPLICATE})|[^\t\n\x20-\x7e]|<#|@[\"']"
+    rf"[$`\\]|<<<|>(?=&)(?!{FD_DUPLICATE})|[^\t\n\x20-\x7e]|<#|@[\"']|\[\[|\]\]|//"
 )
 
 
@@ -421,8 +427,9 @@ def _reads_only(segment: "_Segment") -> bool:
     A wrapper (`sudo`, `xargs`), a variable assignment, or a keyword before
     the command can run something else or change what runs, so the command
     word must come first. It must be the bare name, in any case, with no
-    folder or extension: `./cat` or `cat.cmd` may be any program. Its only
-    redirects may be into null targets.
+    folder or extension: `./cat` or `cat.cmd` may be any program. It has no
+    output redirect, not even into a null device: `nul` is a real file in
+    bash, and `/dev/null` a real path in PowerShell.
     """
 
     name, original, args = _resolve(segment.words)
@@ -432,9 +439,7 @@ def _reads_only(segment: "_Segment") -> bool:
         return False
     if segment.nested or segment.heredocs or segment.after not in READ_ONLY_ENDS:
         return False
-    # `$null` never gets here, since a read holds no `$`; it stays a null
-    # target for the write analysis, where `2>$null` writes nothing.
-    if any(target.lower() not in NULL_TARGETS for target in segment.redirects):
+    if segment.redirects:
         return False
     if name == "git":
         return _git_reads_only(args)
@@ -606,7 +611,9 @@ def _segments(command: str) -> list[_Segment]:
                 current.out_redirects.append(value)
             redirect_next = False
             return
-        if value == "[[":
+        if value == "[[" and all(w in SHELL_KEYWORDS for w in current.words):
+            # Only as the command word, after any keywords (`if [[`, `! [[`):
+            # elsewhere `[[` is a plain word and a `>` after it redirects.
             in_test = True
         elif value == "]]":
             in_test = False

@@ -437,12 +437,13 @@ Before the router loads, `router-first` passes a `Bash` or `PowerShell`
 command made only of plain reads, as it passes Read and Grep, so an agent can
 look around before it routes. Each simple command must be one of:
 
-- `cat`, `head`, `tail`, `ls`, `dir`, `grep`, `rg` (without `--pre`), or `wc`;
+- `cat`, `head`, `tail`, `ls`, `dir`, `grep`, `rg` (without `--pre` or
+  `--hostname-bin`), or `wc`;
 - `find` without `-exec`, `-execdir`, `-ok`, `-okdir`, `-delete`, `-fprint`,
   `-fprint0`, `-fprintf`, or `-fls`;
 - `git status`, `git diff`, `git log`, or `git show`, without `--output`,
-  `--ext-diff`, or `--textconv`, and with no option before the subcommand but
-  `-C <path>`, `--no-pager`, or `-P`;
+  `--ext-diff`, `--textconv`, or `--show-signature`, and with no option before
+  the subcommand but `-C <path>`, `--no-pager`, or `-P`;
 - `Get-Content`, `Get-ChildItem`, or `Select-String`, or their aliases `gc`,
   `gci`, and `sls`.
 
@@ -450,9 +451,12 @@ The command word must be the bare name, in any case: `./cat`, `/bin/cat`,
 or `cat.cmd` may be any program, so it is held. The commands may be joined by
 pipes, `&&`, `||`, `;`, or newlines. The call is held when any part of it is
 something else: another or unknown command, a wrapper such as `sudo` or
-`xargs` or a variable assignment before the command, a redirect into a file
-(one into a null device such as `/dev/null` is fine), a heredoc, a subshell,
-group, or script block, a process substitution, or a background `&`.
+`xargs` or a variable assignment before the command, any output redirect, a
+heredoc, a subshell, group, or script block, a process substitution, or a
+background `&`. A redirect into a null device is held too, since a null
+device in one shell is a real file in another: `nul` in bash, `/dev/null` in
+PowerShell. Duplicating a descriptor (`2>&1`) and an input redirect
+(`< a.py`) are fine.
 
 The call is also held when its text holds anything the lexical reading may
 not follow as the shell does, even inside quotes: a `$` (variables,
@@ -462,11 +466,12 @@ PowerShell), `<<<`, a `>&` not followed by a whole descriptor (`>&2` is
 fine, `>&2x` writes the file `2x`), any character but printable ASCII, a
 newline, or a tab (curly quotes, which PowerShell reads as quotes; a lone
 carriage return or U+2028, which it reads as a line break), a PowerShell
-block comment `<#`, or a PowerShell here-string. So a Windows path with
-backslashes, such as `Get-Content src\a.py`, is held; Read or a
-forward-slash path passes. When the analysis cannot tell, the call is held.
-The lists are
-`READ_ONLY_COMMANDS`, `READ_ONLY_REFUSED_ARGS`, `GIT_READ_SUBCOMMANDS`,
+block comment `<#`, a PowerShell here-string, `[[` or `]]` (outside command
+position a plain word, so a `>` after it redirects), or `//`, which starts a
+UNC path read over the network, where Windows may send the user's
+credentials. So a Windows path with backslashes, such as
+`Get-Content src\a.py`, is held; Read or a forward-slash path passes. When
+the analysis cannot tell, the call is held. The lists are `READ_ONLY_COMMANDS`, `READ_ONLY_REFUSED_ARGS`, `GIT_READ_SUBCOMMANDS`,
 `GIT_READ_REFUSED_ARGS`, and `NOT_PLAINLY_SPELLED_RE` in `shell.py`. Once the
 router loads, commands are judged as before.
 

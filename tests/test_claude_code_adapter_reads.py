@@ -28,7 +28,6 @@ READS = [
     ("Bash", "git log --oneline -5"),
     ("Bash", "git show HEAD:a.py"),
     ("Bash", "git -C sub diff --stat"),
-    ("Bash", "grep -rn x src 2>/dev/null | wc -l"),
     ("PowerShell", "Get-ChildItem -Recurse src | Select-String -Pattern 'x'"),
     ("PowerShell", "gci src; gc a.py"),
     ("Bash", "cat 'a; rm b'"),
@@ -48,8 +47,14 @@ READS = [
     ("Bash", "cat a >&1"),
     ("Bash", "cat a >&2 | wc -l"),
     ("Bash", "cat a 2>&1|wc -l"),
-    ("Bash", "cat a 2>&1>/dev/null"),
     ("PowerShell", "Get-Content 'a' ; Get-Content b"),
+    # Near misses of the third-round probes in HELD.
+    ("Bash", "cat < a.py"),
+    ("Bash", "rg -n x src"),
+    ("Bash", "git log --stat"),
+    ("Bash", "cat /tmp/a"),
+    ("Bash", "ls src/sub"),
+    ("Bash", "grep -c x a.py"),
 ]
 
 # Each is held before the router loads: the near misses of a read.
@@ -138,6 +143,34 @@ HELD = [
     ("Bash", "cat a >&2x"),
     ("Bash", "cat a >&9x"),
     ("Bash", "cat a >&-x"),
+    # Third-round probes. `[[` outside command position is a plain word, so
+    # the `>` after it redirects.
+    ("Bash", "cat [[ a > c ]]"),
+    ("Bash", "ls [[ a > c ]]"),
+    ("Bash", "cat [[ a >> c ]]"),
+    ("Bash", "grep x [[ a > c"),
+    ("Bash", "cat a [[ > c"),
+    ("Bash", "git log [[ > c ]]"),
+    ("PowerShell", "Get-Content [[ a > c ]]"),
+    ("PowerShell", "cat [[ a > c ]]"),
+    ("Bash", "cat [[ a ]]"),
+    ("Bash", "[[ -f a ]] && cat a"),
+    # A null device in one shell is a real file in another, so a read has no
+    # output redirect at all.
+    ("Bash", "cat a > nul"),
+    ("Bash", "cat a > NUL"),
+    ("Bash", "cat a > /dev/null"),
+    ("PowerShell", "Get-Content a > /dev/null"),
+    ("Bash", "grep -rn x src 2>/dev/null | wc -l"),
+    ("Bash", "cat a 2>&1>/dev/null"),
+    # Options that run a program, and UNC paths, which read over the network.
+    ("Bash", "rg --hostname-bin ./x y"),
+    ("Bash", "git log --show-signature"),
+    ("Bash", "git show --show-signature HEAD"),
+    ("Bash", "cat //host/share/a"),
+    ("Bash", "ls '//host/share'"),
+    ("PowerShell", "Get-Content //host/share/a"),
+    ("PowerShell", "Get-Content -Path //host/share/a"),
 ]
 
 
@@ -210,6 +243,21 @@ class ShellReadsBeforeTheRouterTests(ReadsTestCase):
                 held = s.call("Bash", {"command": command})
                 self.assertEqual(hold_line(held), "goated-hold: route-line | strict")
         for command in ("cat a >&2", "cat a 2>&-"):
+            with self.subTest(command=command):
+                s = self.fresh()
+                s.load(ROUTER)
+                self.assertEqual(decision(s.call("Bash", {"command": command})), "pass")
+
+    def test_a_redirect_after_a_test_word_writes_after_the_router_too(self) -> None:
+        # Only a `[[` in command position opens a test, where `>` compares.
+        for command in ("cat [[ a > c ]]", "grep x [[ a > c", "git log [[ > c ]]"):
+            with self.subTest(command=command):
+                s = self.fresh()
+                s.load(ROUTER)
+                held = s.call("Bash", {"command": command})
+                self.assertEqual(hold_line(held), "goated-hold: route-line | strict")
+        for command in ("[[ a > c ]] && cat a", "if [[ a > c ]]; then cat a; fi",
+                        "! [[ a > c ]]"):
             with self.subTest(command=command):
                 s = self.fresh()
                 s.load(ROUTER)
