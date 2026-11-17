@@ -728,13 +728,37 @@ look around before it routes. Each simple command must be one of:
 
 - `cat`, `head`, `tail`, `ls`, `dir`, `grep`, `rg` (without `--pre` or
   `--hostname-bin`), or `wc`;
+- `pwd`, `echo`, `cut`, `tr`, `stat`, `which`, `true`, or `:`;
+- `sort` without `-o`, `-T`, `--output`, `--temporary-directory`, or
+  `--compress-program`, which write files or run a program;
+- `uniq` with at most one file, since it writes its second;
+- `diff` without `-l` or `--paginate`, which pipe its output through `pr`;
+- `file` without `-C` or `--compile` (which write a magic file), `-z`, `-Z`,
+  or `--uncompress` (which run decompressors), or `-m` and `--magic-file`;
 - `find` without `-exec`, `-execdir`, `-ok`, `-okdir`, `-delete`, `-fprint`,
   `-fprint0`, `-fprintf`, or `-fls`;
-- `git status`, `git diff`, `git log`, or `git show`, without `--output`,
-  `--ext-diff`, `--textconv`, or `--show-signature`, and with no option before
-  the subcommand but `-C <path>`, `--no-pager`, or `-P`;
+- `git status`, `git diff`, `git log`, `git show`, `git rev-parse`,
+  `git ls-files`, or `git blame`;
+- `git branch` with only listing options (`-a`, `-r`, `-v`, `-vv`,
+  `--show-current`, `--contains`, `--merged`, `--sort`, `--format`, and the
+  like) and a pattern only after `--list`, so no name to create (`-l`
+  meant `--create-reflog` before git 2.23);
+- `git worktree list`, and `git remote` bare, with `-v`, or as `get-url`;
 - `Get-Content`, `Get-ChildItem`, or `Select-String`, or their aliases `gc`,
   `gci`, and `sls`.
+
+A git read has no `--output`, `--ext-diff`, `--textconv`, or
+`--show-signature`, and no option before the subcommand but `-C <path>`,
+`--no-pager`, or `-P`. GNU tools take a long option by any prefix of its
+name and run short options together, so `sort --out=x` and `sort -uo x` are
+held as `--output` and `-o` are; `git branch` takes prefixes too, so only
+its listing options written in full pass (`--edit` would open an editor as
+`--edit-description`). `git remote show` is held: it contacts each remote,
+which runs ssh or a credential helper.
+
+The command's first part may be a `cd` to one plain path, with no `$`,
+wildcard, or option (`cd sub && ls`): it moves the reads after it and writes
+nothing. A `cd` later in the command, `pushd`, and `cd -` are held.
 
 The command word must be the bare name, in any case: `./cat`, `/bin/cat`,
 or `cat.cmd` may be any program, so it is held. The commands may be joined by
@@ -744,8 +768,11 @@ something else: another or unknown command, a wrapper such as `sudo` or
 heredoc, a subshell, group, or script block, a process substitution, or a
 background `&`. A redirect into a null device is held too, since a null
 device in one shell is a real file in another: `nul` in bash, `/dev/null` in
-PowerShell. Duplicating a descriptor (`2>&1`) and an input redirect
-(`< a.py`) are fine.
+PowerShell. The one exception is a `Bash` call's redirect of standard error,
+or another stream but standard output, into exactly `/dev/null`
+(`ls 2>/dev/null`); `ls 2> errors.txt`, `ls > /dev/null`, and the same in
+`PowerShell` are held. Duplicating a descriptor (`2>&1`) and an input
+redirect (`< a.py`) are fine.
 
 The call is also held when its text holds anything the lexical reading may
 not follow as the shell does, even inside quotes: a `$` (variables,
@@ -758,11 +785,18 @@ carriage return or U+2028, which it reads as a line break), a PowerShell
 block comment `<#`, a PowerShell here-string, `[[` or `]]` (outside command
 position a plain word, so a `>` after it redirects), or `//`, which starts a
 UNC path read over the network, where Windows may send the user's
-credentials. So a Windows path with backslashes, such as
-`Get-Content src\a.py`, is held; Read or a forward-slash path passes. When
-the analysis cannot tell, the call is held. The lists are
-`READ_ONLY_COMMANDS`, `READ_ONLY_REFUSED_ARGS`, `GIT_READ_SUBCOMMANDS`,
-`GIT_READ_REFUSED_ARGS`, and `NOT_PLAINLY_SPELLED_RE` in `shell.py`. Once the
+credentials. A backslash and `//` are fine inside a whole single-quoted
+argument, which both shells read literally (`grep -n 'def\s+x' a.py`,
+`grep 'http://x' src`), unless two slashes or backslashes start it or start
+a value in it after `=`, `,`, or `;` (`'//host/a'`, `'--file=\\host\a'`):
+the adapter cannot tell a pattern from a path, so `grep '// TODO' a.c` is
+held. A quote inside a word (`x'\s'`) and double quotes get no exemption. So
+a Windows path with backslashes, such as `Get-Content src\a.py`, is held;
+`Get-Content 'src\a.py'`, Read, or a forward-slash path passes. When the
+analysis cannot tell, the call is held. The lists are
+`READ_ONLY_COMMANDS`, `READ_ONLY_REFUSED_ARGS`, `READ_ONLY_REFUSED_OPTIONS`,
+the `GIT_READ_*` and `GIT_BRANCH_*` tables, and `NOT_PLAINLY_SPELLED_RE` in
+`shell.py`. Once the
 router loads, commands are judged as before.
 
 A spawn of a read-only subagent type, `claude-code-guide` (the
@@ -1319,8 +1353,11 @@ of the call's prompt, which is normally already there.
 - A [plain read](#plain-reads) can still run a program that git config
   names, such as `core.fsmonitor` under `git status`, or `diff.external` and
   a `textconv` driver set for the repository, which a plain `git diff`,
-  `git show`, or `git log -p` runs too. Refusing the `--ext-diff` and
-  `--textconv` options does not stop them. A passing read can also hang:
+  `git show`, `git log -p`, or `git blame` runs too, or a pager such as
+  `core.pager` under `git branch` or `git log`. Refusing the `--ext-diff`
+  and `--textconv` options does not stop them. A `cd` before a read moves
+  it into another repository, whose config then applies, as `git -C` does.
+  A passing read can also hang:
   `tail -f` never ends on its own.
 - A shell call's result stands for the whole command, not for each command
   in it. A check in the same command as a write proves that write even when

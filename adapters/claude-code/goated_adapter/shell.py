@@ -213,9 +213,11 @@ class ShellCommand:
     `installs_package` says it installs or adds a dependency or tool it names
     (`uv add httpx`), not a bare restore such as `npm install`.
     `read_only` says every simple command in it is a plain read (see
-    `READ_ONLY_COMMANDS`), joined only by pipes or list separators, with no
-    wrapper, redirect into a file, heredoc, group, substitution, or
-    background job, and with none of the text in `NOT_PLAINLY_SPELLED_RE`;
+    `READ_ONLY_COMMANDS`), perhaps after a leading `cd` to a plain path,
+    joined only by pipes or list separators, with no wrapper, redirect into
+    a file (a Bash `2>/dev/null` aside), heredoc, group, substitution, or
+    background job, and with none of the text in `NOT_PLAINLY_SPELLED_RE`
+    outside a whole single-quoted argument (see `_outside_quoted_arguments`);
     when the reading is in doubt it is False.
     """
 
@@ -281,8 +283,9 @@ def analyze(command: str, tool: str = "Bash") -> ShellCommand:
         # Where in the command it runs is not read, so no check proves it.
         result.writes = result.unknown_writes = result.unchecked_unknown_writes = True
     result.read_only = (
-        bool(segments) and not result.writes and not NOT_PLAINLY_SPELLED_RE.search(command)
-        and all(_reads_only(segment) for segment in segments)
+        bool(segments) and not result.writes
+        and not NOT_PLAINLY_SPELLED_RE.search(_outside_quoted_arguments(command))
+        and all(_reads_only(segment, index == 0, tool) for index, segment in enumerate(segments))
     )
     return result
 
@@ -431,33 +434,76 @@ def _add_segment(result: ShellCommand, segment: "_Segment",
 # the reads below; anything else, including a command this table does not
 # know, is held.
 
-# Commands that print files, listings, matches, or counts, and change nothing.
-# Each still passes only without the arguments in READ_ONLY_REFUSED_ARGS.
-# PowerShell's read cmdlets come with the aliases Windows PowerShell 5.1 ships
-# (`ls`, `dir`, and `cat` are aliases there too).
+# Commands that print files, listings, matches, text, or counts, and change
+# nothing. Each still passes only without the arguments that
+# `_refused_argument` refuses for it. PowerShell's read cmdlets come with the
+# aliases Windows PowerShell 5.1 ships (`ls`, `dir`, `cat`, `echo`, `pwd`,
+# `sort`, and `diff` are aliases there too).
 READ_ONLY_COMMANDS = frozenset(
     {
         "cat", "head", "tail", "ls", "dir", "grep", "rg", "wc", "find",
+        "pwd", "echo", "sort", "uniq", "cut", "tr", "diff", "stat", "file",
+        "which", "true", ":",
         "get-content", "gc", "get-childitem", "gci", "select-string", "sls",
     }
 )
-# Arguments that turn a read into a write or make it run another program:
-# `find` runs or deletes with -exec, -ok, and -delete and writes files with
-# -fprint and -fls; `rg --pre` runs a program on every file it searches, and
-# `rg --hostname-bin` runs one to name the host.
+# Arguments that turn a read into a write or make it run another program,
+# refused as prefixes: `find` runs or deletes with -exec, -ok, and -delete and
+# writes files with -fprint and -fls; `rg --pre` runs a program on every file
+# it searches, and `rg --hostname-bin` runs one to name the host.
 READ_ONLY_REFUSED_ARGS = {
     "find": ("-exec", "-ok", "-delete", "-fprint", "-fls"),
     "rg": ("--pre", "--hostname-bin"),
 }
-# git subcommands that only print the repository's state or history.
-GIT_READ_SUBCOMMANDS = frozenset({"status", "diff", "log", "show"})
+# The same for GNU tools, which take a long option by any prefix of its name
+# (`--out` for `--output`) and short options run together (`-uo`): a long
+# option naming any prefix of one here, and a run of short options holding
+# a letter here, are refused. `sort` writes its output with `-o` and
+# temporary files with `-T`, and runs `--compress-program`; `diff -l`
+# pipes its output through `pr`; `file -C` writes a compiled magic file,
+# `-z` and `-Z` run decompressors, and `-m` takes a list of magic files
+# whose separator differs between builds.
+READ_ONLY_REFUSED_OPTIONS = {
+    "sort": ("oT", ("output", "compress-program", "temporary-directory")),
+    "diff": ("l", ("paginate",)),
+    "file": ("CzZm", ("compile", "uncompress", "uncompress-noreport", "magic-file")),
+}
+# `uniq` writes its second operand; these options take the next word as a value.
+UNIQ_VALUE_OPTIONS = frozenset(
+    {"-f", "-s", "-w", "--skip-fields", "--skip-chars", "--check-chars"}
+)
+# git subcommands that print the repository's state or history, with any
+# arguments but those in GIT_READ_REFUSED_ARGS.
+GIT_READ_SUBCOMMANDS = frozenset({"status", "diff", "log", "show", "rev-parse", "ls-files", "blame"})
 # Their arguments refused: `--output` writes the printed text to a file, and
 # `--ext-diff`, `--textconv`, and `--show-signature` (which runs
 # `gpg.program`) ask for programs the repository's config names. Refusing
 # them does not stop those programs: a plain `git diff`,
 # `git show`, or `git log -p` runs `diff.external` and textconv drivers too
-# (README "Known Limits").
+# (README "Known Limits"). These subcommands take no abbreviated long option
+# (`git diff --out=x` is refused by git), so the names are matched as written.
 GIT_READ_REFUSED_ARGS = ("--output", "--ext-diff", "--textconv", "--show-signature")
+# `git branch` lists branches only with these options, matched whole: git
+# takes any prefix of a long option, and `--edit` opens an editor as
+# `--edit-description`. A name to create or change is refused, so a word
+# that is no option passes only as a pattern after `--list`; not after `-l`,
+# which meant `--create-reflog` before git 2.23 (`git branch -l x` created x).
+GIT_BRANCH_LIST_OPTIONS = frozenset(
+    {"-a", "--all", "-r", "--remotes", "-v", "-vv", "--verbose", "-l", "--list",
+     "--show-current", "--color", "--no-color", "-i", "--ignore-case", "--no-column",
+     "--no-abbrev"}
+)
+# Its options that take a value, as `--sort=x` or as the next word.
+GIT_BRANCH_VALUE_OPTIONS = frozenset(
+    {"--contains", "--no-contains", "--merged", "--no-merged", "--points-at", "--sort",
+     "--format"}
+)
+# `git worktree list` and its options; any other worktree subcommand changes one.
+GIT_WORKTREE_LIST_OPTIONS = frozenset({"--porcelain", "-v", "--verbose", "-z"})
+# `git remote` prints remotes bare, with `-v`, or as `get-url`. `show`
+# contacts each remote, which runs ssh or a credential helper, so it is held.
+GIT_REMOTE_LIST = ([], ["-v"], ["--verbose"])
+GIT_REMOTE_GET_URL_OPTIONS = frozenset({"--push", "--all"})
 # The only git options allowed before the subcommand: `-C` picks the folder,
 # and the others turn the pager off. `-c` can set a program to run, such as
 # a pager or external diff, so it and every other global option are refused.
@@ -487,12 +533,62 @@ FD_DUPLICATE_RE = re.compile(FD_DUPLICATE)
 #   after them redirects, while this reading would take it for a comparison;
 # - `//`, which starts a UNC path (`//host/share`) read over the network,
 #   where Windows may send the user's credentials.
+# A backslash and `//` inside a whole single-quoted argument are exempt; see
+# `_outside_quoted_arguments`.
 NOT_PLAINLY_SPELLED_RE = re.compile(
     rf"[$`\\]|<<<|>(?=&)(?!{FD_DUPLICATE})|[^\t\n\x20-\x7e]|<#|@[\"']|\[\[|\]\]|//"
 )
+# Characters before a word starts, and after one ends, for a whole quoted argument.
+BEFORE_WORD = frozenset(" \t\n|;&(")
+AFTER_WORD = frozenset(" \t\n|;&()<>")
+# Two path separators that start a path, or start a value after `=`, `,`,
+# or `;` (`--ignore-file=//host/a`): a UNC path, even inside quotes.
+UNC_START_RE = re.compile(r"(?:^|[=,;])[\\/]{2}")
+# The one redirect a read may make in Bash, where it is the null device.
+BASH_NULL_DEVICE = "/dev/null"
 
 
-def _reads_only(segment: "_Segment") -> bool:
+def _outside_quoted_arguments(command: str) -> str:
+    """`command` with the backslashes and slashes of each whole
+    single-quoted argument blanked out, so that `NOT_PLAINLY_SPELLED_RE`
+    passes them (`grep -n 'def\\s+x' a.py`), unless the argument may name a
+    UNC path. Bash and PowerShell both read a single-quoted text literally,
+    so they agree on it only while they agree on where each quote opens:
+    the text is read from the start, and once a backslash or backtick is
+    met outside quotes, where bash escapes the next character and
+    PowerShell may not, `command` is returned unchanged, and so is held.
+    A quote inside a word (`x'\\s'`) is not blanked either."""
+
+    out: list[str] = []
+    word_start = True
+    i, n = 0, len(command)
+    while i < n:
+        c = command[i]
+        if c in "\\`":
+            return command
+        if c in "'\"":
+            end = command.find(c, i + 1)
+            if end < 0:
+                out.append(command[i:])
+                break
+            text = command[i + 1 : end]
+            whole = word_start and command[end + 1 : end + 2] in AFTER_WORD | {""}
+            if c == "'" and whole and not UNC_START_RE.search(text):
+                text = re.sub(r"[\\/]", "_", text)
+            out.append(c + text + c)  # A backslash in double quotes is kept, and held.
+            i, word_start = end + 1, False
+        elif c == "#" and word_start:
+            end = command.find("\n", i)
+            end = n if end < 0 else end
+            out.append(command[i:end])  # A comment, kept as written.
+            i = end
+        else:
+            out.append(c)
+            i, word_start = i + 1, c in BEFORE_WORD
+    return "".join(out)
+
+
+def _reads_only(segment: "_Segment", first: bool, tool: str) -> bool:
     """True when `segment` is a plain read, written as the bare command.
 
     A wrapper (`sudo`, `xargs`), a variable assignment, or a keyword before
@@ -500,22 +596,44 @@ def _reads_only(segment: "_Segment") -> bool:
     word must come first. It must be the bare name, in any case, with no
     folder or extension: `./cat` or `cat.cmd` may be any program. It has no
     output redirect, not even into a null device: `nul` is a real file in
-    bash, and `/dev/null` a real path in PowerShell.
+    bash, and `/dev/null` a real path in PowerShell. The one exception is a
+    Bash redirect of another stream than standard output into `/dev/null`
+    (`2>/dev/null`). The command's `first` segment may also be a `cd` to
+    one plain path, which moves the reads after it but writes nothing.
     """
 
     name, original, args = _resolve(segment.words)
-    if (name not in READ_ONLY_COMMANDS and name != "git") or segment.words[0] != original:
-        return False
-    if original.lower() != name:
+    if segment.words[:1] != [original] or original.lower() != name:
         return False
     if segment.nested or segment.heredocs or segment.after not in READ_ONLY_ENDS:
         return False
-    if segment.redirects:
+    if segment.redirects and not (
+        tool == "Bash" and not segment.out_redirects
+        and all(target == BASH_NULL_DEVICE for target in segment.redirects)
+    ):
         return False
+    if name == "cd":
+        path = _change_target(name, args)
+        return first and path is not None and _plain(path)
     if name == "git":
         return _git_reads_only(args)
-    refused = READ_ONLY_REFUSED_ARGS.get(name, ())  # Prefixes: `-fprint` covers `-fprintf`.
-    return not any(arg.startswith(refused) for arg in args)
+    if name not in READ_ONLY_COMMANDS:
+        return False
+    if name == "uniq" and len(_positional(_drop_values(args, UNIQ_VALUE_OPTIONS))) > 1:
+        return False
+    return not any(_refused_argument(name, arg) for arg in args)
+
+
+def _refused_argument(name: str, arg: str) -> bool:
+    """True when `arg` makes the read `name` write a file or run a program."""
+
+    if arg.startswith(READ_ONLY_REFUSED_ARGS.get(name, ())):  # `-fprint` covers `-fprintf`.
+        return True
+    letters, long_names = READ_ONLY_REFUSED_OPTIONS.get(name, ("", ()))
+    if arg.startswith("--"):
+        given = arg[2:].split("=", 1)[0]
+        return bool(given) and any(full.startswith(given) for full in long_names)
+    return arg.startswith("-") and any(letter in arg[1:] for letter in letters)
 
 
 def _git_reads_only(args: list[str]) -> bool:
@@ -524,9 +642,47 @@ def _git_reads_only(args: list[str]) -> bool:
         if args[index] not in GIT_READ_GLOBAL_OPTIONS:
             return False
         index += 2 if args[index] == "-C" else 1
-    if index >= len(args) or args[index] not in GIT_READ_SUBCOMMANDS:
+    if index >= len(args):
         return False
-    return not any(arg.startswith(GIT_READ_REFUSED_ARGS) for arg in args[index + 1:])
+    sub, rest = args[index], args[index + 1:]
+    if any(arg.startswith(GIT_READ_REFUSED_ARGS) for arg in rest):
+        return False
+    if sub in GIT_READ_SUBCOMMANDS:
+        return True
+    if sub == "branch":
+        return _git_branch_lists(rest)
+    if sub == "worktree":
+        return rest[:1] == ["list"] and all(a in GIT_WORKTREE_LIST_OPTIONS for a in rest[1:])
+    if sub == "remote":
+        if rest in GIT_REMOTE_LIST:
+            return True
+        names = [a for a in rest[1:] if a not in GIT_REMOTE_GET_URL_OPTIONS]
+        return rest[:1] == ["get-url"] and len(names) == 1 and not names[0].startswith("-")
+    return False
+
+
+def _git_branch_lists(args: list[str]) -> bool:
+    """True when `git branch args` only lists branches."""
+
+    patterns = False
+    listing = False
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        option = arg.split("=", 1)[0]
+        if arg == "--list":
+            listing = True
+        elif option in GIT_BRANCH_VALUE_OPTIONS:
+            index += 0 if "=" in arg else 1  # git takes the next word as the value.
+        elif option in ("--color", "--abbrev") and "=" in arg:
+            pass
+        elif arg.startswith("-"):
+            if arg not in GIT_BRANCH_LIST_OPTIONS:
+                return False
+        else:
+            patterns = True
+        index += 1
+    return listing or not patterns
 
 
 # Directory changes ---------------------------------------------------------------

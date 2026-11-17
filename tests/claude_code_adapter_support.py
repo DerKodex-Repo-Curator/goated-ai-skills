@@ -493,7 +493,9 @@ def git_branch_with_change(
 
 def default_input(tool: str) -> dict:
     if tool in {"Bash", "PowerShell"}:
-        return {"command": "echo hi"}
+        # An unknown command: not a plain read (Ticket 088 made `echo` one),
+        # a write, or a check.
+        return {"command": "make-it"}
     if tool in {"Read", "Write", "Edit"}:
         return {"file_path": "notes.md", "content": "x"}
     return {}
