@@ -429,9 +429,11 @@ a test checks. The ids come from those files, not from a copy in the adapter:
 a user skill is looked for first, then project skills, then plugin skills,
 the newest cached version first. The item names each uncited reference,
 points to the Section Index for its ids, and names the call fields without
-backticks, as the unseen-line advice does. At commit it asks for the
-citation in the commit call's description, since the report is not written
-yet; at `Stop` it asks for it in the reply. Whether a citation says anything
+backticks, as the unseen-line advice does. At commit the report is not
+written yet, and reply text may not be seen, so a shell commit is asked for
+the citation in its own description, or in a call made in an earlier
+message. An MCP commit tool carries no citation in any field, so it is asked
+for one in such an earlier call. At `Stop` the item asks for it in the reply. Whether a citation says anything
 useful is not judged.
 
 ### Shell writes
@@ -589,9 +591,10 @@ has an unmet closeout item: Proof, Unfinished work, Docs, Design red flags,
 Design citations, Security, or Setup. The hold's first line is the
 closeout's, `goated-hold: closeout | justified-skip`, its items are the
 closeout's texts, and each item accepts its usual skip line. It opens
-`Before committing in this turn` and adds that the whole command was held,
-so a check chained before the commit in the same command has not run yet
-and does not count. An unmet `commit` hold comes first, unchanged.
+`Before committing in this turn`; for a shell commit it adds that the whole
+command was held, so a check chained before the commit in the same command
+has not run yet and does not count. An MCP commit tool has no command, so
+its hold leaves that out. An unmet `commit` hold comes first, unchanged.
 
 The `Stop` closeout stays as a backstop. A commit changes no file, so an
 item met before the commit stays met at `Stop`; a turn that never commits
@@ -768,8 +771,10 @@ goated-hold: <gate> | <kind>
   `goated-design-reads: <file>, <file>`; the skill-usage mod reads both.
 - The closeout's Design citations item names where a citation counts, the
   call fields without backticks, like the unseen-line advice. Its
-  commit-time text asks for the citation in the commit call's description,
-  not in a report not yet written; its `Stop` text asks for it in the reply.
+  commit-time text asks for the citation in a shell commit's own description
+  or, for an MCP commit tool, in an earlier call's field, not in a report not
+  yet written, and says why reply text may not be seen; its `Stop` text asks
+  for it in the reply.
   Both Design red-flags texts repeat the question `red-flags.md` ends with;
   no hold reads an answer.
 

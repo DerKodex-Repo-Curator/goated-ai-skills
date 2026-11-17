@@ -3753,6 +3753,41 @@ class DesignCitationTests(AdapterTestCase):
         self.assertIn("your reply", at_stop)
         self.assertNotIn("this commit call's description", at_stop)
 
+    def test_the_commit_time_item_says_reply_text_may_not_be_seen(self) -> None:
+        s = self.committing()
+        item = next(line for line in reason(s.call("Bash", commit("Add CSV export")))
+                    .split("\n") if "file#id" in line)
+
+        self.assertIn("Reply text may not be seen at commit", item)
+        self.assertNotIn("counts too", item)
+        # The near miss: at Stop the reply is read, so the item gives no such warning.
+        self.assertNotIn("may not be seen", stop(s)["reason"])
+
+    def test_a_commit_tool_is_pointed_to_fields_that_count(self) -> None:
+        tool_input = {"message": "Add CSV export", "files": [],
+                      "description": "errors.md#crash-early: a bad header now raises"}
+        s = self.committing()
+        held = reason(s.call("mcp__github__push_files", tool_input))
+        item = next(line for line in held.split("\n") if "file#id" in line)
+
+        # The tool's own description carries no citation, so the hold never asks for it.
+        self.assertEqual(uncited({"reason": held}), ["errors.md"])
+        self.assertNotIn("this commit call's description", item)
+        self.assertIn("a shell or agent call's description or a Skill call's args", item)
+        self.assertNotIn("chained", held)
+        # Following the hold lets the commit through.
+        s.call("Bash", {"command": "git status",
+                        "description": "errors.md#crash-early: a bad header now raises"})
+        self.assertEqual(decision(s.call("mcp__github__push_files", tool_input)), "pass")
+
+        # The near miss: a shell commit is still asked for its own description.
+        s = self.fresh()
+        self.session = s
+        s = self.committing()
+        held = reason(s.call("Bash", commit("Add CSV export")))
+        self.assertIn("this commit call's description", held)
+        self.assertIn("chained", held)
+
     def test_the_red_flags_item_asks_the_question_and_no_hold_needs_an_answer(self) -> None:
         question = "Name one input that would break this change, and say what happens."
         red_flags = (DESIGN_SKILL_SOURCE / "references" / "red-flags.md").read_text(encoding="utf-8")
