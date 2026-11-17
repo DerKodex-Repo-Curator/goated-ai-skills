@@ -284,9 +284,10 @@ def check_routing(
             f"Load the `{ROUTER_SKILL}` skill with the Skill tool before the first "
             "write, spawn, or command of a task, and follow the route it selects. "
             "Reads stay free, and so does a shell command made only of read-only "
-            "commands, such as cat, grep, ls, or git diff, with no output "
-            "redirect. If that skill is not installed, tell the user: they "
-            "can type `skip routing` in their prompt to proceed without it.",
+            "commands, such as cat, grep, ls, git diff, or git branch, perhaps "
+            "after a leading cd, with no output redirect but 2>/dev/null. If "
+            "that skill is not installed, tell the user: they can type "
+            "`skip routing` in their prompt to proceed without it.",
         )
     if not writes_like_an_edit(tool_name, tool_input):
         return None

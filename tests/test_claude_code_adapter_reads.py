@@ -156,12 +156,12 @@ HELD = [
     ("Bash", "cat [[ a ]]"),
     ("Bash", "[[ -f a ]] && cat a"),
     # A null device in one shell is a real file in another, so a read has no
-    # output redirect at all.
+    # output redirect but a Bash `2>/dev/null` (Ticket 088).
     ("Bash", "cat a > nul"),
     ("Bash", "cat a > NUL"),
     ("Bash", "cat a > /dev/null"),
     ("PowerShell", "Get-Content a > /dev/null"),
-    ("Bash", "grep -rn x src 2>/dev/null | wc -l"),
+    ("PowerShell", "Get-ChildItem src 2>/dev/null | Measure-Object"),
     ("Bash", "cat a 2>&1>/dev/null"),
     # Options that run a program, and UNC paths, which read over the network.
     ("Bash", "rg --hostname-bin ./x y"),
