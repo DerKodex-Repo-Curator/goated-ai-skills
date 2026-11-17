@@ -1,6 +1,6 @@
 # Hook Friction Round 3: Parallel Waves
 
-Tickets 086 to 096 grouped by which can run at the same time, together
+Tickets 086 to 097 grouped by which can run at the same time, together
 with the tickets of round 2 that had not started when round 3 was planned
 (078 to 085). The order files remain the source of truth for blockers:
 [low-signal holds](adapter-low-signal-holds-order.md) and
@@ -26,7 +26,8 @@ to 4 there are merged.
 | 5 | [094](094-adapter-own-subagent-reports-continue-the-turn.md) | 3 | adapter | AFK | None |
 | 6 | [090](090-adapter-test-edit-reference-thresholds.md) | 3 | adapter, skills and registry | AFK | 089 |
 | 6 | [092](092-adapter-whole-reads-and-read-order.md) | 3 | adapter and mod | AFK | 078, 089, 091 |
-| 7 | [095](095-adapter-joint-holds-in-one-message.md) | 3 | adapter and mod | AFK | 086 to 094 |
+| 6 | [097](097-adapter-script-write-paths-by-name-and-folder.md) | 3 | adapter | AFK | 093 |
+| 7 | [095](095-adapter-joint-holds-in-one-message.md) | 3 | adapter and mod | AFK | 086 to 094, 097 |
 | 8 | [096](096-adapter-early-closeout-note.md) | 3 | adapter | AFK | 095 |
 | 9 | [079](079-enforcement-contract-and-event-model.md) | 2 | core | HITL (maintainer accepts the ADR and event model) | its round 2 blockers (merged), and 086 to 096 |
 | 10 | [080](080-adapter-rules-read-the-event-model.md) | 2 | adapter | AFK | 079 |
@@ -56,6 +57,13 @@ The maintainer decided these on 2026-11-17, when round 3 was planned:
   restructures the dispatch and the hold message that 086 to 093 change,
   and its turn marker resets on the turn boundaries 094 changes. That
   moved 095 to wave 7 and each later ticket one wave on.
+- **Ticket 097 was added after wave 5 merged.** The new `scripted-edit`
+  gate held a markdown edit whose script named its file in a variable.
+  The maintainer asked for a follow-up: a name bound once to a string
+  literal is read as that literal, and an unnamed write in a folder
+  certainly outside the project is placed there. It runs in wave 6. It
+  shares no function with 090 or 092, which do not touch the reading of
+  inline scripts. Ticket 095 waits for it, and 079 through 095.
 - **Ticket 071's skills line stays as shipped.** A brief must carry a
   `goated-skills:` line, and `goated-skills: none: <reason>` is its
   justified skip. No ticket.
@@ -84,6 +92,7 @@ The maintainer decided these on 2026-11-17, when round 3 was planned:
 | A change read just before a skill load not counted | 092 |
 | A partial read counts as read | 092 |
 | Interpreter-script writes bypass every write gate | 093 |
+| `scripted-edit` holds a script that names its file in a variable (found in use after 093) | 097 |
 | A subagent's report opens a new turn (found while planning) | 094 |
 | Several holds on one call fire one at a time | 095 |
 | Long repeated hold advice | 095 |

@@ -3,7 +3,9 @@
 ## Status
 
 Decisions approved by the maintainer on 2026-11-17 in a grill-with-docs
-session, and this text on the same day. Ticket ready. Builds on
+session, and this text on the same day. R5 and R6 were amended at the
+maintainer's request after Ticket 093 merged, for a false hold met in
+use (Ticket 097). Ticket ready. Builds on
 [the written-line holds spec](2026-11-17-adapter-written-line-holds.md),
 [the skill placement spec](2026-11-17-skill-placement-gates.md) and
 [ADR 0003](../adr/0003-opt-in-framework-enforcement-adapters.md). Its
@@ -100,8 +102,20 @@ show problems that are not about any one trigger:
   calls that write, remove or rename a file. Such a script is a shell
   write:
   - its files are the path literals the write calls name, placed by the
-    usual rules; a write whose path is not a literal counts as an unnamed
-    write, inside the project;
+    usual rules;
+  - a path given as a name counts as a literal when the same script binds
+    that name once, at its top level and before the call, to one string
+    literal (`p = "notes.md"`, `const p = 'notes.md'`). Any other binding
+    leaves the path unread: a name bound twice or changed, a binding
+    inside a loop, branch or function, an f-string or other built string,
+    a concatenation, input, an environment variable, a command's output,
+    or a literal the shell may have expanded;
+  - a write whose path cannot be read this way is an unnamed write. It is
+    inside the project, unless the command's starting folder is known
+    from a leading `cd` to a literal path and that folder is certainly
+    outside: not in the project, in no git checkout and not under the
+    user's `~/.claude` folder, the rule the routing holds use. Then the
+    unnamed write is placed in that folder;
   - it meets the routing holds, the path gates and the closeout as any
     shell write does;
   - a script in which no such call is found is not a write, as today.
@@ -111,7 +125,10 @@ show problems that are not about any one trigger:
   edit tool, where the design and reference holds can judge it. A skip
   line naming `software-design-principles` with a reason, such as a
   mechanical rewrite across many files, clears it for the turn.
-  `software-design-principles` states the rule in one sentence.
+  `software-design-principles` states the rule in one sentence. An
+  unnamed write counts as a code file inside the project only where R5
+  places it there; a path R5 reads through a once-bound name is judged
+  as the file it names.
 - **R7, own subagent reports.** A prompt that is the report of a subagent
   this session started continues the current turn: the route line, skip
   lines, overrides, checks, change reads and the brief's route all stand,
@@ -162,7 +179,10 @@ show problems that are not about any one trigger:
 - [ ] AC8: `python -c "print(1)"` and a heredoc script that only reads
       files are not writes.
 - [ ] AC9: An inline script whose write names its path through a variable
-      counts as an unnamed write inside the project.
+      it does not bind once, at top level, to one string literal counts
+      as an unnamed write inside the project: `p = input()`, an
+      environment variable, an f-string, a name bound twice, a binding
+      inside a loop.
 - [ ] AC10: After a background subagent's report arrives as a prompt, a
       write needs no new route line, an earlier skip line still counts,
       and the `Stop` closeout lists the code changed before the report. A
@@ -181,6 +201,15 @@ show problems that are not about any one trigger:
       stated budget with every gate judged.
 - [ ] AC15: The repo checks in `AGENTS.md` pass on Python 3.11 and 3.14,
       and the mod's tests pass.
+- [ ] AC16: A script that binds `p = "notes.md"` once at top level and
+      writes `open(p, "w")` is judged as a write to `notes.md`: no
+      `scripted-edit` hold. The same script with `p = "src/app.py"` is
+      held by `scripted-edit`. `const p = 'notes.md'` and `let` behave
+      the same in JavaScript.
+- [ ] AC17: An unnamed write in a command that opens with a `cd` to a
+      temp folder outside the project, any git checkout and `~/.claude`
+      is placed there and meets no hold. After a `cd` into another git
+      checkout, or with no leading `cd`, it is inside the project.
 
 ## Proof Surface
 
@@ -199,8 +228,10 @@ one real session confirms R1, R7 and R8.
   able to carry several holds in one decision.
 - Every change fails toward holding when the adapter cannot tell: a
   script it cannot read for certain is judged as today's Known Limits
-  say, a write path that is not a literal is inside the project, and a
-  prompt it cannot tie to an own spawn opens a turn.
+  say, a write path it cannot read as a literal is inside the project
+  unless the command's folder is certainly outside, a name it cannot
+  show was bound once to one literal is not a literal, and a prompt it
+  cannot tie to an own spawn opens a turn.
 - Judging every gate must not change which calls pass. A call no gate
   holds today is not held, and a gate judged after an earlier hold must
   give the answer it would give alone.
@@ -225,6 +256,10 @@ None.
 - R5 can miss a write an unusual call makes, and can read a write call
   inside a string as a write. The first is today's behaviour; the second
   fails toward holding and a skip line answers it.
+- R5's reading of a once-bound name is lexical. Code that changes the
+  name in a way the reading does not see, such as through `globals()` or
+  `eval`, writes a file other than the one judged. That is an agent
+  working to defeat the adapter, which is out of scope.
 - R6 holds a legitimate bulk rewrite once, until its skip line.
 - R7 depends on how Claude Code records a subagent's report. A new
   recording shape falls back to opening a turn, which is today's

@@ -12,12 +12,16 @@ remaining tickets:
 2. `tickets/094-adapter-own-subagent-reports-continue-the-turn.md`
    - Blocked by: None
    - Enables: a turn that survives its own subagent's report.
-3. `tickets/095-adapter-joint-holds-in-one-message.md`
-   - Blocked by: 093, 094, and 086 to 092 in
+3. `tickets/097-adapter-script-write-paths-by-name-and-folder.md`
+   - Blocked by: 093
+   - Enables: no `scripted-edit` hold on a script that names its file in
+     a variable, or that runs in a folder certainly outside the project.
+4. `tickets/095-adapter-joint-holds-in-one-message.md`
+   - Blocked by: 093, 094, 097, and 086 to 092 in
      `tickets/adapter-low-signal-holds-order.md`
    - Enables: one retry for a call that meets several holds, and shorter
      hold texts.
-4. `tickets/096-adapter-early-closeout-note.md`
+5. `tickets/096-adapter-early-closeout-note.md`
    - Blocked by: 095
    - Enables: closeout items met before the final report.
 
@@ -34,16 +38,23 @@ but 096: each changes a gate, a hold's text or, in 094, the turn
 boundaries the turn marker resets on. Ticket 096 adds a hook and uses
 the texts and the turn marker's purpose key that 095 settles.
 
+Ticket 097 was added after Ticket 093 merged, for a false hold met in
+use: a script that named its file in a variable. It amends the spec's R5
+and R6. It changes how inline code is read and where an unnamed write is
+placed, which no ticket of the other order file touches, so it runs
+beside 090 and 092. It changes when `scripted-edit` fires in the dispatch
+095 restructures, so 095 waits for it.
+
 Ticket 079, in `tickets/portable-enforcement-core-order.md`, waits for
-every ticket here. Its event model must carry several holds in one
+every ticket here; it reaches 097 through 095. Its event model must carry several holds in one
 decision, which Ticket 095 defines.
 
 ## Ready Frontier
 
-- `tickets/093-adapter-inline-script-writes.md`
-- `tickets/094-adapter-own-subagent-reports-continue-the-turn.md`
+- `tickets/097-adapter-script-write-paths-by-name-and-folder.md`
 
-Ticket 095 follows 086 to 094. Ticket 096 follows 095.
+Tickets 093 and 094 are merged. Ticket 095 follows 086 to 094 and 097.
+Ticket 096 follows 095.
 
 ## Coverage
 
@@ -55,10 +66,12 @@ Ticket 095 follows 086 to 094. Ticket 096 follows 095.
 - AC6 (named carrier) → 095
 - AC7 (inline script writes held) → 093
 - AC8 (read-only scripts pass) → 093
-- AC9 (unnamed script writes) → 093
+- AC9 (unnamed script writes) → 093, 097
 - AC10 (own subagent reports) → 094
 - AC11 (brief route survives a report) → 094
 - AC12 (early closeout note) → 096
 - AC13 (first lines and lone holds unchanged) → every ticket
 - AC14 (latency) → 095, 096
 - AC15 (repo checks) → every ticket
+- AC16 (a once-bound path is its literal) → 097
+- AC17 (an unnamed write in a known outside folder) → 097

@@ -132,6 +132,7 @@ put the line in another call but names none that is certain to pass.
 - `tickets/092-adapter-whole-reads-and-read-order.md`
 - `tickets/093-adapter-inline-script-writes.md`
 - `tickets/094-adapter-own-subagent-reports-continue-the-turn.md`
+- `tickets/097-adapter-script-write-paths-by-name-and-folder.md`
 
 Each changes a gate, a hold's text or the turn's boundaries, or adds a
 gate, in the dispatch and message assembly this ticket restructures.
