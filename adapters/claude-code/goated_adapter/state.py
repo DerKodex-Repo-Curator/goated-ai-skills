@@ -73,6 +73,17 @@ class SessionState:
         # design gates judged it: {"turn": <turn key>, "edits": {<tool_use_id>: [<file>]}}.
         self.design_edits: dict = {}
 
+    def forget_context(self) -> None:
+        """Drop what counted only while its text was in the agent's context: the
+        router and other loads, the brief's route, and the design references
+        and spawn-brief templates read. Called at a compaction or `/clear`."""
+
+        self.router_loaded = False
+        self.brief_routed = False
+        self.loads = []
+        self.reference_reads = []
+        self.template_reads = []
+
     def record_design_edit(self, turn: str, tool_use_id: str, references: list[str]) -> None:
         """Keep what an edit the design gates let through required, for the
         turn's closeout; an earlier turn's edits are dropped."""

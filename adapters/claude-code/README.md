@@ -796,7 +796,9 @@ goated-hold: <gate> | <kind>
   `subagent-driven-development`, either of which answers it.
 - A hold asks for a load only when the skill does not [count as
   loaded](#loads): it never loaded since the last compaction or `/clear`, or
-  the state that kept the load is missing.
+  the state that kept the load is missing. Inside a
+  [subagent](#subagents), where only its current turn counts, the hold asks
+  for the load or read in this turn.
 - A hold that a route or skip line can clear (`route-line`, `pipeline`,
   `design`, `design-reads`, `security`, `conflict-resolution`,
   `repeated-failure`, `pr-review`) says that a line in reply text may not be
@@ -1149,6 +1151,12 @@ of the call's prompt, which is normally already there.
   all. Inside a subagent, only the subagent's current turn counts: a load or
   reference read in an earlier turn of a continued subagent is required
   again, and the parent's never count for it, nor its for the parent.
+- An edit whose added lines cannot be counted, such as one whose new text
+  is missing, is not small: the `design` gate treats it as substantial, and
+  in a later turn it brings the closeout's Design items.
+- A compaction boundary in the transcript drops earlier loads and reads even
+  when its `SessionStart` reset never landed, for example after a hook that
+  failed open or an adapter installed mid-session.
 - A load counts until the next compaction however many turns ago it was,
   when the agent may no longer follow the skill closely. The checks tied to
   a change (change reads, the red-flags read, Proof) still count only in

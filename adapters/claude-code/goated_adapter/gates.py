@@ -163,6 +163,11 @@ def fold_turns(
         # known again even if saved state was missing or reset.
         state.task_unknown = False
     for turn in turns:
+        if turn.is_compaction:
+            # The compaction's `SessionStart` clears these too, but that reset
+            # may never have landed (a hook that failed open, a refused save,
+            # an adapter installed mid-session), so the boundary itself does.
+            state.forget_context()
         loads = [n for n in (goated_skill_name(raw, namespaces) for raw in turn.loads) if n]
         if ROUTER_SKILL in loads:
             state.router_loaded = True

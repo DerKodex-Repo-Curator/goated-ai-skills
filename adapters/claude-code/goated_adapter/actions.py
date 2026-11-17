@@ -255,20 +255,23 @@ class SinceCompaction(NamedTuple):
     """What counts from earlier turns until the next compaction (spec R3, R4):
     the GOATED skills loaded (`tdd`), the design references read
     (`errors.md`), and the spawn-brief templates read
-    (`contracts.BriefTemplate.reference`). Empty for a subagent, whose earlier
-    turns do not count."""
+    (`contracts.BriefTemplate.reference`). `spans_turns` is False for a
+    subagent, where only its current turn counts, so its holds ask for a
+    load or read in this turn; the sets are then empty."""
 
     loads: frozenset[str] = frozenset()
     references_read: frozenset[str] = frozenset()
     templates_read: frozenset[str] = frozenset()
+    spans_turns: bool = False
 
 
 class _Proof:
     """What the current turn shows, with what counts from earlier turns
     (`earlier`): loads, skip lines, reads, and user skips. `turn_loads` are
-    the turn's own loads; `loads` add the earlier ones. `extra_text` is reply
-    text the transcript may not hold yet, such as the reply a Stop is
-    finishing."""
+    the turn's own loads; `loads` add the earlier ones. `within` is what a
+    hold adds after asking for a load or read: " in this turn" when earlier
+    turns do not count, else "". `extra_text` is reply text the transcript
+    may not hold yet, such as the reply a Stop is finishing."""
 
     def __init__(self, turn: Turn, overrides: dict, namespaces: tuple[str, ...],
                  extra_text: str = "", earlier: SinceCompaction = SinceCompaction()) -> None:
@@ -279,6 +282,7 @@ class _Proof:
         self.loads = self.turn_loads | earlier.loads
         self.references_read = earlier.references_read | set(design_reads.reads_in(turn.calls))
         self.templates_read = earlier.templates_read | set(contracts.templates_read(turn.calls))
+        self.within = "" if earlier.spans_turns else " in this turn"
         self.skips = {skip["skill"] for skip in turn.skips}
         if extra_text:
             self.skips |= {skip["skill"] for skip in parse_reply(extra_text).skips}
@@ -418,7 +422,7 @@ def _commit_hold(message: str | None, proof: _Proof, changes: Callable[[], "_Cha
     if not proof.loaded(COMMIT_SKILL):
         return Hold(
             "commit", STRICT,
-            f"Load the `{COMMIT_SKILL}` skill with the Skill tool and draft "
+            f"Load the `{COMMIT_SKILL}` skill with the Skill tool{proof.within} and draft "
             "the message with it, then run the commit again. The whole command was "
             "held, so rerun any steps chained before it too. This hold is strict: a "
             "goated-skip line does not clear it. A commit message the user typed in "
@@ -451,7 +455,7 @@ def _pr_hold(proof: _Proof, changes: Callable[[], "_Changes"],
         )
     return Hold(
         "pull-request", STRICT,
-        f"Load the `{PR_SKILL}` skill with the Skill tool and draft the "
+        f"Load the `{PR_SKILL}` skill with the Skill tool{proof.within} and draft the "
         "title and body with it, then open the pull request again. The whole command "
         "was held, so rerun any steps chained before it too. This hold is strict: a "
         "goated-skip line does not clear it.",
@@ -483,7 +487,7 @@ def _pr_review_hold(size_of: Callable[[], int | None], proof: _Proof,
         "pr-review", JUSTIFIED_SKIP,
         f"This pull request changes {size} lines against its base, {REVIEW_MIN_LINES} or "
         f"more, so it is large enough to review before it lands. Load `{REVIEW_SKILL}` "
-        "with the Skill tool and review the change with it. If size is not "
+        f"with the Skill tool{proof.within} and review the change with it. If size is not "
         "what makes it worth reviewing, such as generated or vendored files, write "
         f"`goated-skip: {REVIEW_SKILL}: <reason>` on its own line instead. Then open the "
         "pull request again. The whole command was held, so rerun any steps chained "
@@ -621,7 +625,7 @@ def _spawn_hold(brief: str, proof: _Proof) -> Hold | None:
         return Hold(
             "spawn", STRICT,
             f"Before starting another agent or session with a brief, load `{HANDOFF_SKILL}` "
-            "with the Skill tool, read its `references/spawn-brief.md`, and "
+            f"with the Skill tool{proof.within}, read its `references/spawn-brief.md`, and "
             "write the brief from that template (Goal, Scope, Done Means, and its skills line "
             "at least). For a "
             "scoped implementation or review task, load `subagent-driven-development` "
@@ -633,7 +637,7 @@ def _spawn_hold(brief: str, proof: _Proof) -> Hold | None:
         files = " or ".join(f"`{t.reference}`" for t in loaded)
         return Hold(
             "spawn", STRICT,
-            f"Read {files} with the Read tool and write the brief from it. "
+            f"Read {files} with the Read tool{proof.within} and write the brief from it. "
             "The template is the point of this step, so the skill load alone does not "
             "clear the hold. Nothing was started.",
         )
@@ -668,7 +672,7 @@ def _security_hold(path: str, proof: _Proof) -> Hold | None:
     return Hold(
         "security", JUSTIFIED_SKIP,
         f"\"{path.rsplit('/', 1)[-1]}\" is a security-sensitive surface ({category}). Load "
-        f"`{SECURITY_SKILL}` with the Skill tool and review this change with "
+        f"`{SECURITY_SKILL}` with the Skill tool{proof.within} and review this change with "
         "it. If the change crosses no trust boundary and touches no auth, secrets, "
         "persistence, execution, dependency, or deployment behaviour, write "
         f"`goated-skip: {SECURITY_SKILL}: <reason>` on its own line instead. This edit "
@@ -699,7 +703,7 @@ def _conflict_hold(paths: list[str], tool_input: dict, proof: _Proof) -> Hold | 
     return Hold(
         "conflict-resolution", JUSTIFIED_SKIP,
         "A merge conflict is open in this turn. Load "
-        f"`{CONFLICT_SKILL}` with the Skill tool and resolve it from the "
+        f"`{CONFLICT_SKILL}` with the Skill tool{proof.within} and resolve it from the "
         "intent behind both sides. If this write does not resolve the conflict, write "
         f"`goated-skip: {CONFLICT_SKILL}: <reason>` on its own line instead. This write "
         "was not applied. " + unseen_line_advice("skip line", f"skip {CONFLICT_SKILL}"),
@@ -750,7 +754,7 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
         return None
     # A test file is never substantial: in TDD the test comes first, and the
     # design happens in the code after it (Ticket 057).
-    substantial = code and not test and added_lines(tool_input) >= DESIGN_MIN_LINES
+    substantial = code and not test and not _small_edit(tool_input)
     loaded = proof.loaded(DESIGN_SKILL)
     if not loaded and not substantial:
         return None
@@ -767,7 +771,7 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
         "nothing: " + ", ".join(f'"{name}"' for name in unknown) + "."
     ) if unknown else ""
     first = substantial and not any(
-        lines >= DESIGN_MIN_LINES for p, lines in earlier if not is_test(p, project)
+        not small for p, small in earlier if not is_test(p, project)
     )
     if loaded and not needs_line and not first:
         return Hold(
@@ -779,7 +783,8 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
             "was not applied. " + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
         )
     steps = [] if loaded else [
-        f"load `{DESIGN_SKILL}` with the Skill tool and apply its 'Before changing code' rules"
+        f"load `{DESIGN_SKILL}` with the Skill tool{proof.within} and apply its 'Before "
+        "changing code' rules"
     ]
     if needs_line:
         malformed = "; ".join(f'"{line}"' for line in proof.turn.malformed_design_reads)
@@ -843,16 +848,16 @@ def _reference_list(references: dict[str, str]) -> str:
     return ", ".join(f"`{design_reads.SKILL_REFERENCES}{name}` ({why})" for name, why in references.items())
 
 
-def _project_code_writes(turn: Turn, project: Project | None) -> list[tuple[str, int]]:
+def _project_code_writes(turn: Turn, project: Project | None) -> list[tuple[str, bool]]:
     """Each finished edit tool call on a project code file in the turn: its path
-    and how many lines it added."""
+    and whether it is a small edit (`_small_edit`)."""
 
     writes = []
     for call in turn.calls:
         if call.ok and call.name in FILE_WRITE_TOOLS:
             path = _norm(str(call.input.get(FILE_WRITE_TOOLS[call.name]) or ""))
             if is_code(path) and _in_project(path, project):
-                writes.append((path, added_lines(call.input)))
+                writes.append((path, _small_edit(call.input)))
     return writes
 
 
@@ -899,7 +904,7 @@ def _repeated_failure_hold(proof: _Proof) -> Hold | None:
         "repeated-failure", JUSTIFIED_SKIP,
         # The command is quoted, not backticked: backticks name a skill to load.
         f"The check \"{shown.replace('`', chr(39))}\" has failed {REPEATED_FAILURES} times in "
-        f"a row in this turn. Load `{DIAGNOSE_SKILL}` with the Skill tool and "
+        f"a row in this turn. Load `{DIAGNOSE_SKILL}` with the Skill tool{proof.within} and "
         "find the root cause before changing more. If the cause is already known, write "
         f"`goated-skip: {DIAGNOSE_SKILL}: <reason>` on its own line instead. This write was "
         "not applied. Rerunning the check is not held, and a pass of it resets the count. "
@@ -1126,8 +1131,8 @@ def _designing(proof: _Proof, project: Project | None) -> bool:
     if DESIGN_SKILL in proof.turn_loads:
         return True
     return DESIGN_SKILL in proof.loads and any(
-        lines >= DESIGN_MIN_LINES and not is_test(path, project)
-        for path, lines in _project_code_writes(proof.turn, project)
+        not small and not is_test(path, project)
+        for path, small in _project_code_writes(proof.turn, project)
     )
 
 

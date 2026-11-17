@@ -267,6 +267,86 @@ class ResetsAskForTheLoadAgainTests(LoadsTestCase):
                 self.assertIn("load `handoff`", reason(held))
 
 
+class CompactionBoundaryTests(LoadsTestCase):
+    """A compaction drops earlier loads even when its `SessionStart` reset never
+    ran, as when that hook failed open or the adapter was installed mid-session."""
+
+    @staticmethod
+    def compact_without_hook(s: Session) -> None:
+        s._append({"type": "system", "subtype": "compact_boundary",
+                   "content": "Conversation compacted"})
+        s._append({"type": "user", "isCompactSummary": True,
+                   "message": {"role": "user", "content": "Summary of earlier work."}})
+
+    def test_a_load_before_the_boundary_does_not_count(self) -> None:
+        s = self.first_turn("commit-message")
+        stop(s)
+        self.compact_without_hook(s)
+        s.prompt("Commit it.")
+        s.load(ROUTER)
+        s.say("goated-route: direct")
+        s.run("git diff")
+
+        held = s.call("Bash", commit("Add CSV export"))
+        self.assertIn("Load the `commit-message` skill", reason(held))
+
+        # Near miss: a load after the boundary counts.
+        s.load("commit-message")
+        self.assertEqual(decision(s.call("Bash", commit("Add CSV export"))), "pass")
+
+    def test_the_router_must_load_again_after_the_boundary(self) -> None:
+        s = self.first_turn()
+        stop(s)
+        self.compact_without_hook(s)
+        s.prompt("Next part.")
+        s.say("goated-route: direct")
+
+        self.assertEqual(hold_line(s.call("Edit")), "goated-hold: router-first | strict")
+        s.load(ROUTER)
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+
+class UnreadableEditSizeTests(LoadsTestCase):
+    """An edit whose added lines cannot be counted is not small (spec Constraints)."""
+
+    UNREADABLE = {"file_path": "src/export.py", "old_string": "pass", "new_string": None}
+
+    def test_it_meets_the_design_gate(self) -> None:
+        s = self.first_turn()
+        held = s.call("Edit", self.UNREADABLE)
+        self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
+
+        # Near miss: a counted one-line edit is small.
+        self.assertEqual(decision(s.call("Edit", code_edit("src/export.py", 1))), "pass")
+
+    def test_in_a_later_turn_it_raises_the_design_items(self) -> None:
+        s = self.first_turn(DESIGN)
+        self.later_turn(s)
+        s.say(SKIP_DOCS)
+        s.say(NONE_LINE)
+        self.assertEqual(decision(s.call("Edit", self.UNREADABLE)), "pass")
+        s.run("pytest -q")
+
+        self.assertIn("- Design:", stop(s)["reason"])
+
+
+class SubagentHoldTextTests(LoadsTestCase):
+    """Inside a subagent a load must be in its current turn, and its holds say so."""
+
+    def test_a_subagent_hold_asks_for_a_load_in_this_turn(self) -> None:
+        s = self.session()
+        s.prompt("Delegate the export work.")
+        agent = s.subagent("a7")
+        agent.prompt("Commit the export.", hook=False)
+        held = agent.call("Bash", commit("Add export"), agent_id="a7",
+                          agent_type="general-purpose")
+        self.assertIn("with the Skill tool in this turn", reason(held))
+
+        # Near miss: the main agent's hold does not, since an earlier load counts there.
+        main = self.first_turn()
+        self.assertNotIn("in this turn", reason(main.call("Bash", commit("Add export"))))
+
+
 class PerTurnStaysPerTurnTests(LoadsTestCase):
     """AC4, AC5: lines, overrides and change reads still count only in their turn."""
 

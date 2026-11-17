@@ -198,7 +198,8 @@ def _since_compaction(state) -> actions.SinceCompaction:
     """What the main agent's saved state says counts until the next compaction."""
 
     return actions.SinceCompaction(
-        frozenset(state.loads), frozenset(state.reference_reads), frozenset(state.template_reads))
+        frozenset(state.loads), frozenset(state.reference_reads), frozenset(state.template_reads),
+        spans_turns=True)
 
 
 def _claim_turn(
@@ -367,11 +368,7 @@ def _session_start(payload: dict, config: Config) -> str:
     if payload.get("source") == "startup" and state.task is None:
         state.task_unknown = False
     if payload.get("source") in {"compact", "clear"}:
-        state.router_loaded = False
-        state.brief_routed = False
-        state.loads = []
-        state.reference_reads = []
-        state.template_reads = []
+        state.forget_context()
         state.last_turn = None
         store.clear_turn_markers(session_id)
 
