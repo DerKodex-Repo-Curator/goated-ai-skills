@@ -212,13 +212,17 @@ class ShellCommand:
     Only git is read; another version control system's diff is not seen.
     `installs_package` says it installs or adds a dependency or tool it names
     (`uv add httpx`), not a bare restore such as `npm install`.
+    `read_only` says every simple command in it is a plain read (see
+    `READ_ONLY_COMMANDS`), joined only by pipes or list separators, with no
+    wrapper, redirect into a file, heredoc, group, substitution, or
+    background job; when the reading is in doubt it is False.
     """
 
     __slots__ = (
         "writes", "write_targets", "unplaced_targets", "unknown_writes", "commit",
         "commit_message", "opens_pr", "pr_base", "pr_head", "is_check",
         "non_check_writes", "unchecked_targets", "unchecked_unknown_writes", "prints_changes",
-        "installs_package",
+        "installs_package", "read_only",
     )
 
     def __init__(self) -> None:
@@ -237,6 +241,7 @@ class ShellCommand:
         self.unchecked_unknown_writes = False
         self.prints_changes = False
         self.installs_package = False
+        self.read_only = False
 
 
 def analyze(command: str) -> ShellCommand:
@@ -247,7 +252,8 @@ def analyze(command: str) -> ShellCommand:
     # Writes a check may still prove: each later command so far runs after them, in order.
     awaiting: list[str] = []
     awaiting_unknown = False
-    for segment in _segments(command):
+    segments = _segments(command)
+    for segment in segments:
         start = len(result.write_targets)
         directory, unknown, is_check = _add_segment(result, segment, directory)
         if is_check and not segment.nested and segment.after in CHECK_ENDS:
@@ -266,6 +272,12 @@ def analyze(command: str) -> ShellCommand:
     if DOTNET_WRITE_RE.search(command):
         # Where in the command it runs is not read, so no check proves it.
         result.writes = result.unknown_writes = result.unchecked_unknown_writes = True
+    # A backtick is a bash substitution, and in PowerShell an escape this
+    # reading does not follow, so a command holding one is not plainly a read.
+    result.read_only = (
+        bool(segments) and not result.writes and "`" not in command
+        and all(_reads_only(segment) for segment in segments)
+    )
     return result
 
 
@@ -340,6 +352,74 @@ def _add_segment(result: ShellCommand, segment: "_Segment",
     if unknown:
         result.unknown_writes = True
     return next_directory, unknown, is_check
+
+
+# Plain reads ---------------------------------------------------------------------
+#
+# `router-first` lets reads through before the router loads, so an agent can
+# look around before it routes. A shell command passes only when it is made of
+# the reads below; anything else, including a command this table does not
+# know, is held.
+
+# Commands that print files, listings, matches, or counts, and change nothing.
+# Each still passes only without the arguments in READ_ONLY_REFUSED_ARGS.
+# PowerShell's read cmdlets come with the aliases Windows PowerShell 5.1 ships
+# (`ls`, `dir`, and `cat` are aliases there too).
+READ_ONLY_COMMANDS = frozenset(
+    {
+        "cat", "head", "tail", "ls", "dir", "grep", "rg", "wc", "find",
+        "get-content", "gc", "get-childitem", "gci", "select-string", "sls",
+    }
+)
+# Arguments that turn a read into a write or make it run another program:
+# `find` runs or deletes with -exec, -ok, and -delete and writes files with
+# -fprint and -fls; `rg --pre` runs a program on every file it searches.
+READ_ONLY_REFUSED_ARGS = {
+    "find": ("-exec", "-ok", "-delete", "-fprint", "-fls"),
+    "rg": ("--pre",),
+}
+# git subcommands that only print the repository's state or history. Their
+# `--output` writes the printed text to a file instead, so it is refused.
+GIT_READ_SUBCOMMANDS = frozenset({"status", "diff", "log", "show"})
+# The only git options allowed before the subcommand: `-C` picks the folder,
+# and the others turn the pager off. `-c` can set a program to run, such as
+# a pager or external diff, so it and every other global option are refused.
+GIT_READ_GLOBAL_OPTIONS = frozenset({"-C", "--no-pager", "-P"})
+# Separators a read may end at: pipes and the list separators. Not `&`, which
+# leaves a job running, nor an opening `(`, `{`, or `$(`, nor a closing one.
+READ_ONLY_ENDS = ("", "|", "&&", "||", ";", "\n")
+
+
+def _reads_only(segment: "_Segment") -> bool:
+    """True when `segment` is a plain read, written as the bare command.
+
+    A wrapper (`sudo`, `xargs`), a variable assignment, or a keyword before
+    the command can run something else or change what runs, so the command
+    word must come first. Its only redirects may be into null targets.
+    """
+
+    name, original, args = _resolve(segment.words)
+    if (name not in READ_ONLY_COMMANDS and name != "git") or segment.words[0] != original:
+        return False
+    if segment.nested or segment.heredocs or segment.after not in READ_ONLY_ENDS:
+        return False
+    if any(target.lower() not in NULL_TARGETS for target in segment.redirects):
+        return False
+    if name == "git":
+        return _git_reads_only(args)
+    refused = READ_ONLY_REFUSED_ARGS.get(name, ())  # Prefixes: `-fprint` covers `-fprintf`.
+    return not any(arg.startswith(refused) for arg in args)
+
+
+def _git_reads_only(args: list[str]) -> bool:
+    index = 0
+    while index < len(args) and args[index].startswith("-"):
+        if args[index] not in GIT_READ_GLOBAL_OPTIONS:
+            return False
+        index += 2 if args[index] == "-C" else 1
+    if index >= len(args) or args[index] not in GIT_READ_SUBCOMMANDS:
+        return False
+    return not any(arg.startswith("--output") for arg in args[index + 1:])
 
 
 # Directory changes ---------------------------------------------------------------

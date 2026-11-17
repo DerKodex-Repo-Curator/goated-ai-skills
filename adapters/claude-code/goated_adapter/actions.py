@@ -42,7 +42,9 @@ import subprocess
 import time
 
 from . import contracts, design_reads, shell
-from .gates import COMMAND_TOOLS, STRICT, Hold, goated_skill_name, unseen_line_advice
+from .gates import (
+    COMMAND_TOOLS, STRICT, Hold, goated_skill_name, spawns_a_reader, unseen_line_advice,
+)
 from .markers import declared_files, parse_reply
 from .transcript import Turn, skill_name
 
@@ -289,7 +291,9 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
                             by_tool=True)
     if tool_name in SPAWN_BRIEF_FIELDS:
         brief = str(tool_input.get(SPAWN_BRIEF_FIELDS[tool_name]) or "")
-        return _spawn_hold(brief, proof) if brief.strip() else None
+        if not brief.strip() or spawns_a_reader(tool_name, tool_input):
+            return None  # A read-only subagent's search brief needs no handoff template.
+        return _spawn_hold(brief, proof)
     if tool_name in FILE_WRITE_TOOLS:
         path = _norm(str(tool_input.get(FILE_WRITE_TOOLS[tool_name]) or ""))
         # A conflict is open, and a check keeps failing, wherever the file lives

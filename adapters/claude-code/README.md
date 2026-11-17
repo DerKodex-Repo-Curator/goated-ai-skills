@@ -106,13 +106,13 @@ so file text, edit text, and commands never carry a line, and no typed
 
 | Gate | Kind | Holds | Clears when |
 | --- | --- | --- | --- |
-| `router-first` | strict | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction | `using-goated-ai-skills` loads |
+| `router-first` | strict | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction; a command made only of [plain reads](#plain-reads) passes | `using-goated-ai-skills` loads |
 | `route-line` | strict | The first write or spawn after each user prompt until the current turn has a valid `goated-route:` line; also `goated-route: continue` when [missing or reset state](#failing-open) lost the task | A valid route line appears in the turn |
-| `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded | Each listed skill loads, or a corrected route line drops it |
+| `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded; a spawn of a [read-only subagent](#plain-reads) passes | Each listed skill loads, or a corrected route line drops it |
 | `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` loads in the turn, and an inline message (or the tool's `message`) passes the [content check](#content-checks); then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
 | `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` loads in the turn; then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
 | `pr-review` | justified-skip | A pull-request command or tool the `pull-request` gate holds, once that gate passes, when the pull request is [large](#large-pull-requests): 400 or more changed lines against its base | `standards-and-spec-review` loads in the turn; then a [change read](#change-reads) after the load and the last change to any project file; an MCP tool skips that read when the turn changed no project file |
-| `spawn` | strict | Starting an agent or session with a brief | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, all in the turn; and the brief passes the [content check](#content-checks) |
+| `spawn` | strict | Starting an agent or session with a brief, except a [read-only subagent](#plain-reads) | `handoff` loads and `references/spawn-brief.md` is read, or `subagent-driven-development` loads and its implementer or reviewer prompt is read, all in the turn; and the brief passes the [content check](#content-checks) |
 | `design` | justified-skip | The turn's first write adding five or more lines to a code file inside the project folder (or any such write while the skill has not loaded) | `software-design-principles` loads in the turn, a valid [design-reads line](#design-references) is in the turn, and every [reference the edit requires](#design-references) has been read since the last compaction |
 | `design-reads` | justified-skip | Any later write to a code or configuration file inside the project folder, once `software-design-principles` has loaded in the turn, whose [signals or the turn's design-reads lines](#design-references) require a reference not read since the last compaction. The hold names each file and what selected it | Each required reference is read with the Read tool |
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` loads in the turn |
@@ -393,6 +393,38 @@ ignored, as are comparisons inside `[[ ]]` and arithmetic in `$(( ))`, so
 runs, `git status`, and `git checkout <branch>` stay free. Commit and
 pull-request commands are recognized the same way, per command, so
 `echo gh pr create` opens nothing.
+
+### Plain reads
+
+Before the router loads, `router-first` passes a `Bash` or `PowerShell`
+command made only of plain reads, as it passes Read and Grep, so an agent can
+look around before it routes. Each simple command must be one of:
+
+- `cat`, `head`, `tail`, `ls`, `dir`, `grep`, `rg` (without `--pre`), or `wc`;
+- `find` without `-exec`, `-execdir`, `-ok`, `-okdir`, `-delete`, `-fprint`,
+  `-fprint0`, `-fprintf`, or `-fls`;
+- `git status`, `git diff`, `git log`, or `git show`, without `--output`,
+  and with no option before the subcommand but `-C <path>`, `--no-pager`, or
+  `-P`;
+- `Get-Content`, `Get-ChildItem`, or `Select-String`, or their aliases `gc`,
+  `gci`, and `sls`.
+
+The commands may be joined by pipes, `&&`, `||`, `;`, or newlines. The call
+is held when any part of it is something else: another or unknown command, a
+wrapper such as `sudo` or `xargs` or a variable assignment before the
+command, a redirect into a file (one into a null device is fine), a heredoc,
+a subshell, group, or script block, a `$(…)` or backtick substitution, a
+process substitution, or a background `&`. When the analysis cannot tell, the
+call is held. The lists are `READ_ONLY_COMMANDS`, `READ_ONLY_REFUSED_ARGS`,
+and `GIT_READ_SUBCOMMANDS` in `shell.py`. Once the router loads, commands
+are judged as before.
+
+A spawn of a read-only subagent type, `Explore`, `Plan`, or
+`claude-code-guide` (the `subagent_type` of an `Agent` or `Task` call, matched
+exactly), delegates reads, so it passes `pipeline` and `spawn`. It still
+meets `router-first` and needs a route line in the turn. Any other type, a
+spawn with no type, and side sessions are held as before. The list is
+`READ_ONLY_SUBAGENTS` in `gates.py`.
 
 A write target is read from the folder its command runs in, and a `cd` moves
 that folder only when the adapter is certain it ran and where it went.
@@ -761,7 +793,9 @@ of the call's prompt, which is normally already there.
     `pwsh -Command` line is a check is read;
   - command substitution with backticks, or `$(…)` inside double quotes;
   - a write inside an interpreter or script (`python -c "open(...)"`,
-    `node build.js`), or by an archive tool (`tar -x`, `unzip`);
+    `node build.js`), including an interpreter fed a script on stdin
+    (`python - <<'EOF'`, `node < build.js`), or by an archive tool
+    (`tar -x`, `unzip`);
   - git aliases (`git ci`), and `gh api` calls that create a pull request
     (`gh api repos/<owner>/<repo>/pulls`);
   - MCP tools that commit or open pull requests under names other than those
