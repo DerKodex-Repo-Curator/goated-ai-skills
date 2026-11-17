@@ -836,7 +836,7 @@ def _reference_reads_hold(path: str, tool_input: dict, proof: _Proof, project: P
     if not declared:
         return None
     edit = reference_reads.Edit(
-        is_code=is_code(path), is_test=is_test(path, project), lines_written=added_lines(tool_input),
+        is_code=is_code(path), is_test=is_test(path, project),
         added_code=design_reads.added_code(path, tool_input, project.cwd if project else None),
     )
     unread = [(r, why) for r, why in reference_reads.selected(declared, edit)
@@ -846,13 +846,14 @@ def _reference_reads_hold(path: str, tool_input: dict, proof: _Proof, project: P
     skills = list(dict.fromkeys(r.skill for r, _ in unread))
     listing = ", ".join(f"`{r.path}` ({why})" for r, why in unread)
     skip_lines = " or ".join(f"`goated-skip: {skill}: <reason>`" for skill in skills)
+    way_out = f"skip {skills[0]}" if len(skills) == 1 else "skip <skill>"
     return Hold(
         "reference-reads", JUSTIFIED_SKIP,
         f"This edit of \"{path.rsplit('/', 1)[-1]}\" needs skill references not yet read since "
         "the last compaction; the GOATED registry declares when each is required. Read each "
         f"with the Read tool before the edit, and apply it: {listing}. If one does not apply "
         f"to this edit, write {skip_lines} on its own line instead, naming its skill. This edit "
-        "was not applied. " + unseen_line_advice("skip line", f"skip {skills[0]}"),
+        "was not applied. " + unseen_line_advice("skip line", way_out),
     )
 
 

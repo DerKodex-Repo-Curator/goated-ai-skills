@@ -8,7 +8,7 @@ judged on one edit (Ticket 067):
 
 - `edit-adds-pattern`: the code an edit adds matches a pattern the registry
   names (`PATTERNS`), in a file of the given kind if one is given;
-- `edit-of-file-kind`: an edit of a file of that kind writes at least
+- `edit-of-file-kind`: an edit of a file of that kind adds at least
   `min_added_lines` lines.
 
 Every other kind is observed elsewhere or not yet: `existing-rule` references
@@ -17,8 +17,10 @@ edit kind added to the registry later is enforced with no change here, as long
 as its pattern and file kind are ones this module knows.
 
 The adapter uses only the standard library, so `load` reads the block-style
-YAML subset the registry is written in. A registry it cannot find, read, or
-parse declares nothing, so the gate asks for nothing (spec Constraints).
+YAML subset the registry is written in, and raises `RegistryUnreadable` for a
+registry it cannot find, read, or parse; the gate then asks for nothing (spec
+Constraints). The validator checks that this reader and a full YAML parser
+agree on the source registry.
 """
 
 from __future__ import annotations
@@ -51,9 +53,11 @@ PATTERNS = {
         r"|[a-z0-9_]Mock\b|\b(?:jest|vi)\.fn\b"
     )),
     "sleep-retry-or-timeout": Pattern("a sleep, retry, poll, or timeout", re.compile(
-        r"\w*(?:sleep|timeout)|\w*retr(?:y|ies|ied|ying)|\w*poll(?:s|ed|ing|er)?\b"
-        r"|\bwait_?for\b|\bsetInterval\b",
-        re.IGNORECASE,
+        r"(?i:\w*(?:sleep|timeout)|\w*retr(?:y|ies|ied|ying))"
+        # `poll` and `wait for` end a word, or a part of one before an
+        # underscore or a capital: `poll_interval`, `waitForSelector`.
+        r"|(?:(?i:\w*poll(?:s|ed|ing|er)?)|(?i:\bwait_?for))(?=_|[A-Z]|\b)"
+        r"|\bsetInterval\b"
     )),
 }
 # The file kinds a signal can name: "test" is a code file at a test path.
@@ -62,6 +66,16 @@ FILE_KINDS = ("test",)
 REFERENCE_PATH_RE = re.compile(
     r"(?:^|/)([a-z0-9]+(?:-[a-z0-9]+)*)/references/([a-z0-9]+(?:-[a-z0-9]+)*\.md)$"
 )
+
+
+class RegistryUnreadable(Exception):
+    """The registry cannot be used: `missing` when no file is at its path,
+    else it could not be read or is not the registry's shape. The message
+    says why."""
+
+    def __init__(self, why: str, missing: bool = False) -> None:
+        super().__init__(why)
+        self.missing = missing
 
 
 class Reference(NamedTuple):
@@ -83,29 +97,34 @@ class Reference(NamedTuple):
 
 class Edit(NamedTuple):
     """What the edit signals read of one edit: whether its file is a code file
-    and a test file, how many lines it writes (`actions.added_lines`), and
-    the code each added line holds (`design_reads.added_code`)."""
+    and a test file, and the code of each line it adds
+    (`design_reads.added_code`): the non-blank lines the text it replaces, or
+    the file on disk for a Write, did not hold, indentation aside."""
 
     is_code: bool
     is_test: bool
-    lines_written: int
     added_code: list[str]
 
 
 def load(path: Path | None) -> tuple[Reference, ...]:
     """Every reference the registry at `path` declares with a signal, in
-    registry order. None, a missing or unreadable file, one too large, or one
-    whose text is not the registry's shape declares nothing: ()."""
+    registry order; () for None. Raises `RegistryUnreadable` for a missing
+    file, one that cannot be read or is too large, or one whose text is not
+    the registry's shape."""
 
     if path is None:
         return ()
+    path = Path(path)
+    if not path.exists():
+        raise RegistryUnreadable("no file is there", missing=True)
     try:
-        if Path(path).stat().st_size > MAX_REGISTRY_BYTES:
-            return ()
-        text = Path(path).read_text(encoding="utf-8")
-        return tuple(_declared(_parse_yaml(text)))
-    except (OSError, UnicodeDecodeError, ValueError):
-        return ()
+        if path.stat().st_size > MAX_REGISTRY_BYTES:
+            raise RegistryUnreadable("it is too large")
+        return tuple(_declared(_parse_yaml(path.read_text(encoding="utf-8"))))
+    except (OSError, UnicodeDecodeError) as exc:
+        raise RegistryUnreadable(f"it could not be read ({type(exc).__name__})") from exc
+    except ValueError as exc:
+        raise RegistryUnreadable(f"it does not parse: {exc}") from exc
 
 
 def selected(references, edit: Edit) -> list[tuple[Reference, str]]:
@@ -152,10 +171,10 @@ def _fires(signal: dict, edit: Edit) -> str | None:
         if token is None:
             return None
         return f'adds {pattern.label} ("{token}"){in_file}, the registry\'s {signal["pattern"]} pattern'
-    least = signal.get("min_added_lines", 1)
-    if file_kind is None or not isinstance(least, int) or edit.lines_written < least:
+    least, added = signal.get("min_added_lines", 1), len(edit.added_code)
+    if file_kind is None or added < least:
         return None
-    return f"an edit of a {file_kind} file writing {edit.lines_written} lines, {least} or more"
+    return f"an edit of a {file_kind} file adding {added} lines, {least} or more"
 
 
 def _word_at(code: str, match: re.Match) -> str:
@@ -191,17 +210,24 @@ def _declared(data) -> list[Reference]:
                 continue  # An advisory reference: no read is required.
             if not isinstance(signal, dict) or not isinstance(signal.get("kind"), str):
                 raise ValueError("a reference signal has no kind")
+            for key, kind in (("pattern", str), ("file_kind", str), ("min_added_lines", int)):
+                if key in signal and not isinstance(signal[key], kind):
+                    raise ValueError(f"a reference signal's {key} is not {kind.__name__}")
             found.append(Reference(skill["name"], entry["file"], signal))
     return found
 
 
 # ---------- the registry's YAML subset ----------------------------------------
 #
-# Block mappings and sequences by indentation, `- ` items whose first key sits
-# on the dash line, plain scalars (an integer when all digits), quoted scalars
-# on one line, flow sequences of plain scalars (`[a, b]`), and `#` comments.
-# Anything else, such as a block scalar (`|`), an anchor, or a flow mapping,
-# raises ValueError rather than being read wrongly.
+# Block mappings and sequences, each item indented under its key, `- ` items
+# whose first key sits on the dash line, one-line plain scalars (an integer
+# when all digits, any other a string, `true`, `null`, `~` and `-1`
+# included), one-line quoted scalars without escapes, flow sequences of plain
+# scalars (`[a, b]`), and `#` comments. A block scalar (`|`), an anchor, a
+# flow mapping, a plain scalar wrapped onto more lines, a sequence not
+# indented under its key, or a key with no value raises ValueError rather
+# than being read wrongly. `validation/adapters.py` checks that the source
+# registry reads the same here as with a full YAML parser.
 
 _KEY_RE = re.compile(r"^([A-Za-z_][\w-]*):(?: (.*))?$")
 _UNSUPPORTED_START = ("|", ">", "&", "*", "!", "{", "@", "`")

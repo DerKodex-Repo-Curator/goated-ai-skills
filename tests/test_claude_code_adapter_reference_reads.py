@@ -9,9 +9,11 @@ for the first enforced set, or a fixture registry written by the test.
 
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
@@ -137,6 +139,21 @@ class MockingAndSeams(ReferenceReadsTestCase):
         held = s.call("Write", {"file_path": TEST_FILE, "content": "from unittest import mock\n"})
         self.assertHeldFor(held, "tdd/references/mocking-and-seams.md")
 
+    def test_an_edit_keeping_a_mock_its_old_text_held_is_not_held(self) -> None:
+        s = self.first_turn("tdd")
+        self.assertPasses(s.call("Edit", {
+            "file_path": TEST_FILE, "old_string": "client = MagicMock()\nassert run(client)",
+            "new_string": "client = MagicMock()\nassert run(client) == 1",
+        }))
+
+    def test_a_multiedit_carrying_a_mock_is_held(self) -> None:
+        s = self.first_turn("tdd")
+        held = s.call("MultiEdit", {"file_path": TEST_FILE, "edits": [
+            {"old_string": "a = 1", "new_string": "a = 2"},
+            {"old_string": "pass", "new_string": "client = MagicMock()"},
+        ]})
+        self.assertHeldFor(held, "tdd/references/mocking-and-seams.md")
+
 
 class NotLoaded(ReferenceReadsTestCase):
     """AC: with `tdd` not loaded, neither edit is held by the gate."""
@@ -170,6 +187,31 @@ class TestDesign(ReferenceReadsTestCase):
         self.assertNotEqual(hold_line(held), GATE_LINE)
         self.assertPasses(s.call("Edit", edit(CODE_FILE, *[f"total_{n} = {n}" for n in range(4)])))
 
+    def test_lines_kept_from_the_old_text_do_not_count(self) -> None:
+        context = ["def test_a():", "    x = 1", "    y = 2", "    z = 3", "    assert x"]
+        s = self.first_turn("tdd")
+        self.assertPasses(s.call("Edit", {
+            "file_path": TEST_FILE, "old_string": "\n".join(context),
+            "new_string": "\n".join(context[:-1] + ["    assert x == 1"]),
+        }))
+
+    def test_a_new_four_line_file_with_a_trailing_newline_is_not_held(self) -> None:
+        s = self.first_turn("tdd")
+        self.assertPasses(s.call("Write", {"file_path": "tests/test_new.py",
+                                           "content": "\n".join(plain_lines(4)) + "\n"}))
+        held = s.call("Write", {"file_path": "tests/test_new.py",
+                                "content": "\n".join(plain_lines(5)) + "\n"})
+        self.assertHeldFor(held, "tdd/references/test-design.md")
+
+    def test_a_write_over_a_test_file_counts_only_the_lines_it_adds(self) -> None:
+        s = self.first_turn("tdd")
+        existing = s.project / TEST_FILE
+        existing.parent.mkdir(parents=True)
+        old = "\n".join(plain_lines(8)) + "\n"
+        existing.write_text(old, encoding="utf-8")
+        self.assertPasses(s.call("Write", {"file_path": TEST_FILE,
+                                           "content": old + "assert extra == 9\n"}))
+
     def test_a_long_test_edit_with_a_mock_asks_for_both(self) -> None:
         s = self.first_turn("tdd")
         held = s.call("Edit", edit(TEST_FILE, "client = MagicMock()", *plain_lines(4)))
@@ -196,6 +238,10 @@ class ConditionBasedWaiting(ReferenceReadsTestCase):
                             (CODE_FILE, "await asyncio.sleep(1)"),
                             (CODE_FILE, "while not ready: poll()"),
                             (CODE_FILE, "MAX_RETRIES = 3"),
+                            (CODE_FILE, "poll_interval = 5"),
+                            ("src/poll.ts", "const pollInterval = 5"),
+                            ("src/e2e.ts", "await page.waitForSelector('#ok')"),
+                            (TEST_FILE, "wait_for_element(page)"),
                             (TEST_FILE, "wait_for(lambda: done)")):
             with self.subTest(added=added):
                 s = self.first_turn("diagnose")
@@ -205,7 +251,8 @@ class ConditionBasedWaiting(ReferenceReadsTestCase):
     def test_the_word_in_a_comment_or_another_word_does_not_count(self) -> None:
         s = self.first_turn("diagnose")
         for added in ("# no sleep or retry: the event fires once", "value = retrieve(key)",
-                      "count = pollen + 1", '"""Waits for nothing; no timeout."""',
+                      "count = pollen + 1", "label = waitformat(1)", "x = pollenCount",
+                      '"""Waits for nothing; no timeout."""',
                       "total = 1  # retry once if this fails"):
             with self.subTest(added=added):
                 self.assertPasses(s.call("Edit", edit(CODE_FILE, added)))
@@ -275,6 +322,14 @@ class SkipLine(ReferenceReadsTestCase):
         held = s.call("Edit", edit(TEST_FILE, "client = MagicMock()", "time.sleep(1)"))
         self.assertHeldFor(held, "tdd/references/mocking-and-seams.md")
         self.assertNotIn("condition-based-waiting.md", reason(held))
+
+    def test_a_hold_naming_two_skills_names_no_single_way_out(self) -> None:
+        s = self.first_turn("tdd", "diagnose")
+        held = s.call("Edit", edit(TEST_FILE, "client = MagicMock()", "time.sleep(1)"))
+        self.assertIn("`goated-skip: diagnose: <reason>`", reason(held))
+        self.assertIn("`goated-skip: tdd: <reason>`", reason(held))
+        self.assertIn("`skip <skill>`", reason(held))
+        self.assertNotIn("`skip diagnose`", reason(held))
 
     def test_a_typed_skip_clears_it(self) -> None:
         s = self.first_turn("tdd", prompt="Work on the exporter. skip tdd")
@@ -358,14 +413,58 @@ class NoRegistry(ReferenceReadsTestCase):
         broken.write_text("skills:\n  - name: tdd\n    references: |\n      text\n", encoding="utf-8")
         not_a_file = self.root / "folder.yaml"
         not_a_file.mkdir()
-        for registry in (None, self.root / "missing.yaml", broken, not_a_file):
+        indentless = self.root / "indentless.yaml"
+        indentless.write_text("skills:\n- name: tdd\n  references: []\n", encoding="utf-8")
+        for registry in (None, self.root / "missing.yaml", broken, not_a_file, indentless):
             with self.subTest(registry=registry):
                 s = self.first_turn("tdd", "diagnose", registry=registry)
                 self.assertPasses(s.call("Edit", edit(TEST_FILE, "client = MagicMock()")))
                 self.assertPasses(s.call("Edit", edit(CODE_FILE, "time.sleep(1)")))
 
     def test_the_default_registry_is_the_distributions_beside_the_adapter(self) -> None:
-        self.assertEqual(Config.from_environment().registry_path, REGISTRY)
+        with mock.patch.dict(os.environ):
+            os.environ.pop("GOATED_ADAPTER_REGISTRY", None)
+            self.assertEqual(Config.from_environment().registry_path, REGISTRY)
+        with mock.patch.dict(os.environ, {"GOATED_ADAPTER_REGISTRY": str(self.root / "r.yaml")}):
+            self.assertEqual(Config.from_environment().registry_path, self.root / "r.yaml")
+
+    def warning(self, s: Session) -> str:
+        return parse(s.hook("PreToolUse", tool_name="Edit", tool_use_id="toolu_w",
+                            tool_input=edit(TEST_FILE, "client = MagicMock()"))).get("systemMessage", "")
+
+    def test_a_registry_that_does_not_parse_warns_and_holds_nothing(self) -> None:
+        broken = self.root / "broken.yaml"
+        broken.write_text("skills:\n- name: tdd\n", encoding="utf-8")
+        s = self.first_turn("tdd", registry=broken)
+        output = parse(s.hook("PreToolUse", tool_name="Edit", tool_use_id="toolu_w",
+                              tool_input=edit(TEST_FILE, "client = MagicMock()")))
+        self.assertPasses(output)
+        self.assertIn("registry", output.get("systemMessage", ""))
+        self.assertIn("broken.yaml", output.get("systemMessage", ""))
+
+    def test_a_missing_registry_warns_only_when_the_environment_names_it(self) -> None:
+        missing = self.root / "missing.yaml"
+        s = self.first_turn("tdd", registry=missing)
+        self.assertEqual(self.warning(s), "")
+        s = self.first_turn("tdd", registry=missing)
+        s.config.registry_named = True
+        self.assertIn("missing.yaml", self.warning(s))
+
+    def test_a_registry_with_a_malformed_signal_value_declares_nothing(self) -> None:
+        for field in ("pattern: [mock-or-patch]", "file_kind: 3", "min_added_lines: five"):
+            with self.subTest(field=field):
+                registry = self.root / "malformed.yaml"
+                kind = "edit-of-file-kind" if field.startswith("min") else "edit-adds-pattern"
+                extra = "\n          file_kind: test" if field.startswith("min") else ""
+                registry.write_text(
+                    "skills:\n  - name: tdd\n    references:\n      - file: x.md\n"
+                    f"        signal:\n          kind: {kind}\n          {field}{extra}\n",
+                    encoding="utf-8",
+                )
+                with self.assertRaises(reference_reads.RegistryUnreadable):
+                    reference_reads.load(registry)
+                s = self.first_turn("tdd", registry=registry)
+                self.assertPasses(s.call("Edit", edit(TEST_FILE, "client = MagicMock()", *plain_lines(5))))
 
 
 class OtherGatesUnchanged(ReferenceReadsTestCase):

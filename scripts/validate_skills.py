@@ -136,6 +136,7 @@ validate_reference_fixtures = reference_validation.validate_reference_fixtures
 
 # The adapters module owns the opt-in adapter boundary checks (ADR 0003).
 validate_adapter_boundary = adapter_validation.validate_adapter_boundary
+validate_registry_reader = adapter_validation.validate_registry_reader
 
 
 def validate_skills(repo: Path) -> tuple[list[Finding], list[Finding], list[Finding], int]:
@@ -165,6 +166,7 @@ def validate_skills(repo: Path) -> tuple[list[Finding], list[Finding], list[Find
     errors.extend(validate_marker_fixtures(repo))
     errors.extend(validate_reference_fixtures(repo))
     errors.extend(validate_adapter_boundary(repo))
+    errors.extend(validate_registry_reader(repo))
 
     return (
         errors,

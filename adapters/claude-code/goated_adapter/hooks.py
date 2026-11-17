@@ -64,11 +64,13 @@ class Config:
     distribution installed as a plugin. `project_dir` is the project's root
     folder, when Claude Code names one. `registry_path` is the installed
     registry the `reference-reads` gate reads; None reads none.
+    `registry_named`: the user named that path (`GOATED_ADAPTER_REGISTRY`),
+    so a missing file there is worth a warning; a missing default is not.
     `from_environment` gives the installed defaults; tests pass their own.
     """
 
     __slots__ = ("state_dir", "home", "lag_wait_seconds", "skill_namespaces", "project_dir",
-                 "registry_path")
+                 "registry_path", "registry_named")
 
     def __init__(
         self,
@@ -78,6 +80,7 @@ class Config:
         skill_namespaces: tuple[str, ...] = (),
         project_dir: str | None = None,
         registry_path: Path | None = None,
+        registry_named: bool = False,
     ) -> None:
         self.state_dir = Path(state_dir)
         self.home = Path(home) if home is not None else Path.home()
@@ -85,6 +88,7 @@ class Config:
         self.skill_namespaces = tuple(skill_namespaces)
         self.project_dir = project_dir
         self.registry_path = Path(registry_path) if registry_path is not None else None
+        self.registry_named = registry_named
 
     @classmethod
     def from_environment(cls) -> "Config":
@@ -96,6 +100,7 @@ class Config:
             skill_namespaces=tuple(n.strip() for n in namespaces.split(",") if n.strip()),
             project_dir=os.environ.get(PROJECT_DIR_ENV) or None,
             registry_path=Path(registry) if registry else DEFAULT_REGISTRY,
+            registry_named=bool(registry),
         )
 
 
@@ -183,6 +188,7 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
         return found
 
     earlier = _since_compaction(state)
+    registry_warnings: list[str] = []
     hold = gates.check_routing(state, tool_name, tool_input, current, overrides)
     if hold is None:
         hold = actions.check_action(
@@ -190,7 +196,7 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
             _project(payload, config), spawned, earlier,
             closeout=actions.Closeout(state.design_edits_of(current.key),
                                       _design_ids(payload, config)),
-            references=lambda: reference_reads.load(config.registry_path),
+            references=lambda: _registry_references(config, registry_warnings),
         )
     tool_use_id = str(payload.get("tool_use_id") or "")
     if hold is None and tool_use_id:
@@ -201,8 +207,23 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
         if references:
             state.record_design_edit(current.key, tool_use_id, references)
     hold = gates.advice_once(hold, lambda: _claim_turn(store, session_id, current.key))
-    warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread)]
+    warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread),
+                *registry_warnings]
     return _with_warnings(_deny(hold), warnings)
+
+
+def _registry_references(config: Config, warnings: list[str]) -> tuple:
+    """The installed registry's declared references, or () when it cannot be
+    used, failing open: a registry that does not parse, or a missing one the
+    user named, adds a warning to `warnings`; a missing default is silent."""
+
+    try:
+        return reference_reads.load(config.registry_path)
+    except reference_reads.RegistryUnreadable as exc:
+        if not exc.missing or config.registry_named:
+            warnings.append(f"could not use the GOATED registry at {config.registry_path} ({exc}), "
+                            "so the reference-reads gate asked for nothing")
+        return ()
 
 
 def _since_compaction(state) -> actions.SinceCompaction:

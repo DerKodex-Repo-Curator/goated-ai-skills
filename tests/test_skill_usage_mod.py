@@ -328,7 +328,7 @@ class SkillUsageModFixtureTests(unittest.TestCase):
             "designLine": "skip software-design-principles",
             "designLineReads": "skip software-design-principles",
             "designReads": "skip software-design-principles",
-            "referenceReads": "skip diagnose",
+            "referenceReads": "skip <skill>",
             "security": "skip code-security-review",
             "shellWrite": "skip code-security-review",
             "securityNoExtension": "skip code-security-review",

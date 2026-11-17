@@ -30,7 +30,10 @@ Skills work the same without it. Install it only if you want enforcement.
    package beside it. The [`reference-reads`](#registry-references) gate
    reads the installed registry two folders up,
    `<goated-root>/stack/goated-stack.yaml`; if the adapter lives elsewhere,
-   set `GOATED_ADAPTER_REGISTRY` to the registry's path.
+   set `GOATED_ADAPTER_REGISTRY` to the registry's path. A missing registry
+   at the default path turns that gate off quietly; one that does not parse,
+   or a path the variable names with no file there, turns it off with a
+   warning.
 2. Open [`settings.snippet.json`](settings.snippet.json) and replace every
    `<adapter-dir>` with the folder's absolute path. Forward slashes work on
    Windows too.
@@ -491,8 +494,14 @@ of a code file inside the project folder:
 
 | Kind | Fires when the edit |
 | --- | --- |
-| `edit-adds-pattern` | adds code matching the named pattern, in a file of `file_kind` when the signal gives one. Comments and docstrings are left out, as for the [design signals](#design-references), and a `Write` over a file on disk is compared with it |
-| `edit-of-file-kind` | is of a file of `file_kind` and writes at least `min_added_lines` lines, as the `design` gate counts them (`added_lines` in `actions.py`) |
+| `edit-adds-pattern` | adds code matching the named pattern, in a file of `file_kind` when the signal gives one. Comments and docstrings are left out, as for the [design signals](#design-references) |
+| `edit-of-file-kind` | is of a file of `file_kind` and adds at least `min_added_lines` lines |
+
+An edit adds the non-blank lines of the text it writes that the text it
+replaces did not hold, indentation aside; a `Write` over a file on disk is
+compared with that file. So changing one line among four unchanged ones adds
+one line, a new four-line file adds four whatever its trailing newline, and
+a line the old text already held, such as an existing mock, is not added.
 
 A `test` file is a code file at a test path, as the design gates judge it.
 The named patterns are the registry's `reference_patterns`, as the adapter
@@ -501,10 +510,10 @@ matches them; so `dispatch` holds no patch, and `retrieve` no retry:
 | Pattern | Matches |
 | --- | --- |
 | `mock-or-patch` | a word starting `mock`, `patch`, `stub`, `spy`, or `fake` (either case), `monkeypatch`, `sinon`, a word ending `Mock` (`MagicMock`), `jest.fn`, or `vi.fn` |
-| `sleep-retry-or-timeout` | in any case: a word holding `sleep`, `timeout`, `retry`, `retries`, `retried`, or `retrying` (`asyncio.sleep`, `setTimeout`, `MAX_RETRIES`); a word ending `poll`, `polls`, `polled`, `polling`, or `poller`; `wait_for`, `waitFor`, or `setInterval` |
+| `sleep-retry-or-timeout` | in any case: a word holding `sleep`, `timeout`, `retry`, `retries`, `retried`, or `retrying` (`asyncio.sleep`, `setTimeout`, `MAX_RETRIES`); `poll`, `polls`, `polled`, `polling`, or `poller` at the end of a word or before an underscore or a capital (`poll_interval`, `pollInterval`); `wait_for` or `waitFor` likewise at a word start (`waitForSelector`, `wait_for_element`); or `setInterval` |
 
 So the first enforced set is: `tdd`'s `mocking-and-seams.md` when a test
-edit adds a mock or patch, its `test-design.md` at a test edit writing five
+edit adds a mock or patch, its `test-design.md` at a test edit adding five
 or more lines, and `diagnose`'s `condition-based-waiting.md` when an edit
 adds a sleep, retry, or timeout. A reference of these kinds added to the
 registry later is enforced with no adapter change, as long as it names a
@@ -521,7 +530,8 @@ same name under another skill. A skip line naming the skill, or a typed
 `skip <skill>`, clears that skill's references for the turn. A skill that
 does not count as loaded is not asked for its references: routing and the
 other gates decide whether it loads. When one edit fires references of two
-skills, the hold names them all and offers a skip line for each skill.
+skills, the hold names them all, offers a skip line for each skill, and
+names the typed override as `skip <skill>`.
 
 ### Shell writes
 
@@ -1239,10 +1249,18 @@ of the call's prompt, which is normally already there.
   in a reply that also makes a tool call can be lost the way a route line
   is, so the item points to the call fields too.
 - The `reference-reads` gate fails open: with no registry at its path (see
-  [Install](#install)), or one it cannot read or parse, it asks for nothing.
-  Its reader takes the registry's plain block YAML only; a value written as a
-  block scalar (`|`), an anchor, or a flow mapping makes the whole registry
-  unreadable to it, though the validator accepts it. A signal naming a
+  [Install](#install)), or one it cannot read or parse, it asks for nothing,
+  with a warning unless the default registry is simply missing. Its reader
+  takes the registry's plain block YAML only. A block scalar (`|`), an
+  anchor, a flow mapping, a plain value wrapped onto more lines, a sequence
+  not indented under its key, or a key with no value makes the whole
+  registry unreadable to it. It reads `true`, `null`, `~`, and `-1` as
+  strings, and a quoted value without its escapes. `validate_skills.py`
+  fails when this reader and a full YAML parser read the source registry's
+  references differently, so a registry edit cannot switch the gate off
+  unnoticed; an installed registry edited by hand is not checked. A
+  signal value of the wrong type, such as a list for `pattern`, makes the
+  registry unreadable too. A signal naming a
   pattern or file kind the adapter does not list asks for nothing. It judges
   only edits by a write tool, not shell writes, and does not run inside a
   [subagent](#subagents). Its patterns match words by their letters, so a word
