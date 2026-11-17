@@ -145,7 +145,7 @@ check after its own last change, that change is already proved.
 
 | Item | Needed when | Met by | Skip line names |
 | --- | --- | --- | --- |
-| Proof | A change not already proved | A check command run after the last code change: a test runner, linter, type checker, or build tool (`pytest`, `python -m unittest`, `npm test`, `cargo test`, `go vet`, `tsc`, `make check`, and the like, also through `uv run` or `npx`), or a script whose name says test, check, lint, verify, validate, or build (`scripts/validate_skills.py`) | `verification-before-completion` |
+| Proof | A change not already proved | A check command run after the last code change: a test runner, linter, type checker, or build tool (`pytest`, `python -m unittest`, `npm test`, `cargo test`, `go vet`, `tsc`, `make check`, and the like, also through `uv run` or `npx`), or a script whose name says test, check, lint, verify, validate, or build (`scripts/validate_skills.py`). The check may be a later call, or later in the same shell command as the write (`cp a.py src/a.py && pytest`): every command from the write to the check must be joined by `&&`, `;`, or a newline, none of them an `exit`, `return`, or the like, and neither inside a branch, loop, function, or group (`if`, `( )`, `{ }`); the check must not run in the background (`pytest &`), though a pipe or `\|\|` after it is fine (`pytest 2>&1 \| tee log.txt`). A code file written after the check, or by a .NET call (`[IO.File]::WriteAllText`) anywhere in the command, is not proved by it; another file written after it, such as a log, does not matter. Inline interpreter code (`python -c`, `python -Bc`, `node -pe`, `perl -e`) is not a check; a shell's inline command line (`bash -c`, `pwsh -Command`) is read as a command line, so `bash -c 'npm test'` is a check and `bash -c 'echo tests ok'` is not | `verification-before-completion` |
 | Unfinished work | The last check after the change failed | `handoff` loads | `handoff` |
 | Docs | A code file outside the tests changed | `doc-sync` loads, then a [change read](#change-reads) after the load and the last code change | `doc-sync` |
 | Design red flags | `software-design-principles` loaded in the turn | `software-design-principles/references/red-flags.md` is read after the last change, then a [change read](#change-reads) after that read | `software-design-principles` |
@@ -666,7 +666,8 @@ of the call's prompt, which is normally already there.
   them meets no action gate:
   - a command run through another shell or evaluator: `bash -c`, `sh -c`,
     `eval`, `Invoke-Expression`, `Start-Process`, or a heredoc fed to a shell
-    (`bash <<'EOF'`);
+    (`bash <<'EOF'`); only whether a `bash -c`, `sh -c`, `zsh -c`, or
+    `pwsh -Command` line is a check is read;
   - command substitution with backticks, or `$(…)` inside double quotes;
   - a write inside an interpreter or script (`python -c "open(...)"`,
     `node build.js`), or by an archive tool (`tar -x`, `unzip`);
@@ -677,6 +678,12 @@ of the call's prompt, which is normally already there.
 
   An agent working around the holds this way is the case the next item
   describes.
+- A shell call's result stands for the whole command, not for each command
+  in it. A check in the same command as a write proves that write even when
+  the command hid the check's failure (`pytest || true`, `pytest; echo done`,
+  `pytest | tail`), and the Unfinished item does not see that failure either.
+  A write in a subshell (`(cp a.py src/a.py) && pytest`) is not proved by a
+  check after the group.
 - Two closeout triggers are mechanical stand-ins for judgement. "Behavior or
   interfaces changed" is read as "a non-test code file changed", so a pure
   refactor still asks for `doc-sync` or a skip line. "Work left unfinished" is
