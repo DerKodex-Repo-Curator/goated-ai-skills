@@ -3,7 +3,7 @@
 // and settles what is left. Pure, like classify.ts, which reads the events and
 // feeds them here in order.
 
-import type { Counts, HoldKind, NudgedSkill, Outcome, RouteForm, SkipReasons, TimelineEntry, UsageEvent } from '../types'
+import type { Counts, HoldKind, NudgedSkill, Outcome, RefAskOutcome, RefAsks, RouteForm, SkipReasons, TimelineEntry, UsageEvent } from '../types'
 
 /** The adapter's route-line hold asks for a route line, which no skill load settles. */
 export const ROUTE_LINE = '(route line)'
@@ -101,10 +101,10 @@ export type HoldSettlement = {
   /**
    * Settles what is still open, `unanswered` once the session is over (`isFinal`), else `pending`, and returns what
    * became of the holds by gate (`nudges`), how many held, by kind (`holds`), what became of each closeout item, by its
-   * label (`closeoutItems`), and the reason of each skip line that declined a hold, by skill and gate (`skipReasons`).
-   * Call it once, after the last event.
+   * label (`closeoutItems`), the reason of each skip line that declined a hold, by skill and gate (`skipReasons`), and
+   * what became of each skill reference a hold asked to read (`refAsks`). Call it once, after the last event.
    */
-  finish(isFinal: boolean): { nudges: Record<string, Counts<Outcome>>; holds: Counts<HoldKind>; closeoutItems: Record<string, Counts<Outcome>>; skipReasons: SkipReasons }
+  finish(isFinal: boolean): { nudges: Record<string, Counts<Outcome>>; holds: Counts<HoldKind>; closeoutItems: Record<string, Counts<Outcome>>; skipReasons: SkipReasons; refAsks: RefAsks }
 }
 
 /**
@@ -131,6 +131,36 @@ export function holdSettlement(): HoldSettlement {
   const holds: Counts<HoldKind> = {}
   const closeoutItems: Record<string, Counts<Outcome>> = {}
   const skipReasons: SkipReasons = {}
+  const refAsks: RefAsks = {}
+  const countRef = (skill: string, file: string, outcome: RefAskOutcome) => {
+    const counts = ((refAsks[skill] ??= {})[`references/${file}`] ??= {})
+    counts[outcome] = (counts[outcome] ?? 0) + 1
+  }
+  // The references holds named in each loop's running turn and that are still unread, by agent ('' for the main agent),
+  // then skill, then file name. Kept apart from the asks, which settle by other rules: a design hold's ask is met by
+  // loading the skill, and a later hold's reference may come after its skill's ask settled. A reference counts as fired
+  // once while it waits, then read by the Read tool, or skipped by a skip line naming its skill; a turn end drops what is
+  // left, which went unanswered.
+  const unread = new Map<string, Map<string, Set<string>>>()
+  const unreadOf = (agent?: string) => {
+    const key = agent ?? ''
+    let skills = unread.get(key)
+    if (!skills) unread.set(key, (skills = new Map()))
+    return skills
+  }
+  /** A hold names `file` of `skill`: fired, unless it already waits; skipped at once when a skip line already declined the skill. */
+  const nameRef = (skill: string, file: string, agent: string | undefined, isDeclined: boolean) => {
+    const files = unreadOf(agent).get(skill) ?? new Set<string>()
+    if (files.has(file)) return
+    countRef(skill, file, 'fired')
+    if (isDeclined) return countRef(skill, file, 'skipped')
+    unreadOf(agent).set(skill, files.add(file))
+  }
+  /** A skip line declines `skill`: each of its references still unread was skipped. */
+  const skipRefs = (skill: string, agent?: string) => {
+    for (const file of unreadOf(agent).get(skill) ?? []) countRef(skill, file, 'skipped')
+    unreadOf(agent).delete(skill)
+  }
   let turnNudged = new Set<string>()
   // One open ask per nudge: the skills any one of which answers it (`anyOf`; more than one only for a gate whose skills
   // are alternatives), and its mark on the nudge's own log row, so settling it updates that row.
@@ -334,6 +364,11 @@ export function holdSettlement(): HoldSettlement {
     }
     // A gate whose skills are alternatives asks once; any other nudge asks for each skill it names.
     const asks = ALTERNATIVE_GATES.has(e.hook) && e.named.length > 1 ? [e.named] : e.named.map(s => [s])
+    // Each reference the hold names counts whether or not the hold joins an earlier row: a repeat may name a new one.
+    for (const ask of asks) {
+      const isDeclined = e.holdKind !== 'strict' && !isCloseoutHold(e) && skipFor(ask, e.agent) !== undefined
+      for (const file of refsOf(e.refs ?? [], ask)) nameRef(ask[0] ?? '', file, e.agent, isDeclined)
+    }
     if (joinRepeat(e, asks)) return undefined
     const row: NudgeRow = {
       ...stamp(e),
@@ -363,6 +398,7 @@ export function holdSettlement(): HoldSettlement {
       case 'prompt':
         // Anything still open belongs to a turn that is over, a turn end the mod did not see included.
         closeTurn(() => true, e)
+        unread.clear()
         lastClosed = closedInTurn
         closedInTurn = []
         skipped.clear()
@@ -392,11 +428,13 @@ export function holdSettlement(): HoldSettlement {
         const own = skipsOf(e.agent)
         own.set(e.skill, e.reason)
         skipped.set(e.agent ?? '', own)
+        skipRefs(e.skill, e.agent)
         for (const n of open.filter(n => n.anyOf.includes(e.skill) && n.agent === e.agent && !n.isStrict)) decline(n, { skill: e.skill, reason: e.reason }, e)
         break
       }
       case 'turn-end':
         closeTurn(n => n.agent === e.agent, e)
+        unread.delete(e.agent ?? '')
         skipped.delete(e.agent ?? '')
         forgetHolds(e.agent)
         if (!e.agent) {
@@ -414,6 +452,7 @@ export function holdSettlement(): HoldSettlement {
       case 'ref':
         // Only the Read tool counts as a reference read, as the adapter counts it; a subagent's reads are its own.
         if (!e.isReadTool || e.isSubagent) break
+        if (e.file.startsWith('references/') && unreadOf().get(e.skill)?.delete(e.file.slice('references/'.length))) countRef(e.skill, e.file.slice('references/'.length), 'read')
         for (const n of open.filter(n => !n.agent && n.refs !== undefined && n.anyOf.includes(e.skill))) {
           if (n.refs?.delete(e.file.split('/').pop() ?? '')) settleDesign(n, 'read files', e)
         }
@@ -451,7 +490,7 @@ export function holdSettlement(): HoldSettlement {
     wasAsked: skill => turnNudged.has(skill),
     finish: isFinal => {
       settle(() => true, isFinal ? 'unanswered' : 'pending')
-      return { nudges, holds, closeoutItems, skipReasons }
+      return { nudges, holds, closeoutItems, skipReasons, refAsks }
     },
   }
 }

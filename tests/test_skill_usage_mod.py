@@ -1,11 +1,14 @@
-"""Keeps the skill-usage mod's copies of the grammar and adapter texts current.
+"""Keeps the skill-usage mod's copies of the grammar, registry and adapter texts current.
 
 The mod's tests run inside Claude Code's plugin test kit, which has no file
-system, YAML parser, or Python, so they read two generated TypeScript modules:
+system, YAML parser, or Python, so they read generated TypeScript modules:
 
 - `marker-fixtures.ts`, the marker fixtures in `stack/fixtures/markers/lines.yaml`;
 - `design-reads-fixtures.ts`, the design-reads line fixtures in
   `stack/fixtures/markers/design-reads.yaml`;
+- `registry-fixture.ts`, the source registry `stack/goated-stack.yaml` with the
+  references each skill declares, as a full YAML parser reads them, so the mod's
+  own reader is tested against both;
 - `adapter-texts.ts`, the hold reasons and the override context the Claude Code
   adapter actually produces, from driving it with synthetic sessions.
 
@@ -42,6 +45,8 @@ GENERATED_DESIGN_READS = MOD_ROOT / "tests" / "design-reads-fixtures.ts"
 MOD_CODE_EXTENSIONS = re.compile(r"const CODE_EXTENSIONS = new Set\(\s*'([^']*)'")
 MOD_FILE_EDIT_TOOLS = re.compile(r"const FILE_EDIT_TOOLS: Record<string, string> = \{([^}]*)\}")
 GENERATED_ADAPTER_TEXTS = MOD_ROOT / "tests" / "adapter-texts.ts"
+REGISTRY = REPO_ROOT / "stack" / "goated-stack.yaml"
+GENERATED_REGISTRY = MOD_ROOT / "tests" / "registry-fixture.ts"
 DESIGN_SKILL_DIR = REPO_ROOT / "skills" / "engineering" / "software-design-principles"
 
 
@@ -63,6 +68,17 @@ def render_marker_fixtures() -> str:
 def render_design_reads_fixtures() -> str:
     fixtures = yaml.safe_load(DESIGN_READS_FIXTURES.read_text(encoding="utf-8"))
     return _module("stack/fixtures/markers/design-reads.yaml", "DESIGN_READS_FIXTURES", fixtures)
+
+
+def render_registry_fixture() -> str:
+    """The registry's text, and each skill's references as `enforced` (a signal) or `advisory`, file by file."""
+    text = REGISTRY.read_text(encoding="utf-8")
+    declared = {
+        skill["name"]: {ref["file"]: "enforced" if "signal" in ref else "advisory" for ref in skill["references"]}
+        for skill in yaml.safe_load(text)["skills"]
+        if skill.get("references")
+    }
+    return _module("stack/goated-stack.yaml", "REGISTRY_FIXTURE", {"text": text, "declared": declared})
 
 
 def _write(path: str, lines: int = 6) -> dict:
@@ -294,6 +310,7 @@ GENERATED = {
     GENERATED_MARKERS: render_marker_fixtures,
     GENERATED_DESIGN_READS: render_design_reads_fixtures,
     GENERATED_ADAPTER_TEXTS: render_adapter_texts,
+    GENERATED_REGISTRY: render_registry_fixture,
 }
 
 

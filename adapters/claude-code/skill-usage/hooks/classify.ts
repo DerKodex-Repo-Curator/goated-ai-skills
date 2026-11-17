@@ -628,7 +628,7 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
   const refs: Refs = {}
   let refsUnloaded = 0
   const refMoments: RefMoments = {}
-  const measures: Required<Omit<Measures, 'holds' | 'closeoutItems' | 'skipReasons'>> = {
+  const measures: Required<Omit<Measures, 'holds' | 'closeoutItems' | 'skipReasons' | 'refAsks'>> = {
     routes: {},
     routeSkills: {},
     sideSessions: {},
@@ -777,11 +777,11 @@ export function summarize(events: readonly UsageEvent[], isFinal = false): Sessi
         break
     }
   }
-  const { nudges, holds: held, closeoutItems, skipReasons } = holds.finish(isFinal)
+  const { nudges, holds: held, closeoutItems, skipReasons, refAsks } = holds.finish(isFinal)
   tallyWritingTurn()
   settleReadMoments()
 
-  return { loads, nudges, lastUsed, refs, refsUnloaded, refMoments, ...measures, holds: held, closeoutItems, skipReasons, timeline, router: 'off', version: DATA_VERSION }
+  return { loads, nudges, lastUsed, refs, refsUnloaded, refMoments, ...measures, holds: held, closeoutItems, skipReasons, refAsks, timeline, router: 'off', version: DATA_VERSION }
 }
 
 /**
@@ -812,6 +812,7 @@ function addMeasures(into: Measures, from: Measures) {
   reads.none += from.designReads?.none ?? 0
   if (from.closeoutItems) addCounts((into.closeoutItems ??= {}), from.closeoutItems)
   addSkipReasons(into, from.skipReasons)
+  for (const [skill, files] of Object.entries(from.refAsks ?? {})) addCounts(((into.refAsks ??= {})[skill] ??= {}), files)
 }
 
 function addCounts<K extends string>(into: Record<string, Counts<K>>, from: Record<string, Counts<K>>) {

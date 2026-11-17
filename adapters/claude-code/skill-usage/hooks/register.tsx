@@ -12,13 +12,14 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface as Dollar, Register, SessionAppendInput } from 'claude-code'
 
-import type { AllTime, Available, SessionSummary, Tab, UsageEvent } from '../types'
+import type { AllTime, Available, DeclaredReferences, SessionSummary, Tab, UsageEvent } from '../types'
 import { addSession, allTimeOf, closeOpen, DATA_VERSION, historyEvents, isObservedRow, mergeSummaries, rowEvents, short, summarize } from './classify'
 import type { HistoryMessage } from './classify'
 import type { View } from './meaning'
 import { forgetPictures, PREVIEW_MS } from './picture'
 import { errorText } from './holds'
 import { newSalt, projectKey } from './project'
+import { declaredReferences, registryPlaces } from './registry'
 import { allTimeTab, PANE_COLUMNS, reportText, sessionTab, statusText, unusedTab } from './view'
 
 const PANE = 'skill-usage'
@@ -45,6 +46,7 @@ const owner = atom({ plugin: 'skill-usage', key: 'owner' } as const, null)
 const backfilled = atom({ plugin: 'skill-usage', key: 'backfilled' } as const, null, { shape: EVENTS_SHAPE })
 const baseline = atom({ plugin: 'skill-usage', key: 'baseline' } as const, null, { shape: 'summary-1' })
 const available = atom({ plugin: 'skill-usage', key: 'available' } as const, null, { shape: 'available-2' })
+const declared = atom({ plugin: 'skill-usage', key: 'declared' } as const, null, { shape: 'declared-1' })
 // `all-time-2`: Ticket 076 added totals by project and the earlier versions' holds.
 const allTime = atom({ plugin: 'skill-usage', key: 'allTime' } as const, null, { shape: 'all-time-2' })
 const project = atom({ plugin: 'skill-usage', key: 'project' } as const, null)
@@ -55,13 +57,14 @@ const preview = atom({ plugin: 'skill-usage', key: 'preview' } as const, null)
 
 type Stored = { t: number; summary: SessionSummary }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     await $.command.register({ name: 'skill-usage', description: 'Skill usage pane; `/skill-usage preview` plays every animation, `/skill-usage report` prints the all-time report' })
     try {
       await claimSession($)
       await knownSkills($, true)
+      await readRegistry($, String(options.registryPath ?? ''))
       await backfill($)
       showStatus($, await liveSummary($))
     } catch (error) {
@@ -107,7 +110,7 @@ export const register: Register = on => {
 
   on('command.run', { command: 'skill-usage' }, async ($, e) => {
     const arg = e.args.trim()
-    if (arg === 'report') return { text: reportText(addSession(await read($, allTime), await liveSummary($)), await read($, available)) }
+    if (arg === 'report') return { text: reportText(addSession(await read($, allTime), await liveSummary($)), await read($, available), await read($, declared)) }
     await $.ui.open({ id: PANE, title: 'Skill usage' })
     if (arg === 'preview') {
       // The picture shows the Session tab's map, so the preview switches to it.
@@ -135,7 +138,7 @@ export const register: Register = on => {
     const now = await $.clock.now()
     const body =
       current === 'session' ? sessionTab(v, live, session.timeline, rows, now, await read($, preview))
-      : current === 'all' ? allTimeTab(v, addSession(await read($, allTime), live), rows, { shown: await read($, allProject), ...(own ? { own } : {}), choose: key => update($, allProject, () => key) })
+      : current === 'all' ? allTimeTab(v, addSession(await read($, allTime), live), rows, { shown: await read($, allProject), ...(own ? { own } : {}), choose: key => update($, allProject, () => key) }, await read($, declared))
       : unusedTab(v, addSession(await read($, allTime), live), await read($, available))
 
     return (
@@ -178,6 +181,23 @@ async function knownSkills($: Dollar, refresh = false): Promise<string[]> {
   }
   await update($, available, () => list)
   return list.names
+}
+
+/**
+ * Reads the references the installed GOATED registry declares, once per session start, so a registry edited since
+ * shows in the next session: from the first of `registryPlaces` that holds a registry, `configured` (the mod's
+ * `registryPath` option) first. A place with no file, or with a file that is no registry, is passed over: a mod
+ * installed without GOATED finds none anywhere, and the pane then shows reads as it would without the registry. The
+ * home folder is `HOME`, else `USERPROFILE` as on Windows; with neither readable, the home place is not tried.
+ */
+async function readRegistry($: Dollar, configured: string) {
+  const variable = (value: Promise<string | undefined>) => value.catch(() => undefined)
+  const home = (await variable($.env.get('HOME'))) || (await variable($.env.get('USERPROFILE'))) || undefined
+  for (const place of registryPlaces({ configured, ...(home ? { home } : {}), pluginRoot: $.plugin.root })) {
+    const found = declaredReferences(await $.fs.read(place).catch(() => ''))
+    if (found) return void (await update($, declared, () => found))
+  }
+  await update($, declared, () => null)
 }
 
 /**
