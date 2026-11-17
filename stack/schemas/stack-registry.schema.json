@@ -260,6 +260,10 @@
           "type": "integer",
           "minimum": 1
         },
+        "new_file": {
+          "description": "An edit-of-file-kind signal also fires for an edit creating a file of the kind, whatever lines it adds.",
+          "type": "boolean"
+        },
         "path": {
           "type": "string",
           "pattern": "^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*/$"
@@ -310,7 +314,8 @@
               "enum": [
                 "kind",
                 "file_kind",
-                "min_added_lines"
+                "min_added_lines",
+                "new_file"
               ]
             }
           }

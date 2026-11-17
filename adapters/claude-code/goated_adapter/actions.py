@@ -418,6 +418,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     proof = _Proof(turn, overrides, namespaces, earlier=earlier)
     reviewed = lambda path: _review_intake_hold(path, proof, closeout)
     spawned = functools.cache(subagents) if subagents else dict
+    # The design and reference-reads gates may both read the registry for one write.
+    references = functools.cache(references) if references else None
     changes = lambda: _Changes(turn, spawned(), project)
     at_commit = lambda by_tool=False: closeout and check_closeout(
         turn, overrides, namespaces, subagents=spawned(), project=project,
@@ -480,7 +482,7 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
         if hold is None and _in_project(path, project):
             # A scratch file elsewhere is not the project's design or security.
             hold = (_security_hold(path, proof) or reviewed(path)
-                    or _design_hold(path, tool_input, proof, project)
+                    or _design_hold(path, tool_input, proof, project, references)
                     or _reference_reads_hold(path, tool_input, proof, project, references,
                                              changes))
         elif hold is None:
@@ -1036,16 +1038,18 @@ def _open_conflict(turn: Turn) -> tuple[bool, list[str]]:
     return git_open, marked_files
 
 
-def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | None) -> Hold | None:
+def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | None,
+                 references: Callable[[], tuple] | None) -> Hold | None:
     """Hold a project file write until its design is done (spec R5).
 
     The `design` gate holds a turn's first substantial non-test code edit until
     `software-design-principles` loads and every reference the edit's signals
     select is read. The `design-reads` gate holds any later edit the
     design-reads rules apply to, once the skill is loaded, until the
-    references it requires are read. `design_reads` says which those are. A
-    load or a read counts until the next compaction; a skip line or the
-    user's skip of the skill clears both gates.
+    references it requires are read. `design_reads` says which those are; a
+    test edit is judged by the registry's rule for test edits, from
+    `references` (`_test_edit`). A load or a read counts until the next
+    compaction; a skip line or the user's skip of the skill clears both gates.
     """
 
     code, test = is_code(path), is_test(path, project)
@@ -1058,11 +1062,14 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
     if not loaded and not substantial:
         return None
     earlier = _project_code_writes(proof.turn, project)
+    written_before = any(p == path for p, _ in earlier)
     required = design_reads.required(
         path, tool_input, is_code=code, is_test=test, small=_small_edit(tool_input),
-        written_before=any(p == path for p, _ in earlier),
+        written_before=written_before,
         other_code_files=len({p for p, _ in earlier if p != path and not is_test(p, project)}),
         cwd=project.cwd if project else None,
+        test_edit=_test_edit(path, tool_input, project, references, written_before=written_before)
+        if test else None,
     )
     unread = {name: why for name, why in required.items() if name not in proof.references_read}
     if loaded and not unread:
@@ -1094,6 +1101,24 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
     )
 
 
+def _test_edit(path: str, tool_input: dict, project: Project | None,
+               references: Callable[[], tuple] | None, *, written_before: bool) -> str | None:
+    """Why an edit of test file `path` designs a test, so the design gates ask
+    for `coding.md`, or None. The registry's rule for test edits decides
+    (`reference_reads.file_kind_signal`), as it decides `tdd`'s
+    `test-design.md` (spec R9). Without one, as with no registry, any edit
+    that is not small does, failing toward holding."""
+
+    signal = reference_reads.file_kind_signal(references() if references else (), "test")
+    if signal is None:
+        return None if _small_edit(tool_input) else "edits a test file"
+    cwd = project.cwd if project else None
+    return reference_reads.fires(signal, reference_reads.Edit(
+        is_code=True, is_test=True, added_code=design_reads.added_code(path, tool_input, cwd),
+        new_file=design_reads.creates_file(path, tool_input, written_before=written_before, cwd=cwd),
+    ))
+
+
 def _reference_reads_hold(path: str | None, tool_input: dict | None, proof: _Proof,
                           project: Project | None, references: Callable[[], tuple] | None,
                           changes: Callable[[], "_Changes"]) -> Hold | None:
@@ -1122,15 +1147,18 @@ def _reference_reads_hold(path: str | None, tool_input: dict | None, proof: _Pro
     if path is None:
         edit = reference_reads.Edit(is_code=False, is_test=False, added_code=[], gates=gates)
     else:
-        category = security_category(path)
+        category, cwd = security_category(path), project.cwd if project else None
         edit = reference_reads.Edit(
             is_code=is_code(path), is_test=is_test(path, project),
-            added_code=design_reads.added_code(path, tool_input, project.cwd if project else None)
+            added_code=design_reads.added_code(path, tool_input, cwd)
             if tool_input is not None else [],
             project_paths=tuple(_paths_in_project(path, project)),
             gates=gates,
             categories=frozenset({category, *(c for _, c in changes().sensitive)})
             if category else frozenset(),
+            new_file=tool_input is not None and design_reads.creates_file(
+                path, tool_input, cwd=cwd,
+                written_before=any(p == path for p, _ in _project_code_writes(proof.turn, project))),
         )
     unread = [(r, why) for r, why in reference_reads.selected(declared, edit)
               if r.path not in proof.skill_references_read]

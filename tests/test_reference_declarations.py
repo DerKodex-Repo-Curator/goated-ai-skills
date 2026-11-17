@@ -120,7 +120,8 @@ class CurrentRegistryTests(unittest.TestCase):
             ("tdd", "test-design.md"): {
                 "kind": "edit-of-file-kind",
                 "file_kind": "test",
-                "min_added_lines": 5,
+                "min_added_lines": 20,
+                "new_file": True,
             },
             ("diagnose", "root-cause-tracing.md"): {
                 "kind": "gate-fires",
@@ -277,6 +278,26 @@ class ReferenceDeclarationFailureTests(unittest.TestCase):
         )
         self.assertEqual(1, len(messages), messages)
         self.assertIn("'path' is a required property", messages[0])
+
+    def new_file_signal(self, new_file) -> dict:
+        return {"file": "new-ref.md", "signal": {
+            "kind": "edit-of-file-kind", "file_kind": "test",
+            "min_added_lines": 20, "new_file": new_file}}
+
+    def test_a_file_kind_signal_selecting_new_files_passes(self) -> None:
+        self.assertEqual([], run_with(add_linked_and_declare(self.new_file_signal(True))))
+
+    def test_a_new_file_value_that_is_not_a_boolean_fails(self) -> None:
+        for value in ("true", 1):
+            with self.subTest(value=value):
+                messages = run_with(add_linked_and_declare(self.new_file_signal(value)))
+                self.assertEqual(1, len(messages), messages)
+                self.assertIn("is not of type 'boolean'", messages[0])
+
+    def test_a_new_file_parameter_on_another_kind_fails(self) -> None:
+        messages = run_with(add_linked_and_declare({"file": "new-ref.md", "signal": {
+            "kind": "write-under-path", "path": "docs/specs/", "new_file": True}}))
+        self.assertEqual(1, len(messages), messages)
 
     def test_advisory_entry_without_a_reason_fails(self) -> None:
         for advisory in ("", "   ", None):

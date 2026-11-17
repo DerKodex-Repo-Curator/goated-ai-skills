@@ -484,7 +484,8 @@ skills:
         signal:
           kind: edit-of-file-kind
           file_kind: test
-          min_added_lines: 5
+          min_added_lines: 20
+          new_file: true
       - file: mocking-and-seams.md
         signal:
           kind: edit-adds-pattern

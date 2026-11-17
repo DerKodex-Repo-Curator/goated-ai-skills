@@ -115,6 +115,20 @@ class RegistryReaderTests(unittest.TestCase):
         messages = self.messages("skills:\n" + self.ENTRY.replace("min_added_lines: 5", "min_added_lines: -1"))
         self.assertEqual(len(messages), 1)
 
+    def test_a_new_file_signal_both_read_alike_passes(self) -> None:
+        # The reader reads `true` and `false` as booleans, as YAML does.
+        for value in ("true", "false"):
+            with self.subTest(value=value):
+                entry = self.ENTRY + f"          new_file: {value}\n"
+                self.assertEqual(self.messages("skills:\n" + entry), [])
+
+    def test_a_boolean_spelled_another_way_is_an_error(self) -> None:
+        # YAML reads `True` and `yes` as true too; the reader keeps them strings.
+        for value in ("True", "yes"):
+            with self.subTest(value=value):
+                entry = self.ENTRY + f"          new_file: {value}\n"
+                self.assertEqual(len(self.messages("skills:\n" + entry)), 1)
+
     def gate_entry(self, gate: str) -> str:
         return ("skills:\n  - name: diagnose\n    path: skills/engineering/diagnose/SKILL.md\n"
                 "    references:\n      - file: root-cause-tracing.md\n        signal:\n"

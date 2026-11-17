@@ -17,7 +17,7 @@ in its `references/` folder, and the files its `SKILL.md` links are one set.
 | Kind | Parameters | Required read when |
 | --- | --- | --- |
 | `edit-adds-pattern` | `pattern`, optional `file_kind` | an edit adds text matching a pattern named in the registry's `reference_patterns`, in a file of that kind if one is given |
-| `edit-of-file-kind` | `file_kind`, optional `min_added_lines` | an edit of a file of that kind adds at least that many lines |
+| `edit-of-file-kind` | `file_kind`, optional `min_added_lines` and `new_file` | an edit of a file of that kind adds at least that many lines, or, with `new_file: true`, creates the file |
 | `write-under-path` | `path`, ending in `/` | a write under that project-relative folder |
 | `gate-fires` | `gate`: one of the adapter gate names the schema lists, and one the Claude Code adapter observes, which today is `repeated-failure` only | another gate of the adapter fires, such as `repeated-failure` |
 | `sensitive-category-count` | `min_categories` | the turn's security-sensitive changes span at least that many categories |

@@ -53,7 +53,9 @@ references each moment names for the reasoning.
    when the work changes. A small edit, one writing fewer than five lines,
    meets a condition only through its code, such as a new module or public
    interface, error handling, or concurrency; being a test, a setting, a
-   comment, or one more file of a change does not.
+   comment, or one more file of a change does not. A test edit calls for
+   `coding.md` only when it creates the test file or adds twenty or more
+   lines, a changed line counting as added.
 3. Apply the rules for the current moment. Scale the effort to the change: a
    one-line fix needs a glance at the rules, not a design exercise.
 4. Before reporting the work as done, read [Red Flags](references/red-flags.md)
