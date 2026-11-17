@@ -339,6 +339,14 @@ test('closeout items that ask for a read of the change offer their skills only a
   expect(passed.nudges).toEqual({ closeout: { followed: 3 } })
 })
 
+test('the closeout design citations item offers its skill only as a skip line, and a passed Stop meets it', async () => {
+  // A citation answers the item, not a load, so the skill is named only in its skip line.
+  const named = ['software-design-principles']
+  expect(stopHold(1, ADAPTER_TEXTS.closeoutCitation)).toEqual([{ kind: 'nudge', t: 1, hook: 'closeout', named, holdKind: 'justified-skip', isStop: true, skipOnly: named }])
+  const passed = summarize([prompt(), response(1), ...stopHold(2, ADAPTER_TEXTS.closeoutCitation), results(2), response(3), turnEnd(4)])
+  expect(passed.nudges).toEqual({ closeout: { followed: 1 } })
+})
+
 test('a turn that ends after nine blocked Stops in a row hit the Claude Code limit: what was still asked counts as not followed', async () => {
   const blocks = Array.from({ length: 9 }, (_, i) => [...stopHold(2 + 2 * i), results(2 + 2 * i), response(3 + 2 * i)]).flat()
   const s = summarize([prompt(), response(1), ...blocks, turnEnd(30)])

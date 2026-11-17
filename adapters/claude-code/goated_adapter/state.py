@@ -39,7 +39,7 @@ class SessionState:
 
     __slots__ = (
         "router_loaded", "last_turn", "task", "task_unknown", "overrides", "policy_notice_shown",
-        "reference_reads",
+        "reference_reads", "design_edits",
     )
 
     def __init__(self) -> None:
@@ -54,6 +54,22 @@ class SessionState:
         self.policy_notice_shown = False
         # The design references (`errors.md`) read since the last compaction.
         self.reference_reads: list[str] = []
+        # The design references each edit of one turn required when the
+        # design gates judged it: {"turn": <turn key>, "edits": {<tool_use_id>: [<file>]}}.
+        self.design_edits: dict = {}
+
+    def record_design_edit(self, turn: str, tool_use_id: str, references: list[str]) -> None:
+        """Keep what an edit the design gates let through required, for the
+        turn's closeout; an earlier turn's edits are dropped."""
+
+        if self.design_edits.get("turn") != turn:
+            self.design_edits = {"turn": turn, "edits": {}}
+        self.design_edits["edits"][tool_use_id] = list(references)
+
+    def design_edits_of(self, turn: str) -> dict[str, list[str]]:
+        """What `record_design_edit` kept for `turn`'s edits, by tool_use_id."""
+
+        return dict(self.design_edits["edits"]) if self.design_edits.get("turn") == turn else {}
 
     def to_json(self) -> dict:
         return {
@@ -64,6 +80,7 @@ class SessionState:
             "overrides": self.overrides,
             "policy_notice_shown": self.policy_notice_shown,
             "reference_reads": self.reference_reads,
+            "design_edits": self.design_edits,
         }
 
     @classmethod
@@ -78,6 +95,13 @@ class SessionState:
         state.last_turn = _expect(data.get("last_turn"), (str, type(None)))
         state.task_unknown = _expect(data.get("task_unknown", False), bool)
         state.reference_reads = _string_list(data.get("reference_reads", []))
+        design_edits = _expect(data.get("design_edits", {}), dict)
+        if design_edits:
+            edits = _expect(design_edits.get("edits"), dict)
+            state.design_edits = {
+                "turn": _expect(design_edits.get("turn"), str),
+                "edits": {_expect(k, str): _string_list(v) for k, v in edits.items()},
+            }
         task = _expect(data.get("task"), (dict, type(None)))
         if task is not None:
             state.task = Task(

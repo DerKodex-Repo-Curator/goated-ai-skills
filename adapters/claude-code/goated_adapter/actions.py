@@ -9,17 +9,18 @@ with `handoff`'s spawn brief or `subagent-driven-development`, design with
 `code-security-review`, resolve a merge conflict with
 `resolving-merge-conflicts`, investigate a check that keeps failing with
 `diagnose`, close a code-changing turn with proof, `doc-sync`, `handoff`,
-and the design red flags, and close a turn that changed setup with
-`setup-scribe`.
+the design red flags, and citations of the design references it required,
+and close a turn that changed setup with `setup-scribe`.
 
 Every decision is a pure function of the current turn as the transcript
 records it, plus the user's typed overrides for that turn. So an unchanged
 retry always gets the same answer (spec R6), and a hold stops firing as soon
 as the turn shows compliance. Proof counts only within the current turn
 (spec R7): a skill loaded in an earlier turn does not cover a later action.
-The one input from outside the transcript is a pull request's size, which
+The inputs from outside the transcript include a pull request's size, which
 the `pr-review` gate asks git for, and only when its hold would otherwise
-fire.
+fire, and the design skill's section ids, which the closeout reads from the
+installed skill only when it checks citations.
 
 Strict holds clear only on proof or a user override. Justified-skip holds also
 clear on a `goated-skip: <skill>: <reason>` line in the current turn.
@@ -188,12 +189,15 @@ SETUP_FILE_RE = re.compile(
 
 
 class _Proof:
-    """What the current turn shows: loads, skip lines, reads, and user skips."""
+    """What the current turn shows: loads, skip lines, reads, and user skips.
+    `extra_text` is reply text the transcript may not hold yet, such as the
+    reply a Stop is finishing."""
 
     def __init__(self, turn: Turn, overrides: dict, namespaces: tuple[str, ...],
                  extra_text: str = "") -> None:
         self.turn = turn
         self.namespaces = namespaces
+        self.extra_text = extra_text
         self.loads = {goated_skill_name(raw, namespaces) for raw in turn.loads} - {None}
         self.skips = {skip["skill"] for skip in turn.skips}
         if extra_text:
@@ -638,12 +642,7 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
         return None
     earlier = _project_code_writes(proof.turn, project)
     declared = declared_files(proof.turn.design_reads)
-    required = design_reads.required(
-        path, tool_input, is_code=code, is_test=test,
-        written_before=any(p == path for p, _ in earlier),
-        other_code_files=len({p for p, _ in earlier if p != path and not TEST_PATH_RE.search(p)}),
-        declared=declared, cwd=project.cwd if project else None,
-    )
+    required = _edit_required(path, tool_input, proof, project, earlier)
     read = references_read | set(design_reads.reads_in(proof.turn.calls))
     unread = {name: why for name, why in required.items() if name not in read}
     needs_line = substantial and not proof.turn.design_reads
@@ -683,6 +682,39 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
         f"{misnamed} If the edit is mechanical, with no design in it, write "
         f"`goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. This edit was not "
         "applied. " + unseen_line_advice("design-reads or skip line", f"skip {DESIGN_SKILL}"),
+    )
+
+
+def design_references(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
+                      namespaces: tuple[str, ...] = (),
+                      project: Project | None = None) -> list[str]:
+    """The design references an edit requires, as the design gates judge it,
+    for the closeout's citation item: [] unless `software-design-principles`
+    is loaded and not skipped and the design-reads rules apply to the edited
+    project file. Call it for a call `check_action` let through."""
+
+    if tool_name not in FILE_WRITE_TOOLS:
+        return []
+    proof = _Proof(turn, overrides, namespaces)
+    path = _norm(str(tool_input.get(FILE_WRITE_TOOLS[tool_name]) or ""))
+    applies = design_reads.applies(path, is_code=is_code(path), is_test=bool(TEST_PATH_RE.search(path)))
+    judged = applies and _in_project(path, project) and proof.loaded(DESIGN_SKILL)
+    if not judged or proof.skipped(DESIGN_SKILL):
+        return []
+    earlier = _project_code_writes(turn, project)
+    return list(_edit_required(path, tool_input, proof, project, earlier))
+
+
+def _edit_required(path: str, tool_input: dict, proof: _Proof, project: Project | None,
+                   earlier: list[tuple[str, int]]) -> dict[str, str]:
+    """The references an edit of `path` requires, each with why (see
+    `design_reads.required`); `earlier` is `_project_code_writes` of the turn."""
+
+    return design_reads.required(
+        path, tool_input, is_code=is_code(path), is_test=bool(TEST_PATH_RE.search(path)),
+        written_before=any(p == path for p, _ in earlier),
+        other_code_files=len({p for p, _ in earlier if p != path and not TEST_PATH_RE.search(p)}),
+        declared=declared_files(proof.turn.design_reads), cwd=project.cwd if project else None,
     )
 
 
@@ -766,7 +798,9 @@ def _check_key(command: str) -> tuple[str, bool]:
 
 def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = (),
                    final_text: str = "", subagents: dict | None = None,
-                   project: Project | None = None) -> Hold | None:
+                   project: Project | None = None,
+                   edit_references: dict[str, list[str]] | None = None,
+                   design_ids: Callable[[], dict[str, tuple[str, ...]]] | None = None) -> Hold | None:
     """Return the closeout hold for a turn about to end, if any.
 
     A turn that changed code needs, after its last code change, a check
@@ -774,7 +808,8 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     also needs `doc-sync` when non-test code changed, `handoff` when the
     last check after the change failed (work left unfinished), and a read
     of the design red flags after the change when
-    `software-design-principles` was loaded. A turn that loaded
+    `software-design-principles` was loaded, with a citation of a section of
+    each design reference the turn's edits required. A turn that loaded
     `code-security-review` and changed a security-sensitive file, code or
     not, needs a security review. The doc-sync, design, and security items
     each also need a change read after their load or red-flags read. A turn
@@ -787,11 +822,18 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     turns. Their code changes count as made at the spawn; a subagent that ran
     a check after its own last change has already proved them. Only files
     inside `project` count (see `find_project`); a scratch file elsewhere does not.
+    `edit_references` maps the tool_use_id of each edit the design gates
+    judged in this turn to the references it required (`design_references`);
+    the finished ones among them are the turn's required set. A subagent's
+    edits are not in it, so they need no citation. `design_ids` returns each
+    reference's section ids from the installed skill
+    (`design_reads.section_ids`); it is called only when citations are
+    checked, and a reference it leaves out needs none.
     """
 
     changes = _Changes(turn, subagents or {}, project)
     proof = _Proof(turn, overrides, namespaces, final_text)
-    items = _code_items(changes, proof) if changes.code else []
+    items = _code_items(changes, proof, edit_references or {}, design_ids) if changes.code else []
     sensitive = changes.sensitive
     if sensitive and SECURITY_SKILL in proof.loads and not proof.skipped(SECURITY_SKILL):
         last_sensitive = sensitive[-1][0]
@@ -819,9 +861,11 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     )
 
 
-def _code_items(changes: "_Changes", proof: _Proof) -> list[str]:
+def _code_items(changes: "_Changes", proof: _Proof, edit_references: dict[str, list[str]],
+                design_ids: Callable[[], dict[str, tuple[str, ...]]] | None) -> list[str]:
     """The closeout items a code change needs: proof, a handoff for a failed
-    check, doc-sync, and the design red flags, each with what is missing."""
+    check, doc-sync, the design red flags, and the design citations, each with
+    what is missing."""
 
     code = changes.code
     last = code[-1].index
@@ -873,7 +917,36 @@ def _code_items(changes: "_Changes", proof: _Proof) -> list[str]:
                 f"against them, not your memory of it: {CHANGE_READ}. Or write "
                 f"`goated-skip: {DESIGN_SKILL}: <reason>`."
             )
+        uncited = _uncited_references(proof, edit_references, design_ids)
+        if uncited:
+            items.append(
+                "- Design: in your report, cite a section of each design reference this turn "
+                "required, as file#id, with how it shaped the change or why it did not apply; "
+                "the Section Index in the skill's SKILL.md lists each file's ids. Not yet "
+                f"cited: {', '.join(uncited)}. Or write `goated-skip: {DESIGN_SKILL}: <reason>`."
+            )
     return items
+
+
+def _uncited_references(proof: _Proof, edit_references: dict[str, list[str]],
+                        design_ids: Callable[[], dict[str, tuple[str, ...]]] | None) -> list[str]:
+    """The references the turn's finished design edits required that its
+    text, the reply being finished included, cites no section of, in the
+    skill's order."""
+
+    required = {
+        name for call in proof.turn.calls if call.ok
+        for name in edit_references.get(call.tool_id, ())
+    }
+    if not required or design_ids is None:
+        return []
+    ids = design_ids()
+    cited = design_reads.citations([*proof.turn.texts, proof.extra_text])
+    return [
+        name for name in design_reads.REFERENCES
+        if name in required and name in ids
+        and not any(f"{name}#{section}" in cited for section in ids[name])
+    ]
 
 
 def _setup_item(turn: Turn, subagents: dict, proof: _Proof) -> str:

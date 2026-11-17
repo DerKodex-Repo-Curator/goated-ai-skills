@@ -58,21 +58,44 @@ def installed_skill_names(cwd: Path, home: Path) -> frozenset[str]:
     folder inside `~/.claude/plugins/`.
     """
 
+    return frozenset(folder.name for folder in _skill_folders(cwd, home))
+
+
+def skill_folder(cwd: Path, home: Path, skill: str) -> Path | None:
+    """The folder of `skill` as Claude Code finds it (see
+    `installed_skill_names`), a user skill first, or None when not installed."""
+
+    return next((folder for folder in _skill_folders(cwd, home) if folder.name == skill), None)
+
+
+def _skill_folders(cwd: Path, home: Path):
+    """Each skill folder Claude Code can find: user skills, then project
+    skills from `cwd` up, then plugin skills, the newest cached plugin
+    version first (`1.10.0` before `1.9.0`). An unreadable folder hides only
+    its own skills."""
+
     user_dir = home / ".claude"
     roots = [user_dir / "skills", *(d / ".claude" / "skills" for d in _project_dirs(cwd, home))]
-    names = set()
-    try:
-        for root in roots:
-            if root.is_dir():
-                names.update(p.parent.name for p in root.glob("*/SKILL.md"))
-        plugins = user_dir / "plugins"
-        if plugins.is_dir():
-            for depth in PLUGIN_SKILL_DEPTHS:
-                pattern = "/".join(["*"] * depth + ["skills", "*", "SKILL.md"])
-                names.update(p.parent.name for p in plugins.glob(pattern))
-    except OSError:
-        pass  # An unreadable folder hides only its own skills.
-    return frozenset(names)
+    patterns = [(root, "*/SKILL.md", False) for root in roots] + [
+        (user_dir / "plugins", "/".join(["*"] * depth + ["skills", "*", "SKILL.md"]), True)
+        for depth in PLUGIN_SKILL_DEPTHS
+    ]
+    for root, pattern, newest_first in patterns:
+        try:
+            found = list(root.glob(pattern)) if root.is_dir() else []
+        except OSError:
+            continue
+        found.sort(key=_version_order, reverse=newest_first)
+        yield from (path.parent for path in found)
+
+
+def _version_order(path: Path) -> list[tuple[int, int | str]]:
+    """A sort key that orders each run of digits in `path` as a number."""
+
+    return [
+        (0, int(part)) if part.isdigit() else (1, part)
+        for part in re.split(r"(\d+)", path.as_posix()) if part
+    ]
 
 
 def _instruction_files(cwd: Path, home: Path):

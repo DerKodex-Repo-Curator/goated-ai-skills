@@ -167,6 +167,7 @@ check after its own last change, that change is already proved.
 | Unfinished work | The last check after the change failed | `handoff` loads | `handoff` |
 | Docs | A code file outside the tests changed | `doc-sync` loads, then a [change read](#change-reads) after the load and the last code change | `doc-sync` |
 | Design red flags | `software-design-principles` loaded in the turn | `software-design-principles/references/red-flags.md` is read after the last change, then a [change read](#change-reads) after that read | `software-design-principles` |
+| Design citations | `software-design-principles` loaded in the turn, and the turn's edits required a [design reference](#design-references) | The turn's reply text, the reply being finished included, cites a section of each required reference as `file#id`, such as `errors.md#crash-early` (see [Design references](#design-references)) | `software-design-principles` |
 | Security | `code-security-review` loaded in the turn and a security-sensitive file (the `security` gate's paths, code or not) changed | A [change read](#change-reads) after the load and the last sensitive change | `code-security-review` |
 | Setup | The turn installed or added a dependency or tool by a command that names a package, or wrote an env or settings file (see below) | `setup-scribe` loads in the turn, before or after the change | `setup-scribe` |
 
@@ -359,6 +360,32 @@ The first substantial code edit of a turn meets `design`, which asks for what
 is missing: the load, the line, and the reads. A later edit meets
 `design-reads`, which asks only for reads. A small edit before the skill
 loads is not held, as before.
+
+At closeout, the Design citations item asks for a citation of each reference
+the turn required, whether read in this turn or an earlier one: the turn's
+reply text cites at least one section id of each, with how it shaped the
+change or why it did not apply, as the skill's citation convention asks.
+The turn's required set is what the `design` and `design-reads` gates
+required of its edits: when the skill is loaded and a gate lets an edit of a
+project file through, the adapter records that edit's required references in
+its [state](#state), by the call's `tool_use_id`, and the closeout unions
+those of the turn's edits that finished. An edit made before the skill
+loaded, an edit a hold or the user stopped, and an edit whose hook input
+names no `tool_use_id` add nothing.
+
+A citation is `<file>#<id>`, bare, backticked, or after a path
+(`references/errors.md#crash-early`), anywhere in the turn's reply text,
+inside a quote or a code block too. Its id must be a section id that file
+declares in an `<!-- id: #name -->` comment in the installed skill's
+`references/`, so an id of another reference, or a bare `#crash-early`, does
+not count. An id whose `##` heading groups `###` sections, such as
+`#errors`, names a part of the file, not a section, so it does not count
+either; the remaining ids are the ones the skill's Section Index lists, which
+a test checks. The ids come from those files, not from a copy in the adapter:
+a user skill is looked for first, then project skills, then plugin skills,
+the newest cached version first. The item names each uncited reference and
+points to the Section Index for its ids. Whether a citation says anything
+useful is not judged.
 
 ### Shell writes
 
@@ -679,11 +706,14 @@ One small JSON file per session in a `goated-claude-code-adapter/` folder:
 
 It holds the current task's route and loads, whether missing or reset state
 lost the task, whether the router loaded, which design references were read
-since the last compaction, the last turn seen, and the latest typed overrides. It holds no prompt or reply
+since the last compaction, which references each edit of the latest turn
+required when the design gates judged it, the last turn seen, and the latest
+typed overrides. It holds no prompt or reply
 text beyond the short override phrases and a commit message the user typed.
 The action and closeout gates keep no state of their own: they read the
-current turn, and the design gates also the design references read since the
-last compaction. Files are not pruned automatically;
+current turn, the design gates also the design references read since the
+last compaction, and the closeout's citation item the references recorded
+for the turn's edits. Files are not pruned automatically;
 deleting the folder between sessions is safe.
 
 ## Latency
@@ -819,6 +849,13 @@ of the call's prompt, which is normally already there.
   path alone. The conflict-resolution gate reads git's English messages
   (`Automatic merge failed`, `could not apply`, `could not revert`), so a git
   set to another language is not seen.
+- The Design citations item fails open: with no installed
+  `software-design-principles` found, it asks for nothing, and a reference
+  whose file cannot be read, or that declares no section, needs no citation.
+  There is no closeout inside a subagent, and the parent does not record a
+  subagent's edits, so a subagent's design edits need no citation. A citation
+  in a call's description does not count, and one in a reply that also makes
+  a tool call can be lost the way a route line is.
 - The adapter guards against agents skipping skills, not against an agent
   working to defeat it. An agent with shell access could edit the transcript,
   the state file, or the settings that install the hooks. Defending against

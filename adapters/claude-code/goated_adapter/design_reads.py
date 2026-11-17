@@ -11,12 +11,17 @@ Signals are word and shape matches on the code an edit adds, so they lean
 toward selecting; a reference read counts until the next compaction, which
 bounds the cost. What is code and what is a test file are the action gates'
 rules (`actions.is_code`, `actions.TEST_PATH_RE`); callers pass their answers.
+
+It also owns what the closeout's citation item reads (spec R6): each
+reference's section ids, from the installed skill's own files, and the
+citations a text makes.
 """
 
 from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 
 SKILL_REFERENCES = "software-design-principles/references/"
 # The references a design-reads line can require, in the skill's order.
@@ -58,6 +63,11 @@ CONCURRENCY_RE = re.compile(
 CONFIG_PATH_RE = re.compile(
     r"\.(?:ya?ml|toml|json|env)$|(?:^|/)\.env(?:\.[^/]*)?$|(?:^|/)settings\.[^/]+$", re.IGNORECASE
 )
+# A section id, declared on its own line in a reference file before its heading.
+SECTION_ID_RE = re.compile(r"^<!-- id: #([a-z0-9]+(?:-[a-z0-9]+)*) -->[ \t]*$", re.MULTILINE)
+HEADING_RE = re.compile(r"^(#{2,3}) ", re.MULTILINE)
+# A citation, `errors.md#crash-early`, bare or after a path such as `references/`.
+CITATION_RE = re.compile(r"(?<![\w.-])([a-z0-9]+(?:-[a-z0-9]+)*\.md)#([a-z0-9]+(?:-[a-z0-9]+)*)")
 # Lock files are written by tools, not designed.
 LOCK_FILE_RE = re.compile(r"(?:^|/)(?:[^/]*[-.]lock\.(?:json|ya?ml|toml)|npm-shrinkwrap\.json)$",
                           re.IGNORECASE)
@@ -95,6 +105,39 @@ def required(path: str, tool_input: dict, *, is_code: bool, is_test: bool,
     return {name: found[name] for name in REFERENCES if name in found}
 
 
+def section_ids(skill_folder: Path | None) -> dict[str, tuple[str, ...]]:
+    """Each design reference's section ids, in file order, from the
+    `<!-- id: #name -->` comments in `skill_folder`'s reference files.
+
+    An id whose `##` heading groups `###` sections, such as `#errors`, names
+    a part of the file, not a section, so it is left out, as the skill's
+    Section Index leaves it out. A reference whose file cannot be read, or
+    that declares no section, is left out, so its citation is not required.
+    """
+
+    ids: dict[str, tuple[str, ...]] = {}
+    if skill_folder is None:
+        return ids
+    for name in REFERENCES:
+        try:
+            text = (skill_folder / "references" / name).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        found = tuple(
+            match.group(1) for match in SECTION_ID_RE.finditer(text)
+            if not _groups_sections(text, match.end())
+        )
+        if found:
+            ids[name] = found
+    return ids
+
+
+def citations(texts: list[str]) -> set[str]:
+    """The sections `texts` cite, each as `file#id`, such as `errors.md#crash-early`."""
+
+    return {f"{name}#{section}" for text in texts for name, section in CITATION_RE.findall(text)}
+
+
 def unknown(declared: list[str]) -> list[str]:
     """The files a design-reads line names that are not design references."""
 
@@ -121,6 +164,16 @@ def reads_in(calls) -> list[str]:
         if call.name == "Read" and call.ok
         and (name := reference_read(str(call.input.get("file_path") or ""))) is not None
     ]
+
+
+def _groups_sections(text: str, at: int) -> bool:
+    """Whether the first heading after `at` is a `##` with a `###` under it."""
+
+    heading = HEADING_RE.search(text, at)
+    if heading is None or heading.group(1) != "##":
+        return False
+    following = HEADING_RE.search(text, heading.end())
+    return following is not None and following.group(1) == "###"
 
 
 class _Added:
