@@ -91,10 +91,24 @@ adapter for another harness has nothing to build on or be checked against.
 - `tickets/072-orientation-and-plans-in-routes.md`
 - `tickets/073-notices-for-retrospective-and-onboarding.md`
 - `tickets/077-undocumented-override-phrases.md`
+- `tickets/086-adapter-repeated-failure-red-runs.md`
+- `tickets/087-adapter-routing-orientation-by-reads-and-outside-writes.md`
+- `tickets/088-adapter-wider-plain-reads.md`
+- `tickets/089-adapter-design-holds-without-written-text.md`
+- `tickets/090-adapter-test-edit-reference-thresholds.md`
+- `tickets/091-adapter-review-size-and-installs.md`
+- `tickets/092-adapter-whole-reads-and-read-order.md`
+- `tickets/093-adapter-inline-script-writes.md`
+- `tickets/094-adapter-own-subagent-reports-continue-the-turn.md`
+- `tickets/095-adapter-joint-holds-in-one-message.md`
+- `tickets/096-adapter-early-closeout-note.md`
 
 These settle the rules the contract states and change the README it is
 drawn from. Ticket 077 may change the override parsing that Tickets 080
-and 081 then refactor and move.
+and 081 then refactor and move. Tickets 086 to 096 are hook-friction
+round 3 (`tickets/hook-friction-round-3-waves.md`): they change gates and
+hold delivery, so the contract is written after them. Ticket 095 makes
+one decision carry several holds, which the event model must allow.
 
 ## Scope Exclusions
 

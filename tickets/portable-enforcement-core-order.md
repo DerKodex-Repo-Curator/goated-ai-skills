@@ -6,7 +6,7 @@ Parallel waves across all five order files:
 [hook-friction-round-2-waves.md](hook-friction-round-2-waves.md)
 
 1. `tickets/079-enforcement-contract-and-event-model.md`
-   - Blocked by: 065, 068, 069, 070, 072, 073 and 077
+   - Blocked by: 065, 068, 069, 070, 072, 073, 077, and 086 to 096
    - Enables: a harness-neutral statement of the rules, and scenarios any
      adapter can be checked against.
 2. `tickets/080-adapter-rules-read-the-event-model.md`
@@ -42,14 +42,21 @@ contract states and change the files the extraction moves. Tickets 077 and
 078 are in `tickets/skill-usage-data-detail-order.md`; 077 may change the
 override parsing the extraction then moves.
 
+Ticket 079 also waits for Tickets 086 to 096, hook-friction round 3, in
+`tickets/adapter-low-signal-holds-order.md` and
+`tickets/adapter-hold-delivery-and-coverage-order.md`. They change gates
+and how holds are delivered, so the contract is written once, after them.
+The waves from here on are in
+[hook-friction-round-3-waves.md](hook-friction-round-3-waves.md).
+
 Ticket 085 follows 084 so the second real adapter can reuse what the
 first learned; they could run in parallel if the maintainer prefers, at
 the cost of some duplicated translation code.
 
 ## Ready Frontier
 
-None yet. Ticket 079 becomes ready when 065, 068, 069, 070, 072, 073 and
-077 are complete.
+None yet. Ticket 079 becomes ready when 065, 068, 069, 070, 072, 073,
+077, and 086 to 096 are complete.
 
 ## Coverage
 

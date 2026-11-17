@@ -44,8 +44,7 @@ The maintainer decided these on 2026-11-17, when round 3 was planned:
   contract and conformance scenarios from the adapter's rules, and 080
   and 081 then move the rule code. Round 3 changes those rules and that
   code, so it lands first and the contract is written once. Ticket 079's
-  own "Blocked By" list was left as written; this table adds the wait for
-  086 to 096. Whoever starts 079 checks this table first.
+  "Blocked By" list and its order file name 086 to 096.
 - **Tickets 079 to 085 keep their scope.** Two round 3 results reach
   them: the event model's decision must carry several holds (Ticket 095),
   and the contract gains the `scripted-edit` gate (Ticket 093) and loses
