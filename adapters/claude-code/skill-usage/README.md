@@ -282,6 +282,10 @@ This has not been tested end to end. Keep a backup of both files.
 - A writing turn runs from one typed prompt to the next. A message from
   another session that starts a new turn for the adapter joins the running
   turn here, and so does a background result, as it does for the adapter.
+- A `start_session` call that only shows a card (an `offer` or
+  `own_initiative` with no `proposal_id`) still counts as a write here,
+  though the adapter no longer holds it like one: a turn whose only write is
+  such a card counts as a writing turn.
 - A hold still waiting when the session ends counts as not followed. That
   includes a session you resume later: the turn it waited in is over.
 - A mod reloaded mid-session, such as by a plugin update, keeps the
