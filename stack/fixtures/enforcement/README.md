@@ -36,8 +36,13 @@ The repo proves every scenario against the Claude Code adapter through
 `tests/claude_code_scenarios.py`, which translates each step into that
 adapter's hook input and its output back into a decision. It raises on a
 step it cannot run faithfully, such as a line on a call Claude Code gives
-no field for, rather than dropping part of it. An adapter for another
-harness runs the same files through its own translation.
+no field for, rather than dropping part of it. It also proves them against
+the shared core (`adapters/core/`) through both its ways in, the Python call
+and the JSON command, with `tests/core_scenarios.py`, which acts as a
+minimal adapter: it sends one request per judged step and records a held
+call as held. The two ways in must give the same decision at every step.
+An adapter for another harness runs the same files through its own
+translation.
 
 | File | Gates |
 | --- | --- |

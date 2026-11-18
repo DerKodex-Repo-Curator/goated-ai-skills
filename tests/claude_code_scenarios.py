@@ -1,12 +1,12 @@
-"""Run a conformance scenario against today's Claude Code adapter (Ticket 079).
+"""Run a conformance scenario against the Claude Code adapter (Ticket 079).
 
 A scenario (`stack/fixtures/enforcement/`) is written in the event model's
 terms and names no harness. This module is the bridge: it maps each step to
 what Claude Code records and the hook it runs, using the synthetic sessions of
 `claude_code_adapter_support`, and maps each hook's output back to a decision.
 It also builds the event-model request each judged step stands for, so the
-caller can check the scenario against the schema. Tickets 080 and 081 replace
-this bridge with the core itself.
+caller can check the scenario against the schema. `core_scenarios` runs the
+same scenarios against the shared core directly (Ticket 081).
 """
 
 from __future__ import annotations

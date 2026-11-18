@@ -19,15 +19,22 @@ Skills work the same without it. Install it only if you want enforcement.
 - Claude Code with command hooks. The snippet uses the exec form (`command`
   plus `args`); see [Shell-form alternative](#shell-form-alternative) if your
   version lacks it.
-- Python 3.11 or later on `PATH`. CI tests 3.11 and 3.14. The adapter uses
-  only the standard library, so it needs no packages.
+- Python 3.11 or later on `PATH`. CI tests 3.11 and 3.14. The adapter and
+  the shared core use only the standard library, so they need no packages.
 
 ## Install
 
-1. Copy this `claude-code/` folder to a stable place, for example next to your
-   installed GOATED distribution as `<goated-root>/adapters/claude-code/`.
-   Copy the whole folder: `goated_hook.py` imports the `goated_adapter/`
-   package beside it. The [`reference-reads`](#registry-references) gate
+1. Copy this `claude-code/` folder and the shared core's `core/` folder
+   beside it to a stable place, for example inside your installed GOATED
+   distribution as `<goated-root>/adapters/claude-code/` and
+   `<goated-root>/adapters/core/`. Copy the whole folders: `goated_hook.py`
+   imports the `goated_adapter/` package beside it, which calls the rules in
+   the [shared core](../README.md#the-shared-core), `../core/goated_core/`.
+   An adapter installed inside a GOATED distribution has both already, so an
+   install made before the core existed keeps working once its distribution
+   is updated, with no change to its settings. Without the core, every hook
+   lets its action through with a warning that names the missing package.
+   The [`reference-reads`](#registry-references) gate
    reads the installed registry two folders up,
    `<goated-root>/stack/goated-stack.yaml`; if the adapter lives elsewhere,
    set `GOATED_ADAPTER_REGISTRY` to the registry's path. A missing registry
@@ -81,7 +88,8 @@ with every other hook you have.
 ## Remove
 
 1. Remove the five adapter entries from the settings file.
-2. Delete the copied `claude-code/` folder.
+2. Delete the copied `claude-code/` folder, and the `core/` folder if no
+   other adapter uses it.
 3. Delete the state folder `goated-claude-code-adapter/` (see [State](#state)).
 
 Skills keep working unchanged.
@@ -93,16 +101,20 @@ rule this adapter enforces in harness-neutral words: each gate, its kind
 (`strict` or `justified-skip`), what it holds and what clears it, the
 closeout items, the hold message format, the overrides, and the fail-open
 rules. This section says how those rules meet Claude Code's tools and
-transcript, and keeps the detection detail the contract cites. The routing
-rules live in [`goated_adapter/gates.py`](goated_adapter/gates.py) and the
-action and closeout rules in
-[`goated_adapter/actions.py`](goated_adapter/actions.py). A skip line's
-reason stays in the transcript, where the skill-usage mod reads it.
+transcript. The rules live in the [shared core](../README.md#the-shared-core)
+(Ticket 081): the routing rules in
+[`goated_core/gates.py`](../core/goated_core/gates.py), the action and
+closeout rules in [`goated_core/actions.py`](../core/goated_core/actions.py),
+and the session state in [`goated_core/state.py`](../core/goated_core/state.py).
+A skip line's reason stays in the transcript, where the skill-usage mod
+reads it.
 
-The rule modules know nothing of Claude Code (Ticket 080): they read the
+The core knows nothing of Claude Code: it reads the
 [event model](../../stack/schemas/enforcement-event-model.schema.json), as
-[`goated_adapter/events.py`](goated_adapter/events.py) holds it, and judge
-calls by kind. Three modules translate. The transcript reader
+[`goated_core/events.py`](../core/goated_core/events.py) holds it, and
+judges calls by kind. This adapter calls it through `goated_core.judge`, one
+function per hook event, and turns the decision back into hook output.
+Three modules translate. The transcript reader
 ([`goated_adapter/transcript.py`](goated_adapter/transcript.py)) builds the
 model's turns from the transcript and removes the reminder and pasted blocks
 from a typed prompt before overrides are read.
@@ -112,20 +124,21 @@ commits, or pull requests; the line field of each; which spawns are read-only,
 start a side session, or only show a card; which edits make a missing file;
 and each call's action key for the friction count) and fills the slots the
 rules leave in hold text
-([`goated_adapter/wording.py`](goated_adapter/wording.py)) with Claude Code's
+([`goated_core/wording.py`](../core/goated_core/wording.py)) with Claude Code's
 words: the Skill and Read tools, the line advice, and the carrier sentence.
 A slot is marked by two private-use characters, so text a hold quotes, such
-as a malformed route line, is never filled.
+as a malformed route line, is never filled. It also upgrades session state
+an earlier adapter saved in Claude Code's words (an override record keyed by
+`prompt_id`, a shell saved as `Bash` or `PowerShell`) as the core loads it.
 The hook entry point ([`goated_adapter/hooks.py`](goated_adapter/hooks.py))
 passes Claude Code's own folders as the agent's folders, where no write is
-scratch. Three other modules stay with the adapter: `policy.py` and
+scratch, and its prompt id as the key the core matches a prompt's overrides
+by. Two other modules stay with the adapter: `policy.py` and
 `onboarding.py` write the session-start notices, which are about where
-Claude Code keeps instruction files and skills, and
-[`goated_adapter/state.py`](goated_adapter/state.py), the saved session
-state, still binds its override record to Claude Code's `prompt_id` until
-the core owns session state (Ticket 081). A test fails when a rule module,
-or `state.py` beyond that one name, names a Claude Code tool, input,
-transcript or hook field, a tool in prose, or Claude Code's own folder.
+Claude Code keeps instruction files and skills. A test fails when a core
+module names a Claude Code tool, input, transcript or hook field, a tool in
+prose, or Claude Code's own folder, or imports anything but the standard
+library and the core.
 
 Route and skip lines are read from the agent's reply text and
 from one field
@@ -182,145 +195,56 @@ compactions do not end that, and a briefed session meets no closeout Review
 item (see the closeout table below).
 
 The contract's [Gates](../../stack/enforcement-contract.md#gates) table is
-the authority for each gate. In Claude Code, with its detection detail:
+the authority for each gate, and its
+[Detection Detail](../../stack/enforcement-contract.md#detection-detail)
+gives the tables each rule judges by. This table adds only what is Claude
+Code's own: which tools make which calls, and which input fields the rules
+read.
 
 | Gate | Kind | Holds | Clears when |
 | --- | --- | --- | --- |
-| `router-first` | strict | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction; a command made only of [plain reads](#plain-reads) passes, and so does a write whose every file is a scratch file outside the project (see below) | `using-goated-ai-skills` loads; or the session's first prompt is a brief with a route line (see above), until a typed prompt opens a turn |
-| `route-line` | strict | The first write or spawn after each user prompt until the current turn has a valid `goated-route:` line; also `goated-route: continue` when [missing or reset state](#failing-open) lost the task; a write whose every file is a scratch file outside the project (see below) passes | A valid route line appears in the turn |
-| `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded, or, in a session routed by its brief, on a `standard` or `full` route, orientation is unmet while `session-start-progressive-disclosure` is installed (see above); a spawn of a [read-only subagent](#plain-reads) passes, and so does a write whose every file is a scratch file outside the project (see below) | Each listed skill loads, or a corrected route line drops it; the brief's orientation skill loads or three distinct files are [read whole](#whole-reads), or a corrected `goated-route: direct` or `lightweight` route line drops it |
-| `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` [counts as loaded](#loads), and an inline message (or the tool's `message`) passes the [content check](#content-checks); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file. Once these are met, the commit meets the [closeout](#closeout-at-commit) |
-| `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` [counts as loaded](#loads); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file |
-| `pr-review` | justified-skip | A pull-request command or tool the `pull-request` gate holds, once that gate passes, when the pull request is [large](#large-pull-requests): 400 or more changed lines of non-test code against its base | `standards-and-spec-review` [counts as loaded](#loads); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file. The `pull-request` gate before it asks for the same read, so this read is asked for only when you typed `skip pr-description` |
-| `spawn` | strict | Starting an agent or session with a brief, except a [read-only subagent](#plain-reads) | `handoff` loads and `references/spawn-brief.md` is [read whole](#whole-reads), or `subagent-driven-development` loads and its implementer or reviewer prompt is read whole, each in this turn or an earlier one since the last compaction (see [Loads](#loads)); and the brief, on every spawn, passes the [content check](#content-checks) |
-| `design` | justified-skip | The turn's first write adding five or more lines to a non-test code file inside the project folder (or any such write while the skill does not count as loaded). A test file never triggers it and is not counted when finding the turn's first such write: in TDD the test comes first and the design happens in the code after it. A shell command that puts new text into such a file is judged too (Ticket 098; see [Shell writes](#shell-writes)) | `software-design-principles` [counts as loaded](#loads), and every [reference the edit's signals select](#design-references) has been [read whole](#whole-reads) since the last compaction |
-| `design-reads` | justified-skip | Any later write to a code or configuration file inside the project folder, once `software-design-principles` [counts as loaded](#loads), whose [signals](#design-references) select a reference not read since the last compaction; a test file edit selects `coding.md` only when it creates the file or adds twenty or more lines. A shell command that puts new text into such a file is judged too, by its path alone (see [Shell writes](#shell-writes)). The hold names each file and what selected it | Each required reference is [read whole](#whole-reads) with the Read tool |
-| `reference-reads` | justified-skip | A write by a write tool or a shell command that is not a check, inside the project folder or, for a `gate-fires` signal, anywhere, that fires a signal the installed registry declares for a reference of a skill that [counts as loaded](#loads) (see [Registry references](#registry-references)); `tdd`'s `test-design.md` is required by a test edit that creates the file or adds twenty or more lines, and a shell write meets only the signals that need no added text. The hold names each file by its path under the skill, `<skill>/references/<file>`, and what selected it | Each reference it names is [read whole](#whole-reads) with the Read tool, in this turn or an earlier one since the last compaction; or a skip line naming its skill, for the turn |
-| `review-intake` | justified-skip | A write, by a write tool or a shell command, to a code file inside the project folder, once a [reviewer subagent](#reviewer-subagents) started by `Agent` or `Task` has reported in the turn: its result arrived, or, started in the background, its completion did. A held or failed spawn, any other brief, and a side session trigger nothing. A test file is held like other code; a docs or config file is not | `receiving-code-review` [counts as loaded](#loads), in this turn or an earlier one since the last compaction; or a skip line naming it, for the turn |
-| `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` [counts as loaded](#loads) |
-| `scripted-edit` | justified-skip | A shell command whose [inline script](#inline-scripts) (`python -c`, `node -e`, a heredoc on `python -`) writes a code file inside the project folder, test files included, or writes a file it names only at run time, which counts as code wherever the command runs. A path through a name the script binds once to one literal is judged as that literal's file. The hold asks for the change to be made with a file edit tool, where the `design`, `design-reads`, and `reference-reads` gates can judge it; a script suits only a mechanical rewrite across many files. It comes after the `security` and `review-intake` gates for the same file. Once cleared, the script runs and its files count as changed | A `goated-skip: software-design-principles: <reason>` line in the turn, or the typed override `skip software-design-principles`; loading the skill does not clear it |
-| `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an `Edit` or `MultiEdit` whose old text has a `<<<<<<<` or `>>>>>>>` marker at a line start; a write, by a write tool or a shell command such as `git checkout --theirs`, to a file a Read in the turn showed with such a marker; or any write after a git merge, rebase, cherry-pick, revert, or pull whose result in the turn reported a conflict. A finished abort, quit, continue, or skip of that operation, or a finished commit, ends the conflict and drops the Reads before it. Only the turn is read, not the repository, so a conflict opened in an earlier turn is caught only by markers the turn shows: an edit whose old text spans only `=======` and one side, in a file not read this turn, is not held, because `=======` alone is also a heading underline. A conflicting stash pop or apply is not held | `resolving-merge-conflicts` [counts as loaded](#loads) |
-| `repeated-failure` | justified-skip | A write, by a write tool or a shell command, once one check command (as the closeout's Proof item recognises checks) has failed twice in a row in the turn. A shell command is held when any of its simple commands writes and is not itself a check, so `sed -i … && pytest` and `pytest \| tee out.txt` are held, while `pytest > out.txt` is a rerun. "The same check" is the same command text run from the same folder, whitespace aside. A leading `cd` to a folder joined by `&&` or `;` names the folder: `cd pkg_a && pytest -q` and `cd pkg_b && pytest -q` are two checks, and `cd <the session folder> && pytest -q` is `pytest -q`. The command text is compared without a trailing pipe into output filters (`tail`, `head`, `grep`, `findstr`, `more`, `less`, `tee`, `Select-Object`, `Select-String`, `Out-Host`, `Out-String`) or a `2>&1` before it; so `pytest -q \| tail -20` and `pytest -q \| tail -40` are one check, and a narrowed rerun such as one test file of a failing suite is another. A piped run fails by what it prints (`N failed`, `N errors`, `FAILED (`, `FAIL`, `npm ERR!`, `error TS…`, `test result: FAILED`, and the like), since the exit code is the filter's; any other run fails by its exit code. A run whose only failures are test modules that could not load a missing module or name neither adds to the count nor resets it, whether or not it looks failed, since in TDD the first red run often fails because the module under test does not exist yet. Only each runner's own report counts: pytest's `ERROR collecting` section showing `ImportError while importing test module` or ending in an `ImportError` or `ModuleNotFoundError`; unittest's `_FailedTest` error ending in one of those; jest's `Test suite failed to run` with `Cannot find module`. A run counts as usual when it also shows a failure in a test that ran (`1 failed, 1 error`), when a module that is there fails to load (a `SyntaxError` or `NameError`: the edit-and-crash loop the gate exists for), or when a test only prints such text. These miss, toward holding: output cut before the runner names the cause (`pytest -q \| tail -3`), ts-jest's `TS2307`, and vitest's `Failed to load url`. The table is `LOAD_ERROR_SIGNS` in `actions.py`. Two kinds of failed run also neither add to the count nor reset it. One is the first run of a check after a finished write to a test file in the turn, by a write tool or a shell command: in TDD that run is meant to fail. A held or failed write excuses nothing, and only that first run is excused. The other is a run whose runner reports fewer failed and errored tests than the check's run before it: pytest's summary line (`3 failed, 1 error in 0.2s`), unittest's `FAILED (failures=…, errors=…)`, jest's `Tests:` line, and cargo's `test result: FAILED`. When either run's count cannot be read, the run counts: output with no summary, a runner that prints no count (`go test`), two runners' summaries in one run, a summary counting no failure (`Tests: 0 total`), or a run showing a test module or suite that could not load (pytest's `ERROR collecting` or `Interrupted: 1 error during collection`, unittest's `_FailedTest`, jest's `Test suite failed to run`), whose tests are missing from its count. The hold shows the check without its `cd`, so `cd "<long path>" && pytest -q` shows `pytest -q`. A pass of the check resets its count; other commands between runs do not. A call that never ran does not count: one the adapter or another hook held, one refused at a permission prompt, or one interrupted | `diagnose` [counts as loaded](#loads) |
-| `closeout` | justified-skip | A commit the `commit` gate lets through, or the end of the turn (a `Stop` hook), in a turn that changed code, that changed a security-sensitive file, or that changed setup | Every item below is met or skipped |
-
-The closeout items, each judged against the turn's last code change. A code
-change is a write tool's file, or a file a shell command writes (its redirect
-target, copy destination, or removed, moved, or edited file), inside the
-project folder; a scratch or temp file elsewhere does not count. The `design`,
-`design-reads`, `reference-reads`, `review-intake`, `scripted-edit`, and `security` gates use the same rule, so a scratch script outside the
-project is not held, except by a `reference-reads` signal of the
-`gate-fires` kind. The `conflict-resolution` and `repeated-failure` gates
-hold a write wherever its file is, since a worktree with a conflict, or the
-code a failing check runs, may sit outside the project folder.
-The routing gates `router-first`, `route-line`, and `pipeline` let a write
-through when every file it writes is a scratch file, such as a copy into a
-temp folder: outside the project by the rule below, inside no git checkout
-(no folder at or above it holds a `.git` file or folder), outside your
-`~/.claude` folder, and not a folder that holds the project. When any of that
-cannot be checked, the file is not scratch. So a write into another repo,
-such as a worktree under the temp folder or a sibling checkout, or into
-Claude's settings, is routed. A shell command passes only when every simple
-command in it is a [plain read](#plain-reads), a `cd`, a command that only
-writes, copies, moves, or removes the files it names (`cp`, `mv`, `rm`,
-`touch`, `tee`, `ln`, and their PowerShell forms; not `install` or
-`rename`), or a plain read with its output redirected into a file, so
-`cp a /tmp/x && cat f` passes and `cp a /tmp/x && ./script.sh` is held. A
-write with any file that is not scratch, or whose files cannot be named
-(`git apply`), is held as before, and so are spawns and commands that write
-nothing.
-
-**A file counts as outside the project only when the adapter is certain.**
-When in doubt, it is inside. The project's folders are `CLAUDE_PROJECT_DIR`
-when Claude Code sets it, the session's working folder (the hook input's
-`cwd`), and the nearest folder at or above either that holds a `.git` entry,
-so a session that changed folder below its checkout still counts the whole
-checkout. A file is outside only when it is under none of them in any way the
-path can be read, with symbolic links and junctions resolved too:
-
-- A relative path is taken from the working folder; a shell write target is
-  taken from a `cd` before it only as [Shell writes](#shell-writes) says, and
-  counts as inside when its folder is unknown.
-- A leading `~` or `~/` is your home folder, read both as your profile folder
-  and as `HOME`. On Windows, 8.3 short names such
-  as `PROGRA~1` are expanded where the folders exist.
-- On Windows, a one-letter top folder naming a drive that exists is Git
-  Bash's name for that drive (`/c/work` is `C:/work`); it may also be a folder
-  on any drive the project's folders use, and each reading is checked. The
-  same applies to a project folder given in Git Bash form. On Windows,
-  `/tmp/x` is also read as `x` in your temp folder, where Git Bash mounts
-  `/tmp`: under `TMP` and under `TEMP`, each that is set, and both must be
-  absolute Windows paths, or `/tmp/x` counts as inside. Any other path rooted
-  with no drive, such as `/etc/x`, counts as inside: Git Bash mounts `/` as
-  its install folder, and you may add mounts of your own.
-- These count as inside, since the adapter does not read them: a path holding
-  a variable or glob (`$`, `%`, a backtick, `*`, `?`), `~-`, `~+`, or another
-  user's `~name`, device paths (`\\?\`, `//?/`, `\\.\`), network paths
-  (`\\server\share`), a drive-relative path such as `C:x`, and, on Windows, a
-  folder or file name ending in a dot or space.
-
-A shell write whose files the command does not name (`git apply`, `patch`, a
-download without an output name, a .NET call) counts as a change to non-test
-code, wherever it runs, since where its files are cannot be said. Code a
-subagent changed counts too, at the point the parent spawned it; if the subagent ran a
-check after its own last change, that change is already proved.
+| `router-first` | strict | An `Edit`, `Write`, `MultiEdit`, or `NotebookEdit`, a spawn, or a `Bash` or `PowerShell` command; a command made only of [plain reads](#plain-reads) passes, as Read and Grep do, and so does a write whose every file is a [scratch file](../../stack/enforcement-contract.md#project-folders-and-scratch-files) | A `Skill` load of `using-goated-ai-skills`; or the session's first prompt is a brief with a route line (see above), until a typed prompt opens a turn |
+| `route-line` | strict | The first write or spawn after each typed prompt until the turn has a valid route line, in reply text or a call's line field (see above) | A valid route line appears in the turn |
+| `pipeline` | strict | Writes and spawns while a `requires:` skill has not loaded, or a brief-routed session's orientation is unmet while Claude Code can find `session-start-progressive-disclosure`; a spawn of a [read-only subagent](#plain-reads) passes | Each listed skill loads by the Skill tool, or orientation by that skill or three [whole reads](#whole-reads) by the Read tool |
+| `commit` | strict | A `git commit` in a `Bash` or `PowerShell` command, or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit`; the tool's `message` is the commit message | `commit-message` [counts as loaded](#loads), the message passes the [content check](#content-checks), and a [change read](#change-reads) follows the last change; then the [closeout](#closeout-at-commit) |
+| `pull-request` | strict | `gh pr create` or `new`, `glab mr create` or `new` in a shell command, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` [counts as loaded](#loads), and a [change read](#change-reads) |
+| `pr-review` | justified-skip | A pull request the `pull-request` gate holds, once it passes, when it is [large](#large-pull-requests); an MCP tool's `base` or `target_branch`, `head` or `source_branch`, and `owner` and `repo` inputs name what is measured | `standards-and-spec-review` [counts as loaded](#loads), and a [change read](#change-reads) |
+| `spawn` | strict | An `Agent` or `Task` call, or a `start_session` or `hand_off_to_session` call that carries a brief (see the Spawns bullet below), except a [read-only subagent](#plain-reads) | The skill loads, its template is [read whole](#whole-reads) by the Read tool, and the `prompt` or brief passes the [content check](#content-checks) |
+| `design` | justified-skip | The turn's first substantial non-test code write by `Edit`, `Write`, `MultiEdit`, or `NotebookEdit`, or a [shell write that puts new text into the file](#shell-writes) | `software-design-principles` [counts as loaded](#loads), and each [selected reference](#design-references) is [read whole](#whole-reads) by the Read tool |
+| `design-reads` | justified-skip | A later write whose [signals](#design-references) select a reference not yet read | Each reference is [read whole](#whole-reads) by the Read tool |
+| `reference-reads` | justified-skip | A write tool's or shell command's write that fires a [registry signal](#registry-references) | Each named reference is [read whole](#whole-reads) by the Read tool |
+| `review-intake` | justified-skip | A code write once a [reviewer subagent](#reviewer-subagents) started by `Agent` or `Task` has reported | `receiving-code-review` [counts as loaded](#loads) |
+| `security` | justified-skip | A write tool's or shell command's write to a [security-sensitive path](../../stack/enforcement-contract.md#security-sensitive-paths) | `code-security-review` [counts as loaded](#loads) |
+| `scripted-edit` | justified-skip | A shell command whose [inline script](#inline-scripts) writes code; the hold asks for the change to be made with `Edit`, `MultiEdit`, or `Write` | A skip line naming `software-design-principles`, or the typed override |
+| `conflict-resolution` | justified-skip | A [conflict](../../stack/enforcement-contract.md#conflicts) opened by an `Edit` or `MultiEdit` whose `old_string` holds a marker, a Read whose numbered lines show one, or a git command's result | `resolving-merge-conflicts` [counts as loaded](#loads) |
+| `repeated-failure` | justified-skip | A write once a check in a `Bash` or `PowerShell` command has [failed twice](../../stack/enforcement-contract.md#repeated-failures); a call held by the adapter or another hook, refused at a permission prompt, or interrupted never ran | `diagnose` [counts as loaded](#loads) |
+| `closeout` | justified-skip | A commit the `commit` gate lets through, or the `Stop` hook, in a turn that changed code, a security-sensitive file, or setup | Every item below is met or skipped |
 
 The contract's [Closeout Items](../../stack/enforcement-contract.md#closeout-items)
 table is the authority for each item; this one adds Claude Code's detail.
 
 | Item | Needed when | Met by | Skip line names |
 | --- | --- | --- | --- |
-| Proof | A change not already proved | A check command run after the last code change: a test runner, linter, type checker, or build tool (`pytest`, `python -m unittest`, `npm test`, `cargo test`, `go vet`, `tsc`, `make check`, and the like, also through `uv run` or `npx`), or a script whose name says test, check, lint, verify, validate, or build (`scripts/validate_skills.py`). The check may be a later call, or later in the same shell command as the write (`cp a.py src/a.py && pytest`): every command from the write to the check must be joined by `&&`, `;`, or a newline, none of them an `exit`, `return`, or the like, and neither inside a branch, loop, function, or group (`if`, `( )`, `{ }`); the check must not run in the background (`pytest &`), though a pipe or `\|\|` after it is fine (`pytest 2>&1 \| tee log.txt`). A code file written after the check, or by a .NET call (`[IO.File]::WriteAllText`) anywhere in the command, is not proved by it; another file written after it, such as a log, does not matter. Inline interpreter code (`python -c`, `python -Bc`, `node -pe`, `perl -e`) is not a check; a shell's inline command line (`bash -c`, `pwsh -Command`) is read as a command line, so `bash -c 'npm test'` is a check and `bash -c 'echo tests ok'` is not | `verification-before-completion` |
+| Proof | A change not already proved | A [check](../../stack/enforcement-contract.md#checks) in a `Bash` or `PowerShell` command after the last code change | `verification-before-completion` |
 | Unfinished work | The last check after the change failed | `handoff` counts as loaded | `handoff` |
-| Docs | A code file outside the tests changed | `doc-sync` counts as loaded, and a [change read](#change-reads) follows the last code change, before or after the load | `doc-sync` |
-| Design red flags | `software-design-principles` loaded in the turn, or counts as loaded and the turn made an edit the `design` gate triggers on (five or more lines added to a non-test code file), so a later turn of small edits meets no Design item | `software-design-principles/references/red-flags.md` is [read whole](#whole-reads) after the last code change that is not [comment-only](#comment-only-edits), then a [change read](#change-reads) after that read and that change. After a red-flags read in the turn that follows code changes adding five or more lines, later code changes that add fewer than five lines in total, comment-only ones aside, need no second red-flags read, only the change read after the last of them; a read before any such change covers no later change; a change whose added lines are unknown, a shell write or a subagent's, counts as five or more. The item repeats the question `red-flags.md` ends with (name one input that would break this change, and say what happens); no answer is checked | `software-design-principles` |
-| Review | The turn changed code, the session was not started from a brief, and the branch's work is [large](#large-branches): 400 or more changed lines against its base in code files outside test paths, counting committed, staged, unstaged, and untracked files that git does not ignore. A session whose first prompt was a brief with a route line from the session that started it meets no Review item for the whole session, typed prompts and compactions included: the starting session reviews the work when it inspects the report and the changed paths (`handoff`'s spawn-brief template). Missing state counts as not briefed | A [reviewer subagent](#reviewer-subagents) that finished after the last code change; or `standards-and-spec-review` counts as loaded and a [change read](#change-reads) follows the last code change, before or after the load | `standards-and-spec-review` |
-| Verification | The turn changed code or a security-sensitive file, and one of these holds: the task's route is `full`; a subagent the turn spawned changed code; a security-sensitive file changed; or the branch's work is [large](#large-branches) | `verification-before-completion` counts as loaded | `verification-before-completion`, the Proof item's skip line, so one line answers both |
-| Security | `code-security-review` counts as loaded and a security-sensitive file (the `security` gate's paths, code or not) changed | A [change read](#change-reads) after the last sensitive change, before or after the load | `code-security-review` |
-| Setup | The turn installed or added a dependency or tool by a command that names a package, in the project or globally, or wrote an env or settings file (see below) | `setup-scribe` counts as loaded, the load before or after the change | `setup-scribe` |
+| Docs | A code file outside the tests changed | `doc-sync` counts as loaded, and a [change read](#change-reads) | `doc-sync` |
+| Design red flags | As the contract states | `software-design-principles/references/red-flags.md` [read whole](#whole-reads) by the Read tool after the last code change that is not [comment-only](#comment-only-edits), then a [change read](#change-reads) | `software-design-principles` |
+| Review | The branch is [large](#large-branches) and the session was not started from a brief | A [reviewer subagent](#reviewer-subagents) started by `Agent` or `Task`, or `standards-and-spec-review` and a [change read](#change-reads) | `standards-and-spec-review` |
+| Verification | As the contract states | `verification-before-completion` counts as loaded | `verification-before-completion`, the Proof item's skip line, so one line answers both |
+| Security | As the contract states | A [change read](#change-reads) | `code-security-review` |
+| Setup | A [package install or setup file](../../stack/enforcement-contract.md#package-installs-and-setup-files), such as a `settings*.json` under `.claude/` | `setup-scribe` counts as loaded | `setup-scribe` |
 
-The Setup item is not judged against code changes. A **package install** is a
-finished `npm`, `pnpm`, or `bun` `add` or `install`, `yarn add`, `pip install`
-(also `python -m pip`), `uv add`, `uv pip install`, `uv tool install`,
-`poetry add`, `pipx install`, `conda install`, `cargo add` or `install`,
-`go get` or `install`, `gem install`, or `brew`, `apt`, `apt-get`, `winget`,
-`choco`, or `scoop` `install`, or `yarn global add`, that names a package. A
-bare `npm install`, `pip install -r requirements.txt`, or `pip install -e .`
-restores what a manifest records or installs a local path, so it does not
-count; a URL, such as `pip install -e git+https://…`, is a package. Each
-manager's options that take a value (`--filter`, `--workspace`, `--python`,
-`--file`, `--prefix`, `--registry`, `--index-url`, `--target`, and the like;
-`PACKAGE_MANAGERS` in `shell.py`) are skipped with their value, so
-`pnpm install --filter web` names no package. An **env or settings file** is
-`.env` or `.env.*` (`.env.example` included), or a `settings*.json` under
-`.claude/` or `.vscode/`, written by a write tool or a shell command. A
-**global, machine, or per-user install** (`npm`, `pnpm`, or `bun` with `-g`
-or `--global`, `npm --location=global`, `pip install --user`,
-`yarn global add`, `uv tool install`, `pipx install`, `cargo install`,
-`go install`, `gem install`, every `brew`, `apt`, `apt-get`, `winget`,
-`choco`, or `scoop` install, and any install run under `sudo`;
-`GLOBAL_INSTALLS` and `GLOBAL_OPTIONS` in `shell.py`) counts wherever it
-runs. Any other package install counts unless it goes into a folder
-certainly outside the project. That folder is the one a folder option names
-(`npm --prefix`, `pnpm --dir` or `-C`, `yarn` or `bun --cwd`,
-`uv --project` or `--directory`, `poetry -C` or `--directory`, `go -C`;
-`FOLDER_OPTIONS` in `shell.py`), else the one it runs in: one a `cd` in the
-same command moved to, as a write's folder is followed (see
-[Writes](#what-it-holds)). So `cd /tmp/x && pip install requests` does not
-count, `cd /tmp/x && npm install --prefix <project> lodash` does, and so does
-one after a `cd` the adapter cannot follow (`cd "$TMPDIR" && …`,
-`cd sub && …`). An env or
-settings file counts only
-inside the project, by the same rule as code changes, so a scratch folder's
-`.claude/settings.json` does not, and neither do global settings such as
-`~/.claude/settings.json`, unless the project holds your home folder. A
-subagent's installs and writes count
-toward the parent's closeout; that subagent's own `setup-scribe` load or skip
-line meets them, as the parent's does.
+A subagent's installs and writes count toward the parent's closeout; that
+subagent's own `setup-scribe` load or skip line meets them, as the parent's
+does.
 
-Two limits: an install inside `bash -c "…"` or another wrapped command string
-is not seen, as with every shell reading here; and an install whose failure
-the command hides (`npm install foo || true`) still counts, since the adapter
-sees only the whole command's result.
+**Project folders.** The project's folders, as the adapter passes them to
+the core, are `CLAUDE_PROJECT_DIR` when Claude Code sets it and the hook
+input's `cwd`; the core adds the checkout above either. Claude Code's own
+folders, such as `~/.claude`, are the agent's folders, where no write is
+scratch. The core's
+[path rules](../../stack/enforcement-contract.md#project-folders-and-scratch-files)
+decide what is outside.
 
 - **Writes** are `Edit`, `Write`, `MultiEdit`, and `NotebookEdit`, and a
   `Bash` or `PowerShell` command that writes files (see
@@ -337,27 +261,6 @@ sees only the whole command's result.
   session tool call with no brief, such as an offer card, is not a spawn for
   the `spawn` gate. **Commands** are `Bash` and `PowerShell`.
   Every other tool, including reads and the Skill tool, is never held.
-- **Code** is a file with a programming-language extension such as `.py`,
-  `.ts`, `.go`, `.ps1`, or `.sh`; the list is `CODE_EXTENSIONS` in
-  `actions.py`. Docs and config files are not code. A **test file** is judged
-  by its path inside the project, so a folder above the project, such as
-  the `tests` in `D:/tests/myapp/`, makes nothing a test. It is one under a
-  `tests/`, `test/`, or `__tests__/` folder at any depth, or a top-level
-  `spec/` folder; or one named `test_*`, `*_test.*`, `*_spec.*`, `*.test.*`,
-  or `*.spec.*`. So `tests/helpers/factory.py` and `src/app/test_runner.py`
-  (named as runners collect tests) are test files, and `src/spec/parser.py`
-  is not. A file whose place in the project is unknown, because the project
-  is unknown or the path cannot be read for certain, is not a test file. The
-  rule is `TEST_PATH_RE` in `design_reads.py`; the `design` gate and the
-  closeout's Docs item share it.
-- **A task** starts at a route line that is not `continue` and runs through
-  later `goated-route: continue` turns. The last route line wins, so a
-  corrected line replaces the route at once. A `continue` after such a line
-  in the same turn keeps that task. In a session
-  with no task yet, such as one started from another session to continue work
-  begun there, a turn whose only route lines are `continue` starts a task that
-  requires no skills.
-  `goated-route: direct` exempts the task from the pipeline gate.
 - <a id="loads"></a>**Loads count until the next compaction.** A
   successful load counts from its call until the next compaction or `/clear`,
   in this turn or a later one, for every hold that asks for a load: the
@@ -368,24 +271,6 @@ sees only the whole command's result.
   [design references](#design-references) read. The [state](#state) keeps
   the loaded names and the reads; a resumed session keeps them, and missing
   or reset state counts as not loaded.
-- **Everything else is per turn.** Route and skip lines, and
-  typed overrides, count only in their turn. So do the checks tied to a
-  change: [change reads](#change-reads), the red-flags read after the last
-  change, and Proof. A hold stops firing as soon as the turn shows
-  compliance: once `commit-message` counts as loaded, a commit passes its
-  skill check, and still needs this turn's change read.
-- **Dropping a required skill.** A `goated-skip` line never clears a strict
-  hold. If a route names a skill that does not apply, the agent writes a
-  corrected route line without it; the last route line wins, as the shared
-  policy says.
-- **Compaction** clears the proof: the router and every other skill must
-  load again, and the design references and spawn-brief templates be read
-  again. The route itself carries over, so `goated-route: continue` still
-  works, and keeps the earlier task's `requires:` skills, which must then
-  load again. When the work after a compaction is a new task, write its own
-  route line; a `direct` or corrected line in a message before the write
-  replaces the earlier route at once. A compaction also starts a new turn, so
-  the per-turn proof restarts.
 - **Proof of use** is a successful Skill-tool load read from the transcript (a
   `Skill` tool call whose result is not an error), or a skill the user invoked
   by typing `/<skill>`. Naming a skill in text is not proof. A load counts by
@@ -394,592 +279,106 @@ sees only the whole command's result.
   to its namespace (comma-separated for several), for example in the settings
   file's `env` block. A **required read** is a `Read` tool call on the
   reference file, under any install folder, whose result is not an error.
-- **No free retry.** Every hold is decided from the transcript, so repeating a
-  held call unchanged gives the same answer until the proof or skip line
-  appears. A held call is recorded as an error, so it never counts as a change
-  or a check.
-- **Every hold at once.** A call is judged by every gate, and one message
-  carries every hold it meets (see [Hold messages](#hold-messages)), so
-  meeting them all clears it in one retry. `router-first` and `route-line`
-  come together. Two holds may still follow on the retry, because they can
-  be judged only once another clears: `pipeline`, which reads the route, is
-  judged once the router counts as loaded and the turn has a route line;
-  and the [closeout at a commit](#closeout-at-commit) is judged once the
-  `commit` gate passes the commit. When one shell command writes several
-  files, each gate judges them all at once, and its one hold asks for
-  everything they need: every sensitive file, every code file a script
-  writes, and every reference any of them selects.
+- **Compaction** is a `SessionStart` with source `compact`, and `/clear`
+  counts the same: the router and every other skill must load again, and the
+  reads be made again. The route carries over, as the contract's
+  [Prompts, Turns, And Tasks](../../stack/enforcement-contract.md#prompts-turns-and-tasks)
+  says.
+- The rest, per-turn lines and checks, tasks, no free retry, and every hold
+  at once, is the contract's [Holds](../../stack/enforcement-contract.md#holds).
+  A held call is recorded as an error, so it never counts as a change or a
+  check.
 
 ### Large pull requests
 
-`standards-and-spec-review` is for a change "large or risky enough to review
-before it lands", and its Activation section gives the number: a branch whose
-work against its base is 400 or more changed lines, added plus deleted, in
-code files outside test paths. A file counts when its extension is a code
-extension (`CODE_EXTENSIONS` in `actions.py`) and its path from the top of
-the checkout is not a test path (`is_test_path` in `design_reads.py`, the
-rule the Docs item uses); docs, fixtures, configuration, and tests add
-nothing. The
-`pr-review` gate and the closeout's [Review item](#large-branches) enforce
-that threshold, `REVIEW_MIN_LINES` in `actions.py`. Risk, unclear acceptance,
-and uncertain conventions, the policy's other reasons, are left to the
-router.
-
-The transcript does not hold a branch's size, so this gate and the
-closeout's [large-branch](#large-branches) measure are the only places the
-adapter runs commands. When a pull-request call would otherwise be held
-by `pr-review` (no load, change read, or skip line has cleared `pr-review`;
-it is judged together with the `pull-request` gate), the adapter asks git, in the hook's
-working folder, which of the candidate refs below exist (`git for-each-ref`),
-then measures the first base and head found:
-
-```text
-git diff --numstat -z --no-relative --no-ext-diff --no-textconv <base>...<head> --
-```
-
-- `<base>` is the branch the pull request merges into: `--base` or `-B` on
-  `gh pr create`, `--target-branch` or `-b` on `glab mr create`, or an MCP
-  tool's `base` or `target_branch` input, found as `origin/<base>` or else the
-  local branch. Without one, it is the first that exists of `origin/HEAD`,
-  `origin/main`, `origin/master`, `main`, and `master`.
-- `<head>` is the branch it merges from: `--head` or `-H` on `gh`,
-  `--source-branch` or `-s` on `glab`, or an MCP tool's `head` or
-  `source_branch` input, found as the local branch or else `origin/<head>`.
-  Without one, it is the checked-out `HEAD`. Only committed work counts,
-  which is what the pull request opens.
-- An MCP tool that names an `owner` and `repo` is measured only when they
-  match the checkout's `origin` URL (one more git call). Aimed at another
-  repository, or from a folder with no `origin`, the tool is not measured:
-  this checkout says nothing about that repository's branches.
-
-Values of the command's other options are never read as options, so
-`--description "-bump deps"` names no base. Every name reaches git inside a
-full ref name (`refs/…`), so none can read as a git option.
-
-When the size cannot be measured, `pr-review` does not hold: no base or head
-is found (a head from another fork, `owner:branch`, or a branch not yet
-fetched), git is missing or fails, the folder is not a git checkout or is
-one the adapter cannot read for certain (so it has no project folders), or
-git's calls take longer than two seconds in all. This gate fails open, like the
-rest of the adapter: holding on an unknown size would hold every pull request
-from a fork or another clone, whatever its size, and a justified-skip hold
-that fires without evidence teaches agents to skip it. The cost is in
+The rule and its git commands are the contract's
+[Branch Size](../../stack/enforcement-contract.md#branch-size). In Claude
+Code, git runs in the hook's working folder, and an MCP pull-request tool's
+`base` or `target_branch` input names the base, `head` or `source_branch`
+the head, and `owner` and `repo` the repository. The cost is in
 [Latency](#latency).
 
 #### Large branches
 
-Work is often merged locally with no pull request, so the closeout's Review
-and Verification items measure the branch's work as it stands, against the
-same base the `pr-review` gate finds without a `--base` (the first that
-exists of `origin/HEAD`, `origin/main`, `origin/master`, `main`, and
-`master`). That counts the branch's commits since it left the base, staged
-and unstaged changes, and every line of each untracked file git does not
-ignore, in code files outside test paths only, as for
-[Large pull requests](#large-pull-requests); a binary file counts no lines and a symbolic link one, as in
-`git diff`, and a link's target is never read. Where the base branch exists
-both locally and on `origin`, the branch is measured from the fork point
-closer to it, so work merged into a local `main` and not yet pushed does not
-count toward the next branch: local merges prefer the local base. The
-`pr-review` gate keeps measuring from `origin/<base>` first.
-
-```text
-git rev-parse --show-toplevel --symbolic-full-name HEAD
-git merge-base HEAD <base> [<the same branch's other ref>]
-git diff --numstat -z --no-relative --no-ext-diff --no-textconv <merge-base> --
-git ls-files --others --exclude-standard --full-name -z -- :/
-```
-
-The size is asked for only in a turn that changed code (or a sensitive file,
-for Verification), and only when nothing else has met the item. Because the
-branch is measured, not the commit, a large ticket split across commits is
-still caught: two 300-line commits raise the Review item at the second. It
-also means every later turn on a large branch that changes code, at its
-commit or at its `Stop`, raises the item again, until a review in that turn
-meets it or a skip line declines it.
-
-Two cases are not measured. A commit in a turn that changed no code, such as
-a later turn that only commits earlier work, meets no Review or Verification
-item, since both follow the turn's own code change. And git runs in the
-hook's working folder, so a commit made elsewhere, with `git -C <dir>` or
-after a `cd`, is measured as the hook's folder's branch, or not at all when
-that folder is no checkout.
-
-Nothing counts as large when the size cannot be measured: on the base branch
-itself, with a detached `HEAD`, with no base found, in a folder that is not a
-git checkout, when git fails, or past the same two-second limit. The other
-items are unchanged then.
+The closeout's Review and Verification items measure the branch as the
+contract's [Branch Size](../../stack/enforcement-contract.md#branch-size)
+says, in the hook's working folder, so a commit made elsewhere, with
+`git -C <dir>` or after a `cd`, is measured as the hook's folder's branch.
 
 #### Reviewer subagents
 
-A reviewer subagent is a finished `Agent` or `Task` spawn the `spawn` gate
-let through whose brief follows `subagent-driven-development`'s reviewer prompt
-(`references/reviewer-prompt.md`, read, with its `Review Mode`,
-`Review Inputs`, and `Required Report Format` headings). The gate records
-which templates each spawn's brief followed, by the call's id, in the
-session's [state](#state); a spawn that finished after the turn's last code
-change, and whose brief followed the reviewer prompt, meets the Review item.
-A spawn started in the background (its result says `async_launched`) has
-finished only once its completion arrives later in the turn: a
-`<task-notification>` naming the agent's id with a `completed` status, or the
-agent's `<agent-message from="<id>">` hand-back, as a prompt or a queued
-command.
-A side session started with a reviewer brief (`start_session` or
+A reviewer subagent is a finished `Agent` or `Task` spawn that meets the
+contract's [Reviewer Agents](../../stack/enforcement-contract.md#reviewer-agents)
+rule. The gate records which templates each spawn's brief followed, by the
+call's id, in the session's [state](#state). A spawn started in the
+background (its result says `async_launched`) has finished only once its
+completion arrives later in the turn: a `<task-notification>` naming the
+agent's id with a `completed` status, or the agent's
+`<agent-message from="<id>">` hand-back, as a prompt or a queued command. A
+side session started with a reviewer brief (`start_session` or
 `hand_off_to_session`) is not one: its result arrives at once but says only
-that the review started. A subagent briefed any other way, from `handoff`'s
-spawn brief or the implementer prompt, is not a review, and the item's text says to use the
-reviewer prompt. Whether the review was any good is not judged.
-
-Once a reviewer subagent has reported in the turn, the [`review-intake`](#what-it-holds) gate holds the next write to a
-project code file until `receiving-code-review` counts as loaded, as that
-skill's Activation states, so the findings are classified before they are
-fixed.
+that the review started.
 
 ### Design references
 
-`software-design-principles` keeps its reasoning in reference files and names,
-for each moment of a change, which to read. The `design` and `design-reads`
-gates enforce those reads where the skill is loaded, judged from the edit
-itself: no line the agent writes declares them. A `goated-design-reads:`
-line, which earlier versions asked for, is ignored like other prose.
-
-The rules live in one place,
-[`goated_adapter/design_reads.py`](goated_adapter/design_reads.py), with the
-test-path rule the closeout shares; only what counts as code, and where a
-file sits in the project, stay with the other action gates, which pass in
-their answers. They apply to an edit of
-a code file, or of a configuration file (`.yaml`, `.yml`, `.toml`, `.json`,
-`.env`, `.env.*`, `settings.*`) that is neither a lock file (`*-lock.json`,
-`pnpm-lock.yaml`, `npm-shrinkwrap.json`) nor under a test path.
-
-An edit requires the references its signals select. Signals are judged on
-what the edit adds: the lines of its new text, or of a
-`Write`'s text, that the text it replaces did not hold, indentation aside. A
-`Write` over a file on disk is compared with that file. A definition whose
-name the old text already defined, as in a signature change, is not new.
-Comments and docstrings are left out of the code the error and concurrency
-signals read, so `# try the cache, then raise` selects neither.
-
-A **small edit**, one writing fewer than five lines as the `design` gate counts
-them (every line of the text it writes, unchanged context and a trailing
-newline's empty line included; `DESIGN_MIN_LINES` in `actions.py`),
-selects no reference by the kind of file or text it touches: no
-`decoupling.md` for a configuration file or the third code file, and no
-`readability.md` for a comment or docstring.
-`software-design-principles` states this rule; the adapter enforces it.
-A test file has its own rule, for `coding.md` only: the edit must create
-the file or add twenty or more lines, an added line being one of the text
-it writes that the text it replaces did not hold, so a changed line counts
-and unchanged context does not (spec R9). The registry states it, as the
-`tdd` signal for `test-design.md` (see [Registry
-references](#registry-references)), and the adapter reads it from there, so
-both references follow one rule. With no registry, or none declaring an
-`edit-of-file-kind` signal for `test` files, any test edit that is not small
-selects `coding.md`, failing toward holding.
-Outside test files, which get no signal read from the code, signals read from
-the added code apply at any size: a new code file or public top-level
-definition, error handling, and concurrency. An edit whose added lines cannot be
-counted, such as a `MultiEdit` with an `edits` entry that is not an edit, is
-not small.
-
-| Reference | Selected when the edit |
-| --- | --- |
-| `process.md` | creates a code file (a `Write`, or an `Edit` with no old text, to a code file no earlier write in the turn made and that is not on disk), or adds a public top-level definition: an unindented line starting with `def`, `async def`, `class`, `function`, `export`, `func`, `fn`, `pub fn`, `public`, `interface`, `struct`, `enum`, `trait`, `impl`, or `defmodule`, whose name does not start with `_`; a shell `export NAME=` is not one |
-| `complexity-and-modules.md` | the same as `process.md` |
-| `decoupling.md` | is not small, and edits a configuration file or is to the third or later distinct non-test code file the turn edits |
-| `readability.md` | the same as `process.md`, or is not small and adds a comment or docstring: a line opening with `#`, `//`, `/*`, `*`, `"""`, `'''`, `-- `, or `<!--`, a line inside a docstring or block comment, or a trailing `#` or `//` comment after two spaces |
-| `errors.md` | adds code holding `try`, `except`, `catch`, `raise`, `throw`, `finally`, `defer` as words, or `with open` |
-| `coding.md` | edits a test file and creates it or adds twenty or more lines, by the registry's rule above; a test file selects nothing else |
-| `concurrency.md` | adds code holding `threading`, `Lock`, `RLock`, `Mutex`, `asyncio`, `synchronized`, `Promise.all`, a word starting `Atomic`, or `go func` |
-| `differences.md` | never selected: no tool call shows two rules pulling apart, so the registry declares it advisory |
-
-`red-flags.md` is not among them: the closeout's Design red flags item asks
-for it.
-
-A typical change, one new public function with a docstring and error
-handling, its caller, and its test, requires five: `process.md`,
-`complexity-and-modules.md`, `readability.md`, `errors.md`, and `coding.md`.
-Tune the signals from the skill-usage mod's counts.
+The signals and the reference each selects are the contract's
+[Design Reference Signals](../../stack/enforcement-contract.md#design-reference-signals),
+in [`../core/goated_core/design_reads.py`](../core/goated_core/design_reads.py).
+In Claude Code, an edit's text is an `Edit`'s `old_string` and `new_string`,
+each `MultiEdit` entry's, a `Write`'s `content` (compared with the file on
+disk), or a `NotebookEdit`'s new source, whose replaced text the call does
+not show. An `Edit` with no `old_string` may make a missing file, so it
+counts as creating one. A `MultiEdit` with an `edits` entry that is not an
+edit cannot be counted, so it is not small. A `goated-design-reads:` line,
+which earlier versions asked for, is ignored like other prose.
 
 A reference counts as read after a finished [whole](#whole-reads) `Read` of a
 path ending in `software-design-principles/references/<file>`, in this turn
-or an earlier one, until the next compaction: the [state](#state) keeps the names read, a
-resumed session keeps them, and a compaction's or `/clear`'s `SessionStart`
-clears them, so each reference is required at most once per context window.
-The skill's load counts the same way (see [Loads](#loads)).
-A shell command printing one does not count. A skip line or a typed `skip
-software-design-principles` clears both gates for the turn.
-
-The first substantial non-test code edit of a turn meets `design`, which asks
-for what is missing: the load and the reads. A later edit, or any
-test file edit once the skill counts as loaded, meets `design-reads`, which
-asks only for reads; a test file edit that creates the file or adds twenty
-or more lines still requires `coding.md`. A small edit while the skill does not count as loaded is not
-held, as before.
-
-The skill's section ids and its Section Index name sections for navigation;
-no hold asks for a citation of them.
+or an earlier one, until the next compaction: the [state](#state) keeps the
+names read, and a compaction's or `/clear`'s `SessionStart` clears them. A
+skip line or a typed `skip software-design-principles` clears both gates for
+the turn. Tune the signals from the skill-usage mod's counts.
 
 ### Registry references
 
-Every skill's entry in the GOATED registry, `stack/goated-stack.yaml`,
-lists each file under its `references/` folder with a signal that makes its
-read required, or `advisory` with the reason no signal fits; the registry
-schema and `stack/fixtures/reference-reads/README.md` own the shape. The
-`reference-reads` gate enforces those signals for the skills that [count as
-loaded](#loads), so a skill whose references are never read in practice,
-such as `tdd`, is asked for them at the write that needs them.
-
-The rules live in
-[`goated_adapter/reference_reads.py`](goated_adapter/reference_reads.py).
+The signals are the contract's
+[Registry Reference Signals](../../stack/enforcement-contract.md#registry-reference-signals),
+in [`../core/goated_core/reference_reads.py`](../core/goated_core/reference_reads.py).
 The adapter reads the installed registry (see [Install](#install)) on each
-write, with its own reader for the registry's plain YAML, since it uses
-only the standard library. It judges each write inside the project folder:
-one by a write tool (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`), and each
-file a shell command names as written when some command in it writes and is
-not a check, as the [`repeated-failure`](#what-it-holds) gate counts writes
-(`pytest > out.txt` is not judged), and only when the command's folder is
-known. A write the gate cannot place in the project, such as `git apply
-fix.patch`, `cd $DIR && echo x > tickets/a.md`, or a file outside the project,
-meets only the `gate-fires` signals, which the `repeated-failure` gate's own
-writes all meet. The edit kinds read the code a write adds, so they fire only
-for a code file written by a write tool:
-
-| Kind | Fires when the write |
-| --- | --- |
-| `edit-adds-pattern` | adds code matching the named pattern, in a file of `file_kind` when the signal gives one. Comments and docstrings are left out, as for the [design signals](#design-references) |
-| `edit-of-file-kind` | is of a file of `file_kind` and adds at least `min_added_lines` lines, or, with `new_file: true`, creates the file: a `Write`, or an `Edit` with no old text, to a file no earlier write in the turn made and that is not on disk. The `design-reads` gate judges a test edit for `coding.md` by the registry's one such signal for `test` files (`validate_skills.py` refuses a second), so one rule decides both (see [Design references](#design-references)) |
-| `write-under-path` | is of a file under the `path` folder of the project, case aside: the file's path below a project root, as the adapter places files (see [What It Holds](#what-it-holds)), starts with it. So with `docs/specs/`, `docs/specs.md` does not fire it, and a `tickets/` folder outside the project never does. Each project root counts: from a session working in the checkout's root, `src/docs/specs/x.md` does not fire it, but from a session working in `src/`, that folder is a root too, so it does |
-| `gate-fires` | comes while the named gate's condition holds, whether or not that gate holds the write: its own skill may be loaded. The adapter observes `repeated-failure` only (`OBSERVED_GATES` in `reference_reads.py`), whose condition is one check failed twice in a row with no pass since, its runs counted as that gate counts them. The schema allows any gate name, so `validate_skills.py` fails on an entry naming another; an installed registry that names one anyway asks for nothing by it |
-| `sensitive-category-count` | is to a [security-sensitive](#what-it-holds) file inside the project while the turn's changes to such files, its subagents' included and this write counted, span at least `min_categories` of the `security` gate's categories |
-
-An edit adds the non-blank lines of the text it writes that the text it
-replaces did not hold, indentation aside; a `Write` over a file on disk is
-compared with that file. So changing one line among four unchanged ones adds
-one line, a new four-line file adds four whatever its trailing newline, and
-a line the old text already held, such as an existing mock, is not added.
-
-A `test` file is a code file at a test path, as the design gates judge it.
-The named patterns are the registry's `reference_patterns`, as the adapter
-matches them; so `dispatch` holds no patch, and `retrieve` no retry:
-
-| Pattern | Matches |
-| --- | --- |
-| `mock-or-patch` | a word starting `mock`, `patch`, `stub`, `spy`, or `fake` (either case), `monkeypatch`, `sinon`, a word ending `Mock` (`MagicMock`), `jest.fn`, or `vi.fn` |
-| `sleep-retry-or-timeout` | in any case: a word holding `sleep`, `timeout`, `retry`, `retries`, `retried`, or `retrying` (`asyncio.sleep`, `setTimeout`, `MAX_RETRIES`); `poll`, `polls`, `polled`, `polling`, or `poller` at the end of a word or before an underscore or a capital (`poll_interval`, `pollInterval`); `wait_for` or `waitFor` likewise at a word start (`waitForSelector`, `wait_for_element`); or `setInterval` |
-
-So the first enforced set is: `tdd`'s `mocking-and-seams.md` when a test
-edit adds a mock or patch, at any size, its `test-design.md` at a test edit
-creating the file or adding twenty or more lines; `diagnose`'s `condition-based-waiting.md` when an edit adds a
-sleep, retry, or timeout, and its `root-cause-tracing.md` at a write after
-one check failed twice; `code-security-review`'s
-`security-review-checklist.md` at a sensitive write once the turn's
-sensitive changes span two categories; `write-a-spec`'s `spec-template.md`
-before a write under `docs/specs/`; and `spec-to-tickets`'s
-`ticket-slicing-templates.md` before a write under `tickets/`. The
-registry's other `write-under-path` entries (`docs/adr/`, `docs/setup/`,
-`docs/wayfinding/`, `docs/agents/external-docs/`) are enforced the same way.
-A reference of these kinds added to the registry later is enforced with no
-adapter change, as long as it names a pattern, file kind, and gate listed
-here. References declared `existing-rule` keep their own gates
-(`design-reads`, `spawn`, and the closeout), and `spawn-with-brief` asks for
-nothing yet.
-
-A reference counts as read after a finished [whole](#whole-reads) `Read` of a
-path ending in `<skill>/references/<file>`, in this turn or an earlier one,
-until the next compaction, as design references do: the [state](#state) keeps the paths
-read. A shell command printing one does not count, nor does a file of the
-same name under another skill. A skip line naming the skill, or a typed
-`skip <skill>`, clears that skill's references for the turn. A skill that
-does not count as loaded is not asked for its references: routing and the
-other gates decide whether it loads. When one edit fires references of two
-skills, the hold names them all, offers a skip line for each skill, and
-names the typed override as `skip <skill>`.
+write, with its own reader for the registry's plain YAML, since it uses only
+the standard library. A write tool is `Edit`, `Write`, `MultiEdit`, or
+`NotebookEdit`; a reference counts as read after a finished
+[whole](#whole-reads) `Read` of a path ending in
+`<skill>/references/<file>`, kept in the [state](#state) until the next
+compaction.
 
 ### Shell writes
 
-The adapter splits a command into its simple commands (joined by `;`, `&&`,
-`||`, `|`, `&`, newlines, parentheses, braces, or `$(`) and reads each one's
-real command word past wrappers (`sudo -u <user>`, `env`, `timeout <n>`,
-`nice`, `nohup`, `xargs`, `cmd /c`), a quoted or full path to the program
-(`"git"`, `& "C:\…\git.exe"`), and line continuations (`\` in bash, a
-backtick in PowerShell). A `Bash` or `PowerShell` command meets the
-`route-line` and `pipeline` gates, like an edit, when one of its commands:
-
-- redirects output into a file (`>`, `>>`, `&>`, `>&file`, `2>`), except into a null
-  device (`/dev/null`, `$null`, `NUL`) or another stream (`2>&1`);
-- runs `tee`, `Tee-Object`, `cp`, `mv`, `rm`, `rmdir`, `touch`, `truncate`,
-  `ln`, `unlink`, `shred`, or `patch`;
-- edits in place with `sed -i`, `perl -i`, or `ruby -i`;
-- runs `Set-Content`, `Add-Content`, `Out-File`, `Clear-Content`, `New-Item`,
-  `Copy-Item`, `Move-Item`, `Remove-Item`, `Rename-Item`, `Export-Csv`, or
-  `Export-Clixml`, or one of the stock Windows PowerShell 5.1 aliases (`sc`,
-  `ac`, `clc`, `del`, `erase`, `copy`, `move`, `ren`, `rd`, `ri`, `mi`, `cpi`,
-  `ni`, `rni`), or a .NET `[IO.File]::Write…` style call. In a `PowerShell`
-  tool command, a .NET call's text counts wherever it appears, since
-  PowerShell can run text in many ways (`& $p`, `Get-Content x | iex`). In a
-  `Bash` command, a .NET call's text
-  handed only to text tools, which cannot start a program (`cat`, `echo`,
-  `printf`, `grep`, `rg`, `head`, `tail`, `sort`, `tee`, `Write-Output`,
-  `Select-Object`, and the like; `NO_POWERSHELL` in `shell.py`), is data,
-  such as a heredoc fed to `cat`. It is still a write when it holds a `$(` or
-  a backtick that may run it, outside a quoted-delimiter heredoc
-  (`<<'EOF'`); when it is piped on into any other program
-  (`… | pwsh -Command -`); when it is written into a PowerShell script file
-  (`.ps1`, `.psm1`, `.psd1`) by a redirect or `tee`, wherever that file is,
-  since a later call may run it; and whenever the command names `pwsh`,
-  `powershell`, `iex`, or `Invoke-Expression` anywhere, or runs a script
-  (`. x.ps1`), which may run text written earlier in it.
-  Interpreters (`python -c`, `node -e`) and `git` (an alias or hook) can start
-  PowerShell, so text handed to them counts too;
-- downloads to a file: `curl -o <file>` (also `-sSLo <file>`) or `curl -O`,
-  `wget` unless it writes to standard output, or `Invoke-WebRequest -OutFile`;
-- runs `git apply`, `git am`, `git restore`, `git mv`, `git rm`, `git clean`,
-  `git checkout -- <path>`, `git checkout <rev> <path>`,
-  `git checkout --theirs|--ours <path>`, `git reset --hard`, or
-  `git stash pop|apply`;
-- runs an [inline script](#inline-scripts) that writes, removes, or renames a
-  file.
-
-Text inside quotes, heredoc bodies, PowerShell here-strings, and comments is
-ignored, as are comparisons inside a `[[ ]]` test that is the command (after
-any `if`, `!`, or other keyword) and arithmetic in `$(( ))`, so
-`echo "a > b"`, `[[ $a > $b ]]`, and `ls # a > b` write nothing. Elsewhere
-`[[` is a plain word, so `cat [[ a > c ]]` writes `c`. Reads, test
-runs, `git status`, and `git checkout <branch>` stay free. Commit and
-pull-request commands are recognized the same way, per command, so
-`echo gh pr create` opens nothing.
-
-A write target is read from the folder its command runs in, and a `cd` moves
-that folder only when the adapter is certain it ran and where it went.
-**Only a plain `cd` in the command's leading `&&` chain is followed**: the
-first command, or one joined to everything before it by `&&` alone. Plain
-means `cd`, `chdir`, `Set-Location`, or `sl` with exactly one folder argument
-and no option other than `--` (or `-Path`/`-LiteralPath` naming that folder),
-to an absolute path, a drive path, `~` or a path under it, or a path starting
-`./` or `../` from a folder already known. So `cd /elsewhere && mv a.py b.py`
-moves `/elsewhere/a.py`, outside the project, and `cd ./sub && mv a.py b.py`
-moves `sub/a.py`, inside it.
-
-Anything else makes the folder unknown for the rest of the command, and
-nothing later makes it known again. Relative targets written from an unknown
-folder count as inside the project, so `cd sub && mv a.py b.py` still changes
-the project. That is:
-
-- a `cd` to a bare relative name such as `sub`, which bash may find through
-  `CDPATH` instead;
-- a `cd` to a variable, a glob, a command substitution, `-`, `~-`, `~+`, or
-  `+N`, with an option such as `-P`, with more than one argument, and a bare
-  `cd`;
-- any `pushd`, `popd`, `Push-Location`, or `Pop-Location`, since the folder
-  stack can leave the folder unmoved (`pushd -n`) or rotate it (`pushd +1`);
-- a command starting with `!`, since a failed `cd` then lets the `&&` after
-  it run;
-- a `cd` after `;`, a newline, `||`, `|`, or `&`, or that is followed by `|`,
-  `||`, or `&`, since it may have failed, never run, or run apart;
-- a `cd` inside `( )`, `{ }`, `$( )`, `case`, `if`, a loop, or a PowerShell
-  script block;
-- any separator other than `&&` after a followed `cd`, since what runs next
-  runs even if that `cd` failed.
-
-PowerShell 5.1 has no `&&`, and `;` is not a safe chain, so there a
-`Set-Location` before a write leaves the write's relative targets counted as
-inside; in PowerShell 7, `Set-Location <absolute path> && …` is followed. Only
-a `cd` in the same command is followed, not one in an earlier call.
+A `Bash` command is read as a `posix` shell and a `PowerShell` command as a
+`powershell` shell; what each writes, and how a `cd` moves its folder, is
+the contract's [Shell Reading](../../stack/enforcement-contract.md#shell-reading),
+in [`../core/goated_core/shell.py`](../core/goated_core/shell.py).
 
 #### Shell writes the design gates judge
 
-`design` and `design-reads` judge a shell command only where it puts new
-text into a project code or configuration file (Ticket 098, the
-maintainer's decision of 2026-11-18): a redirect of output into the file,
-`tee` or `Tee-Object`, `Set-Content`, `Add-Content`, or `Out-File` and their
-aliases, or `New-Item` or `ni` with a `-Value`. The text counts by the
-lines the command shows: a heredoc's body fed to `cat` or `tee`, the
-arguments of `echo`, `printf`, or `Write-Output`, shown text piped on
-through `cat`, a quoted PowerShell string piped in, or a `-Value` (or
-`Set-Content`'s and `Add-Content`'s positional value). Text it does not
-show counts as five or more lines, as the closeout counts a shell write:
-a program's output (`python gen.py > src/a.py`), and text the shell fills
-in, holding a `$` or a backtick (`echo "$CODE"`, `-Value $code`,
-`-Value (Get-Content x)`), even inside single quotes, where it would be
-literal. Writes to two spellings of one file in one command add up
-(`src/a.py`, `./src/a.py`, `src\a.py`). A code file written this way
-counts among the turn's code writes when the gates find its first
-substantial change and its third code file. The gates do not read the text for signals, so only the path
-selects a reference (a configuration file, the third code file), and a
-test file selects none.
-
-Other shell writes stay with the routing, `security`, and closeout rules
-only. The reason is what the command adds: a copy, move, restore
-(`git checkout -- <path>`), or in-place edit (`sed -i`) carries text that
-was designed elsewhere or a substitution the command shows whole, so asking
-for a design load there would hold routine file work. A file an
-[inline script](#inline-scripts) writes is the `scripted-edit` gate's, and
-a write naming no file (`git apply`, `patch`) shows no file whose design a
-hold could ask for.
+Which shell writes the `design` and `design-reads` gates judge, and how
+their lines are counted, is the contract's
+[Shell Writes The Design Gates Judge](../../stack/enforcement-contract.md#shell-writes-the-design-gates-judge).
 
 #### Inline scripts
 
-When a command gives an interpreter its code inline, the adapter reads that
-code for calls that write, remove, or rename a file. It reads `python`
-(`python3`, `python3.12` and other versions, `py`), `node`, `perl`, `ruby`,
-`deno`, and `bun`, each also through `uv run`, `npx`, and the other command
-runners a check is read through. The code is given by an inline-code option
-(`python -c`, `node -e`/`-p`/`--eval`, `perl -e`/`-E`, `ruby -e`,
-`deno eval`, `bun -e`/`--eval`), or reaches standard input when no script is
-named (`python -`, `python`, `deno run -`, `bun run -`) from:
-
-- a heredoc or `<<<` here-string on the interpreter (`python - <<'EOF'`,
-  `python <<< "…"`);
-- a pipe from a text producer: `cat` with no file, fed a heredoc
-  (`cat <<'EOF' | python -`); `echo`, `printf`, or `Write-Output` with their
-  arguments; or a PowerShell string or here-string alone
-  (`@'…'@ | python -`). Text piped from a file (`cat notes.txt | python -`)
-  or any other program is not read.
-
-Such a script is a shell write: its files are the string
-literals its write calls name, placed as any write target is (a `cd` it
-follows applies), and it meets the routing gates, the path gates
-(`security`, `review-intake`, `scripted-edit`, `reference-reads`,
-`conflict-resolution`, `repeated-failure`), and the closeout. A path given
-as a name counts as the literal that name is bound to when the script binds
-it once, at its top level and before the call, to one string literal with
-no run-time part: `p = "notes.md"` in Python (read from its syntax tree,
-also as a `Path(p)` receiver), and `const`, `let`, or `var p = 'notes.md'`
-in JavaScript, where every other use of `p` must be a whole argument of a
-call or the object of a property (`f(p)`, `p.length`). A name bound or
-changed anywhere else (a second assignment, `p += …`, a loop or `with`
-target, a parameter, an import, an `except` name, `del`), bound inside a
-loop, branch, function, or class, bound after the call, or bound to
-anything but one literal (an f-string, a template with `${}`, a
-concatenation, `input()`, an environment variable, a call, a JavaScript
-statement that goes on past its line, such as a next line opening with
-`.replace(…)` or `+ '.py'`) is not read. No name at all is read in code
-that may bind one unseen: code the shell may expand (see below) holding
-`$` or a backtick anywhere, or code using `exec`, `eval`, `globals`,
-`vars`, `locals`, `sys.modules`, `__main__`, `__dict__`, `globalThis`, a
-star import, or a
-JavaScript `with`. Perl and Ruby names are never read, since their strings
-can change in place (`$p =~ s/a/b/`, `p << "x"`). Any other write call
-whose path is not one literal is an unnamed write, inside the project
-wherever the command runs, as `git apply` is: a script reaches project
-files from any folder (`os.path.join(ROOT, …)`, `sys.argv`, `os.chdir`).
-So is a literal holding `$` or a backtick in code the shell may expand
-first: code given as an argument, an unquoted heredoc (`<<EOF`), a `<<<`
-here-string, or piped text (`python -c "open('$F', 'w')"` writes whatever
-`$F` holds). A quoted-delimiter heredoc (`<<'EOF'`) expands nothing, so
-there `'$F'` is the file's name. A name an import gives a listed module or
-function is followed: `import shutil as s` then `s.move(…)`,
-`from os import remove` then `remove(…)`, `from pathlib import Path as P`,
-and `const {writeFileSync: w} = require('fs')` or
-`import {rmSync as r} from 'fs'`. A script in which no write call is found is not a write, so
-`python -c "print(1)"` and a script that opens files only to read them pass
-as before. Inline code is never a check; `python -m pytest` still is.
-
-The calls, by language (`WRITE_CALLS` in `script_writes.py`, the one table):
-
-| Language | Write calls |
-| --- | --- |
-| Python | `open`, `io.open`, `codecs.open`, `gzip.open`, `bz2.open`, `lzma.open` with a mode holding `w`, `a`, `x`, or `+` (a mode that is not a literal counts); `os.open` with a writing flag; `os.remove`, `unlink`, `rmdir`, `removedirs`, `truncate`, `rename`, `renames`, `replace`; `shutil.copy`, `copy2`, `copyfile`, `copytree` (the destination), `move`, `rmtree`; a path's `.write_text`, `.write_bytes`, `.unlink`, `.touch`, `.rmdir` (an unnamed file unless called on `Path("…")`), and `Path("…").rename`, `.replace`, and `.open` with a writing mode |
-| JavaScript (`node`, `deno`, `bun`) | `fs` and `fs/promises`: `writeFile`, `appendFile`, `createWriteStream`, `unlink`, `rm`, `rmdir`, `truncate`, `rename`, `copyFile` and `cp` (the destination), `open` with a writing flag, and their `Sync` forms; `Deno.writeTextFile`, `writeFile`, `remove`, `create`, `truncate`, `rename`, `copyFile`, and their `Sync` forms; `Bun.write` |
-| Perl | `open` with a `>`, `>>`, or `+` mode, in its three-argument form or in the path of its two-argument form; `unlink`, `rmdir`, `rename`, `rmtree`, `remove_tree`; `File::Copy`'s `copy`/`cp` (the destination) and `move`/`mv` |
-| Ruby | `File.write`, `IO.write`, `binwrite`; `File.open` and `File.new` with a `w`, `a`, or `+` mode; `File.delete`, `unlink`, `rename`; `FileUtils.rm` and its forms, `remove…`, `rmdir`, `touch`, `mv`/`move`, and `cp`/`copy`/`install` (the destination) |
-
-The reading is lexical, like the rest: a call spelled inside a string or
-comment of the script still counts, toward holding. A name other code also
-uses (`open`, `.rename`, `.replace`) counts only where its module, receiver,
-or mode says it writes, so `text.replace("a", "b")` and
-`window.open(url, "_blank")` do not.
+Which inline scripts are read, and their write calls, are the contract's
+[Inline Scripts](../../stack/enforcement-contract.md#inline-scripts), in
+[`../core/goated_core/script_writes.py`](../core/goated_core/script_writes.py).
 
 ### Plain reads
 
 Before the router loads, `router-first` passes a `Bash` or `PowerShell`
-command made only of plain reads, as it passes Read and Grep, so an agent can
-look around before it routes. Each simple command must be one of:
-
-- `cat`, `head`, `tail`, `ls`, `dir`, `grep`, `rg` (without `--pre` or
-  `--hostname-bin`), or `wc`;
-- `pwd`, `echo`, `cut`, `tr`, `stat`, `which`, `true`, or `:`, and, as a
-  whole PowerShell command, `$null`, which does nothing, as `true` does in
-  Bash; a hold names either as the carrier for a line (see
-  [Hold messages](#hold-messages));
-- `sort` without `-o`, `-T`, `--output`, `--temporary-directory`, or
-  `--compress-program`, which write files or run a program;
-- `uniq` with at most one file, since it writes its second, and no `*`,
-  `?`, or `[` in any argument, quoted or not, since bash may expand one
-  into several files (`uniq *.txt` overwrote the second);
-- `diff` without `-l` or `--paginate`, which pipe its output through `pr`;
-- `file` without `-C` or `--compile` (which write a magic file), `-z`, `-Z`,
-  or `--uncompress` (which run decompressors), or `-m` and `--magic-file`;
-- `find` without `-exec`, `-execdir`, `-ok`, `-okdir`, `-delete`, `-fprint`,
-  `-fprint0`, `-fprintf`, or `-fls`;
-- `git status`, `git diff`, `git log`, `git show`, `git rev-parse`,
-  `git ls-files`, or `git blame`;
-- `git branch` with only listing options (`-a`, `-r`, `-v`, `-vv`,
-  `--show-current`, `--contains`, `--merged`, `--sort`, `--format`, and the
-  like) and a pattern only after `--list`, so no name to create (`-l`
-  meant `--create-reflog` before git 2.23); an option value given as the
-  next word holds no `*`, `?`, or `[`, since a glob there expands into
-  several words and one left over is a branch to create
-  (`git branch --format *`), while `--format=*` passes;
-- `git worktree list`, and `git remote` bare, with `-v`, or as `get-url`;
-- `Get-Content`, `Get-ChildItem`, or `Select-String`, or their aliases `gc`,
-  `gci`, and `sls`.
-
-A git read has no `--output`, `--ext-diff`, `--textconv`, or
-`--show-signature`, and no option before the subcommand but `-C <path>`,
-`--no-pager`, or `-P`. GNU tools take a long option by any prefix of its
-name and run short options together, so `sort --out=x` and `sort -uo x` are
-held as `--output` and `-o` are; `git branch` takes prefixes too, so only
-its listing options written in full pass (`--edit` would open an editor as
-`--edit-description`). `git remote show` is held: it contacts each remote,
-which runs ssh or a credential helper.
-
-The command's first part may be a `cd` to one plain path, with no `$`,
-wildcard, or option (`cd sub && ls`): it moves the reads after it and writes
-nothing. A `cd` later in the command, `pushd`, and `cd -` are held.
-
-The command word must be the bare name, in any case: `./cat`, `/bin/cat`,
-or `cat.cmd` may be any program, so it is held. The commands may be joined by
-pipes, `&&`, `||`, `;`, or newlines. The call is held when any part of it is
-something else: another or unknown command, a wrapper such as `sudo` or
-`xargs` or a variable assignment before the command, any output redirect, a
-heredoc, a subshell, group, or script block, a process substitution, or a
-background `&`. A redirect into a null device is held too, since a null
-device in one shell is a real file in another: `nul` in bash, `/dev/null` in
-PowerShell. The one exception is a `Bash` call's redirect of standard error,
-or another stream but standard output, into exactly `/dev/null`
-(`ls 2>/dev/null`); `ls 2> errors.txt`, `ls > /dev/null`, and the same in
-`PowerShell` are held. Duplicating a descriptor (`2>&1`) and an input
-redirect (`< a.py`) are fine.
-
-The call is also held when its text holds anything the lexical reading may
-not follow as the shell does, even inside quotes: a `$` (variables,
-`$(…)` inside double quotes, `${x:=…}`, arithmetic), a backtick, a backslash
-(an escape in bash, where `-del\ete` is `-delete`, but a plain character in
-PowerShell), `<<<`, a `>&` not followed by a whole descriptor (`>&2` is
-fine, `>&2x` writes the file `2x`), any character but printable ASCII, a
-newline, or a tab (curly quotes, which PowerShell reads as quotes; a lone
-carriage return or U+2028, which it reads as a line break), a PowerShell
-block comment `<#`, a PowerShell here-string, `[[` or `]]` (outside command
-position a plain word, so a `>` after it redirects), `//`, which starts a
-UNC path read over the network, where Windows may send the user's
-credentials, `::` before a slash or backslash, a PowerShell provider path
-(`FileSystem::\\host\share`) that can do the same, or PowerShell's
-stop-parsing token `--%`, after which the rest of the line goes to a native
-program unparsed. A backslash and `//` are fine inside a whole single-quoted
-argument, which both shells read literally (`grep -n 'def\s+x' a.py`,
-`grep 'http://x' src`), unless two slashes or backslashes, in any mix,
-appear anywhere in it but right after a URL scheme such as `https:`: a
-program may split a path off anywhere (`'-f//host/p'` is `-f` with
-`//host/p`), and the adapter cannot tell a pattern from a path, so
-`grep '// TODO' a.c` and `grep 'a\\b' a.py` are held. A quote inside a word (`x'\s'`) and double quotes get no exemption. So
-a Windows path with backslashes, such as `Get-Content src\a.py`, is held;
-`Get-Content 'src\a.py'`, Read, or a forward-slash path passes. When the
-analysis cannot tell, the call is held. The lists are
-`READ_ONLY_COMMANDS`, `READ_ONLY_REFUSED_ARGS`, `READ_ONLY_REFUSED_OPTIONS`,
-the `GIT_READ_*` and `GIT_BRANCH_*` tables, and `NOT_PLAINLY_SPELLED_RE` in
-`shell.py`. Once the
-router loads, commands are judged as before.
+command made only of the contract's
+[plain reads](../../stack/enforcement-contract.md#plain-reads), as it passes
+Read and Grep. `true` in Bash and `$null` in PowerShell are plain reads, and
+a hold names either as the carrier for a line (see
+[Hold messages](#hold-messages)).
 
 A spawn of a read-only subagent type, `claude-code-guide` (the
 `subagent_type` of an `Agent` or `Task` call, matched exactly), delegates
@@ -998,10 +397,9 @@ with whatever tools it lists, and is exempt too. The list is
 Agents commit before they report, so a commit meets the closeout first. A
 commit, as the `commit` gate sees one (a git commit in a shell command or an
 MCP commit tool), that the `commit` gate lets through is held while the turn
-has an unmet closeout item: Proof, Unfinished work, Docs, Design red flags,
-Review, Verification, Security, or Setup. The hold's first line is the
-closeout's, `goated-hold: closeout | justified-skip`, its items are the
-closeout's texts, and each item accepts its usual skip line. It opens
+has an unmet closeout item. The hold's first line is the closeout's,
+`goated-hold: closeout | justified-skip`, its items are the closeout's
+texts, and each item accepts its usual skip line. It opens
 `Before committing in this turn`; for a shell commit it adds that the whole
 command was held, so a check chained before the commit in the same command
 has not run yet and does not count. An MCP commit tool has no command, so
@@ -1033,178 +431,46 @@ changed file still counts as one.
 
 ### Change reads
 
-A hold whose step reviews or describes the change needs the change itself in
-front of the agent, not only the skill: the closeout's Docs, Design, and
-Security items, the commit, the pull request, and its review. A **change read** is a
-finished call, made after the last change the step covers. For every step
-that asks for one, a read before the skill load counts (Tickets 059 and
-092): a diff read, then a `commit-message` or `standards-and-spec-review`
-load with no change between, needs no second read. The Design step alone
-also orders the change read after its red-flags read.
-
-| Step | The change read must follow |
-| --- | --- |
-| Docs | The last code change |
-| Design | The red-flags read and the last code change that is not [comment-only](#comment-only-edits); after a red-flags read that follows five or more changed lines, later changes adding fewer than five lines in total need no second red-flags read, only this change read after them |
-| Security | The last change to a security-sensitive file |
-| Commit, pull request, pull-request review | The last change to any project file, code or not, including changes a subagent spawned in the turn made |
-| Review | The last code change |
-
-A change read is one of:
-
-- a command that prints the changes' content to the agent: `git diff`, `git
-  show`, a patch log (`git log` or `git whatchanged` with `-p`, `-u`, `-U<n>`,
-  `--unified`, `--patch`, or `--patch-with-stat`), `git stash show -p`, `git
-  format-patch --stdout`, `gh pr diff`, or `glab mr diff`, under any wrapper
-  or through a pipe (`git diff | head`), or with stderr redirected
-  (`2>err.txt`). A listing of names or counts does not count: `--stat`,
-  `--shortstat`, `--numstat`, `--dirstat`, `--summary`, `--name-only`,
-  `--name-status`, `--raw`, `--check`, `-s`, or `--no-patch`, unless a patch
-  option asks for the patch too. Neither does `--quiet`, `--output` or
-  `--output=<file>`, or standard output redirected into a file
-  (`> change.patch`, `1>out.txt`);
-- a `Read` of a file the turn changed (any project file, code or not). In a
-  turn that changed no file it can name, such as a commit of an earlier turn's
-  work, only a printed diff can count, and the hold says so.
-
-A read chained in the same command as the commit, or made in parallel with
-the held call, has not finished when the call is judged, so it does not
-count. A command whose result is an error does not count either, so a diff
-with `--exit-code`, which exits 1 when there are changes, is not a change
-read: run it without. Only git and the `gh` and `glab` diffs are read: another
-version control system's diff is not seen, so read a changed file instead.
-
-A skip line, where the item accepts one, a typed skill skip, and a commit
-message the user typed still clear each hold without a change read. An MCP
-tool that commits or opens a pull request passes the change-read step when
-the turn changed no project file: it carries the change in its own input,
-and outside a git checkout no diff can run and no changed file exists to
-read, so the strict hold would have no way out.
-
-A change read can be met by a token read, such as a diff piped through
-`head -1`: the rule puts the change in front of the agent, it does not prove
-the agent reviewed it. Some forms are counted although they print nothing to
-the agent, because the analysis sees the diff but not where its output ends
-up: `> /dev/null`, `| Out-Null`, `| wc -l`, `| cat > file`, and
-`x=$(git diff)`.
+What counts as a change read, and which change each step's read must
+follow, is the contract's
+[Change Reads](../../stack/enforcement-contract.md#change-reads). In Claude
+Code, a `Read` of a changed file counts, whole or not, and so does a diff
+printed by a `Bash` or `PowerShell` command. A read chained in the same
+command as the commit, or made in parallel with the held call, has not
+finished when the call is judged, so it does not count. An MCP tool that
+commits or opens a pull request skips the read when the turn changed no
+project file.
 
 #### Comment-only edits
 
-An `Edit` or `MultiEdit` whose added and removed text is only comments and
-docstrings does not move the change point the Design red-flags read must
-follow, so fixing a comment the red-flags scan found does not reopen the
-item. The rules (`comment_only` in
-[`goated_adapter/design_reads.py`](goated_adapter/design_reads.py)) err
-toward a change:
-
-- The comment syntax comes from the file's extension. `#` comments: `.py`
-  and `.pyi` (with three-quote docstrings), `.rb`, `.sh`, `.bash`, `.zsh`,
-  `.pl`, `.r`, `.ps1`, `.psm1`. `//` line comments and `/* */` blocks: `.c`,
-  `.h`, `.cc`, `.cpp`, `.cxx`, `.hpp`, `.cs`, `.java`, `.js`, `.jsx`, `.mjs`,
-  `.cjs`, `.ts`, `.tsx`, `.go`, `.rs`, `.swift`, `.kt`, `.kts`, `.scala`,
-  `.dart`. No edit of any other file is comment-only. So `#define` or
-  `#[derive]` in a C-family file, and `a // 2` in Python, are code.
-- Each replaced text must hold the same code lines, indentation included,
-  as the text replacing it, once comments are left out: a whole line opening
-  with the line marker, a `/* */` block with nothing after its close, a
-  docstring line opening with three quotes with nothing after its close, and
-  a trailing comment after two or more spaces (`x = 1  # note`).
-- Text it cannot read for certain counts as a change: a quote before a
-  trailing comment, a lone three-quote line (a fragment cannot say whether
-  it opens or closes a docstring), code after a block's or docstring's
-  close, and any code line holding three quotes or a backtick, which may
-  open a string spanning lines. A line opening with `*` outside a block it
-  saw is code.
-- A `Write`, even of a file that is now only a comment, a notebook edit,
-  and a shell write always count as a change.
-
-Proof, Docs, and every other step still count a comment-only edit as a
-change.
+Which edits are comment-only is the contract's
+[Comment-Only Edits](../../stack/enforcement-contract.md#comment-only-edits).
+In Claude Code, an `Edit` or `MultiEdit` can be comment-only; a `Write`, a
+`NotebookEdit`, and a shell write always count as a change.
 
 ### Content checks
 
-Only text in the tool input is checked, and only for what the skill's
-contract states plainly enough to test without judgement
-([`goated_adapter/contracts.py`](goated_adapter/contracts.py)):
-
-- **Commit message.** When the commit itself carries the message inline (`-m`,
-  `--message`, a short-flag cluster such as `-am`, the heredoc fed to that
-  commit's `-F -`, a heredoc in `-m "$(cat <<'EOF' … EOF)"`, or a PowerShell
-  here-string), or an MCP commit tool carries it in `message`, it needs a non-empty subject of at most 72
-  characters, a blank line before any body, and no credential-shaped token. A
-  message in a file (`-F <path>`), reused from another commit (`-c`, `-C`), or
-  from an editor is not checked.
-- **Spawn brief.** The brief needs, as Markdown headings, the sections its
-  template keeps even for an agent that inherits the conversation:
-  `Goal`, `Scope`, and `Done Means` for `handoff`'s spawn brief; `Task`,
-  `Ownership`, and `Required Report Format` for the implementer prompt;
-  `Review Mode`, `Review Inputs`, and `Required Report Format` for the
-  reviewer prompt. A brief passes when it matches a template whose reference
-  was read in the turn.
-- **Skills line in a brief.** Every spawn brief, including a card's, also
-  needs a skills line naming the skills the new agent should read before it
-  starts: `goated-skills: <skill>, <skill>`, or
-  `goated-skills: none: <reason>` with a reason of three words or more. A
-  skill is named by its installed name, bare or with a plugin namespace
-  (`goated:tdd`). Like a route line, the line counts only on its own line
-  outside code blocks, bare or in one pair of backticks; it may also be a
-  `- ` or `* ` list item. `handoff`'s `references/spawn-brief.md` defines
-  the line, and the implementer and reviewer prompts carry it. A brief is
-  held when it has no such line or its line is malformed, and the hold names
-  the problem: a missing line, no skill named, none with too short a reason,
-  none mixed with names, an empty or malformed name, a capitalised prefix, or
-  no space after it. Whether the named skills are the right ones, and whether
-  the agent reads them, is not checked.
+The checks are the contract's
+[Content Checks](../../stack/enforcement-contract.md#content-checks), in
+[`../core/goated_core/contracts.py`](../core/goated_core/contracts.py). In
+Claude Code, a commit message is read from the `Bash` or `PowerShell`
+command, or from an MCP commit tool's `message`; a spawn brief is an `Agent`
+or `Task` call's `prompt`, or a session tool's brief, an offer card's
+included.
 
 ### Hold messages
 
 Every hold, whether a denied tool call or a blocked `Stop`, returns a reason
-whose first line has one stable format, which the skill-usage mod parses. The
-`closeout` gate holds a commit call as well as a `Stop`, with the same first
-line, and the mod counts both alike:
+whose first line has the format the contract's
+[Hold Messages](../../stack/enforcement-contract.md#hold-messages) owns,
+with the pattern the first line matches and the closeout's item labels; the
+skill-usage mod parses it. Its [Gates](../../stack/enforcement-contract.md#gates)
+table owns the list of gates. The hook's decision belongs to the first hold
+of a message; the skill-usage mod reads every hold line and counts each hold
+as if shown alone. A test checks every hold text against the registry's
+skill names. The core returns the rule text; the adapter fills in what only
+Claude Code can say:
 
-```text
-goated-hold: <gate> | <kind>
-<what the agent must do, in plain words>
-```
-
-- The contract's [Hold Messages](../../stack/enforcement-contract.md#hold-messages)
-  owns this format, the pattern the first line matches, and the closeout's
-  item labels; its [Gates](../../stack/enforcement-contract.md#gates) table
-  owns the list of gates.
-- When a call meets several holds, one message carries them all, in the
-  order the gates fire: the first hold as it would be alone, then, after a
-  blank line, each further hold opening with its own `goated-hold:` line,
-  alone on its line and matching the same pattern, followed by its text.
-  Each keeps its kind and its own way to clear. The hook's decision belongs
-  to the first; the skill-usage mod reads every hold line and counts each
-  hold as if shown alone.
-- The lines after it are guidance for the agent and may change between
-  releases; do not parse their wording. They backtick each skill they ask
-  for by its bare name, which the skill-usage mod reads from them,
-  and backtick no other bare word: a file name is quoted, and the grammar's
-  words appear backticked only inside a whole line such as
-  `goated-skip: <skill>: <reason>`. A test checks every hold text against
-  the registry's skill names.
-- The closeout hold lists each unmet item on its own line, starting
-  `- <Label>: `, with `Proof`, `Unfinished`, `Docs`, `Design`, `Review`,
-  `Verification`, `Security`, or `Setup` as the label; the two design items
-  share `Design`. Each item names the skill it asks for, backticked or as the
-  skill of the skip line it offers: the mod counts an item through that
-  skill, so an item that names none is not counted. The Review item names
-  the reviewer prompt by its path, so it counts through
-  `standards-and-spec-review`. These labels
-  are stable: the skill-usage mod counts each closeout hold per item by them,
-  so a release keeps them, and a new item takes a label of its own. The
-  wording after the label may change.
-- Each named skill is a separate requirement, except in the `spawn` hold,
-  whose two skills are alternatives: `handoff` or
-  `subagent-driven-development`, either of which answers it.
-- A hold asks for a load only when the skill does not [count as
-  loaded](#loads): it never loaded since the last compaction or `/clear`, or
-  the state that kept the load is missing. Inside a
-  [subagent](#subagents), where only its current turn counts, the hold asks
-  for the load or read in this turn.
 - A hold that a route or skip line can clear (`route-line`, `pipeline`,
   `design`, `design-reads`, `reference-reads`, `review-intake`, `scripted-edit`, `security`,
   `conflict-resolution`, `repeated-failure`, `pr-review`) says that a line in reply text may not be
@@ -1221,8 +487,7 @@ goated-hold: <gate> | <kind>
   [State](#state)), one exclusive file create, so of several hooks running at
   once only one can claim it. When the marker cannot be made or read, each
   such hold gives the full advice. The next turn's first such hold gives it
-  in full again. The first line, and every hold that never carried the
-  advice, stay the same. A subagent's turns claim their own marker, so each
+  in full again. A subagent's turns claim their own marker, so each
   subagent gives the full advice once per turn, apart from its parent.
 - Such a hold on a call with no field a line can go in, such as an `Edit`
   or `Write`, ends its message by naming a carrier in the session's shell:
@@ -1231,43 +496,11 @@ goated-hold: <gate> | <kind>
   command there), with the line in its description. Both are
   [plain reads](#plain-reads), so they pass every hold, before and after the
   router loads. Before the session's first shell call the carrier is Bash.
-- A paragraph several holds or closeout items share appears once in a
-  message: the [change read](#change-reads) explanation (a later copy says
-  to print the diff or Read a changed file, as above), the sentence about
-  rerunning steps chained before a held command, the sentence that a read
-  made in parallel does not count, and the closeout's rule for skip lines.
-- A hold that repeats an ask the turn already showed in full is short: it
-  opens `Still unmet:`, names what is still missing and every constraint
-  needed to clear it, such as what does not count as a change read, the
-  lines that broke the route grammar, or a typed message that stands a
-  commit down, and keeps every skill, reference, and skip line the full
-  text names, so the mod reads the same asks. An ask is the gate and what
-  is unmet, so a gate's new ask, such as a change read after a load, comes
-  in full the first time. The closeout judges each item apart: an item the
-  turn has not yet shown, at a commit or a `Stop`, comes in full under the
-  full opening (`Before finishing this turn, which changed code:`); when
-  every item it lists was shown before, it opens `Still unmet before
-  finishing this turn:` (or `committing in`) and lists them short, keeping
-  a commit's rules about chained steps and checks. Each ask claims its own
-  turn marker, apart from the advice's; when a marker cannot be made or
-  read, the full text is given. The next turn starts full again.
-- A hold or closeout item that asks for a [change read](#change-reads) once
-  its skill has loaded names that skill without backticks, or only in its
-  skip line, since no load answers it: the commit, pull-request, and
-  pr-review holds name no skill (pr-review's skip line is not backticked
-  either), and the closeout offers the skill only as a skip line. Once
-  `software-design-principles` has loaded, the `design` hold (asking for
-  reads) and the `design-reads` hold name it only in their skip line, and
-  backtick each reference by its path,
-  `software-design-principles/references/<file>`, which is no bare name; the
-  skill-usage mod reads it.
-- The `reference-reads` hold names each skill it asks about only in its
-  skip line, `goated-skip: <skill>: <reason>`, since the skill is already
-  loaded, and backticks each reference by its path under the skill,
-  `<skill>/references/<file>`; the skill-usage mod counts each skill's ask
-  as read files once each of its references is read.
-- Both Design red-flags texts repeat the question `red-flags.md` ends with;
-  no hold reads an answer.
+- A hold that repeats an ask the turn already showed in full is short, as
+  the contract says. Each ask claims its own turn marker, apart from the
+  advice's; when a marker cannot be made or read, the full text is given.
+- A required read names the Read tool and asks for the whole file, with no
+  `limit`, `offset`, or `pages`.
 
 Claude Code records a denied call as a `tool_result` with `is_error: true`
 whose content carries this reason, and a blocked `Stop` as the reason shown
@@ -1336,7 +569,7 @@ prompt: "<phrase>"`, also goes into the turn's context as the hook's
 commit-message override is recorded as `commit message`, without its text.
 A notice reaches a Claude Code mod with no text, so the
 [skill-usage mod](skill-usage/README.md) counts overrides from that context.
-The phrase set lives in [`goated_adapter/overrides.py`](goated_adapter/overrides.py);
+The phrase set lives in [`goated_core/overrides.py`](../core/goated_core/overrides.py);
 change it and this table together.
 
 ## Subagents
@@ -1498,6 +731,8 @@ and shows a warning that starts `GOATED Claude Code adapter:` when:
   `prompt_id`) within 1.5 seconds. The call itself need not be there: it is
   judged from the hook input (see [Latency](#latency));
 - the adapter hits an internal error;
+- the shared core, `../core/goated_core/`, cannot be imported, such as when
+  the `core/` folder was not copied beside this one;
 - on macOS and Linux, its state folder is a link, belongs to another user, or
   is writable by others, because planted state there could make holds pass.
 
@@ -1513,7 +748,11 @@ still stands and a warning says the state was not saved.
 
 ## State
 
-One small JSON file per session in a `goated-claude-code-adapter/` folder:
+The shared core keeps the session state
+([`goated_core/state.py`](../core/goated_core/state.py)), keyed by Claude
+Code's session id, in the folder this adapter names: one small JSON file per
+session in a `goated-claude-code-adapter/` folder, the same folder as before
+the core existed:
 
 - on macOS and Linux, under `$XDG_STATE_HOME`, or `~/.local/state` when that
   is not set, rather than the shared `/tmp`, so another local user cannot
@@ -1546,7 +785,9 @@ owner's markers of other turns, and a `SessionStart` after compaction or
 `/clear` deletes the session's and its subagents'. The state also keeps the
 shell the session last called (`posix` or `powershell`), which names the
 carrier a hold offers for a line. A state file an adapter from before Ticket
-080 saved names the tool instead (`Bash`, `PowerShell`) and is read the same.
+080 saved names the tool instead (`Bash`, `PowerShell`) and is read the same,
+as is one from before Ticket 081, whose override record is keyed by
+`prompt_id` where the core keys it by `prompt`.
 An older adapter reading a newer state file takes the shell as a tool name,
 so until the session's next shell call its carrier sentence names a
 `posix` or `powershell` call, with Bash's command `true` either way. An `onboarding-notices/` folder holds one file per project, named by
@@ -1598,6 +839,23 @@ different interpreter: the project's virtual environment of the uv-managed
 Python 3.14 takes 41 ms to start alone, against 22 ms for the system Python
 3.13 the table used, and it imports more slowly too (see the Ticket 095
 paragraph below). Compare them with each other, not with the table.
+
+Calling the shared core (Ticket 081) adds no measurable cost. Measured on
+2026-11-18 the same way, base then branch, in two rounds, with a 245 KB
+transcript whose current turn holds 300 calls:
+
+| Case | Before | After |
+| --- | --- | --- |
+| In process (`run_hook`), 150 runs: `PreToolUse` of an `Edit` | 20.0, 20.5 ms | 19.2, 18.9 ms |
+| The same, `PreToolUse` of a `Bash` command | 9.3, 9.3 ms | 9.7, 9.2 ms |
+| The same, `Stop` | 12.8, 12.5 ms | 12.7, 12.6 ms |
+| Spawned in exec form, 30 runs: `PreToolUse` of an `Edit` | 200, 191 ms | 198, 188 ms |
+| The same, `Stop` | 198, 191 ms | 187, 186 ms |
+| The same, `UserPromptSubmit` | 164, 165 ms | 169, 160 ms |
+
+The core's own command, `adapters/core/goated_judge.py`, judging an edit in
+a 38 KB request with a 300-call turn, took a median of 174 ms over 30 runs,
+against 41 ms for the interpreter alone.
 
 The `pr-review` gate's size check (see [Large pull requests](#large-pull-requests))
 runs only on a pull-request call that no load or skip line has cleared of
@@ -1935,7 +1193,13 @@ checks the adapter's marker parser against `stack/fixtures/markers/lines.yaml`.
 Verification items against scratch git repositories.
 `tests/test_claude_code_adapter_closeout_note.py` covers the early closeout
 note.
-`tests/test_claude_code_adapter_rule_purity.py` fails when a rule module
-names Claude Code (see [What It Holds](#what-it-holds)), and
+`tests/test_claude_code_adapter_rule_purity.py` fails when a core module
+names Claude Code or imports more than the standard library and the core
+(see [What It Holds](#what-it-holds)),
 `tests/test_claude_code_adapter_translation_parity.py` pins the behaviour the
-translation layer must keep (Ticket 080).
+translation layer must keep (Ticket 080), and
+`tests/test_claude_code_adapter_saved_state.py` pins that state saved before
+the core reads as before (Ticket 081).
+`tests/test_enforcement_scenarios.py` runs the conformance scenarios through
+this adapter's hooks, and `tests/test_enforcement_core.py` runs them through
+the core's two ways in.

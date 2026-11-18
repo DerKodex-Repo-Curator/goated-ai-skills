@@ -86,7 +86,7 @@ API loop, cannot call them.
       working with no change to the user's settings.
 - [x] Two sessions with different ids keep separate state.
 - [x] `AGENTS.md` and `adapters/README.md` describe `adapters/core/`.
-- [ ] The contract holds the detection tables and cites no adapter README;
+- [x] The contract holds the detection tables and cites no adapter README;
       the Claude Code README's gate and closeout tables keep only Claude
       Code detail.
 - [x] The contract check reads the gates, kinds and closeout labels from
