@@ -12,20 +12,25 @@ replaces waves 5 to 10 of
    - Blocked by: 065, 068, 069, 070, 072, 073, 077, and 086 to 096
    - Enables: a harness-neutral statement of the rules, and scenarios any
      adapter can be checked against.
-2. `tickets/098-adapter-contract-gaps.md`
+2. `tickets/archive/098-adapter-contract-gaps.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: 079
    - Enables: an adapter as strict as the contract it enforces, before its
      code moves.
-3. `tickets/080-adapter-rules-read-the-event-model.md`
+3. `tickets/archive/080-adapter-rules-read-the-event-model.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: 079, 098
    - Enables: rules that no longer know which harness they run in.
-4. `tickets/081-shared-enforcement-core.md`
+4. `tickets/archive/081-shared-enforcement-core.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: 080
    - Enables: one core, callable by import or by a JSON command.
-5. `tickets/082-neutral-usage-log-and-report.md`
+5. `tickets/archive/082-neutral-usage-log-and-report.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: 081, `tickets/archive/078-skill-usage-reference-counts.md`
    - Enables: the same measurement in every harness.
-6. `tickets/083-adapter-guide-and-worked-example.md`
+6. `tickets/archive/083-adapter-guide-and-worked-example.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: 081
    - Enables: adapters written by anyone, checked by the scenarios.
 7. `tickets/084-pi-agent-adapter.md`
@@ -67,8 +72,8 @@ the cost of some duplicated translation code.
 
 ## Ready Frontier
 
-Ticket 079 is completed and archived, and 098, 080, 081, 082 and 083 are
-merged. Ticket 084 is ready.
+Tickets 079, 098, 080, 081, 082 and 083 are completed and archived.
+Ticket 084 is ready.
 
 ## Coverage
 

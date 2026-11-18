@@ -40,23 +40,23 @@ and skip lines ... count only in their turn"), the `design-reads` and
 - `stack/enforcement-contract.md`: Holds, the two rows, Notices, and
   "Prompts, Turns, And Tasks".
 - The core's skip lookup, session state and the two gates' code.
-- `tickets/099-core-fixture-data-is-test-data.md` and
-  `tickets/100-core-narrower-reference-triggers.md`, which change the
+- `tickets/archive/099-core-fixture-data-is-test-data.md` and
+  `tickets/archive/100-core-narrower-reference-triggers.md`, which change the
   same rows first.
 
 ## Acceptance Criteria
 
-- [ ] A skip that cleared a `design-reads` hold for `decoupling.md` on a
+- [x] A skip that cleared a `design-reads` hold for `decoupling.md` on a
       configuration file covers a later turn's hold for the same
       reference on another configuration file in the same task, with a
       notice.
-- [ ] It does not cover another reference, a code or test file, a new
+- [x] It does not cover another reference, a code or test file, a new
       task, or a turn after a compaction.
-- [ ] A skip line clearing `design` or a closeout item still lasts one
+- [x] A skip line clearing `design` or a closeout item still lasts one
       turn.
-- [ ] The contract states the rule, and conformance scenarios cover the
+- [x] The contract states the rule, and conformance scenarios cover the
       lasting skip and each near miss above.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 
@@ -66,12 +66,22 @@ and skip lines ... count only in their turn"), the `design-reads` and
 
 ## Blocked By
 
-- `tickets/081-shared-enforcement-core.md`
-- `tickets/099-core-fixture-data-is-test-data.md`
-- `tickets/100-core-narrower-reference-triggers.md`
+- `tickets/archive/081-shared-enforcement-core.md`
+- `tickets/archive/099-core-fixture-data-is-test-data.md`
+- `tickets/archive/100-core-narrower-reference-triggers.md`
 
 ## Scope Exclusions
 
 - The skip line's grammar: it still names a skill and a reason.
 - Skips of any gate other than `design-reads` and `reference-reads`.
 - A person's `skip <skill>` override, which keeps lasting one turn.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-18.
+
+- Merged as `76c9161` (`e672c53`, follow-up `e1ceb12`).
+- Maintainer decisions: C2 (decision C, option 2); a new notice kind,
+  `skip_carried`, with the event model at version 3; and lasting skips
+  also cover a turn's first loaded `design` hold.
+- Exercised in later sessions; no separate live-check record.

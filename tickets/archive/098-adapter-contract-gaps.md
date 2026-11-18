@@ -62,16 +62,16 @@ code is fixed before Ticket 080 starts moving it:
 
 ## Acceptance Criteria
 
-- [ ] Three partial reads no longer meet a briefed session's orientation;
+- [x] Three partial reads no longer meet a briefed session's orientation;
       three whole reads still do.
-- [ ] A shell write of non-test code inside the project meets `design`,
+- [x] A shell write of non-test code inside the project meets `design`,
       and a shell write to a configuration file meets `design-reads` once
       `software-design-principles` counts as loaded.
-- [ ] A subagent's commit meets the closeout from its own turn, and a
+- [x] A subagent's commit meets the closeout from its own turn, and a
       subagent that proved and documented its change commits freely.
-- [ ] The contract carries no gap note, and a conformance scenario pins
+- [x] The contract carries no gap note, and a conformance scenario pins
       each fixed rule.
-- [ ] The adapter's other tests pass with no change to their expected
+- [x] The adapter's other tests pass with no change to their expected
       outcomes.
 
 ## Expected Proof
@@ -91,8 +91,15 @@ code is fixed before Ticket 080 starts moving it:
 
 ## Closeout
 
-Implemented on branch `claude/ticket-098-contract-gaps-4add32`; awaiting the
-lead session's review and merge.
+Completed, merged and archived on 2026-11-18.
+
+- Merged as `c292a3e` (`3daa05e`, follow-up `7ca6307`).
+- Maintainer decision: gap (b), where `design` judges only shell writes
+  that put new text from the command, as set out below.
+- Exercised in later sessions; no separate live-check record.
+
+Implementation notes, from the branch
+`claude/ticket-098-contract-gaps-4add32`:
 
 - **(a)** `_files_read` counts only whole reads (`Call.whole_read_path`), and
   the orientation hold says each read must be whole.

@@ -101,7 +101,7 @@ API loop, cannot call them.
 
 ## Blocked By
 
-- `tickets/080-adapter-rules-read-the-event-model.md`
+- `tickets/archive/080-adapter-rules-read-the-event-model.md`
 
 ## Scope Exclusions
 
@@ -130,3 +130,12 @@ API loop, cannot call them.
   store, so a session that spans the upgrade behaves as before.
   `state.py`'s allowance is gone from the purity check, which now covers
   every core module.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-18.
+
+- Merged as `c6d7237` (`5d060ea`, `b371d17`, `c6556b9`, `39e0f52`,
+  follow-ups `6000536`, `d492453`).
+- Decisions: as recorded above, on what Ticket 080 left.
+- Exercised in later sessions; no separate live-check record.

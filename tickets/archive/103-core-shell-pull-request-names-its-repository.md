@@ -48,17 +48,17 @@ The contract and a conformance scenario change with the code, as
 
 ## Acceptance Criteria
 
-- [ ] `gh pr create --repo other/x` and `glab mr create -R other/x` from a
+- [x] `gh pr create --repo other/x` and `glab mr create -R other/x` from a
       checkout whose `origin` is not `other/x` are not measured.
-- [ ] `gh pr create -R <owner>/<repo>` naming the checkout's own `origin`
+- [x] `gh pr create -R <owner>/<repo>` naming the checkout's own `origin`
       is measured as a command without the option is.
-- [ ] A host-prefixed or URL form names the same repository as its
+- [x] A host-prefixed or URL form names the same repository as its
       `owner/repo` path.
-- [ ] `--base`, `--head` and their glab forms are still read with the
+- [x] `--base`, `--head` and their glab forms are still read with the
       option present.
-- [ ] The contract states the rule, and a conformance scenario covers the
+- [x] The contract states the rule, and a conformance scenario covers the
       measured case and the other-repository near miss.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 
@@ -68,7 +68,7 @@ The contract and a conformance scenario change with the code, as
 
 ## Blocked By
 
-- `tickets/081-shared-enforcement-core.md` (merged)
+- `tickets/archive/081-shared-enforcement-core.md` (merged)
 
 ## Overlaps
 
@@ -81,3 +81,10 @@ The contract and a conformance scenario change with the code, as
 - The `GH_REPO`-style environment variables, and a repository chosen by
   `gh repo set-default`.
 - Which holds a pull request meets, and how a branch is measured.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-18.
+
+- Merged as `ebf782e` (`e56c3f0`, follow-up `43aa4e2`).
+- Exercised in later sessions; no separate live-check record.

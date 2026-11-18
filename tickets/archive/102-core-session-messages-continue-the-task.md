@@ -69,7 +69,7 @@ in `stack/fixtures/enforcement/routing.yaml` and `closeout.yaml`.
 
 ## Blocked By
 
-- `tickets/081-shared-enforcement-core.md`
+- `tickets/archive/081-shared-enforcement-core.md`
 
 ## Scope Exclusions
 
@@ -77,3 +77,12 @@ in `stack/fixtures/enforcement/routing.yaml` and `closeout.yaml`.
 - A status-line grammar (D2 option 2, not chosen).
 - How the Claude Code adapter tells a session's message from a person's,
   which stays as it is.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-18.
+
+- Merged as `a8c6b61` (`9539c5f`, follow-up `4a27af4`).
+- Maintainer decisions: D1 option 2 and D2 option 1. The lead narrowed
+  the continued route to peer messages only.
+- Exercised in later sessions; no separate live-check record.

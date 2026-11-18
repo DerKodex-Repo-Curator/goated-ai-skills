@@ -63,17 +63,17 @@ change with the code, as `AGENTS.md` requires:
 
 ## Acceptance Criteria
 
-- [ ] `node -e "window.open(u,'width=200')"` and `node -e "db.rm(id)"`
+- [x] `node -e "window.open(u,'width=200')"` and `node -e "db.rm(id)"`
       meet no `scripted-edit` hold.
-- [ ] `fs.rmSync(p)`, `fs.promises.rm(p)`, `fs.open(p,'w')`, a call on a
+- [x] `fs.rmSync(p)`, `fs.promises.rm(p)`, `fs.open(p,'w')`, a call on a
       name bound to `require('node:fs')`, and a destructured
       `const { rm } = require('fs'); rm(p)` are still writes.
-- [ ] A posix `echo x > nul` is a write that meets the write gates, and
+- [x] A posix `echo x > nul` is a write that meets the write gates, and
       its hold text names `/dev/null`; the same in a `powershell` command
       is not a write.
-- [ ] The contract states each rule, and conformance scenarios cover each
+- [x] The contract states each rule, and conformance scenarios cover each
       hold and near miss above.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 
@@ -83,7 +83,7 @@ change with the code, as `AGENTS.md` requires:
 
 ## Blocked By
 
-- `tickets/081-shared-enforcement-core.md` (merged)
+- `tickets/archive/081-shared-enforcement-core.md` (merged)
 
 ## Overlaps
 
@@ -97,3 +97,11 @@ change with the code, as `AGENTS.md` requires:
 - Python, Perl and Ruby receivers.
 - `$null` in a posix command and `/dev/null` in a powershell command.
 - Plain Reads, which already holds any redirect into a null device.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-18.
+
+- Merged as `c6ced98` (`1d711d1`, follow-up `b3ae338`).
+- Maintainer decisions: E1 and F1 (option 1 of decisions E and F).
+- Exercised in later sessions; no separate live-check record.

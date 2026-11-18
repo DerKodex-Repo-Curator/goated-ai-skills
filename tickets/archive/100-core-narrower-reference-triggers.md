@@ -77,7 +77,7 @@ the pattern; scenarios in `stack/fixtures/enforcement/writes.yaml` and
 
 ## Blocked By
 
-- `tickets/081-shared-enforcement-core.md`
+- `tickets/archive/081-shared-enforcement-core.md`
 
 ## Scope Exclusions
 
@@ -85,3 +85,10 @@ the pattern; scenarios in `stack/fixtures/enforcement/writes.yaml` and
 - What `comment_only` counts as a comment.
 - Proof and Docs for comment-only edits.
 - The red-flags read and its question.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-18.
+
+- Merged as `fdeed59` (`5293c26`, follow-up `9bc4b71`).
+- Exercised in later sessions; no separate live-check record.
