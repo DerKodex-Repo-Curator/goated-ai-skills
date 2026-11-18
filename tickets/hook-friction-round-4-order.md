@@ -63,8 +63,8 @@ overlaps below were with 099, 100 and 102, which have merged.
 
 ## Ready Frontier
 
-Tickets 081, 099, 100 and 102 are merged. Tickets 101, 103, 104, 105 and
-107 are ready (wave 14); 106 waits for 101.
+Tickets 081, 099 to 105 and 107 are merged (wave 14 on 2026-11-18).
+Ticket 106 is ready.
 
 ## Coverage
 
