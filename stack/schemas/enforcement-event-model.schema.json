@@ -1,0 +1,433 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goated-ai-skills.dev/schemas/enforcement-event-model.schema.json",
+  "title": "GOATED Enforcement Event Model",
+  "description": "What the enforcement core needs to judge one event, and what it answers (ADR 0004). The root is a request; `$defs/decision` is the answer. Calls have kinds, never harness tool names. DRAFT for maintainer review (Ticket 079).",
+  "$ref": "#/$defs/request",
+  "$defs": {
+    "version": {
+      "description": "The event model's major version. A request or decision of any other version is refused, not guessed at.",
+      "const": 1
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_model", "session", "project", "turns", "event"],
+      "properties": {
+        "event_model": {"$ref": "#/$defs/version"},
+        "session": {"$ref": "#/$defs/session"},
+        "project": {"$ref": "#/$defs/project"},
+        "turns": {
+          "description": "Turns oldest first; the last is the current turn. An adapter sends every turn since the last compaction, or only those the core has not seen; the core folds turns it has seen by key. Empty only at a session start.",
+          "type": "array",
+          "items": {"$ref": "#/$defs/turn"}
+        },
+        "event": {"$ref": "#/$defs/event"}
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "agent"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "agent": {
+          "description": "Who is acting. A subagent's turns are its own; the routing gates do not apply to it and no override reaches it.",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role"],
+              "properties": {"role": {"const": "main"}}
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "id"],
+              "properties": {
+                "role": {"const": "subagent"},
+                "id": {"type": "string", "minLength": 1}
+              }
+            }
+          ]
+        }
+      }
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["folders", "working_folder", "home"],
+      "properties": {
+        "folders": {
+          "description": "The project's folders. A file is outside the project only when it is certainly under none of them.",
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "working_folder": {"type": "string", "minLength": 1},
+        "home": {"type": "string", "minLength": 1},
+        "agent_folders": {
+          "description": "The harness's own configuration folders. A write there is never scratch.",
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "installed_skills": {
+          "description": "Skill names the harness can find. Null when the adapter cannot tell.",
+          "type": ["array", "null"],
+          "items": {"$ref": "#/$defs/skill_name"}
+        }
+      }
+    },
+    "event": {
+      "description": "The one event to judge. Only a pending call and a turn end can be held; the others answer with notices only.",
+      "oneOf": [
+        {
+          "description": "A call about to run. It is not yet in the turn's entries.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "call"],
+          "properties": {
+            "type": {"const": "pending_call"},
+            "call": {"$ref": "#/$defs/call"}
+          }
+        },
+        {
+          "description": "A call that has just run. It need not be in the turn's entries yet.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "call", "result"],
+          "properties": {
+            "type": {"const": "finished_call"},
+            "call": {"$ref": "#/$defs/call"},
+            "result": {"$ref": "#/$defs/result"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {"type": {"const": "turn_end"}}
+        },
+        {
+          "description": "A prompt was submitted; it is the opener or last entry of the current turn.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {"type": {"const": "prompt_submitted"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "source"],
+          "properties": {
+            "type": {"const": "session_start"},
+            "source": {"enum": ["new", "resumed", "after_compaction", "cleared"]}
+          }
+        }
+      ]
+    },
+    "turn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "opener", "entries"],
+      "properties": {
+        "key": {
+          "description": "Stable for the life of the turn, unique in the session.",
+          "type": "string",
+          "minLength": 1
+        },
+        "opener": {
+          "oneOf": [
+            {"$ref": "#/$defs/prompt"},
+            {
+              "description": "A compaction opens a turn of its own.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type"],
+              "properties": {"type": {"const": "compaction"}}
+            }
+          ]
+        },
+        "entries": {
+          "description": "What happened in the turn after its opener, in order.",
+          "type": "array",
+          "items": {"$ref": "#/$defs/entry"}
+        }
+      }
+    },
+    "prompt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "author", "text"],
+      "properties": {
+        "type": {"const": "prompt"},
+        "author": {
+          "description": "person: a person typed it, so it may carry overrides. session: another session or agent sent it, such as a brief or a message. host: the harness wrote it, such as a retry or a background result. unknown: the adapter cannot tell, and it counts as not a person.",
+          "enum": ["person", "session", "host", "unknown"]
+        },
+        "text": {
+          "description": "The author's own text, with harness-inserted blocks removed.",
+          "type": "string"
+        },
+        "pasted": {
+          "description": "Text the person pasted rather than typed. Never read for overrides.",
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "starts_session": {
+          "description": "This is the session's first prompt, a brief from the session that started it. Its route line counts as the first turn's.",
+          "type": "boolean"
+        }
+      }
+    },
+    "entry": {
+      "oneOf": [
+        {
+          "description": "A later prompt that continues the turn rather than opening one, such as a background result or an own subagent's report. It carries no override.",
+          "$ref": "#/$defs/prompt"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "text"],
+          "properties": {
+            "type": {"const": "reply_text"},
+            "text": {"type": "string"}
+          }
+        },
+        {
+          "description": "A call, with its result once it has finished. A call with no result is still running.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "call"],
+          "properties": {
+            "type": {"const": "call"},
+            "call": {"$ref": "#/$defs/call"},
+            "result": {"$ref": "#/$defs/result"}
+          }
+        },
+        {
+          "description": "A person loaded a skill by name, such as a typed command.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "skill"],
+          "properties": {
+            "type": {"const": "skill_invoked"},
+            "skill": {"type": "string", "minLength": 1}
+          }
+        },
+        {
+          "description": "A background agent this session spawned has finished.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "agent_id"],
+          "properties": {
+            "type": {"const": "agent_finished"},
+            "agent_id": {"type": "string", "minLength": 1}
+          }
+        },
+        {
+          "description": "The turn's end was allowed. Overrides typed for the turn stop applying; a later continuing prompt keeps its route and lines.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {"type": {"const": "turn_ended"}}
+        }
+      ]
+    },
+    "call": {
+      "description": "A call by its kind, one branch per kind. `line_text` is the one field a route or skip line may be read from, for a harness that may not keep reply text whole; leave it out otherwise.",
+      "type": "object",
+      "required": ["kind"],
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "required": ["path", "edits"],
+          "properties": {
+            "id": {"type": "string"}, "line_text": {"type": "string"},
+            "kind": {"const": "file_write"},
+            "path": {"type": "string", "minLength": 1},
+            "whole_file": {
+              "description": "The call writes the whole file, creating or replacing it; its one edit's added text is the content.",
+              "type": "boolean"
+            },
+            "edits": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["removed", "added"],
+                "properties": {
+                  "removed": {"type": "string"},
+                  "added": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        {
+          "description": "A shell command. A commit or pull request made by a command stays a shell_command; the core reads the command.",
+          "additionalProperties": false,
+          "required": ["command", "shell"],
+          "properties": {
+            "id": {"type": "string"}, "line_text": {"type": "string"},
+            "kind": {"const": "shell_command"},
+            "command": {"type": "string"},
+            "shell": {"enum": ["posix", "powershell"]},
+            "background": {"type": "boolean"}
+          }
+        },
+        {
+          "additionalProperties": false,
+          "required": ["skill"],
+          "properties": {
+            "id": {"type": "string"}, "line_text": {"type": "string"},
+            "kind": {"const": "skill_load"},
+            "skill": {
+              "description": "The name as the harness gave it, namespace included; the core decides whether it counts.",
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "required": ["path", "whole"],
+          "properties": {
+            "id": {"type": "string"}, "line_text": {"type": "string"},
+            "kind": {"const": "file_read"},
+            "path": {"type": "string", "minLength": 1},
+            "whole": {"description": "False when the call asked for part of the file.", "type": "boolean"}
+          }
+        },
+        {
+          "description": "Handing work to another agent or session.",
+          "additionalProperties": false,
+          "required": ["brief", "starts_now"],
+          "properties": {
+            "id": {"type": "string"}, "line_text": {"type": "string"},
+            "kind": {"const": "spawn"},
+            "brief": {"type": "string"},
+            "starts_now": {
+              "description": "False when the call only proposes the work and nothing runs until a person starts it.",
+              "type": "boolean"
+            },
+            "read_only": {
+              "description": "The spawned agent has no write, edit, or shell tool.",
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "description": "A tool that only records a commit.",
+          "additionalProperties": false,
+          "properties": {
+            "id": {"type": "string"}, "line_text": {"type": "string"},
+            "kind": {"const": "commit"},
+            "message": {"type": ["string", "null"]}
+          }
+        },
+        {
+          "description": "A tool that only opens a pull or merge request.",
+          "additionalProperties": false,
+          "properties": {
+            "id": {"type": "string"}, "line_text": {"type": "string"},
+            "kind": {"const": "pull_request"}
+          }
+        },
+        {
+          "description": "Any other call. Never held.",
+          "additionalProperties": false,
+          "properties": {
+            "id": {"type": "string"}, "line_text": {"type": "string"},
+            "kind": {"const": "other"}
+          }
+        }
+      ]
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok"],
+      "properties": {
+        "ok": {"description": "False when the call failed or was refused.", "type": "boolean"},
+        "held": {"description": "A GOATED hold refused it, so it never ran.", "type": "boolean"},
+        "output": {"type": "string"},
+        "agent": {
+          "description": "For a spawn: the agent it started.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id"],
+          "properties": {
+            "id": {"type": "string", "minLength": 1},
+            "background": {"description": "Started in the background; done once an agent_finished entry names it.", "type": "boolean"},
+            "entries": {
+              "description": "The agent's own turn, for rules that count its work toward this turn.",
+              "type": "array",
+              "items": {"$ref": "#/$defs/entry"}
+            }
+          }
+        }
+      }
+    },
+    "skill_name": {
+      "description": "A bare skill name. The marker grammar in stack/fixtures/markers/README.md owns this shape.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_model", "decision", "holds", "notices"],
+      "properties": {
+        "event_model": {"$ref": "#/$defs/version"},
+        "decision": {"enum": ["allow", "hold"]},
+        "holds": {
+          "description": "Every hold the event meets, in the order the gates fire. The first decides how a harness with one reason field shows it.",
+          "type": "array",
+          "items": {"$ref": "#/$defs/hold"}
+        },
+        "notices": {
+          "description": "Never hold anything.",
+          "type": "array",
+          "items": {"$ref": "#/$defs/notice"}
+        }
+      },
+      "oneOf": [
+        {"properties": {"decision": {"const": "allow"}, "holds": {"maxItems": 0}}},
+        {"properties": {"decision": {"const": "hold"}, "holds": {"minItems": 1}}}
+      ]
+    },
+    "hold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gate", "kind", "text"],
+      "properties": {
+        "gate": {
+          "description": "A gate the enforcement contract names; the contract owns the list.",
+          "type": "string",
+          "pattern": "^[a-z]+(?:-[a-z]+)*$"
+        },
+        "kind": {"enum": ["strict", "justified-skip"]},
+        "text": {
+          "description": "What the agent must do, shown after the hold line the contract defines.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "notice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "text"],
+      "properties": {
+        "kind": {
+          "description": "fail_open: the core could not judge and allowed the event. warning: it judged, but something it reads was missing. override_recorded: a person's override for the turn. closeout_note: the turn's closeout items, early. session_notice: a session-start or friction notice.",
+          "enum": ["fail_open", "warning", "override_recorded", "closeout_note", "session_notice"]
+        },
+        "text": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}
