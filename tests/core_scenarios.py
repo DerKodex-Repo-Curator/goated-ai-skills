@@ -171,7 +171,7 @@ class _Run:
 
     def _judged(self, expect: dict | None, event: dict) -> dict:
         request = {
-            "event_model": 2,
+            "event_model": 3,
             "session": {"id": "scenario-session", "agent": self.agent},
             "project": {"folders": [self.project.as_posix()],
                         "working_folder": self.project.as_posix(),

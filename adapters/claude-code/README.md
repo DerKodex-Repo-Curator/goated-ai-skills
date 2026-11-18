@@ -579,6 +579,12 @@ A notice reaches a Claude Code mod with no text, so the
 The phrase set lives in [`goated_core/overrides.py`](../core/goated_core/overrides.py);
 change it and this table together.
 
+A skip line that clears a `design-reads` or `reference-reads` hold lasts the
+task for those references on files of the same kind, until a new task or a
+compaction (see the contract's Holds). When such a skip lets a later call
+through, the core's `skip_carried` notice goes to the agent as that call's
+`additionalContext`.
+
 ## Subagents
 
 A hook call from inside a subagent carries `agent_id`. There:

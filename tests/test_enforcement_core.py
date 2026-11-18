@@ -33,7 +33,7 @@ WRITE = {"type": "pending_call", "call": {
 
 def _request(session_id: str = "s1", **changes) -> dict:
     request = {
-        "event_model": 2,
+        "event_model": 3,
         "session": {"id": session_id, "agent": {"role": "main"}},
         "project": {"folders": ["/work/app"], "working_folder": "/work/app",
                     "home": "/home/u", "installed_skills": []},
@@ -80,13 +80,13 @@ class FailOpenTests(CoreTestCase):
         self.assert_allowed_with_reason(decision, "could not read the request")
 
     def test_a_request_the_core_cannot_read_is_allowed_with_a_reason(self) -> None:
-        for broken in (["a list"], {"event_model": 2}, _request(turns="none"),
+        for broken in (["a list"], {"event_model": 3}, _request(turns="none"),
                        _request(event={"type": "pending_call", "call": {"kind": "file_write"}})):
             with self.subTest(request=broken):
                 self.assert_allowed_with_reason(self.decide(broken), "could not read the request")
 
     def test_a_request_of_an_unknown_version_is_allowed_with_a_reason(self) -> None:
-        for version in (1, 3, "2", None):
+        for version in (1, 2, 4, "3", None):
             with self.subTest(version=version):
                 decision = self.decide(_request(event_model=version))
                 self.assert_allowed_with_reason(decision, "event model version")
@@ -98,7 +98,7 @@ class FailOpenTests(CoreTestCase):
     def test_the_command_answers_json_python_cannot_parse_with_a_reason(self) -> None:
         # An integer longer than Python's digit limit, and nesting deeper
         # than its recursion limit, both stop the parser itself.
-        for text in ('{"event_model": 2, "n": ' + "1" * 5000 + "}",
+        for text in ('{"event_model": 3, "n": ' + "1" * 5000 + "}",
                      "[" * 100_000 + "]" * 100_000):
             with self.subTest(text=text[:20]):
                 self.assert_allowed_with_reason(_command(text, self.state_dir),
@@ -114,8 +114,8 @@ class FailOpenTests(CoreTestCase):
         self.assert_allowed_with_reason(self.decide(request), "could not read the request")
 
     def test_the_command_answers_an_unknown_version_the_same_way(self) -> None:
-        decision = _command(json.dumps(_request(event_model=3)), self.state_dir)
-        self.assert_allowed_with_reason(decision, "event model version 3")
+        decision = _command(json.dumps(_request(event_model=4)), self.state_dir)
+        self.assert_allowed_with_reason(decision, "event model version 4")
 
     def test_a_readable_request_of_the_known_version_is_judged(self) -> None:
         # The near miss: the same write, well formed, meets router-first.

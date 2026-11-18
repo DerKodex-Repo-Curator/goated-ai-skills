@@ -1,4 +1,4 @@
-event_model: 2
+event_model: 3
 scenarios:
   - name: a substantial code change waits for design principles
     covers:
@@ -267,6 +267,142 @@ scenarios:
       - reply: "goated-route: continue"
       - call: *settings
 
+  - name: a skip line that clears a design-reads hold lasts the task for its references on the same kind of file
+    covers:
+      - {gate: design-reads, case: clears, way: lasting-skip}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export settings.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *settings
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+      - reply: "goated-skip: software-design-principles: one setting with no design in it"
+      - call: *settings
+      - prompt: {type: prompt, author: person, text: Add the import settings too.}
+      - reply: "goated-route: continue"
+      - call: &import_settings
+          kind: file_write
+          path: config/import.json
+          whole_file: true
+          edits: [{removed: null, added: "{\n  \"limit\": 3,\n  \"format\": \"csv\",\n  \"header\": true,\n  \"quote\": \"minimal\"\n}\n"}]
+        expect: {decision: allow, notices: [skip_carried]}
+
+  - name: a lasting design-reads skip covers neither another reference nor another kind of file
+    covers:
+      - {gate: design-reads, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export settings and a guarded read.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *settings
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+      - call: &guarded_read
+          kind: file_write
+          path: src/read.py
+          edits: [{removed: "pass", added: "try:\n    load()\nexcept OSError:\n    pass"}]
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+      - reply: "goated-skip: software-design-principles: one setting and one guard with no design in them"
+      - call: *settings
+      - call: *guarded_read
+      - prompt: {type: prompt, author: person, text: Split the export totals.}
+      - reply: "goated-route: continue"
+      - call: {kind: file_write, path: src/a.py, edits: [{removed: "pass", added: "total_0 = 0\ntotal_1 = 1\ntotal_2 = 2\ntotal_3 = 3\ntotal_4 = 4\ntotal_5 = 5"}]}
+      - call: {kind: file_write, path: src/b.py, edits: [{removed: "pass", added: "total_0 = 0\ntotal_1 = 1\ntotal_2 = 2\ntotal_3 = 3\ntotal_4 = 4\ntotal_5 = 5"}]}
+      - call:
+          kind: file_write
+          path: src/c.py
+          edits: [{removed: "pass", added: "total_0 = 0\ntotal_1 = 1\ntotal_2 = 2\ntotal_3 = 3\ntotal_4 = 4\ntotal_5 = 5"}]
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+      - call:
+          kind: file_write
+          path: src/d.py
+          edits: [{removed: "pass", added: "with threading.Lock():\n    pass"}]
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+      - call:
+          kind: file_write
+          path: src/e.py
+          edits: [{removed: "pass", added: "try:\n    save()\nexcept OSError:\n    pass"}]
+        expect: {decision: allow, notices: [skip_carried]}
+
+  - name: a new task ends a lasting design-reads skip
+    covers:
+      - {gate: design-reads, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export settings.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *settings
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+      - reply: "goated-skip: software-design-principles: one setting with no design in it"
+      - call: *settings
+      - prompt: {type: prompt, author: person, text: Now add the import settings.}
+      - reply: "goated-route: direct"
+      - call: *import_settings
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+
+  - name: a compaction ends a lasting design-reads skip
+    covers:
+      - {gate: design-reads, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export settings.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *settings
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+      - reply: "goated-skip: software-design-principles: one setting with no design in it"
+      - call: *settings
+      - compaction: true
+      - reply: "goated-route: continue"
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *import_settings
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+
+  - name: a skip line that clears the design hold lasts one turn
+    covers:
+      - {gate: design, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export totals.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *totals
+        expect:
+          decision: hold
+          holds: [{gate: design, kind: justified-skip}]
+      - reply: "goated-skip: software-design-principles: one mechanical list of constants"
+      - call: *totals
+      - prompt: {type: prompt, author: person, text: Add the import totals.}
+      - reply: "goated-route: continue"
+      - call:
+          kind: file_write
+          path: src/import.py
+          edits: [{removed: "pass", added: "total_0 = 0\ntotal_1 = 1\ntotal_2 = 2\ntotal_3 = 3\ntotal_4 = 4\ntotal_5 = 5"}]
+        expect:
+          decision: hold
+          holds: [{gate: design, kind: justified-skip}]
+
   - name: a docs change selects no design reference
     covers:
       - {gate: design-reads, case: near-miss}
@@ -367,6 +503,57 @@ scenarios:
         expect: {decision: allow, notices: [override_recorded]}
       - reply: "goated-route: continue"
       - call: *new_test
+
+  - name: a skip line that clears a reference-reads hold lasts the task for its references on the same kind of file
+    covers:
+      - {gate: reference-reads, case: clears, way: lasting-skip}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export test first.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: standard | requires: tdd"
+      - call: {kind: skill_load, skill: tdd}
+      - call: *new_test
+        expect:
+          decision: hold
+          holds: [{gate: reference-reads, kind: justified-skip}]
+      - reply: "goated-skip: tdd: the test only copies an existing one"
+      - call: *new_test
+      - prompt: {type: prompt, author: person, text: Add the import test too.}
+      - reply: "goated-route: continue"
+      - call: &new_import_test
+          kind: file_write
+          path: tests/test_import.py
+          whole_file: true
+          edits: [{removed: null, added: "def test_limit():\n    assert 3 == 3\n"}]
+        expect: {decision: allow, notices: [skip_carried]}
+      - call:
+          kind: file_write
+          path: tests/test_import.py
+          edits: [{removed: "pass", added: "@patch(\"export.client\")"}]
+        expect:
+          decision: hold
+          holds: [{gate: reference-reads, kind: justified-skip}]
+
+  - name: a new task ends a lasting reference-reads skip
+    covers:
+      - {gate: reference-reads, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export test first.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: standard | requires: tdd"
+      - call: {kind: skill_load, skill: tdd}
+      - call: *new_test
+        expect:
+          decision: hold
+          holds: [{gate: reference-reads, kind: justified-skip}]
+      - reply: "goated-skip: tdd: the test only copies an existing one"
+      - call: *new_test
+      - prompt: {type: prompt, author: person, text: Now add the import test.}
+      - reply: "goated-route: standard | requires: tdd"
+      - call: *new_import_test
+        expect:
+          decision: hold
+          holds: [{gate: reference-reads, kind: justified-skip}]
 
   - name: a small edit to an existing test selects no reference
     covers:

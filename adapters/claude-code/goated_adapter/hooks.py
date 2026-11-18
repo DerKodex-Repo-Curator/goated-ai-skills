@@ -273,7 +273,13 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
                                     _situation(payload, config, session_id, transcript_path),
                                     call, _reader(payload, config, transcript_path, call))
     text = translation.render(decision.message(), tool_name, decision.shell)
-    return _with_warnings(_deny(text), decision.texts(judge.WARNING))
+    output = _deny(text)
+    # A lasting skip let a read gate pass (spec R4): tell the agent which skip did.
+    carried = decision.texts(judge.SKIP_CARRIED)
+    if carried:
+        specific = output.setdefault("hookSpecificOutput", {"hookEventName": "PreToolUse"})
+        specific["additionalContext"] = _sentence(translation.render(t) for t in carried)
+    return _with_warnings(output, decision.texts(judge.WARNING))
 
 
 def _stop(payload: dict, config: Config) -> str:

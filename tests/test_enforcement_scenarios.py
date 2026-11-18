@@ -127,7 +127,7 @@ class ScenarioCoverageTests(unittest.TestCase):
 
 class EventModelVersionTests(unittest.TestCase):
     REQUEST = {
-        "event_model": 2,
+        "event_model": 3,
         "session": {"id": "s1", "agent": {"role": "main"}},
         "project": {"folders": ["/work/app"], "working_folder": "/work/app", "home": "/home/u"},
         "turns": [{"key": "t1", "opener": {"type": "prompt", "author": "person", "text": "Go."},
@@ -139,7 +139,7 @@ class EventModelVersionTests(unittest.TestCase):
         self.assertEqual(list(validator().iter_errors(self.REQUEST)), [])
 
     def test_a_request_of_an_unknown_version_is_rejected(self) -> None:
-        for version in (1, 3, 0, "2"):
+        for version in (1, 2, 4, 0, "3"):
             with self.subTest(version=version):
                 request = copy.deepcopy(self.REQUEST)
                 request["event_model"] = version
@@ -150,11 +150,11 @@ class EventModelVersionTests(unittest.TestCase):
         holds = [{"gate": "router-first", "kind": "strict", "text": "Load the router."},
                  {"gate": "route-line", "kind": "strict", "text": "Write a route line."}]
         self.assertEqual(list(check.iter_errors(
-            {"event_model": 2, "decision": "hold", "holds": holds, "notices": []})), [])
+            {"event_model": 3, "decision": "hold", "holds": holds, "notices": []})), [])
         self.assertTrue(list(check.iter_errors(
-            {"event_model": 2, "decision": "allow", "holds": holds, "notices": []})))
+            {"event_model": 3, "decision": "allow", "holds": holds, "notices": []})))
         self.assertTrue(list(check.iter_errors(
-            {"event_model": 2, "decision": "hold", "holds": [], "notices": []})))
+            {"event_model": 3, "decision": "hold", "holds": [], "notices": []})))
 
 
 class ClaudeCodeConformanceTests(unittest.TestCase):

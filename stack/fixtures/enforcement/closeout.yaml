@@ -1,4 +1,4 @@
-event_model: 2
+event_model: 3
 scenarios:
   - name: a code change brings the closeout note, and the turn's end waits for proof and docs
     covers:
@@ -39,6 +39,28 @@ scenarios:
       - reply: "goated-skip: verification-before-completion: the module has no test suite yet"
       - reply: "goated-skip: doc-sync: no document names the limit"
       - turn_end: true
+
+  - name: skip lines that meet the closeout items last one turn
+    covers:
+      - {gate: closeout, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *limit
+      - reply: "goated-skip: verification-before-completion: the module has no test suite yet"
+      - reply: "goated-skip: doc-sync: no document names the limit"
+      - turn_end: true
+      - prompt: {type: prompt, author: person, text: Fix the import limit too.}
+      - reply: "goated-route: continue"
+      - call:
+          kind: file_write
+          path: src/import.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+      - turn_end: true
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Proof, Docs]}]
 
   - name: a person's skips stand down the closeout items
     covers:

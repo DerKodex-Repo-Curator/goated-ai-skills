@@ -104,7 +104,7 @@ def applies(path: str, *, is_code: bool, is_test_data: bool) -> bool:
     or a configuration file that is neither a lock file nor test data
     (`is_test_data_path`)."""
 
-    return is_code or (_is_config(path) and not is_test_data)
+    return is_code or (is_config(path) and not is_test_data)
 
 
 def required(path: str, edit: Call | None, *, is_code: bool, is_test: bool, small: bool,
@@ -341,7 +341,7 @@ def _signals(path: str, added: _Added, *, new_file: bool, is_test: bool, small: 
             found[name] = why
     elif added.comment and not small:
         found["readability.md"] = "adds a comment or docstring"
-    if not small and _is_config(path):
+    if not small and is_config(path):
         found["decoupling.md"] = "edits a configuration file"
     elif not small and code_files >= MANY_CODE_FILES:
         found["decoupling.md"] = f"the {_ordinal(code_files)} code file this turn edits, tests aside"
@@ -404,7 +404,9 @@ def _disk_text(path: str, cwd: str | None) -> str | None:
         return ""
 
 
-def _is_config(path: str) -> bool:
+def is_config(path: str) -> bool:
+    """Whether `path` names a configuration file that is designed, not a lock file."""
+
     path = path.replace("\\", "/")
     return bool(CONFIG_PATH_RE.search(path)) and not LOCK_FILE_RE.search(path)
 

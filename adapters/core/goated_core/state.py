@@ -4,7 +4,8 @@ State holds only what the current turn cannot answer on its own:
 the current task's route, whether missing or reset state lost the task, what
 counts until the next compaction (whether the router loaded, which GOATED
 skills loaded, which design references, skill references, and spawn-brief
-templates were read, and digests of the first distinct files read), which
+templates were read, and digests of the first distinct files read), the
+task's lasting skips (`actions.LastingSkip`), which
 template each of the current turn's spawns' briefs followed, the last turn
 seen, the latest user overrides, and the friction count (`friction.py`). Beside it,
 markers name what the current turn's holds already gave in full, and a
@@ -60,7 +61,7 @@ class SessionState:
         "router_loaded", "last_turn", "task", "task_unknown", "overrides", "policy_notice_shown",
         "reference_reads", "brief_routed", "briefed", "loads", "template_reads",
         "skill_reference_reads", "spawn_templates", "open_holds", "held_gates", "friction",
-        "retrospective_notice_shown", "files_read", "shell",
+        "retrospective_notice_shown", "files_read", "shell", "lasting_skips",
     )
 
     def __init__(self) -> None:
@@ -97,6 +98,10 @@ class SessionState:
         # compaction, up to `gates.ORIENTATION_READS`: enough of them orient a
         # session routed by its brief. A digest keeps file names out of state.
         self.files_read: list[str] = []
+        # The current task's lasting skips since the last compaction (spec R4):
+        # {"gate", "skill", "kind", "reference", "turn"}, the turn being the one
+        # whose skip line cleared the hold (`record_lasting_skips`).
+        self.lasting_skips: list[dict] = []
         # The brief templates (`contracts.BriefTemplate.reference`) each spawn of
         # one turn followed when the spawn gate let it through:
         # {"turn": <turn key>, "edits": {<call_id>: [<template>]}}.
@@ -113,11 +118,13 @@ class SessionState:
         # shell command, or None before its first: the carrier a hold names (Ticket 095).
         self.shell: str | None = None
 
-    def forget_context(self) -> None:
+    def forget_context(self, boundary_turn: str | None = None) -> None:
         """Drop what counted only while its text was in the agent's context: the
-        router and other loads, the brief's route, and the design references,
-        skill references, spawn-brief templates, and files read. Called at a
-        compaction or `/clear`."""
+        router and other loads, the brief's route, the design references,
+        skill references, spawn-brief templates, and files read, and the
+        lasting skips. Called at a compaction or `/clear`. `boundary_turn` is
+        the compaction's own turn when it is folded again: its lasting skips
+        came after the compaction, so they stay."""
 
         self.router_loaded = False
         self.brief_routed = False
@@ -126,6 +133,28 @@ class SessionState:
         self.skill_reference_reads = []
         self.template_reads = []
         self.files_read = []
+        self.end_lasting_skips(boundary_turn)
+
+    def end_lasting_skips(self, boundary_turn: str | None = None) -> None:
+        """End the lasting skips at a new task or a compaction, keeping only
+        those `boundary_turn` recorded: it is the turn that crossed the
+        boundary, which may be folded again after its own skip lines."""
+
+        self.lasting_skips = [s for s in self.lasting_skips if s["turn"] == boundary_turn]
+
+    def record_lasting_skips(self, turn: str, skips) -> None:
+        """Keep the lasting skips (`actions.LastingSkip`) that a skip line of `turn` made."""
+
+        known = set(self.lasting_skip_keys())
+        for skip in skips:
+            if tuple(skip) not in known:
+                known.add(tuple(skip))
+                self.lasting_skips.append({**skip._asdict(), "turn": turn})
+
+    def lasting_skip_keys(self) -> list[tuple[str, str, str, str]]:
+        """The task's lasting skips, each as (gate, skill, kind, reference)."""
+
+        return [(s["gate"], s["skill"], s["kind"], s["reference"]) for s in self.lasting_skips]
 
     def record_spawn_templates(self, turn: str, call_id: str, templates: list[str]) -> None:
         """Keep which brief templates a spawn the spawn gate let through
@@ -159,6 +188,7 @@ class SessionState:
             "friction": self.friction,
             "retrospective_notice_shown": self.retrospective_notice_shown,
             "shell": self.shell,
+            "lasting_skips": self.lasting_skips,
         }
 
     @classmethod
@@ -186,6 +216,8 @@ class SessionState:
         state.retrospective_notice_shown = _expect(
             data.get("retrospective_notice_shown", False), bool)
         state.shell = _expect(data.get("shell"), (str, type(None)))
+        state.lasting_skips = [_valid_lasting_skip(s)
+                               for s in _expect(data.get("lasting_skips", []), list)]
         task = _expect(data.get("task"), (dict, type(None)))
         if task is not None:
             state.task = Task(
@@ -249,6 +281,14 @@ def _valid_open_hold(data) -> dict:
         "skippable": _string_list(hold.get("skippable")),
         "seen": {_expect(k, str): _expect(v, int) for k, v in seen.items()},
     }
+
+
+def _valid_lasting_skip(data) -> dict:
+    """A lasting skip as `record_lasting_skips` saved it; ValueError on any other shape."""
+
+    entry = _expect(data, dict)
+    return {key: _expect(entry.get(key), str)
+            for key in ("gate", "skill", "kind", "reference", "turn")}
 
 
 def _valid_held_gates(data) -> dict:
