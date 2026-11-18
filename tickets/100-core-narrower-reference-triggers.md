@@ -54,18 +54,18 @@ the pattern; scenarios in `stack/fixtures/enforcement/writes.yaml` and
 
 ## Acceptance Criteria
 
-- [ ] In a test file, with `tdd` loaded, an added line holding `"patch"`
+- [x] In a test file, with `tdd` loaded, an added line holding `"patch"`
       or `"MagicMock"` only inside a string, or the bare word `patch`,
       asks for no mocking reference.
-- [ ] `@patch("x")`, `mock.patch(`, `patch.object(` and
+- [x] `@patch("x")`, `mock.patch(`, `patch.object(` and
       `m = MagicMock()` each ask for it.
-- [ ] A comment-only edit of a Python file adding 19 lines meets no
+- [x] A comment-only edit of a Python file adding 19 lines meets no
       `design` or `design-reads` hold and, as the turn's only code
       change, no Design item.
-- [ ] A comment-only edit adding 20 lines is judged as today.
-- [ ] The contract states both rules, and conformance scenarios cover each
+- [x] A comment-only edit adding 20 lines is judged as today.
+- [x] The contract states both rules, and conformance scenarios cover each
       hold and its near miss.
-- [ ] The repo checks in `AGENTS.md` pass, including the context
+- [x] The repo checks in `AGENTS.md` pass, including the context
       comparison if a skill or registry text changes.
 
 ## Expected Proof

@@ -203,6 +203,9 @@ GIT_CONFLICT_RESULT_RE = re.compile(
 )
 # An edit adding at least this many lines is a design change, not a tiny fix.
 DESIGN_MIN_LINES = 5
+# A comment-only edit (`design_reads.comment_only`) adding fewer lines than
+# this is no design change either (round 4, R3): it explains code, not changes it.
+COMMENT_EDIT_MIN_LINES = 20
 # A pull request, or a branch's work at the closeout, changing at least this
 # many lines against its base, added plus deleted, in code files outside test
 # paths (spec R11), is large enough to review before it lands: the threshold
@@ -1079,7 +1082,8 @@ def _design_hold(writes: dict[str, bool], write: Call | None, proof: _Proof,
                  references: Callable[[], tuple] | None) -> Hold | None:
     """Hold a write of project files until its design is done (spec R5).
     `writes` maps each file the call writes to whether its write is small,
-    adding fewer than `DESIGN_MIN_LINES` lines (`_small_edit`).
+    adding fewer than `DESIGN_MIN_LINES` lines or a short comment-only edit
+    (`_small_edit`).
 
     The `design` gate holds a turn's first substantial non-test code edit until
     `software-design-principles` loads and every reference the edit's signals
@@ -1151,7 +1155,7 @@ def _design_need(path: str, write: Call | None, small: bool, loaded: bool,
     """What a write of `path` needs from the design gates, as `_design_hold`
     describes: whether it is the turn's first substantial code change, and
     the references its signals select, each with why; or None when neither
-    gate judges it. `small`: it adds fewer than `DESIGN_MIN_LINES` lines.
+    gate judges it. `small`: it is too small for the design gates (`_small_edit`).
     `earlier` are the turn's project code writes so far."""
 
     code, test = is_code(path), is_test(path, project)
@@ -1739,7 +1743,8 @@ def _code_items(changes: "_Changes", proof: _Proof) -> list[_Item]:
                 f"whether durable docs now drift: {CHANGE_READ}. Or write {skip}.",
                 f"- Docs: read the change after your last code change for docs drift, or "
                 f"write {skip}."))
-    if _designing(proof, changes.project) and not proof.skipped(DESIGN_SKILL):
+    counted = any(not c.short_comment for c in code)
+    if counted and _designing(proof, changes.project) and not proof.skipped(DESIGN_SKILL):
         # Fixing a comment the red-flags scan found needs no second scan (Ticket 059).
         designed = [c for c in code if not c.comment_only]
         flags = _red_flags_read(proof, designed)
@@ -1848,7 +1853,9 @@ def _designing(proof: _Proof, project: Project | None) -> bool:
     """Whether the turn's Design items apply: it loaded
     `software-design-principles`, or, with the skill loaded in an earlier
     turn, it made an edit the `design` gate triggers on (spec R3), so a later
-    turn of small edits meets no Design item."""
+    turn of small edits, short comment-only ones included, meets no Design
+    item. `_code_items` also asks for none when every code change is a short
+    comment-only edit."""
 
     if DESIGN_SKILL in proof.turn_loads:
         return True
@@ -1981,6 +1988,13 @@ class _Change:
         self.comment_only = comment_only
         self.by_subagent = by_subagent
         self.added_lines = added_lines
+
+    @property
+    def short_comment(self) -> bool:
+        """Whether it is a short comment-only edit, which the Design item does
+        not count (`_short_comment_edit`)."""
+
+        return _short_comment_edit(self.added_lines, lambda: self.comment_only)
 
 
 class _Changes:
@@ -2429,11 +2443,23 @@ def countable_lines(write: Call) -> int | None:
 
 
 def _small_edit(write: Call) -> bool:
-    """Whether a file write adds fewer than `DESIGN_MIN_LINES` lines; one whose
-    added lines cannot be counted is not small."""
+    """Whether a file write is too small for the design gates: it adds fewer
+    than `DESIGN_MIN_LINES` lines, or is a short comment-only edit
+    (`_short_comment_edit`). One whose added lines cannot be counted is not
+    small."""
 
     lines = countable_lines(write)
-    return lines is not None and lines < DESIGN_MIN_LINES
+    return lines is not None and (lines < DESIGN_MIN_LINES or _short_comment_edit(
+        lines, lambda: design_reads.comment_only(write.path, write)))
+
+
+def _short_comment_edit(added_lines: int | None, comment_only: Callable[[], bool]) -> bool:
+    """Whether an edit adding `added_lines` lines, None when unknown, is a
+    comment-only edit adding fewer than `COMMENT_EDIT_MIN_LINES`: the design
+    gates find it small, and the Design item does not count it.
+    `comment_only` is asked only when the count is short enough."""
+
+    return added_lines is not None and added_lines < COMMENT_EDIT_MIN_LINES and comment_only()
 
 
 def _subject(message: str) -> str:

@@ -173,9 +173,9 @@ route line in the brief that started the session.
 | `pull-request` | strict | Opening a pull or merge request, by a `gh` or `glab` command or a `pull_request` call | `pr-description` counts as loaded, and a change read follows the last change to any project file | `proof`, `override` | `pr-description` |
 | `pr-review` | justified-skip | Opening a pull or merge request that changes 400 or more lines of non-test code against its base. It is judged together with `pull-request`, so both may hold the same call | `standards-and-spec-review` counts as loaded, and a change read follows the last change | `proof`, `skip-line`, `override` | `standards-and-spec-review`'s rule to review a branch of 400 or more changed lines in code outside test paths (`skills/engineering/standards-and-spec-review/SKILL.md`) |
 | `spawn` | strict | A spawn with a brief, except of a read-only agent | `handoff` counts as loaded and its `references/spawn-brief.md` is read whole, or `subagent-driven-development` counts as loaded and its implementer or reviewer prompt is read whole; and the brief passes the content check | `proof`, `override` | `handoff` and `subagent-driven-development` |
-| `design` | justified-skip | The turn's first file write adding five or more lines to a non-test code file inside the project, or any such file write while the skill does not count as loaded. A shell write counts only where it puts new text into a file: a redirect, heredoc, `tee`, `Set-Content`, `Add-Content`, `Out-File`, or `New-Item` with a value. It adds the lines of text the command shows, such as a heredoc's body, and five or more when it shows none, as for a program's output or text holding a variable, command substitution, or subexpression. Writes to two spellings of one file add up. A copy, move, restore, or in-place edit adds no text designed in the command, so it is not judged; a script's files are `scripted-edit`'s; and a write naming no file is not judged, since no file's design can be asked for (the maintainer's choice, [Ticket 098](../tickets/098-adapter-contract-gaps.md)) | `software-design-principles` counts as loaded, and every reference the edit's signals select is read whole | `proof`, `skip-line`, `override` | `software-design-principles`, workflow steps 2 and 4 |
-| `design-reads` | justified-skip | A later file write to a code file, or to a configuration file that is not test data, inside the project, once `software-design-principles` counts as loaded, whose signals select a reference not read whole since the last compaction. A shell write counts as for `design`; its text is not read for signals, so only its path selects (a configuration file, the third code file), and a test file it writes selects nothing | Each selected reference is read whole | `proof`, `skip-line`, `override` | `software-design-principles`'s Read now lists |
-| `reference-reads` | justified-skip | A write inside the project (or anywhere, for a `gate-fires` signal) that fires a signal the installed registry declares for a reference of a skill that counts as loaded | Each named reference is read whole | `proof`, `skip-line`, `override` | The registry's `references` signals (`stack/goated-stack.yaml`, `skills/README.md`) |
+| `design` | justified-skip | The turn's first file write adding five or more lines to a non-test code file inside the project, or any such file write while the skill does not count as loaded. A [comment-only edit](#comment-only-edits) adding fewer than twenty lines is small, so it is not such a write. A shell write counts only where it puts new text into a file: a redirect, heredoc, `tee`, `Set-Content`, `Add-Content`, `Out-File`, or `New-Item` with a value. It adds the lines of text the command shows, such as a heredoc's body, and five or more when it shows none, as for a program's output or text holding a variable, command substitution, or subexpression. Writes to two spellings of one file add up. A copy, move, restore, or in-place edit adds no text designed in the command, so it is not judged; a script's files are `scripted-edit`'s; and a write naming no file is not judged, since no file's design can be asked for (the maintainer's choice, [Ticket 098](../tickets/098-adapter-contract-gaps.md)) | `software-design-principles` counts as loaded, and every reference the edit's signals select is read whole | `proof`, `skip-line`, `override` | `software-design-principles`, workflow steps 2 and 4 |
+| `design-reads` | justified-skip | A later file write to a code file, or to a configuration file that is not test data, inside the project, once `software-design-principles` counts as loaded, whose signals select a reference not read whole since the last compaction. A shell write counts as for `design`; its text is not read for signals, so only its path selects (a configuration file, the third code file), and a test file it writes selects nothing. A comment-only edit adding fewer than twenty lines is small, so its comment selects no `readability.md` | Each selected reference is read whole | `proof`, `skip-line`, `override` | `software-design-principles`'s Read now lists |
+| `reference-reads` | justified-skip | A write inside the project (or anywhere, for a `gate-fires` signal) that fires a signal the installed registry declares for a reference of a skill that counts as loaded. A named pattern matches as [Registry Reference Signals](#registry-reference-signals) states: `mock-or-patch` takes `patch` only as a call or decorator, and no word inside a quoted string the line shows for certain | Each named reference is read whole | `proof`, `skip-line`, `override` | The registry's `references` signals (`stack/goated-stack.yaml`, `skills/README.md`) |
 | `review-intake` | justified-skip | A write to a code file inside the project once a reviewer agent has reported in the turn: an agent started now by a spawn whose brief followed `subagent-driven-development`'s reviewer template, whose result arrived or, started in the background, whose completion did. Any other brief, and a held or failed spawn, trigger nothing | `receiving-code-review` counts as loaded | `proof`, `skip-line`, `override` | `receiving-code-review` |
 | `security` | justified-skip | A write to a security-sensitive path inside the project: dependency manifests and lockfiles, env and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files | `code-security-review` counts as loaded | `proof`, `skip-line`, `override` | `code-security-review` |
 | `scripted-edit` | justified-skip | A shell command whose inline script writes a code file inside the project, or a file it names only at run time. It follows `security` and `review-intake` for the same file | A skip line naming `software-design-principles`; loading the skill does not clear it | `skip-line`, `override` | `software-design-principles`: change code with the file edit tools |
@@ -194,7 +194,7 @@ that change is already proved.
 | `Proof` | A change not already proved | A check after the last code change, in a later call or later in the same shell command, joined by sequencing operators, not in the background | `verification-before-completion` |
 | `Unfinished` | The last check after the change failed | `handoff` counts as loaded | `handoff` |
 | `Docs` | A non-test code file changed | `doc-sync` counts as loaded, and a change read follows the last code change | `doc-sync` |
-| `Design` | `software-design-principles` loaded in the turn, or counts as loaded and the turn made an edit the `design` gate triggers on | `software-design-principles/references/red-flags.md` read whole after the last code change that is not comment-only, then a change read; later changes adding fewer than five lines in total need only the change read. The item repeats the question `red-flags.md` ends with; no answer is checked | `software-design-principles` |
+| `Design` | `software-design-principles` loaded in the turn, or counts as loaded and the turn made an edit the `design` gate triggers on; in both, some code change in the turn is not a [comment-only edit](#comment-only-edits) adding fewer than twenty lines | `software-design-principles/references/red-flags.md` read whole after the last code change that is not comment-only, then a change read; later changes adding fewer than five lines in total need only the change read. The item repeats the question `red-flags.md` ends with; no answer is checked | `software-design-principles` |
 | `Review` | The turn changed code, the session was not started from a brief with a route line, and the branch's work is large: 400 or more changed lines of non-test code against its base | A reviewer agent that finished after the last code change; or `standards-and-spec-review` counts as loaded and a change read follows the last code change | `standards-and-spec-review` |
 | `Verification` | The turn changed code or a security-sensitive file, and the route is `full`, a spawned agent changed code, a security-sensitive file changed, or the branch's work is large | `verification-before-completion` counts as loaded | `verification-before-completion` |
 | `Security` | `code-security-review` counts as loaded and a security-sensitive file changed | A change read after the last sensitive change | `code-security-review` |
@@ -1090,7 +1090,8 @@ so `# try the cache, then raise` selects neither.
 
 A **small edit**, one writing fewer than five lines (every line of the text
 it writes, unchanged context and a trailing newline's empty line included;
-`DESIGN_MIN_LINES` in `actions.py`), selects no reference by the kind of
+`DESIGN_MIN_LINES` in `actions.py`), or a [comment-only edit](#comment-only-edits)
+writing fewer than twenty (`COMMENT_EDIT_MIN_LINES`), selects no reference by the kind of
 file or text it touches: no `decoupling.md` for a configuration file or the
 third code file, and no `readability.md` for a comment or docstring. A test
 file has its own rule, for `coding.md` only: the edit must create the file
@@ -1163,6 +1164,14 @@ fixing a comment the red-flags scan found does not reopen the item
 - A whole-file write, even of a file that is now only a comment, an edit
   whose text is not shown, and a shell write always count as a change.
 
+A comment-only edit writing fewer than twenty lines, counted as for a small
+edit, is no design change at all (round 4, R3): it is small for `design` and
+`design-reads`, so it is not substantial and its comment selects no
+`readability.md`, and the Design item does not count it, so a turn whose
+code changes are all such edits meets no Design item. A comment-only edit of
+twenty or more lines is still substantial and selects `readability.md`, and
+it makes the Design item needed, though it does not move its change point.
+
 Proof, Docs, and every other step still count a comment-only edit as a
 change.
 
@@ -1201,11 +1210,25 @@ a line the removed text already held, such as an existing mock, is not
 added. A shell write meets only the signals that need no added text.
 
 The named patterns are the registry's `reference_patterns`, as the core
-matches them; so `dispatch` holds no patch, and `retrieve` no retry:
+matches them; so `dispatch` holds no patch, and `retrieve` no retry.
+`mock-or-patch` skips what each quoted string on the added line holds (`"`,
+`'`, or a backtick, a backslash escaping the next character), so
+`assert kind == "patch"` and `name = 'MagicMock'` match nothing. Where the
+line's strings cannot be read for certain, the whole line is matched: a
+quote left open, three quotes in a row, a string holding `${`, `#{`, or
+`\(`, one with an `f`, `t`, `$`, or `$@` prefix holding `{`, or, outside a
+`.py` or `.pyi` file, one holding `$` before a name (`"$fakeRepo"`). In a
+`.rs`, `.c`, `.h`, `.cc`, `.cpp`, `.cxx`, `.hpp`, `.cs`, `.java`, `.go`,
+`.kt`, `.kts`, `.scala`, or `.swift` file, `'` opens only a char literal
+(`'x'`, `'\n'`), and any other `'`, such as a Rust lifetime (`&'a MockDb`),
+leaves the line unread; a file whose place in the project is unknown is read
+as no such language (`_without_strings` in `reference_reads.py`). A hold
+names the matched word and stops at a call's parenthesis
+(`"patch.object"`). `sleep-retry-or-timeout` matches inside strings too:
 
 | Pattern | Matches |
 | --- | --- |
-| `mock-or-patch` | a word starting `mock`, `patch`, `stub`, `spy`, or `fake` (either case), `monkeypatch`, `sinon`, a word ending `Mock` (`MagicMock`), `jest.fn`, or `vi.fn` |
+| `mock-or-patch` | outside quoted strings: a word starting `mock`, `stub`, `spy`, or `fake` (either case), `monkeypatch`, `sinon`, a word ending `Mock` (`MagicMock`), `jest.fn`, or `vi.fn`; and `patch` only as a call or decorator: `@patch`, or the word `patch` before `(` or `.<name>(` (`patch(`, `mock.patch(`, `patch.object(`), so `patch = load_diff()` and `apply_patch(diff)` match nothing |
 | `sleep-retry-or-timeout` | in any case: a word holding `sleep`, `timeout`, `retry`, `retries`, `retried`, or `retrying` (`asyncio.sleep`, `setTimeout`, `MAX_RETRIES`); `poll`, `polls`, `polled`, `polling`, or `poller` at the end of a word or before an underscore or a capital (`poll_interval`, `pollInterval`); `wait_for` or `waitFor` likewise at a word start (`waitForSelector`, `wait_for_element`); or `setInterval` |
 
 So the first enforced set is: `tdd`'s `mocking-and-seams.md` when a test

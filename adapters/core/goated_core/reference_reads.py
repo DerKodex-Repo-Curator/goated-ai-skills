@@ -34,6 +34,7 @@ agree on the source registry.
 
 from __future__ import annotations
 
+import posixpath
 import re
 from pathlib import Path
 from typing import NamedTuple
@@ -49,22 +50,37 @@ MAX_REGISTRY_BYTES = 1024 * 1024
 
 class Pattern(NamedTuple):
     """A named pattern of the registry's `reference_patterns`, as the code an
-    edit adds can match it: `label` says what a match is, in a hold's words."""
+    edit adds can match it: `label` says what a match is, in a hold's words.
+    With `outside_strings`, a match inside a quoted string on the line does
+    not count, unless the line's strings cannot be read for certain
+    (`_without_strings`)."""
 
     label: str
     regex: re.Pattern
+    outside_strings: bool = False
+
+    def token(self, code: str, extension: str = "") -> str | None:
+        """The whole word of the first match in one line of added `code`, from
+        a file with `extension` ("" when unknown), or None."""
+
+        text = _without_strings(code, extension) if self.outside_strings else None
+        text = code if text is None else text
+        match = self.regex.search(text)
+        return _word_at(text, match) if match else None
 
 
-# The mock pattern matches at a word start, so `dispatch` holds no patch; the
-# wait pattern also inside a word (`asyncio.sleep`, `MAX_RETRIES`), though
-# `retrieve` holds no retry. A word that only starts like one (`patches`,
-# `spyglass`), or one in a string, still selects, since a read once per
+# The mock pattern matches at a word start, so `dispatch` holds no patch, and
+# `patch` only as a call or decorator (`patch(`, `@patch`, `mock.patch`,
+# `patch.object(`), since the bare word names a diff as often as a mock. The
+# wait pattern also matches inside a word (`asyncio.sleep`, `MAX_RETRIES`),
+# though `retrieve` holds no retry, and inside a string. A word that only
+# starts like one (`mocks`, `spyglass`) still selects, since a read once per
 # context window costs little.
 PATTERNS = {
     "mock-or-patch": Pattern("a mock or patch", re.compile(
-        r"\b(?:[Mm]ock|[Pp]atch|[Ss]tub|[Ss]py|[Ff]ake|monkeypatch|sinon)"
-        r"|[a-z0-9_]Mock\b|\b(?:jest|vi)\.fn\b"
-    )),
+        r"\b(?:[Mm]ock|[Ss]tub|[Ss]py|[Ff]ake|monkeypatch|sinon)"
+        r"|@patch\b|\bpatch(?:\.\w+)?(?=\s*\()|[a-z0-9_]Mock\b|\b(?:jest|vi)\.fn\b"
+    ), outside_strings=True),
     "sleep-retry-or-timeout": Pattern("a sleep, retry, poll, or timeout", re.compile(
         r"(?i:\w*(?:sleep|timeout)|\w*retr(?:y|ies|ied|ying))"
         # `poll` and `wait for` end a word, or a part of one before an
@@ -226,8 +242,11 @@ def _edit_fires(signal: dict, edit: Edit) -> str | None:
     in_file = f" to a {file_kind} file" if file_kind else ""
     if kind == "edit-adds-pattern":
         pattern = PATTERNS.get(signal.get("pattern"))
+        # The file's path in the project gives its language; unknown, none.
+        extension = next((posixpath.splitext(p)[1].lstrip(".").lower()
+                          for p in edit.project_paths), "")
         token = pattern and next(
-            (_word_at(code, m) for code in edit.added_code if (m := pattern.regex.search(code))),
+            (token for code in edit.added_code if (token := pattern.token(code, extension))),
             None)
         if token is None:
             return None
@@ -243,14 +262,76 @@ def _edit_fires(signal: dict, edit: Edit) -> str | None:
 
 
 def _word_at(code: str, match: re.Match) -> str:
-    """The whole word a pattern matched part of, such as `MagicMock` for `cMock`."""
+    """The whole word a pattern matched part of, such as `MagicMock` for `cMock`.
+    A match ending in a character that is not part of a word ends there."""
 
     start, end = match.start(), match.end()
     while start > 0 and (code[start - 1].isalnum() or code[start - 1] == "_"):
         start -= 1
-    while end < len(code) and (code[end].isalnum() or code[end] == "_"):
+    word_end = end > start and (code[end - 1].isalnum() or code[end - 1] == "_")
+    while word_end and end < len(code) and (code[end].isalnum() or code[end] == "_"):
         end += 1
     return code[start:end]
+
+
+QUOTES = "\"'`"
+# A string prefix that makes the string hold code in braces: Python's `f` and
+# `t`, C#'s `$` and `$@`. Elsewhere `${`, `#{` and Swift's `\(` open code
+# inside a string, and outside Python so does `$name` (Kotlin, Dart, PHP, shell).
+INTERPOLATING_PREFIX_RE = re.compile(r"(?:\$@?|(?<![\w])[rRbB]?[fFtT][rRbB]?)$")
+INTERPOLATION_MARKS = ("${", "#{", "\\(")
+DOLLAR_NAME_RE = re.compile(r"\$[A-Za-z_]")
+# Python files, whose strings hold `$name` as text.
+PYTHON_EXTENSIONS = frozenset({"py", "pyi"})
+# Languages whose `'` opens only a one-character literal, not a string: in
+# Rust it also marks a lifetime (`&'a T`). Any other `'` there leaves the
+# line unread.
+CHAR_QUOTE_EXTENSIONS = frozenset({
+    "rs", "c", "h", "cc", "cpp", "cxx", "hpp", "cs", "java", "go", "kt", "kts", "scala", "swift",
+})
+CHAR_LITERAL_RE = re.compile(r"'(?:\\[^'\s]{1,10}|[^'\\])'")
+
+
+def _without_strings(code: str, extension: str) -> str | None:
+    """One line of `code`, from a file with `extension` ("" when unknown),
+    with what each quoted string holds removed, its quotes kept:
+    `run("mock")` reads `run("")`. None when the line's strings cannot be
+    read for certain: a quote left open, three quotes in a row (a string that
+    may span lines), a string that may hold code (`INTERPOLATING_PREFIX_RE`,
+    `INTERPOLATION_MARKS`, `DOLLAR_NAME_RE` outside Python), or, in a
+    language of `CHAR_QUOTE_EXTENSIONS`, a `'` that opens no char literal. A
+    backslash escapes the character after it inside a string."""
+
+    if any(quote * 3 in code for quote in QUOTES):
+        return None
+    char_quotes = extension in CHAR_QUOTE_EXTENSIONS
+    kept, i = [], 0
+    while i < len(code):
+        quote = code[i]
+        if quote not in QUOTES:
+            kept.append(code[i])
+            i += 1
+            continue
+        if quote == "'" and char_quotes:
+            literal = CHAR_LITERAL_RE.match(code, i)
+            if literal is None:
+                return None
+            kept.append("''")
+            i = literal.end()
+            continue
+        end = i + 1
+        while end < len(code) and code[end] != quote:
+            end += 2 if code[end] == "\\" else 1
+        if end >= len(code):
+            return None
+        held = code[i + 1:end]
+        if any(mark in held for mark in INTERPOLATION_MARKS) or (
+                "{" in held and INTERPOLATING_PREFIX_RE.search(code[:i])) or (
+                extension not in PYTHON_EXTENSIONS and DOLLAR_NAME_RE.search(held)):
+            return None
+        kept.append(quote * 2)
+        i = end + 1
+    return "".join(kept)
 
 
 def _declared(data) -> list[Reference]:

@@ -114,7 +114,8 @@ def required(path: str, edit: Call | None, *, is_code: bool, is_test: bool, smal
     skill's order. `edit` is the write, a `file_write` call, or None for a
     write whose text is unknown.
 
-    `small`: the edit adds too few lines for the `design` gate, so no signal
+    `small`: the edit is too small for the `design` gate, adding too few
+    lines or few enough comment-only ones (`actions._small_edit`), so no signal
     selects a reference by the kind of file or text it touches (see
     `_signals`). `written_before`: the turn already
     wrote this file. `other_code_files`: how many other non-test code files
