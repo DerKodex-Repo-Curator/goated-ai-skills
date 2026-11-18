@@ -40,6 +40,13 @@ A test fails when a gate an adapter can return is missing from the
 The event model's names are used throughout: call kinds, turns, entries,
 prompts and their authors, and the project.
 
+The event model is at version 2. Every change to it bumps the version
+(ADR 0004), so a version-1 request is refused. Version 2 (Ticket 080) added
+what the rules read and version 1 could not carry: a pull request's `base`,
+`head`, and `repository`, for its size; an edit's `removed` or `added` text
+as null when the call does not show it, such as a notebook cell's; and a
+result's `ran`, false for a call that never ran, which no check counts.
+
 - **Write**: a `file_write` call, or a `shell_command` that writes files.
   **Spawn**: a `spawn` call that starts work now (`starts_now`), or that
   carries a brief a person may start later. **Command**: any

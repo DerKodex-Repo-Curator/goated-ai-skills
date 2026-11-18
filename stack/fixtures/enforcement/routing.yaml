@@ -1,4 +1,4 @@
-event_model: 1
+event_model: 2
 scenarios:
   - name: a write before routing meets router-first and route-line in one hold
     covers:
@@ -166,3 +166,58 @@ scenarios:
           text: "## Goal\n\nFix the export limit.\n\ngoated-route: direct\n"
       - call: {kind: file_read, path: src/export.py, whole: false}
       - call: *limit
+
+  - name: a skill a person invokes by its command counts as loaded
+    covers:
+      - {gate: router-first, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: &invoked_fix
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+        expect:
+          decision: hold
+          holds:
+            - {gate: router-first, kind: strict}
+            - {gate: route-line, kind: strict}
+      - prompt: {type: prompt, author: person, text: Route the export fix.}
+      - skill_invoked: using-goated-ai-skills
+      - reply: "goated-route: direct"
+      - call: *invoked_fix
+
+  - name: a report from an agent this session started continues the turn
+    covers:
+      - {gate: route-line, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: "Have an agent check the exporter, then fix it."}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: handoff}
+      - call: {kind: file_read, path: "{outside}/skills/handoff/references/spawn-brief.md", whole: true}
+      - call:
+          kind: spawn
+          starts_now: true
+          brief: "## Goal\n\nCheck the exporter.\n\n## Scope\n\n- Work in: src/export/\n\n## Done Means\n\n- A list of findings.\n\ngoated-skills: code-security-review\n"
+        result: {ok: true, output: Started., agent: {id: checker-1, background: true}}
+      - prompt: {type: prompt, author: session, text: The export limit is off by one.}
+        continues: true
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+
+  - name: a subagent's start and compaction bring no routing hold
+    covers:
+      - {gate: router-first, case: near-miss}
+    setup: {agent: subagent}
+    steps:
+      - session_start: new
+        expect: {decision: allow, notices: []}
+      - prompt: {type: prompt, author: session, text: Note the export limit in the README.}
+      - compaction: true
+      - prompt: {type: prompt, author: session, text: Go on with the note.}
+      - call:
+          kind: file_write
+          path: README.md
+          edits: [{removed: "Export notes.", added: "Export notes: the limit is 2."}]

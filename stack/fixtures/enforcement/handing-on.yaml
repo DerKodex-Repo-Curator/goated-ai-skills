@@ -1,4 +1,4 @@
-event_model: 1
+event_model: 2
 scenarios:
   - name: a commit waits for its skill and a read of the change
     covers:
@@ -215,3 +215,29 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: {kind: spawn, starts_now: false, brief: ""}
+
+  - name: a pull request call is measured between the branches it names
+    covers:
+      - {gate: pr-review, case: holds}
+    setup: {branch_changed_lines: 450}
+    steps:
+      - prompt: {type: prompt, author: person, text: Open the pull request.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: pull_request, base: main, head: feature}
+        expect:
+          decision: hold
+          holds:
+            - {gate: pull-request, kind: strict}
+            - {gate: pr-review, kind: justified-skip}
+
+  - name: a pull request call in another repository is not measured here
+    covers:
+      - {gate: pr-review, case: near-miss}
+    setup: {branch_changed_lines: 450}
+    steps:
+      - prompt: {type: prompt, author: person, text: Open the pull request upstream.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: pr-description}
+      - call: {kind: pull_request, base: main, head: feature, repository: upstream-owner/export-tool}

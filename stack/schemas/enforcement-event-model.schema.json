@@ -7,7 +7,7 @@
   "$defs": {
     "version": {
       "description": "The event model's version: a whole number every change bumps. A request or decision of any other version is refused, not guessed at.",
-      "const": 1
+      "const": 2
     },
     "request": {
       "type": "object",
@@ -261,8 +261,14 @@
                 "additionalProperties": false,
                 "required": ["removed", "added"],
                 "properties": {
-                  "removed": {"type": "string"},
-                  "added": {"type": "string"}
+                  "removed": {
+                    "description": "The text the edit replaces; null when the call does not say, such as a notebook cell's replacement.",
+                    "type": ["string", "null"]
+                  },
+                  "added": {
+                    "description": "The text the edit writes; null when it writes none it can show, such as a deleted notebook cell.",
+                    "type": ["string", "null"]
+                  }
                 }
               }
             }
@@ -335,7 +341,14 @@
           "additionalProperties": false,
           "properties": {
             "id": {"type": "string"}, "line_text": {"type": "string"},
-            "kind": {"const": "pull_request"}
+            "kind": {"const": "pull_request"},
+            "base": {"description": "The branch it merges into, when the call names one.", "type": "string", "minLength": 1},
+            "head": {"description": "The branch it merges from, when the call names one.", "type": "string", "minLength": 1},
+            "repository": {
+              "description": "The repository it is opened in, as owner/name, when the call names one; a change of another repository is not measured.",
+              "type": "string",
+              "pattern": "^[^/]+/[^/]+$"
+            }
           }
         },
         {
@@ -355,6 +368,10 @@
       "properties": {
         "ok": {"description": "False when the call failed or was refused.", "type": "boolean"},
         "held": {"description": "A GOATED hold refused it, so it never ran.", "type": "boolean"},
+        "ran": {
+          "description": "False when the call never ran: held, refused by the harness or another hook, or interrupted. A run that never happened neither fails nor passes a check. Absent means it ran unless held.",
+          "type": "boolean"
+        },
         "output": {"type": "string"},
         "agent": {
           "description": "For a spawn: the agent it started.",

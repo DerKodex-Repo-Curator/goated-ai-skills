@@ -99,6 +99,24 @@ action and closeout rules in
 [`goated_adapter/actions.py`](goated_adapter/actions.py). A skip line's
 reason stays in the transcript, where the skill-usage mod reads it.
 
+The rule modules know nothing of Claude Code (Ticket 080): they read the
+[event model](../../stack/schemas/enforcement-event-model.schema.json), as
+[`goated_adapter/events.py`](goated_adapter/events.py) holds it, and judge
+calls by kind. Three modules translate. The transcript reader
+([`goated_adapter/transcript.py`](goated_adapter/transcript.py)) builds the
+model's turns from the transcript and removes the reminder and pasted blocks
+from a typed prompt before overrides are read.
+[`goated_adapter/translation.py`](goated_adapter/translation.py) maps each tool
+and its input to a call (which tools are file writes, shell commands, spawns,
+commits, or pull requests; the line field of each; which spawns are read-only
+or only show a card) and fills the slots the rules leave in hold text
+([`goated_adapter/wording.py`](goated_adapter/wording.py)) with Claude Code's
+words: the Skill and Read tools, the line advice, and the carrier sentence.
+The hook entry point ([`goated_adapter/hooks.py`](goated_adapter/hooks.py))
+passes Claude Code's own folders as the agent's folders, where no write is
+scratch. A test fails when a rule module names a Claude Code tool, input,
+transcript, or hook field.
+
 Route and skip lines are read from the agent's reply text and
 from one field
 of some built-in tool calls: the `description` of a `Bash`, `PowerShell`,
@@ -963,7 +981,7 @@ routing gate (see [Subagents](#subagents)). Any other type, a spawn with no
 type, and side sessions are held as before. The exemption trusts the name: a
 project or user agent file named `claude-code-guide` replaces the built-in,
 with whatever tools it lists, and is exempt too. The list is
-`READ_ONLY_SUBAGENTS` in `gates.py`.
+`READ_ONLY_SUBAGENTS` in `translation.py`.
 
 ### Closeout at commit
 
@@ -1547,6 +1565,14 @@ about 4 ms: on the recorded 20 KB fixture, 30 runs each, the median went from
 transcript of each subagent the turn spawned, as the closeout does, to find
 the changes its change read must follow; other calls never read them. That
 case was not measured.
+
+Translating Claude Code's calls and transcript into the event model (Ticket
+080) added under 1 ms. Measured on 2026-11-18 with Python 3.14, in-process
+through `run_hook` on a turn of 300 finished calls, 150 runs each, two rounds:
+the median `PreToolUse` of an `Edit` went from 19.4 and 20.4 ms to 21.0 and
+20.7 ms, of a `Bash` command from 6.5 to 7.1 to 7.3 ms, and a `Stop` from 12.2
+to 13.0 ms. Spawned in exec form, 30 runs each, the same cases' medians stayed
+within the machine's run-to-run spread, about 200 to 235 ms that day.
 
 The `pr-review` gate's size check (see [Large pull requests](#large-pull-requests))
 runs only on a pull-request call that no load or skip line has cleared of

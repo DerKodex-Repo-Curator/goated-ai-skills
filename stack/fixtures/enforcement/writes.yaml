@@ -1,4 +1,4 @@
-event_model: 1
+event_model: 2
 scenarios:
   - name: a substantial code change waits for design principles
     covers:
@@ -644,4 +644,57 @@ scenarios:
         result: {ok: false, output: "FFF\n3 failed in 0.10s"}
       - call: *check
         result: {ok: false, output: "F..\n1 failed, 2 passed in 0.10s"}
+      - call: *patch
+
+  - name: a reviewer started in the background counts once its finish arrives
+    covers:
+      - {gate: review-intake, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: "Have the export change reviewed, then act on it."}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: subagent-driven-development}
+      - call: *reviewer_prompt
+      - call: *review
+        result: {ok: true, output: Started in the background., agent: {id: reviewer-bg, background: true}}
+      - call: *fix
+      - agent_finished: reviewer-bg
+      - call: *fix
+        expect:
+          decision: hold
+          holds: [{gate: review-intake, kind: justified-skip}]
+
+  - name: a notebook cell's edit is judged by the text it adds, or held when it shows none
+    covers:
+      - {gate: design, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Rework the export notebook.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call:
+          kind: file_write
+          path: notebooks/export.ipynb
+          edits: [{removed: null, added: "rows = load()\nrows = clean(rows)\nrows = rank(rows)\nsave(rows)\nreport(rows)\n"}]
+        expect:
+          decision: hold
+          holds: [{gate: design, kind: justified-skip}]
+      - call:
+          kind: file_write
+          path: notebooks/export.ipynb
+          edits: [{removed: null, added: null}]
+        expect:
+          decision: hold
+          holds: [{gate: design, kind: justified-skip}]
+
+  - name: a check that never ran neither fails nor passes
+    covers:
+      - {gate: repeated-failure, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Make the export tests pass.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *check
+        result: *failed
+      - call: *check
+        result: {ok: false, ran: false}
       - call: *patch

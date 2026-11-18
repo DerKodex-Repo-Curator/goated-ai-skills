@@ -81,57 +81,77 @@ class _Run:
         self.in_subagent = setup.get("agent") == "subagent"
         self.agent = {"role": "subagent", "id": SUBAGENT_ID} if self.in_subagent \
             else {"role": "main"}
+        self.subagent_fields = {"agent_id": SUBAGENT_ID, "agent_type": "general-purpose"} \
+            if self.in_subagent else {}
         if self.in_subagent:
             self.s = self.s.subagent(SUBAGENT_ID)
+        # The agents this session's spawns started, oldest first.
+        self.agents: list[str] = []
 
     def run(self) -> Result:
-        for number, step in enumerate(self.scenario["steps"], 1):
+        steps = self.scenario["steps"]
+        for number, step in enumerate(steps, 1):
             self.number = number
-            if self.in_subagent and not {"prompt", "reply", "call"} & step.keys():
-                # A subagent's stop runs no closeout, and it starts no session.
-                raise ValueError(f"step {number}: in a subagent the bridge runs only "
-                                 "prompts, replies, and calls")
             if "prompt" in step:
-                self._prompt(step)
+                # A skill a person invokes is the prompt that names it.
+                after = steps[number] if number < len(steps) else {}
+                self._prompt(step, invokes=after.get("skill_invoked"))
             elif "reply" in step:
                 self.s.say(step["reply"])
                 self._entry({"type": "reply_text", "text": step["reply"]})
             elif "call" in step:
                 self._call(step)
+            elif "skill_invoked" in step:
+                self._skill_invoked(step["skill_invoked"])
+            elif "agent_finished" in step:
+                self._agent_finished(step["agent_finished"])
             elif "compaction" in step:
-                self.s.compact()
-                self.turns.append({"key": f"t{len(self.turns) + 1}",
-                                   "opener": {"type": "compaction"}, "entries": []})
+                self._compaction()
             elif "turn_end" in step:
                 self._turn_end(step)
             elif "session_start" in step:
-                event = {"type": "session_start", "source": step["session_start"]}
-                output = parse(self.s.hook("SessionStart",
-                                           source=SESSION_SOURCES[step["session_start"]]))
-                self._judged(step.get("expect"), event, _decision(output, "context"))
+                self._session_start(step)
             else:
                 raise ValueError(f"step {number}: the bridge cannot run {sorted(step)}")
         return Result(self.failures, self.requests)
 
     # Steps --------------------------------------------------------------
 
-    def _prompt(self, step: dict) -> None:
+    def _prompt(self, step: dict, invokes: str | None = None) -> None:
+        """Record a prompt. `invokes` is the skill the next step says a person
+        invoked: Claude Code records the prompt as that skill's command, with
+        the prompt's text as its arguments."""
+
         prompt = step["prompt"]
         text = self._expand(prompt["text"])
         for n, pasted in enumerate(prompt.get("pasted", []), 1):
             text += f'\n<pasted_content id="p{n}">\n{pasted}\n</pasted_content id="p{n}">'
         author, continues = prompt["author"], step.get("continues", False)
+        if invokes is not None and (author != "person" or continues or self.in_subagent):
+            raise ValueError(f"step {self.number}: Claude Code records a skill a person "
+                             "invokes only as a prompt a person types that opens a turn")
         if self.in_subagent:
             if author != "session" or continues or prompt.get("starts_session"):
                 raise ValueError(f"step {self.number}: in a subagent the bridge records only "
                                  "its parent's prompts that open a turn")
             output = self.s.prompt(text, hook=False)
+        elif invokes is not None:
+            output = self.s.prompt(f"<command-message>{invokes}</command-message>\n"
+                                   f"<command-name>/{invokes}</command-name>\n"
+                                   f"<command-args>{text}</command-args>")
         elif author == "person" and not continues:
             output = self.s.prompt(text)
         elif author == "session" and prompt.get("starts_session"):
             output = self.s.prompt(f"{BRIEF_OPENING}\n\n{text}", origin=None,
                                    turnOrigin="host_synthetic", promptSource="sdk")
-        elif author == "session" and not continues:
+        elif author == "session" and continues:
+            # A continuing prompt from another agent is a report from one this
+            # session spawned: the latest spawn whose result names its agent.
+            if not self.agents:
+                raise ValueError(f"step {self.number}: a continuing session prompt is a "
+                                 "spawned agent's report, and no spawn named an agent")
+            output = self.s.peer(text, handback=True, sender=self.agents[-1])
+        elif author == "session":
             output = self.s.peer(text)
         elif author == "host" and continues:
             output = self.s.notify(text)
@@ -149,9 +169,7 @@ class _Run:
     def _call(self, step: dict) -> None:
         call = step["call"]
         tool, tool_input = self._tool(call)
-        fields = {"agent_id": SUBAGENT_ID, "agent_type": "general-purpose"} \
-            if self.in_subagent else {}
-        tool_id, output = self.s._judge(tool, tool_input, **fields)
+        tool_id, output = self.s._judge(tool, tool_input, **self.subagent_fields)
         self._judged(step.get("expect", {"decision": "allow"}),
                      {"type": "pending_call", "call": call}, _decision(output, "tool"))
         held = reason(output)
@@ -166,13 +184,64 @@ class _Run:
                          _decision(after, "context"))
         self._record(tool_id, call, result)
         self._entry({"type": "call", "call": call, "result": result})
+        if result.get("agent"):
+            self.agents.append(result["agent"]["id"])
+
+    def _skill_invoked(self, skill: str) -> None:
+        """Claude Code adds the body of a skill invoked by its command after
+        the prompt (`_prompt`), which proves the load."""
+
+        self.s._append({"type": "user", "isMeta": True, "message": {"role": "user", "content": [
+            {"type": "text", "text": f"Base directory for this skill: {skill}"}]}})
+        self._entry({"type": "skill_invoked", "skill": skill})
+
+    def _agent_finished(self, agent_id: str) -> None:
+        """Claude Code reports a background agent's end as a task notification
+        naming the agent, which continues the turn."""
+
+        if self.in_subagent:
+            raise ValueError(f"step {self.number}: a subagent's own background agents "
+                             "are not recorded by the bridge")
+        self.s.notify("Done.", task_id=agent_id)
+        self._entry({"type": "agent_finished", "agent_id": agent_id})
+
+    def _compaction(self) -> None:
+        if self.in_subagent:
+            # A subagent's compaction is recorded in its own transcript, and
+            # Claude Code runs no session-start hook for it.
+            self.s._append({"type": "system", "subtype": "compact_boundary",
+                            "content": "Conversation compacted"})
+            self.s._append({"type": "user", "isCompactSummary": True,
+                            "message": {"role": "user", "content": "Summary of earlier work."}})
+        else:
+            self.s.compact()
+        self.turns.append({"key": f"t{len(self.turns) + 1}",
+                           "opener": {"type": "compaction"}, "entries": []})
 
     def _turn_end(self, step: dict) -> None:
-        output = parse(self.s.hook("Stop", stop_hook_active=False, last_assistant_message=""))
+        if self.in_subagent:
+            # Claude Code ends a subagent's turn with its own hook event,
+            # which the adapter does not hold.
+            output = parse(self.s.hook("SubagentStop", stop_hook_active=False,
+                                       last_assistant_message="", **self.subagent_fields))
+        else:
+            output = parse(self.s.hook("Stop", stop_hook_active=False,
+                                       last_assistant_message=""))
         decision = _decision(output, "stop")
         self._judged(step.get("expect", {"decision": "allow"}), {"type": "turn_end"}, decision)
         if decision["decision"] == "allow":
             self._entry({"type": "turn_ended"})
+
+    def _session_start(self, step: dict) -> None:
+        event = {"type": "session_start", "source": step["session_start"]}
+        if self.in_subagent:
+            # A subagent starts with its own hook event, which the adapter
+            # does not handle.
+            output = parse(self.s.hook("SubagentStart", **self.subagent_fields))
+        else:
+            output = parse(self.s.hook("SessionStart",
+                                       source=SESSION_SOURCES[step["session_start"]]))
+        self._judged(step.get("expect"), event, _decision(output, "context"))
 
     # Claude Code's side -------------------------------------------------
 
@@ -188,6 +257,17 @@ class _Run:
                              f"line_text on a {kind} call")
         if kind == "file_write":
             path, edits = self._expand(call["path"]), call["edits"]
+            if any(e["removed"] is None for e in edits):
+                # Only a notebook edit writes text without saying what it replaces.
+                if call.get("whole_file") or len(edits) != 1:
+                    raise ValueError(f"step {self.number}: Claude Code leaves replaced text "
+                                     "unknown only in a notebook edit of one cell")
+                added = edits[0]["added"]
+                return "NotebookEdit", {"notebook_path": path, "cell_id": "cell-1", **(
+                    {"new_source": added} if added is not None else {"edit_mode": "delete"})}
+            if any(e["added"] is None for e in edits):
+                raise ValueError(f"step {self.number}: Claude Code shows the text of every "
+                                 "edit but a notebook cell's")
             if call.get("whole_file"):
                 return "Write", {"file_path": path, "content": edits[0]["added"]}
             pairs = [{"old_string": e["removed"], "new_string": e["added"]} for e in edits]
@@ -220,13 +300,24 @@ class _Run:
         if kind == "commit":
             return COMMIT_TOOL, {"message": call.get("message")}
         if kind == "pull_request":
-            return PULL_REQUEST_TOOL, {"title": "Change", "body": "What changed."}
+            tool_input = {"title": "Change", "body": "What changed."}
+            tool_input.update({key: call[key] for key in ("base", "head") if key in call})
+            if "repository" in call:
+                tool_input["owner"], tool_input["repo"] = call["repository"].split("/")
+            return PULL_REQUEST_TOOL, tool_input
         return OTHER_TOOL, {"url": "https://example.invalid"}
 
     def _record(self, tool_id: str, call: dict, result: dict) -> None:
         """Record the call's result as Claude Code does, for its kind."""
 
         text = result.get("output") or ("ok" if result["ok"] else "Exit code 1\nfailed")
+        if result.get("ran") is False and not result.get("held"):
+            if result["ok"]:
+                raise ValueError(f"step {self.number}: a call that never ran did not succeed")
+            # How Claude Code records a call the person refused.
+            text = ("The user doesn't want to proceed with this tool use. The tool use was "
+                    "rejected (eg. if it was a file edit, the new_string was NOT written to "
+                    "the file).")
         extra = None
         agent = result.get("agent")
         if call["kind"] == "skill_load" and result["ok"]:
@@ -260,7 +351,7 @@ class _Run:
         with `expect`; with no `expect`, the step is not checked."""
 
         self.requests.append({
-            "event_model": 1,
+            "event_model": 2,
             "session": {"id": self.s.session_id, "agent": self.agent},
             "project": {"folders": [self.s.project.as_posix()],
                         "working_folder": self.s.cwd.as_posix(),
