@@ -505,9 +505,12 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
     elif name in FORGE_DIFFS:
         rest = _skip_options(args, {"-R", "--repo"})
         noun = FORGE_DIFFS[name]
-        if rest[:1] == [noun] and rest[1:2] in (["create"], ["new"]):
+        # Options may sit between the noun and the verb too (`gh pr -R x create`).
+        verb = _skip_options(rest[1:], set(PR_VALUE_OPTIONS[name]))[:1]
+        if rest[:1] == [noun] and verb in (["create"], ["new"]):
             result.opens_pr = True
-            # `-R`/`--repo` may also come before the noun.
+            # `-R`/`--repo`, the base and the head count before the noun,
+            # between it and the verb, or after the verb.
             named = _pr_options(args, PR_VALUE_OPTIONS[name])
             result.pr_base = named.get("base") or result.pr_base
             result.pr_head = named.get("head") or result.pr_head

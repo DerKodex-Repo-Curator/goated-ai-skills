@@ -644,8 +644,11 @@ apply is not held.
 
 A shell command commits when one of its simple commands is `git commit`,
 not `--dry-run`. It opens a pull or merge request when one is `gh pr create`
-or `gh pr new`, or `glab mr create` or `glab mr new`. Each is recognized per
-simple command, so `echo gh pr create` opens nothing. A `commit` call and a
+or `gh pr new`, or `glab mr create` or `glab mr new`, with its options
+before the noun, between the noun and the verb (`gh pr -R x create`), or
+after the verb. An option's value is never read as the verb, so
+`gh pr -R create list` opens nothing. Each is recognized per simple
+command, so `echo gh pr create` opens nothing. A `commit` call and a
 `pull_request` call are judged the same way.
 
 The step that asks for a [change read](#change-reads) is skipped for a
@@ -689,9 +692,9 @@ git diff --numstat -z --no-relative --no-ext-diff --no-textconv <base>...<head> 
   `HEAD`. Only committed work counts, which is what the pull request opens.
 - A `pull_request` call that names a `repository`, or a shell
   `gh pr create|new` or `glab mr create|new` that names one with `--repo` or
-  `-R` (before or after the subcommand, as `-R x`, `--repo=x`, `-R=x` or
-  `-Rx`), is measured only when it matches the checkout's `origin` URL (one
-  more git call). Aimed at another repository, or from a folder with no
+  `-R` (before the noun, between it and the verb, or after the verb, as
+  `-R x`, `--repo=x`, `-R=x` or `-Rx`), is measured only when it matches
+  the checkout's `origin` URL (one more git call). Aimed at another repository, or from a folder with no
   `origin`, it is not measured. A shell value names its repository by path: a host
   prefix (`github.com/owner/repo`, `gitlab.example.com/group/sub/repo`) or
   a full HTTPS or SSH URL names the same repository as `owner/repo`; a

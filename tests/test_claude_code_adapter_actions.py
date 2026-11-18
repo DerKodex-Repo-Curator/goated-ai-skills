@@ -577,6 +577,34 @@ class PullRequestReviewTests(AdapterTestCase):
                 self.assertEqual(decision(s.call("Bash", {"command": command})),
                                  "deny" if held else "pass")
 
+    def test_options_between_the_noun_and_the_verb_still_open_a_pull_request(self) -> None:
+        # Spec R13: `gh pr -R x create` opens a pull request as `gh pr create -R x` does.
+        github = "https://github.com/acme/export.git"
+        gitlab = "git@gitlab.example.com:group/sub/export.git"
+        branches = "--base main --head feature --fill"
+        for url, command, held in (
+            (github, f"gh pr -R acme/export create {branches}", True),
+            (github, f"gh pr --repo=acme/export create {branches}", True),
+            (github, f"gh pr -Racme/export new {branches}", True),
+            (github, "gh pr -B main -H feature create --fill", True),
+            (github, f"gh pr --draft create {branches}", True),
+            (gitlab, "glab mr --repo group/sub/export create -b main -s feature", True),
+            (github, f"gh pr -R other/x create {branches}", False),
+            (github, "glab mr --repo other/x new -b main -s feature", False),
+        ):
+            with self.subTest(origin=url, command=command):
+                s = self.fresh_described(origin_url=url, stay_on_base=True)
+                self.assertEqual(decision(s.call("Bash", {"command": command})),
+                                 "deny" if held else "pass")
+
+    def test_other_forge_commands_open_no_pull_request(self) -> None:
+        # A value that spells a verb is still a value: `-R create` names a repository.
+        for command in ("gh pr list", "gh pr -R acme/export list", "gh pr -R create list",
+                        "echo gh pr create", "gh pr view create"):
+            with self.subTest(command=command):
+                s = self.fresh_described(stay_on_base=True)
+                self.assertEqual(decision(s.call("Bash", {"command": command})), "pass")
+
     def test_option_values_are_not_read_as_options(self) -> None:
         # glab's -b is the target branch; inside --description's value it is just text.
         s = self.fresh_described(remote_head=True)
