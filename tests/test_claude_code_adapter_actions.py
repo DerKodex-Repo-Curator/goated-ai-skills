@@ -548,6 +548,35 @@ class PullRequestReviewTests(AdapterTestCase):
                 s = self.fresh_described(origin_url=url)
                 self.assertEqual(decision(s.call(tool, pr)), "deny" if held else "pass")
 
+    def test_a_shell_pull_request_naming_a_repository_is_measured_only_there(self) -> None:
+        # Spec R7: `--repo`/`-R` aims the command as a pull_request call's
+        # `repository` does, and the branches are still read beside it.
+        github = "https://github.com/acme/export.git"
+        gitlab = "git@gitlab.example.com:group/sub/export.git"
+        branches = "--base main --head feature --fill"
+        for url, command, held in (
+            (github, f"gh pr create --repo acme/export {branches}", True),
+            (github, f"gh pr create -R acme/export {branches}", True),
+            (github, f"gh pr create --repo=Acme/Export {branches}", True),
+            (github, f"gh pr create -Racme/export {branches}", True),
+            (github, f"gh pr create -R=acme/export {branches}", True),
+            (github, "gh pr create -R acme/export -B=main -H=feature --fill", True),
+            (github, f"gh pr new -R github.com/acme/export {branches}", True),
+            (github, f"gh pr create -R https://github.com/acme/export.git {branches}", True),
+            (github, f"gh pr create -R git@github.com:acme/export.git {branches}", True),
+            (github, f"gh pr create {branches} -R acme/export", True),
+            (gitlab, "glab mr create -R gitlab.example.com/group/sub/export -b main -s feature", True),
+            (gitlab, "glab mr new --repo group/sub/export --target-branch main --source-branch feature", True),
+            (github, f"gh pr create --repo other/x {branches}", False),
+            (github, "glab mr create -R other/x -b main -s feature", False),
+            (github, f"gh pr create -R export {branches}", False),
+            (None, f"gh pr create -R acme/export {branches}", False),
+        ):
+            with self.subTest(origin=url, command=command):
+                s = self.fresh_described(origin_url=url, stay_on_base=True)
+                self.assertEqual(decision(s.call("Bash", {"command": command})),
+                                 "deny" if held else "pass")
+
     def test_option_values_are_not_read_as_options(self) -> None:
         # glab's -b is the target branch; inside --description's value it is just text.
         s = self.fresh_described(remote_head=True)

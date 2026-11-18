@@ -74,18 +74,20 @@ GIT_SILENT_FLAGS_RE = re.compile(r"--quiet|--output(?:=.*)?")
 # `gh pr diff` and `glab mr diff` print a pull or merge request's patch.
 FORGE_DIFFS = {"gh": "pr", "glab": "mr"}
 # The options of `gh pr create` and `glab mr create` that take a value, by the
-# branch each names: "base" (merged into), "head" (merged from), or None. A
-# value is never read as an option, so `--description "-bump deps"` names no
-# base.
+# role each names: "base" (the branch merged into), "head" (the branch merged
+# from), "repository" (the repository the request opens in), or None. A value
+# is never read as an option, so `--description "-bump deps"` names no base.
 PR_VALUE_OPTIONS = {
     "gh": {
         "--base": "base", "-B": "base", "--head": "head", "-H": "head",
+        "--repo": "repository", "-R": "repository",
         **dict.fromkeys(("--assignee", "-a", "--body", "-b", "--body-file", "-F", "--label",
                          "-l", "--milestone", "-m", "--project", "-p", "--recover",
                          "--reviewer", "-r", "--template", "-T", "--title", "-t")),
     },
     "glab": {
         "--target-branch": "base", "-b": "base", "--source-branch": "head", "-s": "head",
+        "--repo": "repository", "-R": "repository",
         **dict.fromkeys(("--assignee", "-a", "--description", "-d", "--related-issue", "-i",
                          "--label", "-l", "--milestone", "-m", "--reviewer",
                          "--target-project", "--title", "-t")),
@@ -200,7 +202,9 @@ class ShellCommand:
     `gh pr create|new` and `glab mr create|new`; `pr_base` and `pr_head` are
     the branches such a command names to merge into and from (`--base`/`-B`
     and `--head`/`-H` for gh, `--target-branch`/`-b` and `--source-branch`/`-s`
-    for glab), else None. `is_check` says it runs a
+    for glab), else None; `pr_repository` is the repository it names with
+    `--repo` or `-R`, as its path (`owner/repo`, `group/sub/repo`) without
+    any host or URL around it, else None (spec R7). `is_check` says it runs a
     test, lint, build, or check; `non_check_writes` says some simple command
     in it writes and is not itself a check (`sed -i … && pytest`, but not
     `pytest > out.txt`). `unchecked_targets` are the write targets no check
@@ -253,7 +257,7 @@ class ShellCommand:
 
     __slots__ = (
         "writes", "write_targets", "unplaced_targets", "unknown_writes", "commit",
-        "commit_message", "opens_pr", "pr_base", "pr_head", "is_check",
+        "commit_message", "opens_pr", "pr_base", "pr_head", "pr_repository", "is_check",
         "non_check_writes", "unchecked_targets", "unchecked_unknown_writes", "prints_changes",
         "installs_globally", "install_folders", "read_only", "only_reads_and_writes_files",
         "script_targets", "script_unknown_writes", "text_writes",
@@ -269,6 +273,7 @@ class ShellCommand:
         self.opens_pr = False
         self.pr_base: str | None = None
         self.pr_head: str | None = None
+        self.pr_repository: str | None = None
         self.is_check = False
         self.non_check_writes = False
         self.unchecked_targets: list[str] = []
@@ -460,9 +465,12 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
         noun = FORGE_DIFFS[name]
         if rest[:1] == [noun] and rest[1:2] in (["create"], ["new"]):
             result.opens_pr = True
-            branches = _pr_branches(rest[2:], PR_VALUE_OPTIONS[name])
-            result.pr_base = branches.get("base") or result.pr_base
-            result.pr_head = branches.get("head") or result.pr_head
+            # `-R`/`--repo` may also come before the noun.
+            named = _pr_options(args, PR_VALUE_OPTIONS[name])
+            result.pr_base = named.get("base") or result.pr_base
+            result.pr_head = named.get("head") or result.pr_head
+            if "repository" in named:
+                result.pr_repository = _repository_path(named["repository"])
         if rest[:2] == [noun, "diff"] and "--name-only" not in rest:
             prints = True
     scripted: list[str] = []  # The files inline interpreter code writes.
@@ -1304,13 +1312,13 @@ def _ps_paths(args: list[str]) -> list[str]:
     return named + positional
 
 
-def _pr_branches(args: list[str], value_options: dict) -> dict[str, str]:
-    """The branches a pull-request command's `args` name, by role ("base",
-    "head"), the last of each winning. An option takes its value as the next
-    word, after `=`, or attached to a short option (`-Bmain`); a value is
-    never read as an option."""
+def _pr_options(args: list[str], value_options: dict) -> dict[str, str]:
+    """The values a pull-request command's `args` name, by role ("base",
+    "head", "repository"; see `PR_VALUE_OPTIONS`), the last of each winning.
+    An option takes its value as the next word, after `=`, or attached to a
+    short option (`-Bmain`, `-B=main`); a value is never read as an option."""
 
-    branches: dict[str, str] = {}
+    named: dict[str, str] = {}
     i = 0
     while i < len(args):
         arg = args[i]
@@ -1321,13 +1329,32 @@ def _pr_branches(args: list[str], value_options: dict) -> dict[str, str]:
         elif arg.startswith("--") and "=" in arg:
             name, value = arg.split("=", 1)
         elif not arg.startswith("--") and arg[:2] in value_options and len(arg) > 2:
-            name, value = arg[:2], arg[2:]
+            name, value = arg[:2], arg[2:].removeprefix("=")  # `-Bmain` or `-B=main`
         else:
             continue
         role = value_options.get(name)
         if role and value is not None:
-            branches[role] = value
-    return branches
+            named[role] = value
+    return named
+
+
+def _repository_path(value: str) -> str:
+    """The repository path a `--repo`/`-R` value names: `owner/repo`, or
+    `group/sub/repo` on GitLab, without the host or URL it may come in
+    (`github.com/owner/repo`, `https://host/owner/repo.git`,
+    `git@host:owner/repo.git`). A first part holding a dot, before two more
+    parts, is a host: owner and group names on GitHub hold none."""
+
+    path = value.strip().rstrip("/").removesuffix(".git")
+    if "://" in path:
+        path = path.split("://", 1)[1].partition("/")[2]
+    elif re.match(r"[^/@:]+@[^/:]+:", path):
+        path = path.partition(":")[2]
+    else:
+        host, _, rest = path.partition("/")
+        if "." in host and "/" in rest:
+            path = rest
+    return path
 
 
 def _skip_options(args: list[str], takes_value: set[str]) -> list[str]:

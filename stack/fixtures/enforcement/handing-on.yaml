@@ -241,3 +241,32 @@ scenarios:
       - reply: "goated-route: direct"
       - call: {kind: skill_load, skill: pr-description}
       - call: {kind: pull_request, base: main, head: feature, repository: upstream-owner/export-tool}
+
+  - name: a shell pull request naming the checkout's own repository is measured
+    covers:
+      - {gate: pr-review, case: holds}
+    setup: {branch_changed_lines: 450, origin_url: "https://github.com/acme/export-tool.git"}
+    steps:
+      - prompt: {type: prompt, author: person, text: Open the pull request.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: pr-description}
+      - call: {kind: shell_command, shell: posix, command: git diff main}
+        result: {ok: true, output: "+line 1"}
+      - call: {kind: shell_command, shell: posix, command: "gh pr create -R github.com/acme/export-tool --base main --fill"}
+        expect:
+          decision: hold
+          holds: [{gate: pr-review, kind: justified-skip}]
+
+  - name: a shell pull request aimed at another repository is not measured here
+    covers:
+      - {gate: pr-review, case: near-miss}
+    setup: {branch_changed_lines: 450, origin_url: "https://github.com/acme/export-tool.git"}
+    steps:
+      - prompt: {type: prompt, author: person, text: Open the pull request upstream.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: pr-description}
+      - call: {kind: shell_command, shell: posix, command: git diff main}
+        result: {ok: true, output: "+line 1"}
+      - call: {kind: shell_command, shell: posix, command: "gh pr create --repo upstream-owner/export-tool --base main --fill"}

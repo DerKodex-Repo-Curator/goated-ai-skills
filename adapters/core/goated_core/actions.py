@@ -520,7 +520,8 @@ def check_action(call: Call, turn: Turn, overrides: dict,
         if command.opens_pr:
             holds.add(lambda: _pr_hold(proof, changes))
             holds.add(lambda: _pr_review_hold(
-                lambda: changed_lines(cwd, command.pr_base, command.pr_head), proof, changes))
+                lambda: changed_lines(cwd, command.pr_base, command.pr_head,
+                                      command.pr_repository), proof, changes))
         # Each gate judges every project file the command writes at once, so its
         # one hold asks for everything they need (Ticket 095).
         inside = [t for t in command.write_targets
@@ -713,8 +714,10 @@ def changed_lines(cwd: str | None, base: str | None, head: str | _WorkingTree | 
     exists. `head` is the branch it merges from, found as the local branch or
     `origin/<head>`; without one, the checked-out `HEAD`. A base or head that
     is in neither place, such as another fork's branch, is unknown.
-    `repository` ("owner/repo") is the repository a tool aims at: unless it is
-    the checkout's `origin`, this checkout says nothing about its size.
+    `repository` ("owner/repo") is the repository a tool or a shell
+    `--repo`/`-R` aims at: unless it is the checkout's `origin`, this checkout
+    says nothing about its size. One that is not an `owner/repo` path names
+    no checkout.
 
     With `head` as `WORKING_TREE`, the measure is the branch's work as it
     stands (spec R1): the working tree against where the checked-out branch
@@ -733,6 +736,8 @@ def changed_lines(cwd: str | None, base: str | None, head: str | _WorkingTree | 
         return None
     deadline = time.monotonic() + SIZE_TIMEOUT_SECONDS
     if repository is not None:
+        if not events.REPOSITORY_RE.match(repository):
+            return None
         url = _git(["config", "--get", "remote.origin.url"], cwd, deadline)
         if url is None or not _names_repository(url, repository):
             return None
