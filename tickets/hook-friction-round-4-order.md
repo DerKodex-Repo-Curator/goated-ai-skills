@@ -26,9 +26,45 @@ Every ticket waits for Ticket 081, so each rule changes once, in
 triggers of the same two gates and edit the same contract rows, and with
 them landed the remaining need for lasting skips can be judged again.
 
+## Unscheduled: Rule Gaps Left By Ticket 081
+
+The spec's addendum (R7 to R12), written 2026-11-18. Not yet placed in a
+wave; the lead decides where they slot. Each waits only for Ticket 081
+(merged); the overlaps say which ones touch code that 099, 100 or 102
+also change.
+
+- `tickets/103-core-shell-pull-request-names-its-repository.md`
+  - Blocked by: `tickets/081-shared-enforcement-core.md`
+  - Overlaps: none with 099, 100, 102.
+  - Enables: a shell pull request aimed at another repository measured
+    as the tool call is.
+- `tickets/104-core-script-receivers-and-posix-nul.md`
+  - Decisions: E and F option 1 (the maintainer, 2026-11-18).
+  - Blocked by: `tickets/081-shared-enforcement-core.md`
+  - Overlaps: 102, if the `/dev/null` hold text lives in `gates.py`.
+  - Enables: `window.open` and `db.rm` in a script not held as writes;
+    a posix `> nul` seen as the file it makes.
+- `tickets/105-core-conflicts-opened-by-shell-reads-and-ended-by-commits.md`
+  - Decision: G option 1 (the maintainer, 2026-11-18).
+  - Blocked by: `tickets/081-shared-enforcement-core.md`
+  - Overlaps: none with 099, 100, 102 in code; shares `writes.yaml`.
+  - Enables: a `commit` call ending a conflict; markers shown by `cat`
+    or `git diff` opening one.
+- `tickets/106-core-definition-starts-read-their-keyword.md`
+  - Blocked by: `tickets/081-shared-enforcement-core.md`
+  - Overlaps: 099 and 100 (`design_reads.py`, the `design-reads` row and
+    the design references table): land after both, or coordinate.
+  - Enables: `pub use` and YAML keys no longer asking for `process.md`.
+- `tickets/107-core-a-reviewer-starts-work.md`
+  - Blocked by: `tickets/081-shared-enforcement-core.md`
+  - Overlaps: 102 (`actions.py`, another function; `closeout.yaml`).
+  - Enables: a proposed spawn never counting as a reviewer.
+
 ## Ready Frontier
 
-Tickets 081, 099, 100 and 102 are merged. Ticket 101 is ready.
+Tickets 081, 099, 100 and 102 are merged. Ticket 101 is ready, and so are
+the five unscheduled tickets, 103 to 107: the overlaps above were with
+099, 100 and 102, which have landed.
 
 ## Coverage
 
@@ -38,5 +74,11 @@ Tickets 081, 099, 100 and 102 are merged. Ticket 101 is ready.
 - AC4 (lasting skips) → 101
 - AC5 (another session's message) → 102
 - AC6 (waiting on another session) → 102
+- AC9 (shell pull request's repository) → 103
+- AC10 (JavaScript receivers) → 104
+- AC11 (posix `nul`) → 104
+- AC12 (conflicts opened and ended) → 105
+- AC13 (definition starts) → 106
+- AC14 (a reviewer starts work) → 107
 - AC7 (contract and scenarios) → every ticket
 - AC8 (repo checks) → every ticket
