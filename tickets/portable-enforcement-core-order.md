@@ -67,8 +67,8 @@ the cost of some duplicated translation code.
 
 ## Ready Frontier
 
-Ticket 079 is completed and archived. Ticket 098 is ready; 080 becomes
-ready when 098 merges.
+Ticket 079 is completed and archived, and 098 is merged. Ticket 080 is
+ready.
 
 ## Coverage
 

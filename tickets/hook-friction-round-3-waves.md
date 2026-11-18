@@ -33,8 +33,8 @@ archived under `tickets/archive/` on 2026-11-18.
 | 7 | [095](archive/095-adapter-joint-holds-in-one-message.md) | 3 | adapter and mod | AFK | 086 to 094, 097 |
 | 8 | [096](archive/096-adapter-early-closeout-note.md) | 3 | adapter | AFK | 095 |
 | 9 | [079](archive/079-enforcement-contract-and-event-model.md) | 2 | core | HITL (maintainer accepts the ADR and event model) | its round 2 blockers (merged), and 086 to 096 |
-| 10 (ready now) | [098](098-adapter-contract-gaps.md) | 2 | adapter | AFK | 079 |
-| 11 | [080](080-adapter-rules-read-the-event-model.md) | 2 | adapter | AFK | 079, 098 |
+| 10 | [098](098-adapter-contract-gaps.md) | 2 | adapter | AFK | 079 |
+| 11 (ready now) | [080](080-adapter-rules-read-the-event-model.md) | 2 | adapter | AFK | 079, 098 |
 | 12 | [081](081-shared-enforcement-core.md) | 2 | core | AFK | 080 |
 | 13 | [082](082-neutral-usage-log-and-report.md) | 2 | core | AFK | 078, 081 |
 | 13 | [083](083-adapter-guide-and-worked-example.md) | 2 | docs | AFK | 081 |
