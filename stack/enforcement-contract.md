@@ -933,8 +933,10 @@ with a writing mode, so `text.replace("a", "b")` does not. In JavaScript,
 `.open`, `.unlink`, `.rm`, `.rmdir`, `.truncate`, `.rename`, `.copyFile`,
 and `.cp` count only on a file-system receiver: `fs`, `fs.promises`,
 `fsPromises`, `Deno`, or a name the script binds to a `require` or `import`
-of `fs`, `node:fs`, `fs/promises`, or `node:fs/promises` (`const f =
-require('node:fs')`, `import * as f from 'fs'`), a destructured name
+of `fs`, `node:fs`, `fs/promises`, or `node:fs/promises`, with or without
+a declaration and in a comma chain (`const f = require('node:fs')`,
+`f = require('fs')`, `const p = require('path'), f = require('fs')`,
+`import * as f from 'fs'`), a destructured name
 included (`const {promises: p} = require('fs')`), each perhaps followed by
 `.promises`. A receiver the core cannot name, one ending in a call or an
 index (`require('fs').rm(…)`, `a[b].rm(…)`), counts too. Any other

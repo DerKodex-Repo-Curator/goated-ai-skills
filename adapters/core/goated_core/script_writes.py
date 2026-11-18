@@ -192,10 +192,10 @@ _SHELL_EXPANDS_RE = re.compile(r"[$`]")
 _PY_MODULES = r"(?:os|shutil|io|codecs|pathlib|gzip|bz2|lzma)"
 _PY_IMPORT_AS_RE = re.compile(rf"\bimport\s+({_PY_MODULES})\s+as\s+(\w+)")
 _PY_FROM_IMPORT_RE = re.compile(rf"\bfrom\s+({_PY_MODULES})\s+import\s+\(?([\w \t,]+)\)?")
-_FS = r"""['"](?:node:)?fs(?:/promises)?['"]"""
+_FS = r"""['"`](?:node:)?fs(?:/promises)?['"`]"""
 # `const {a: b} = require('fs')` (group 1) and `import {a as b} from 'fs'` (group 2).
 _JS_DESTRUCTURE_RE = re.compile(
-    rf"\{{([^{{}}]*)\}}\s*=\s*(?:await\s+)?(?:require|import)\(\s*{_FS}\s*\)"
+    rf"\{{([^{{}}]*)\}}\s*=\s*(?:await\s+)?(?:require|import)\s*\(\s*{_FS}\s*\)"
     rf"|\bimport\s*\{{([^{{}}]*)\}}\s*from\s*{_FS}"
 )
 
@@ -240,13 +240,17 @@ def _imported(entries: str, separator: str) -> list[tuple[str, str]]:
 
 # The receivers that are a file system in any script.
 _JS_FILE_SYSTEMS = frozenset({"fs", "fsPromises", "Deno"})
-# A name bound to the `fs` module: `const f = require('fs')` (a `.promises`
-# after it included) or `await import('node:fs')` (group 1); `import f from
-# 'fs'`, `import * as f from 'fs/promises'`, `import f, {…} from 'fs'` (group 2).
+# A name bound to the `fs` module (group 1): `const f = require('fs')`, a
+# `.promises` after it included, `f = require('fs')` with no declaration,
+# `const p = require('path'), f = require('fs')`, or `await import('node:fs')`;
+# the name opens the code, a line or a statement, or follows a declaration or
+# a `,`. Or (group 2) `import f from 'fs'`, `import * as f from 'fs/promises'`,
+# `import f, {…} from 'fs'`.
 _JS_FS_BINDING_RE = re.compile(
-    rf"(?<![\w$.])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?"
-    rf"(?:require|import)\(\s*{_FS}\s*\)"
-    rf"|\bimport\s+(?:\*\s*as\s+)?([A-Za-z_$][\w$]*)\s*(?:,\s*\{{[^{{}}]*\}}\s*)?from\s*{_FS}"
+    rf"(?:(?<![\w$.])(?:const|let|var)\s+|(?:^|(?<=[;,]))\s*)([A-Za-z_$][\w$]*)\s*=\s*"
+    rf"(?:await\s+)?(?:require|import)\s*\(\s*{_FS}\s*\)"
+    rf"|\bimport\s+(?:\*\s*as\s+)?([A-Za-z_$][\w$]*)\s*(?:,\s*\{{[^{{}}]*\}}\s*)?from\s*{_FS}",
+    re.MULTILINE,
 )
 
 
