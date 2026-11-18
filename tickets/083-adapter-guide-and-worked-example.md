@@ -48,14 +48,14 @@ no way to check their adapter against the rules.
 
 ## Acceptance Criteria
 
-- [ ] The worked example runs in the repo's tests with no network and no
+- [x] The worked example runs in the repo's tests with no network and no
       harness installed.
-- [ ] It passes every conformance scenario through the runner.
-- [ ] The runner reports a failing scenario by name, with the expected and
+- [x] It passes every conformance scenario through the runner.
+- [x] The runner reports a failing scenario by name, with the expected and
       actual decision.
-- [ ] The guide covers each point listed above and names every command it
+- [x] The guide covers each point listed above and names every command it
       tells the reader to run.
-- [ ] A reader can follow the guide using only files in this repo.
+- [x] A reader can follow the guide using only files in this repo.
 
 ## Expected Proof
 
