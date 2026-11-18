@@ -505,9 +505,7 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
     elif name in FORGE_DIFFS:
         rest = _skip_options(args, {"-R", "--repo"})
         noun = FORGE_DIFFS[name]
-        # Options may sit between the noun and the verb too (`gh pr -R x create`).
-        verb = _skip_options(rest[1:], set(PR_VALUE_OPTIONS[name]))[:1]
-        if rest[:1] == [noun] and verb in (["create"], ["new"]):
+        if rest[:1] == [noun] and _forge_verb(rest[1:]) in ("create", "new"):
             result.opens_pr = True
             # `-R`/`--repo`, the base and the head count before the noun,
             # between it and the verb, or after the verb.
@@ -1410,6 +1408,27 @@ def _repository_path(value: str) -> str:
         if "." in host and "/" in rest:
             path = rest
     return path
+
+
+def _forge_verb(words: list[str]) -> str | None:
+    """The verb after `gh pr` or `glab mr`, given the words after the noun,
+    or None when there is none. Options before it are read as their parser
+    (cobra) reads options it does not know: `--x=v`, an attached short form
+    (`-Rx`, `-R=x`) and `--help`/`-h` are one word; any other `--x` or `-x`
+    takes the next word as its value, so `gh pr --state create list` lists.
+    `--` ends the options, and no verb follows it."""
+
+    i = 0
+    while i < len(words):
+        word = words[i]
+        if word == "--":
+            return None
+        if not word.startswith("-") or word == "-":
+            return word
+        whole = "=" in word or word in ("--help", "-h") or (
+            not word.startswith("--") and len(word) > 2)
+        i += 1 if whole else 2
+    return None
 
 
 def _skip_options(args: list[str], takes_value: set[str]) -> list[str]:

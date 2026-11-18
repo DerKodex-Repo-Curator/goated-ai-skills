@@ -646,8 +646,12 @@ A shell command commits when one of its simple commands is `git commit`,
 not `--dry-run`. It opens a pull or merge request when one is `gh pr create`
 or `gh pr new`, or `glab mr create` or `glab mr new`, with its options
 before the noun, between the noun and the verb (`gh pr -R x create`), or
-after the verb. An option's value is never read as the verb, so
-`gh pr -R create list` opens nothing. Each is recognized per simple
+after the verb. An option's value is never read as the verb: between the
+noun and the verb, `--x=v`, an attached short form (`-Rx`, `-R=x`) and
+`--help` or `-h` are one word, any other `--x` or `-x` takes the next word
+as its value, as `gh`'s parser does, and `--` ends the options with no
+verb. So `gh pr -R create list`, `gh pr --state create list` and
+`gh pr --draft create` open nothing. Each is recognized per simple
 command, so `echo gh pr create` opens nothing. A `commit` call and a
 `pull_request` call are judged the same way.
 
@@ -694,9 +698,10 @@ git diff --numstat -z --no-relative --no-ext-diff --no-textconv <base>...<head> 
   `gh pr create|new` or `glab mr create|new` that names one with `--repo` or
   `-R` (before the noun, between it and the verb, or after the verb, as
   `-R x`, `--repo=x`, `-R=x` or `-Rx`), is measured only when it matches
-  the checkout's `origin` URL (one more git call). Aimed at another repository, or from a folder with no
-  `origin`, it is not measured. A shell value names its repository by path: a host
-  prefix (`github.com/owner/repo`, `gitlab.example.com/group/sub/repo`) or
+  the checkout's `origin` URL (one more git call). Aimed at another
+  repository, or from a folder with no `origin`, it is not measured. A
+  shell value names its repository by path: a host prefix
+  (`github.com/owner/repo`, `gitlab.example.com/group/sub/repo`) or
   a full HTTPS or SSH URL names the same repository as `owner/repo`; a
   first part holding a dot, before two more parts, is read as a host. A
   value that is not an `owner/repo` path names no checkout and is not

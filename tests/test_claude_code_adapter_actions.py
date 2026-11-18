@@ -587,7 +587,6 @@ class PullRequestReviewTests(AdapterTestCase):
             (github, f"gh pr --repo=acme/export create {branches}", True),
             (github, f"gh pr -Racme/export new {branches}", True),
             (github, "gh pr -B main -H feature create --fill", True),
-            (github, f"gh pr --draft create {branches}", True),
             (gitlab, "glab mr --repo group/sub/export create -b main -s feature", True),
             (github, f"gh pr -R other/x create {branches}", False),
             (github, "glab mr --repo other/x new -b main -s feature", False),
@@ -599,11 +598,19 @@ class PullRequestReviewTests(AdapterTestCase):
 
     def test_other_forge_commands_open_no_pull_request(self) -> None:
         # A value that spells a verb is still a value: `-R create` names a repository.
+        # Between the noun and the verb, any `--x` or `-x` takes the next word, as
+        # gh's parser does, so `--draft create` gives --draft the value "create".
         for command in ("gh pr list", "gh pr -R acme/export list", "gh pr -R create list",
-                        "echo gh pr create", "gh pr view create"):
+                        "echo gh pr create", "gh pr view create",
+                        "gh pr --search new list", "gh pr -S new list",
+                        "gh pr --state create list", "gh pr --json create view",
+                        "gh pr --draft create", "gh pr -d create", "gh pr -- create"):
             with self.subTest(command=command):
-                s = self.fresh_described(stay_on_base=True)
+                # Checked out on a large branch, where a pull request would be held.
+                s = self.fresh_described()
                 self.assertEqual(decision(s.call("Bash", {"command": command})), "pass")
+        held = self.fresh_described().call("Bash", {"command": "gh pr create --fill"})
+        self.assertEqual(decision(held), "deny")
 
     def test_option_values_are_not_read_as_options(self) -> None:
         # glab's -b is the target branch; inside --description's value it is just text.
