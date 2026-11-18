@@ -41,14 +41,14 @@ code, as `AGENTS.md` requires:
 
 ## Acceptance Criteria
 
-- [ ] With `software-design-principles` loaded, a five-line edit of
+- [x] With `software-design-principles` loaded, a five-line edit of
       `stack/fixtures/x.yaml` and one of `a/__fixtures__/b.json` meet no
       `design-reads` hold.
-- [ ] The same edit of `config/app.yaml` still asks for `decoupling.md`.
-- [ ] A Python file under `fixtures/` is still judged as code.
-- [ ] The contract states the rule, and a conformance scenario covers the
+- [x] The same edit of `config/app.yaml` still asks for `decoupling.md`.
+- [x] A Python file under `fixtures/` is still judged as code.
+- [x] The contract states the rule, and a conformance scenario covers the
       hold, its near miss and the fixture pass.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 

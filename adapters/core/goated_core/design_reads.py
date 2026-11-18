@@ -84,11 +84,27 @@ def is_test_path(project_path: str | None) -> bool:
     return project_path is not None and bool(TEST_PATH_RE.search(project_path))
 
 
-def applies(path: str, *, is_code: bool, is_test: bool) -> bool:
-    """Whether the design-reads rules apply to an edit of `path`: a code file,
-    or a configuration file that is neither a lock file nor test data."""
+# Test data beyond test files: anything under a `fixtures` or `__fixtures__`
+# folder at any depth inside the project.
+FIXTURE_PATH_RE = re.compile(r"(?:^|/)(?:fixtures|__fixtures__)/", re.IGNORECASE)
 
-    return is_code or (_is_config(path) and not is_test)
+
+def is_test_data_path(project_path: str | None) -> bool:
+    """Whether a file is test data, given its path inside the project as for
+    `is_test_path`: a test file, or any file under a fixtures folder. It
+    decides only whether a configuration file is judged; a code file under a
+    fixtures folder is still code, and a test file only by `is_test_path`."""
+
+    return is_test_path(project_path) or (
+        project_path is not None and bool(FIXTURE_PATH_RE.search(project_path)))
+
+
+def applies(path: str, *, is_code: bool, is_test_data: bool) -> bool:
+    """Whether the design-reads rules apply to an edit of `path`: a code file,
+    or a configuration file that is neither a lock file nor test data
+    (`is_test_data_path`)."""
+
+    return is_code or (_is_config(path) and not is_test_data)
 
 
 def required(path: str, edit: Call | None, *, is_code: bool, is_test: bool, small: bool,

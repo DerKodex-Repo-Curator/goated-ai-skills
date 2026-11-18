@@ -194,6 +194,47 @@ scenarios:
       - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/decoupling.md", whole: true}
       - call: *settings
 
+  - name: configuration under a fixtures folder is test data the design reads do not judge
+    covers:
+      - {gate: design-reads, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export fixtures.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call:
+          kind: file_write
+          path: stack/fixtures/export.yaml
+          edits: [{removed: "limit: 1", added: "limit: 2\nformat: csv\nheader: true\nquote: minimal\nrows: 3"}]
+      - call:
+          kind: file_write
+          path: web/__fixtures__/export.json
+          whole_file: true
+          edits: [{removed: null, added: "{\n  \"limit\": 2,\n  \"format\": \"csv\",\n  \"header\": true,\n  \"quote\": \"minimal\"\n}\n"}]
+
+  - name: configuration outside a fixtures folder, and code inside one, are still judged
+    covers:
+      - {gate: design-reads, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export settings and fixture builder.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call:
+          kind: file_write
+          path: config/export.yaml
+          edits: [{removed: "limit: 1", added: "limit: 2\nformat: csv\nheader: true\nquote: minimal\nrows: 3"}]
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+      - call:
+          kind: file_write
+          path: fixtures/build.py
+          edits: [{removed: "pass", added: "def build_rows():\n    return []"}]
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+
   - name: a skip line clears the design-reads hold
     covers:
       - {gate: design-reads, case: clears, way: skip-line}

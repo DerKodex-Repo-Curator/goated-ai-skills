@@ -1155,7 +1155,8 @@ def _design_need(path: str, write: Call | None, small: bool, loaded: bool,
     `earlier` are the turn's project code writes so far."""
 
     code, test = is_code(path), is_test(path, project)
-    if not design_reads.applies(path, is_code=code, is_test=test):
+    test_data = design_reads.is_test_data_path(_path_in_project(path, project))
+    if not design_reads.applies(path, is_code=code, is_test_data=test_data):
         return None
     shell_write = write is None
     # A test file is never substantial: in TDD the test comes first, and the
