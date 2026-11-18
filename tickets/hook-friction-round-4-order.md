@@ -75,10 +75,12 @@ overlaps below were with 099, 100 and 102, which have merged.
 The spec's R13 and R14, written 2026-11-18. They change the same lines of
 the `FORGE_DIFFS` branch in `shell.py`, so they run one after the other.
 
-- `tickets/108-core-pull-request-options-between-noun-and-verb.md`
+- `tickets/archive/108-core-pull-request-options-between-noun-and-verb.md`
+  - Status: Completed, merged and archived on 2026-11-18.
   - Blocked by: `tickets/archive/103-core-shell-pull-request-names-its-repository.md`
   - Enables: `gh pr -R x create` read as a pull request.
-- `tickets/109-core-one-pull-request-per-simple-command.md`
+- `tickets/archive/109-core-one-pull-request-per-simple-command.md`
+  - Status: Completed, merged and archived on 2026-11-18.
   - Blocked by (ordering): 108
   - Enables: each pull request in a chained command measured with its
     own options.
@@ -86,7 +88,7 @@ the `FORGE_DIFFS` branch in `shell.py`, so they run one after the other.
 ## Ready Frontier
 
 Tickets 081 and 099 to 107 are merged and archived (waves 14 and 15,
-2026-11-18). Ticket 108 is ready (wave 16); 109 waits for 108.
+2026-11-18), and so are 108 and 109 (waves 16 and 17). Round 4 is complete.
 
 ## Coverage
 

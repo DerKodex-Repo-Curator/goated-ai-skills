@@ -18,10 +18,11 @@ This table replaces waves 5 to 10 of
 [hook-friction-round-2-waves.md](hook-friction-round-2-waves.md). Waves 1
 to 4 there are merged.
 
-Waves 5 to 13 are merged, and so are wave 14 but 084 and 106 of wave 15.
-Their tickets were archived under `tickets/archive/` on 2026-11-18: waves
-5 to 9 (078, 079 and 086 to 097), and waves 10 to 15 (098, 080 to 083 and
-099 to 107). 084 waits for a go-ahead to start, and 085 for 084.
+Waves 5 to 13 are merged, and so are wave 14 but 084, 106 of wave 15, and
+waves 16 and 17. Their tickets were archived under `tickets/archive/` on
+2026-11-18: waves 5 to 9 (078, 079 and 086 to 097), and waves 10 to 17
+(098, 080 to 083, and 099 to 109). 084 waits for a go-ahead to start, and
+085 for 084.
 
 | Wave | Ticket | Round | Area | Type | Blocked by |
 | --- | --- | --- | --- | --- | --- |
@@ -55,8 +56,8 @@ Their tickets were archived under `tickets/archive/` on 2026-11-18: waves
 | 14 (merged) | [107](archive/107-core-a-reviewer-starts-work.md) | 4 | core | AFK | 081 |
 | 15 (merged) | [106](archive/106-core-definition-starts-read-their-keyword.md) | 4 | core | AFK | 081, 101 |
 | 15 | [085](085-opencode-adapter.md) | 2 | new adapter | HITL (build decision after research) | 084 |
-| 16 (ready now) | [108](108-core-pull-request-options-between-noun-and-verb.md) | 4 | core | AFK | 103 (merged) |
-| 17 | [109](109-core-one-pull-request-per-simple-command.md) | 4 | core | AFK | 108 (same lines) |
+| 16 (merged) | [108](archive/108-core-pull-request-options-between-noun-and-verb.md) | 4 | core | AFK | 103 (merged) |
+| 17 (merged) | [109](archive/109-core-one-pull-request-per-simple-command.md) | 4 | core | AFK | 108 (same lines) |
 
 ## Decisions Recorded Here
 

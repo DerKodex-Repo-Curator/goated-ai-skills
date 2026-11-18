@@ -43,16 +43,16 @@ The contract and a conformance scenario change with the code, as
 
 ## Acceptance Criteria
 
-- [ ] `gh pr -R <own repo> create` and `glab mr --repo <own repo> create`
+- [x] `gh pr -R <own repo> create` and `glab mr --repo <own repo> create`
       open a pull request that is measured; `gh pr -R other/x create` is
       not measured.
-- [ ] `gh pr --repo=x create`, `gh pr -Rx new` and an option with no value
+- [x] `gh pr --repo=x create`, `gh pr -Rx new` and an option with no value
       between noun and verb (such as `gh pr --draft create`, if `gh`
       accepts it there) are read the same way.
-- [ ] `echo gh pr create` and `gh pr list` still open nothing.
-- [ ] The contract states the rule, and a conformance scenario covers a
+- [x] `echo gh pr create` and `gh pr list` still open nothing.
+- [x] The contract states the rule, and a conformance scenario covers a
       hold and a near miss.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 
@@ -76,3 +76,15 @@ The contract and a conformance scenario change with the code, as
 - The `GH_REPO`-style environment variables and `gh repo set-default`.
 - Which `gh` or `glab` options take a value beyond those `_pr_options`
   and `_skip_options` already know.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-18.
+
+- Merged as `e77af6a` (`7449f27`, follow-up `f27a284`), together with
+  Ticket 109.
+- Lead decision at review: between the noun and the verb, options are read
+  as gh's parser reads them; an option it does not know takes the next
+  word as its value, so `gh pr --search new list` opens nothing and
+  `gh pr --draft create` (which gh rejects) opens nothing.
+- Exercised in later sessions; no separate live-check record.

@@ -44,22 +44,22 @@ The contract and a conformance scenario change with the code, as
   `FORGE_DIFFS` branch, `_pr_options`.
 - `adapters/core/goated_core/actions.py`: the shell path that adds
   `_pr_hold` and `_pr_review_hold`, and `changed_lines`.
-- `tickets/108-core-pull-request-options-between-noun-and-verb.md`, which
+- `tickets/archive/108-core-pull-request-options-between-noun-and-verb.md`, which
   lands first in the same lines.
 
 ## Acceptance Criteria
 
-- [ ] In `gh pr create -R other/x && gh pr create`, the second pull
+- [x] In `gh pr create -R other/x && gh pr create`, the second pull
       request is measured in the checkout.
-- [ ] In `gh pr create -B small && gh pr create -B main`, each is measured
+- [x] In `gh pr create -B small && gh pr create -B main`, each is measured
       against its own base, and the hold holds when either is 400 or more
       lines.
-- [ ] A command with one pull request is measured exactly as today.
-- [ ] Branch size still runs at most once per pull request, and only when
+- [x] A command with one pull request is measured exactly as today.
+- [x] Branch size still runs at most once per pull request, and only when
       the call would otherwise be held by `pr-review`.
-- [ ] The contract states the rule, and a conformance scenario covers a
+- [x] The contract states the rule, and a conformance scenario covers a
       hold and a near miss.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 
@@ -69,7 +69,7 @@ The contract and a conformance scenario change with the code, as
 
 ## Blocked By
 
-- `tickets/108-core-pull-request-options-between-noun-and-verb.md`
+- `tickets/archive/108-core-pull-request-options-between-noun-and-verb.md`
   (ordering: the same lines of the `FORGE_DIFFS` branch)
 
 ## Scope Exclusions
@@ -77,3 +77,13 @@ The contract and a conformance scenario change with the code, as
 - The two-second limit on all of branch size's git calls stays one limit
   for the whole call.
 - The `pull-request` gate (`pr-description`) stays one hold per call.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-18.
+
+- Merged as `e77af6a` (`4551e11`, follow-up `c62972e`), together with
+  Ticket 108.
+- Lead decisions at review: backticks in a branch name are quoted in the
+  hold text, and identical pull requests in one chain are measured once.
+- Exercised in later sessions; no separate live-check record.
