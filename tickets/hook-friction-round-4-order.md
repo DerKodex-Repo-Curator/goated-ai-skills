@@ -26,12 +26,12 @@ Every ticket waits for Ticket 081, so each rule changes once, in
 triggers of the same two gates and edit the same contract rows, and with
 them landed the remaining need for lasting skips can be judged again.
 
-## Unscheduled: Rule Gaps Left By Ticket 081
+## Rule Gaps Left By Ticket 081
 
-The spec's addendum (R7 to R12), written 2026-11-18. Not yet placed in a
-wave; the lead decides where they slot. Each waits only for Ticket 081
-(merged); the overlaps say which ones touch code that 099, 100 or 102
-also change.
+The spec's addendum (R7 to R12), written 2026-11-18. Tickets 103, 104,
+105 and 107 run in wave 14 and 106 in wave 15, after 101, in
+[hook-friction-round-3-waves.md](hook-friction-round-3-waves.md). The
+overlaps below were with 099, 100 and 102, which have merged.
 
 - `tickets/103-core-shell-pull-request-names-its-repository.md`
   - Blocked by: `tickets/081-shared-enforcement-core.md`
@@ -52,8 +52,9 @@ also change.
     or `git diff` opening one.
 - `tickets/106-core-definition-starts-read-their-keyword.md`
   - Blocked by: `tickets/081-shared-enforcement-core.md`
+  - Blocked by (ordering): `tickets/101-core-read-skips-last-the-task.md`
   - Overlaps: 099 and 100 (`design_reads.py`, the `design-reads` row and
-    the design references table): land after both, or coordinate.
+    the design references table), now merged; and 101, the same gate.
   - Enables: `pub use` and YAML keys no longer asking for `process.md`.
 - `tickets/107-core-a-reviewer-starts-work.md`
   - Blocked by: `tickets/081-shared-enforcement-core.md`
@@ -62,9 +63,8 @@ also change.
 
 ## Ready Frontier
 
-Tickets 081, 099, 100 and 102 are merged. Ticket 101 is ready, and so are
-the five unscheduled tickets, 103 to 107: the overlaps above were with
-099, 100 and 102, which have landed.
+Tickets 081, 099, 100 and 102 are merged. Tickets 101, 103, 104, 105 and
+107 are ready (wave 14); 106 waits for 101.
 
 ## Coverage
 

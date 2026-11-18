@@ -72,6 +72,8 @@ conformance scenario change with the code, as `AGENTS.md` requires:
 ## Blocked By
 
 - `tickets/081-shared-enforcement-core.md` (merged)
+- `tickets/101-core-read-skips-last-the-task.md` (ordering: both change
+  the `design-reads` gate and its contract row)
 
 ## Overlaps
 

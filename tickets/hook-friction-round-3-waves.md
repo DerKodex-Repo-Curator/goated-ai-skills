@@ -48,6 +48,11 @@ archived under `tickets/archive/` on 2026-11-18. Waves 10 to 13 (098,
 | 13 | [102](102-core-session-messages-continue-the-task.md) | 4 | core | AFK | 081 |
 | 14 (ready now) | [084](084-pi-agent-adapter.md) | 2 | new adapter | HITL (build decision after research) | 082, 083 |
 | 14 (ready now) | [101](101-core-read-skips-last-the-task.md) | 4 | core | AFK | 081, 099, 100 |
+| 14 (ready now) | [103](103-core-shell-pull-request-names-its-repository.md) | 4 | core | AFK | 081 |
+| 14 (ready now) | [104](104-core-script-receivers-and-posix-nul.md) | 4 | core | AFK | 081 |
+| 14 (ready now) | [105](105-core-conflicts-opened-by-shell-reads-and-ended-by-commits.md) | 4 | core | AFK | 081 |
+| 14 (ready now) | [107](107-core-a-reviewer-starts-work.md) | 4 | core | AFK | 081 |
+| 15 | [106](106-core-definition-starts-read-their-keyword.md) | 4 | core | AFK | 081, 101 |
 | 15 | [085](085-opencode-adapter.md) | 2 | new adapter | HITL (build decision after research) | 084 |
 
 ## Decisions Recorded Here
@@ -122,6 +127,14 @@ Round 4 comes from the agents of Tickets 079, 095, 096 and 098.
     skip lines starting empty.
   - D2.1 (Ticket 102): text only; the Proof text names the waiting case,
     and the existing verification skip line clears it.
+- **The gap tickets (103 to 107) join wave 14 (2026-11-18).** Ticket 081
+  left seven rule gaps documented in the contract; the spec's addendum
+  ticketed six of them (`git pull --abort` is not a git option). The
+  overlaps they had with 099, 100 and 102 went when wave 13 merged.
+  The maintainer chose E1, F1 and G1 for 104 and 105.
+- **Ticket 106 waits for 101.** Both change how the `design-reads` gate
+  behaves in `design_reads.py` and its contract row; running them apart
+  avoids a merge clash in the same rules.
 
 ## Where Each Feedback Item Went
 
