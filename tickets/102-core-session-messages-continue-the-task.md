@@ -1,8 +1,5 @@
 # Ticket 102: Messages From Other Sessions Continue The Task
 
-> Draft: waits for the maintainer's decisions D1 and D2 in the parent spec.
-> Written for the recommended options, D1.2 and D2.1.
-
 ## Parent Spec
 
 `docs/specs/2026-11-18-hook-friction-round-4.md` (R5, R6; AC5, AC6, AC7,
@@ -10,8 +7,8 @@ AC8)
 
 ## Type
 
-HITL until decisions D1 and D2 are made (the maintainer chooses how far
-a message nobody typed may continue a task); AFK after.
+AFK. The maintainer decided D1 and D2 on 2026-11-18: D1 option 2 (R5)
+and D2 option 1 (R6) in the parent spec.
 
 ## What To Build
 
@@ -77,6 +74,6 @@ in `stack/fixtures/enforcement/routing.yaml` and `closeout.yaml`.
 ## Scope Exclusions
 
 - Overrides from any prompt a person did not type.
-- A status-line grammar (D2 option 2) unless the maintainer chooses it.
+- A status-line grammar (D2 option 2, not chosen).
 - How the Claude Code adapter tells a session's message from a person's,
   which stays as it is.

@@ -13,11 +13,11 @@ Parallel waves, with round 2's remaining tickets:
    - Enables: the mocking reference for mocks in code, and short
      comment-only edits with no design reads.
 3. `tickets/102-core-session-messages-continue-the-task.md`
-   - Status: Draft, waits for decisions D1 and D2.
+   - Decisions: D1 option 2 and D2 option 1 (the maintainer, 2026-11-18).
    - Blocked by: `tickets/081-shared-enforcement-core.md`
    - Enables: a peer's message continuing the work without a held write.
 4. `tickets/101-core-read-skips-last-the-task.md`
-   - Status: Draft, waits for decision C.
+   - Decision: C option 2 (the maintainer, 2026-11-18).
    - Blocked by: `tickets/081-shared-enforcement-core.md`, 099, 100
    - Enables: a reasoned skip of a read written once per task.
 

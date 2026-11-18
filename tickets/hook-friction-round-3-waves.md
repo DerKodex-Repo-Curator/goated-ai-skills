@@ -44,9 +44,9 @@ archived under `tickets/archive/` on 2026-11-18.
 | 13 | [083](083-adapter-guide-and-worked-example.md) | 2 | docs | AFK | 081 |
 | 13 | [099](099-core-fixture-data-is-test-data.md) | 4 | core | AFK | 081 |
 | 13 | [100](100-core-narrower-reference-triggers.md) | 4 | core and registry | AFK | 081 |
-| 13 | [102](102-core-session-messages-continue-the-task.md) | 4 | core | HITL until decisions D1 and D2 (draft) | 081 |
+| 13 | [102](102-core-session-messages-continue-the-task.md) | 4 | core | AFK | 081 |
 | 14 | [084](084-pi-agent-adapter.md) | 2 | new adapter | HITL (build decision after research) | 082, 083 |
-| 14 | [101](101-core-read-skips-last-the-task.md) | 4 | core | HITL until decision C (draft) | 081, 099, 100 |
+| 14 | [101](101-core-read-skips-last-the-task.md) | 4 | core | AFK | 081, 099, 100 |
 | 15 | [085](085-opencode-adapter.md) | 2 | new adapter | HITL (build decision after research) | 084 |
 
 ## Decisions Recorded Here
@@ -109,8 +109,18 @@ Round 4 comes from the agents of Tickets 079, 095, 096 and 098.
   land, the need for it can be judged again.
 - **084 and 085 do not wait for round 4.** They call the core, so a rule
   change reaches them without a change of theirs.
-- **Open decisions:** C (Ticket 101) and D1, D2 (Ticket 102), in the
-  [round 4 spec](../docs/specs/2026-11-18-hook-friction-round-4.md#open-questions).
+- **The maintainer's decisions (2026-11-18),** each the recommended
+  option in the
+  [round 4 spec](../docs/specs/2026-11-18-hook-friction-round-4.md#decisions):
+  - C2 (Ticket 101): a skip that clears a `design-reads` or
+    `reference-reads` hold lasts until the task ends or the context
+    compacts, for the same references and kind of file only; a later
+    hold it covers passes with a notice.
+  - D1.2 (Ticket 102): another session's message opens a new turn whose
+    route is `continue`, with no override, and with proof, checks and
+    skip lines starting empty.
+  - D2.1 (Ticket 102): text only; the Proof text names the waiting case,
+    and the existing verification skip line clears it.
 
 ## Where Each Feedback Item Went
 
@@ -138,9 +148,9 @@ Round 4 comes from the agents of Tickets 079, 095, 096 and 098.
 | Round 4: `design-reads` treats fixture YAML as configuration | 099 |
 | Round 4: the mocking reference fires on the bare word `patch` or `MagicMock` in data | 100 |
 | Round 4: `readability.md` and the Design item for a docstring-only edit | 100 |
-| Round 4: a skip line lasts one turn, so it repeats | 101 (draft, decision C) |
-| Round 4: `route-line` holds after a lead's or peer's message | 102 (draft, decision D1) |
-| Round 4: Proof asked while a session waits on another | 102 (draft, decision D2) |
+| Round 4: a skip line lasts one turn, so it repeats | 101 (decision C2) |
+| Round 4: `route-line` holds after a lead's or peer's message | 102 (decision D1.2) |
+| Round 4: Proof asked while a session waits on another | 102 (decision D2.1) |
 | Round 4: the `true` carrier call for a line | No ticket (kept) |
 
 ## Notes

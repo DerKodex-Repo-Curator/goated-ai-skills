@@ -1,17 +1,13 @@
 # Ticket 101: Read Skips Last The Task
 
-> Draft: waits for the maintainer's decision C in the parent spec. Written
-> for the recommended option, C2. If C1 is chosen, this ticket is dropped;
-> if C3, it is rewritten.
-
 ## Parent Spec
 
 `docs/specs/2026-11-18-hook-friction-round-4.md` (R4; AC4, AC7, AC8)
 
 ## Type
 
-HITL until decision C is made (the maintainer chooses how long a skip
-lasts); AFK after.
+AFK. The maintainer decided C on 2026-11-18: option 2, the parent spec's
+R4.
 
 ## What To Build
 

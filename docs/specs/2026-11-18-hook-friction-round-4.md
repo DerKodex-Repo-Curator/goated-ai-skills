@@ -2,10 +2,10 @@
 
 ## Status
 
-Decision Needed, 2026-11-18. R1 to R3 follow the lead's curation of the
-round 3 feedback and are ticket ready. R4 to R6 each carry a recommended
-option and wait for the maintainer's decision
-([Open Questions](#open-questions)). Builds on
+Ticket Ready, 2026-11-18. R1 to R3 follow the lead's curation of the
+round 3 feedback. R4 to R6 state the maintainer's decisions of 2026-11-18
+on C, D1 and D2, each the recommended option
+([Decisions](#decisions)). Builds on
 [the portable enforcement core spec](2026-11-17-portable-enforcement-core.md):
 every change here is made once, in the shared core that
 [Ticket 081](../../tickets/081-shared-enforcement-core.md) creates at
@@ -73,11 +73,11 @@ Ticket 081 they live in `adapters/core/`, perhaps under new module names.
   in data.
 - A short comment-only edit asks for no design reads and no Design item.
 - A deliberate skip of a read is not retyped for the same kind of file
-  each turn (subject to decision C).
+  each turn (decision C).
 - A message from another session that continues the work does not cost a
-  held write (subject to decision D1).
+  held write (decision D1).
 - A session waiting on another session can end its turn honestly without
-  a token check (subject to decision D2).
+  a token check (decision D2).
 
 ## Non-Goals
 
@@ -133,8 +133,8 @@ Ticket 081 they live in `adapters/core/`, perhaps under new module names.
     `actions._designing` and the Design item in `_closeout_items`; the
     contract's `design` and `design-reads` rows and the `Design` closeout
     row.
-- **R4, how long a skip lasts** (item 2). Decision C. Recommended: a skip
-  line that clears a `design-reads` or `reference-reads` hold lasts, for
+- **R4, how long a skip lasts** (item 2). Decision C, option 2 (the
+  maintainer's): a skip line that clears a `design-reads` or `reference-reads` hold lasts, for
   the references that hold named and the same kind of file (test,
   configuration, other code), until the task ends or the next compaction,
   as the reads those gates ask for already last. Every other skip keeps
@@ -143,8 +143,8 @@ Ticket 081 they live in `adapters/core/`, perhaps under new module names.
   - Touches: the contract's Holds section ("count only in their turn")
     and the two gate rows; the core's skip lookup (`_Proof.skips`) and
     session state, which would keep the task's lasting skips.
-- **R5, another session's message** (item 3). Decision D1. Recommended:
-  in a session with a task, a prompt with `author: session` opens a turn
+- **R5, another session's message** (item 3). Decision D1, option 2 (the
+  maintainer's): in a session with a task, a prompt with `author: session` opens a turn
   whose route is `continue` until a route line in the turn says
   otherwise. The `route-line` gate does not hold that turn. The turn is
   still new: it carries no override, and its skip lines, checks and
@@ -153,9 +153,9 @@ Ticket 081 they live in `adapters/core/`, perhaps under new module names.
     `route-line` row; the core's route-line check (`gates.check_routing`,
     `_task_route_in`). The event model needs no change: `author: session`
     already marks these prompts.
-- **R6, a session waiting on another** (item 6). Decision D2.
-  Recommended: no rule change. The Proof item's text says that a session
-  waiting on another session's result may write
+- **R6, a session waiting on another** (item 6). Decision D2,
+  option 1 (the maintainer's): no rule change. The Proof item's text says
+  that a session waiting on another session's result may write
   `goated-skip: verification-before-completion: <what it waits for>`.
   - Touches: the Proof item's text in `_closeout_items`, and the
     contract's Hold Messages only if it states that text.
@@ -179,12 +179,12 @@ change, as `AGENTS.md` requires.
       no `design` or `design-reads` hold and, as the turn's only code
       change, no Design item; one adding 20 lines is judged as today. A
       conformance scenario covers the near miss.
-- [ ] **AC4.** R4 as decided, with a scenario in which a lasting skip
+- [ ] **AC4.** R4, with a scenario in which a lasting skip
       covers a later turn and one in which it does not (another
       reference, another kind of file, or a new task).
-- [ ] **AC5.** R5 as decided, with a scenario for a session-authored
+- [ ] **AC5.** R5, with a scenario for a session-authored
       prompt in a task and one for a person's prompt, which is still held.
-- [ ] **AC6.** R6 as decided; if text only, a test shows the Proof text
+- [ ] **AC6.** R6: a test shows the Proof text
       names the waiting case.
 - [ ] **AC7.** The contract states every changed rule, and
       `tests/test_enforcement_contract.py` and the scenario runner pass.
@@ -203,15 +203,17 @@ its hook.
 - Hold first lines (`goated-hold: <gate> | <kind>`) do not change.
 - Skill texts change only where a rule they state changes.
 
-## Open Questions
+## Decisions
 
-The maintainer decides C, D1 and D2.
+The maintainer decided C, D1 and D2 on 2026-11-18, each the recommended
+option: C2, D1.2 and D2.1. The options are kept as the record of what was
+weighed.
 
 ### C. How long a skip line lasts (R4)
 
 1. **Keep one-turn skips.** No ticket. R1 removes the case that caused
    the repeats. Trade-off: rarer repeats stay.
-2. **Recommended: read-gate skips last the task, per reference and file
+2. **Chosen: read-gate skips last the task, per reference and file
    kind**, as R4 states. A read those gates ask for already counts until
    the compaction, so a reasoned skip of the same read lasting as long is
    symmetrical. Trade-off: a later edit that does need the reference goes
@@ -227,7 +229,7 @@ The maintainer decides C, D1 and D2.
 1. **Keep the hold; sharpen its text** for a session-authored prompt, so
    the agent writes `goated-route: continue` before parallel edits.
    Trade-off: one held call per message remains.
-2. **Recommended: a session-authored prompt opens a turn whose route is
+2. **Chosen: a session-authored prompt opens a turn whose route is
    `continue`**, as R5 states. Trade-off: a peer message that starts new
    work runs under the old route unless the agent writes a fresh one; the
    router's "at the start of each new task" is no longer checked for
@@ -240,7 +242,7 @@ The maintainer decides C, D1 and D2.
 
 ### D2. A session waiting on another (R6)
 
-1. **Recommended: text only.** The existing skip line already fits; the
+1. **Chosen: text only.** The existing skip line already fits; the
    Proof text names the case. Trade-off: the agent still writes one line.
 2. **A status line defers Proof.** A reply line such as `Status:
    NEEDS_CONTEXT` or `BLOCKED` at the turn's end defers the Proof and
@@ -249,6 +251,10 @@ The maintainer decides C, D1 and D2.
    without proof that gives no reason.
 3. **Defer the whole closeout** while the reply says it is waiting.
    Trade-off: Docs, Design and Review drop with it.
+
+## Open Questions
+
+None.
 
 ## Sources
 
