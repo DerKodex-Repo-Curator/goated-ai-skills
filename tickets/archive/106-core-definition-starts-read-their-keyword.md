@@ -54,14 +54,14 @@ conformance scenario change with the code, as `AGENTS.md` requires:
 
 ## Acceptance Criteria
 
-- [ ] An added `pub use x;`, `async_helper = 1` or `async` line in a code
+- [x] An added `pub use x;`, `async_helper = 1` or `async` line in a code
       file selects no `process.md`.
-- [ ] An added `class: foo` key in a YAML file selects no `process.md`.
-- [ ] `pub fn run()`, `pub(crate) struct S`, `async def run()`,
+- [x] An added `class: foo` key in a YAML file selects no `process.md`.
+- [x] `pub fn run()`, `pub(crate) struct S`, `async def run()`,
       `async function run()` and `class Run:` still do.
-- [ ] The contract states the rule, and a conformance scenario covers a
+- [x] The contract states the rule, and a conformance scenario covers a
       hold and each near-miss kind.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 
@@ -87,3 +87,14 @@ conformance scenario change with the code, as `AGENTS.md` requires:
 - Whether `pub(crate)` is public: it counts, as today.
 - JavaScript `export { a } from "b"` and other re-export forms.
 - Indented definitions, and a code file being created.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-18.
+
+- Merged as `11baf62` (`d907a9b`, follow-up `125abd1`).
+- Lead decision at review: the name rule skips the keywords this ticket
+  added (`unsafe`, `extern`, `mod`, `union`, `in`), so the contract row
+  holds; qualifiers between `pub` and the keyword are allowed, Zig's
+  `pub var` counts, and `pub extern crate` defines nothing.
+- Exercised in later sessions; no separate live-check record.

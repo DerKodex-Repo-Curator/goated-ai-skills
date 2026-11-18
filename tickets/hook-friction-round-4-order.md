@@ -57,7 +57,8 @@ overlaps below were with 099, 100 and 102, which have merged.
   - Overlaps: none with 099, 100, 102 in code; shares `writes.yaml`.
   - Enables: a `commit` call ending a conflict; markers shown by `cat`
     or `git diff` opening one.
-- `tickets/106-core-definition-starts-read-their-keyword.md`
+- `tickets/archive/106-core-definition-starts-read-their-keyword.md`
+  - Status: Completed, merged and archived on 2026-11-18.
   - Blocked by: `tickets/archive/081-shared-enforcement-core.md`
   - Blocked by (ordering): `tickets/archive/101-core-read-skips-last-the-task.md`
   - Overlaps: 099 and 100 (`design_reads.py`, the `design-reads` row and
@@ -71,8 +72,8 @@ overlaps below were with 099, 100 and 102, which have merged.
 
 ## Ready Frontier
 
-Tickets 081, 099 to 105 and 107 are merged (wave 14 on 2026-11-18) and
-archived. Ticket 106 is ready.
+Tickets 081 and 099 to 107 are merged and archived (waves 14 and 15,
+2026-11-18). Round 4 is complete.
 
 ## Coverage
 

@@ -18,10 +18,10 @@ This table replaces waves 5 to 10 of
 [hook-friction-round-2-waves.md](hook-friction-round-2-waves.md). Waves 1
 to 4 there are merged.
 
-Waves 5 to 13 are merged, and so is wave 14 but 084. Their tickets, all
-but 084, were archived under `tickets/archive/` on 2026-11-18: waves 5 to
-9 (078, 079 and 086 to 097), and waves 10 to 14 (098, 080 to 083, 099 to
-105 and 107). 084 waits for a go-ahead to start; 106 is ready.
+Waves 5 to 13 are merged, and so are wave 14 but 084 and 106 of wave 15.
+Their tickets were archived under `tickets/archive/` on 2026-11-18: waves
+5 to 9 (078, 079 and 086 to 097), and waves 10 to 15 (098, 080 to 083 and
+099 to 107). 084 waits for a go-ahead to start, and 085 for 084.
 
 | Wave | Ticket | Round | Area | Type | Blocked by |
 | --- | --- | --- | --- | --- | --- |
@@ -53,7 +53,7 @@ but 084, were archived under `tickets/archive/` on 2026-11-18: waves 5 to
 | 14 (merged) | [104](archive/104-core-script-receivers-and-posix-nul.md) | 4 | core | AFK | 081 |
 | 14 (merged) | [105](archive/105-core-conflicts-opened-by-shell-reads-and-ended-by-commits.md) | 4 | core | AFK | 081 |
 | 14 (merged) | [107](archive/107-core-a-reviewer-starts-work.md) | 4 | core | AFK | 081 |
-| 15 (ready now) | [106](106-core-definition-starts-read-their-keyword.md) | 4 | core | AFK | 081, 101 |
+| 15 (merged) | [106](archive/106-core-definition-starts-read-their-keyword.md) | 4 | core | AFK | 081, 101 |
 | 15 | [085](085-opencode-adapter.md) | 2 | new adapter | HITL (build decision after research) | 084 |
 
 ## Decisions Recorded Here
