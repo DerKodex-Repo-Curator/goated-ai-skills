@@ -511,6 +511,11 @@
               "description": "The project is a checkout whose branch changes this many lines of non-test code against its base.",
               "type": "integer",
               "minimum": 1
+            },
+            "origin_url": {
+              "description": "With branch_changed_lines: the URL of that checkout's remote `origin`, which is never fetched.",
+              "type": "string",
+              "minLength": 1
             }
           }
         },

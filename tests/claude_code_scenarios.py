@@ -76,7 +76,8 @@ class _Run:
             folder.mkdir(parents=True, exist_ok=True)
             (folder / "SKILL.md").write_text(f"---\nname: {skill}\n---\n", encoding="utf-8")
         if "branch_changed_lines" in setup:
-            git_branch_with_change(self.s.project, setup["branch_changed_lines"])
+            git_branch_with_change(self.s.project, setup["branch_changed_lines"],
+                                   origin_url=setup.get("origin_url"))
         # In a subagent, Claude Code runs no prompt hook, and each call's hook
         # input names the agent; its entries go to its own transcript.
         self.in_subagent = setup.get("agent") == "subagent"

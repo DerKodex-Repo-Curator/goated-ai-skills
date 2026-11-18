@@ -647,12 +647,19 @@ git diff --numstat -z --no-relative --no-ext-diff --no-textconv <base>...<head> 
   `--source-branch` or `-s` on `glab`, or the call's `head`, found as the
   local branch or else `origin/<head>`. Without one, it is the checked-out
   `HEAD`. Only committed work counts, which is what the pull request opens.
-- A `pull_request` call that names a `repository` is measured only when it
-  matches the checkout's `origin` URL (one more git call). Aimed at another
-  repository, or from a folder with no `origin`, it is not measured. Only
-  that call's `repository` counts: a shell `gh pr create` or
-  `glab mr create` that names another repository with `--repo` or `-R` is
-  measured in the working folder's checkout as if it named none.
+- A `pull_request` call that names a `repository`, or a shell
+  `gh pr create|new` or `glab mr create|new` that names one with `--repo` or
+  `-R` (before or after the subcommand, as `-R x`, `--repo=x` or `-Rx`), is
+  measured only when it matches the checkout's `origin` URL (one more git
+  call). Aimed at another repository, or from a folder with no `origin`, it
+  is not measured. A shell value names its repository by path: a host
+  prefix (`github.com/owner/repo`, `gitlab.example.com/group/sub/repo`) or
+  a full HTTPS or SSH URL names the same repository as `owner/repo`; a
+  first part holding a dot, before two more parts, is read as a host. A
+  value that is not an `owner/repo` path names no checkout and is not
+  measured. The `GH_REPO`-style environment variables and a default set
+  with `gh repo set-default` are not read: a command without the option is
+  measured in the working folder's checkout.
 
 Values of the command's other options are never read as options
 (`PR_VALUE_OPTIONS` in `shell.py`), so `--description "-bump deps"` names no

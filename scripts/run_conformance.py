@@ -213,7 +213,7 @@ class _Run:
         (root / "state").mkdir()
         setup = scenario.get("setup", {})
         if "branch_changed_lines" in setup:
-            _git_branch_with_change(project, setup["branch_changed_lines"])
+            _git_branch_with_change(project, setup["branch_changed_lines"], setup.get("origin_url"))
         self.steps = scenario["steps"]
         self.failures: list[str] = []
         self.number = 0
@@ -296,9 +296,11 @@ class _Run:
                                  f"got {mismatch[1]}")
 
 
-def _git_branch_with_change(project: Path, changed_lines: int) -> None:
+def _git_branch_with_change(project: Path, changed_lines: int,
+                            origin_url: str | None = None) -> None:
     """Make `project` a git checkout on a branch `feature` whose diff against
-    `main` changes `changed_lines` lines of a code file."""
+    `main` changes `changed_lines` lines of a code file, with a remote
+    `origin` at `origin_url`, never fetched, when one is given."""
 
     def git(*args: str) -> None:
         subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
@@ -309,6 +311,8 @@ def _git_branch_with_change(project: Path, changed_lines: int) -> None:
     (project / "base.txt").write_text("base\n", encoding="utf-8")
     git("add", "base.txt")
     git("commit", "-q", "-m", "Base")
+    if origin_url:
+        git("remote", "add", "origin", origin_url)
     git("checkout", "-q", "-b", "feature")
     change = project / "src" / "change.py"
     change.parent.mkdir(parents=True)

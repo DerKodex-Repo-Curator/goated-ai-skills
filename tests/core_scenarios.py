@@ -83,7 +83,8 @@ class _Run:
         if "branch_changed_lines" in setup:
             # A git helper, not a harness's: it builds the checkout.
             from claude_code_adapter_support import git_branch_with_change
-            git_branch_with_change(self.project, setup["branch_changed_lines"])
+            git_branch_with_change(self.project, setup["branch_changed_lines"],
+                                   origin_url=setup.get("origin_url"))
         self.installed = list(setup.get("installed_skills", []))
         self.agent = ({"role": "subagent", "id": SUBAGENT_ID}
                       if setup.get("agent") == "subagent" else {"role": "main"})
