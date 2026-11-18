@@ -57,7 +57,7 @@ export function bump<K extends string>(table: Record<string, Counts<K>>, row: st
 
 /** The gates `skip routing` stands down, as the adapter's override table says. */
 const ROUTING_GATES = new Set(['router-first', 'route-line', PIPELINE_GATE])
-// The phrases the adapter records (`ROUTING_RE`, `SKILL_SKIP_RE` and `COMMIT_MESSAGE_RE` in goated_adapter/overrides.py),
+// The phrases the adapter records (`ROUTING_RE`, `SKILL_SKIP_RE` and `COMMIT_MESSAGE_RE` in adapters/core/goated_core/overrides.py),
 // each whole: any run of spaces between words, and a skill name backticked or not. A typed commit message is recorded
 // as the bare words `commit message`.
 const ROUTING_PHRASE = /^skip\s+(?:the\s+)?(?:routing|router)$/

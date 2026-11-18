@@ -290,7 +290,7 @@ function sideSessionKind(name: string, input: Record<string, unknown>): SideSess
   return typeof initiation === 'string' && CARD_INITIATIONS.has(initiation) && input.proposal_id == null ? 'card' : 'start'
 }
 
-// What the adapter counts as a code file, by extension: its `CODE_EXTENSIONS` (goated_adapter/actions.py), copied
+// What the adapter counts as a code file, by extension: its `CODE_EXTENSIONS` (adapters/core/goated_core/actions.py), copied
 // here because the mod cannot import it. tests/test_skill_usage_mod.py fails when the two lists differ.
 const CODE_EXTENSIONS = new Set(
   '.py .js .jsx .ts .tsx .mjs .cjs .go .rs .java .kt .kts .swift .c .h .cpp .hpp .cc .cs .rb .php .scala .ps1 .psm1 .sh .bash .lua .dart .vue .svelte .sql .ex .exs .clj .fs .zig .r .jl .ipynb'.split(' '),
