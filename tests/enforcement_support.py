@@ -67,43 +67,9 @@ def scenario_files() -> dict[Path, dict]:
             for path in sorted(SCENARIOS.glob("*.yaml"))}
 
 
-# A closeout item's line, as the contract's Hold Messages section defines it.
-ITEM_LABEL = re.compile(r"^- ([A-Z][a-z]+): ", re.M)
-# Notices that mean the adapter could not judge: never expected unless named.
-FAILURE_NOTICES = frozenset({"fail_open", "warning"})
-
-
-def item_labels(closeout_text: str) -> list[str]:
-    """The labels of the items a closeout hold's text lists, sorted."""
-
-    return sorted(set(ITEM_LABEL.findall(closeout_text)))
-
-
-def expectation_mismatch(expect: dict | None, got: dict) -> tuple[dict, dict] | None:
-    """What a step `expect`ed and what it `got`, when they differ, else None.
-
-    `got` is a decision as a runner observed it: `decision`, `holds` as
-    (gate, kind) pairs in firing order, `items`, the closeout hold's item
-    labels, and `notices`, their kinds. With no `expect`, the step is not
-    checked, but a decision that could not judge never passes. Holds match
-    by gate and kind; items only when the expectation names them; notices
-    exactly when it names them, and otherwise only the failure kinds count.
-    """
-
-    if expect is None:
-        expect = {"decision": got["decision"], "holds": [
-            {"gate": gate, "kind": kind} for gate, kind in got["holds"]]}
-    holds = expect.get("holds", [])
-    wanted = {"decision": expect["decision"],
-              "holds": [(h["gate"], h["kind"]) for h in holds]}
-    found = {"decision": got["decision"], "holds": got["holds"]}
-    labels = next((h["items"] for h in holds if "items" in h), None)
-    if labels is not None:
-        wanted["items"], found["items"] = sorted(labels), got["items"]
-    if "notices" in expect:
-        wanted["notices"] = sorted(expect["notices"])
-        found["notices"] = sorted(got["notices"])
-    else:
-        wanted["failures"] = []
-        found["failures"] = sorted(FAILURE_NOTICES.intersection(got["notices"]))
-    return None if wanted == found else (wanted, found)
+# How a runner compares a decision with a step's expectation. The
+# conformance runner an adapter's author uses owns it, so every runner in
+# the tests judges a step as theirs does.
+from scripts.run_conformance import (  # noqa: E402,F401
+    FAILURE_NOTICES, ITEM_LABEL, expectation_mismatch, item_labels,
+)

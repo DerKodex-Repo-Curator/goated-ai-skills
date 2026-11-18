@@ -42,7 +42,8 @@ and the JSON command, with `tests/core_scenarios.py`, which acts as a
 minimal adapter: it sends one request per judged step and records a held
 call as held. The two ways in must give the same decision at every step.
 An adapter for another harness runs the same files through its own
-translation.
+translation, with the conformance runner `scripts/run_conformance.py`, as
+[Writing An Adapter](../../../adapters/writing-an-adapter.md) describes.
 
 | File | Gates |
 | --- | --- |

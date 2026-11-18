@@ -66,9 +66,28 @@ through both ways in the repo's tests (`tests/test_enforcement_core.py`,
 with the runner in `tests/core_scenarios.py`), and must give the same
 decision each way.
 
+## Writing An Adapter
+
+[Writing An Adapter](writing-an-adapter.md) shows how to connect another
+harness to the core: mapping its tools to call kinds, building the turns,
+calling the core, showing a hold, the rules every adapter keeps, and what
+to document when a harness cannot support a rule. The
+[conformance runner](../scripts/run_conformance.py) plays every scenario
+through an adapter by way of a small translator its author writes, and
+reports each scenario that fails with the decision it expected and the one
+it got:
+
+```bash
+uv run python scripts/run_conformance.py path/to/your_translator.py
+```
+
+The [worked example](example/README.md) is a toy tool loop with its adapter
+and translator. It passes every scenario in the repo's tests.
+
 ## Adapters
 
 | Folder | Framework | Status |
 | --- | --- | --- |
 | [`core/`](core/) | Any, through the event model | The shared rules every adapter calls (Ticket 081) |
+| [`example/`](example/README.md) | A toy tool loop, to copy from | The worked example of the adapter guide (Ticket 083); not for install |
 | [`claude-code/`](claude-code/README.md) | Claude Code | Routing gates (Ticket 030); action, shell-write, and closeout gates (Ticket 031); calls the shared core (Ticket 081) |
