@@ -2,16 +2,15 @@
 
 ## Status
 
-Decision Needed, for O and the narrowed L1, 2026-11-18. R1 to R4
+Ticket Ready, 2026-11-18. R1 to R4
 follow the lead's curation of the round 5 feedback, items 1 to 4. R5 to
 R8 cover the second source's items 7 to 11, added to this spec by the
 lead on 2026-11-18; item 12 is a decision with no ticket. The maintainer
 chose the recommended option of every decision on 2026-11-18: H1, I1, J1,
 K1.1, K2.1, L1, M1, N1, O1, P1 and Q1 ([Decisions](#decisions)). A review
 the same day found O1 rested on a wrong reading of today's behaviour, so
-O is open again, restated; and it narrowed L1, which the maintainer is to
-confirm. Tickets 114 and 116 are written to the recommended options and
-change if another is chosen. Builds on [the round 4 spec](2026-11-18-hook-friction-round-4.md): every change is
+O was restated, and it narrowed L1; the maintainer then chose the restated
+O's first option and confirmed the narrowed L1. Builds on [the round 4 spec](2026-11-18-hook-friction-round-4.md): every change is
 made once, in the shared core at `adapters/core/goated_core/`, and stated
 in [the enforcement contract](../../stack/enforcement-contract.md).
 
@@ -247,10 +246,13 @@ reference, the diff read before each commit, `code-security-review`, and
     comment-only, as today. The Docs item still fires after a
     docstring-only edit of a non-test code file, by intent: a docstring
     is documentation, and the durable docs may repeat it.
-  - **O (open again; see [decision O](#o-background-checks-and-waiting-r7)):**
-    a check started in the background meets Proof only as the decision
-    states, and the contract and the code agree on it. Whatever O
-    decides, the Proof text names waiting on the user: the skip line
+  - **O ([decision O](#o-background-checks-and-waiting-r7), option 1):**
+    a shell call run in the background is not a check: it meets Proof
+    neither at a commit nor at the turn's end, and its result is not read.
+    The contract's "not in the background" covers a harness background
+    run as well as `pytest &`, so the contract and the code agree. The
+    Proof text names waiting on a background check, and on the user: the
+    skip line
     naming `verification-before-completion`, with what is awaited as the
     reason, clears it, as for waiting on another session.
   - Touches: the Proof and Unfinished items in `_closeout_items` and
@@ -342,8 +344,8 @@ hook, and its translation tests show R3's section.
 ## Decisions
 
 The maintainer chose the first option of each decision on 2026-11-18
-(K1 later that day). The restated O is open, its recommended option
-first; L1 as narrowed at review awaits the maintainer's confirmation. The other options are kept as the record of what was
+(K1 later that day), then the restated O's first option and the
+narrowed L1. The other options are kept as the record of what was
 weighed.
 
 ### H. What orients a session (R1)
@@ -422,8 +424,8 @@ K1 and K2 are separate choices.
 The read gates judge a write by its text, so they can only hold it once
 it is composed. The options differ in when the agent learns what it needs.
 
-1. **Chosen, then narrowed at review (2026-11-18; the maintainer to
-   confirm): large writes land past `design-reads` and
+1. **Chosen, then narrowed at review and confirmed (2026-11-18): large
+   writes land past `design-reads` and
    `reference-reads`, and their reads move to the closeout**, as R5
    states. Re-sent content costs in proportion to its size, so a short
    edit keeps the hold (cheap to send again) and a long one keeps its
@@ -480,8 +482,8 @@ Options 1 and 2 can combine; 1 alone removes the reported cost.
 
 ### O. Background checks and waiting (R7)
 
-Open again, 2026-11-18. The maintainer chose the first option of an
-earlier version of O, which assumed a background check never met Proof.
+Restated, then decided, 2026-11-18. The maintainer chose the first
+option of an earlier version of O, which assumed a background check never met Proof.
 Review found the reverse ([Problem](#problem)): its launch meets Proof
 today, at a commit and at the turn's end, and its result is never read.
 So O is restated around two questions: (a) whether a background check
@@ -489,7 +491,7 @@ still running meets Proof at a commit, and (b) how its later result is
 judged. In every option the waiting-on-the-user half stays as chosen:
 text only, the Proof text naming the skip line for it.
 
-1. **Recommended: a background launch is not a check.** (a) It meets
+1. **Chosen: a background launch is not a check.** (a) It meets
    Proof neither at a commit nor at the turn's end; (b) its result is
    not read. `actions._checks` skips a call whose `background` is true,
    and the contract's "not in the background" covers a harness
@@ -557,11 +559,8 @@ decision H.
 
 ## Open Questions
 
-- O (the maintainer): whether a background check's launch meets Proof,
-  restated after review.
-- L1 (the maintainer): confirm it as narrowed at review (`design` keeps
-  holding; a write whose lines cannot be counted is held).
-- K2 (the maintainer, optional): review asked whether K2.1 should stand.
+- None. Review asked whether K2.1 should stand; it stands unless the
+  maintainer changes it.
 
 The combined ranking orders the work: L (item 7), H (item 1), N and O
 (items 9 and 10), M (item 8), P (item 11), I and J (items 3 and 4), K

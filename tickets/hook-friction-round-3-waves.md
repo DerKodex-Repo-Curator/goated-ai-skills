@@ -62,9 +62,9 @@ waves 16 and 17. Their tickets were archived under `tickets/archive/` on
 | 18 (ready) | [115](115-core-mocking-pattern-for-code-patches.md) | 5 | core and registry | AFK | None |
 | 18 (ready) | [117](117-core-continue-meets-router-first-in-a-briefed-task.md) | 5 | core | AFK | None |
 | 18 | [110](110-core-whole-shell-prints-orient.md) | 5 | core | AFK | 108, 109 (adjacent `shell.py` lines) |
-| 18 (decision needed) | [114](114-core-large-writes-land-and-read-after.md) | 5 | core, event model and skills | HITL (confirm narrowed L1) | None |
+| 18 (ready) | [114](114-core-large-writes-land-and-read-after.md) | 5 | core, event model and skills | AFK | None |
 | 19 | [113](113-core-design-reads-sized-by-substance.md) | 5 | core | AFK | 114 (same rows) |
-| 19 (decision needed) | [116](116-core-proof-kept-while-nothing-material-changed.md) | 5 | core | HITL (decision O, restated) | 114 (same closeout items) |
+| 19 | [116](116-core-proof-kept-while-nothing-material-changed.md) | 5 | core | AFK | 114 (same closeout items) |
 
 ## Decisions Recorded Here
 
@@ -161,9 +161,10 @@ to 13 the same day; the lead brought 7 to 12 into the spec.
   M1 (115), N1 and O1 (116), P1 (117), and Q1, the `true` carrier call
   kept with no ticket.
 - **Review reopened two (2026-11-18).** O1 assumed a background check
-  never met Proof; its launch already does, so O is restated and open
+  never met Proof; its launch already does, so O was restated, and the
+  maintainer chose its first option: a background launch is not a check
   (116). L1 was narrowed to keep the `design` gate and hold writes whose
-  lines cannot be counted; the maintainer is to confirm it (114).
+  lines cannot be counted; the maintainer confirmed it (114).
 - **Waves 18 and 19 follow 108 (wave 16) and 109 (wave 17)**, whose rows
   live on branch `tickets/shell-pr-follow-ups`. That branch merges first;
   keep its rows above round 5's.
@@ -211,10 +212,10 @@ to 13 the same day; the lead brought 7 to 12 into the spec.
 | Round 5: clearing advice repeated per hold in one message | 111 (decision I1) |
 | Round 5: `scripted-edit` calls a markdown file code | 112 (decision J1) |
 | Round 5: a reference hold pointing at a section | Deferred (needs its own spec) |
-| Round 5: holds fire after a large edit is composed, so it is re-sent | 114 (decision L1, narrowed at review; to confirm) |
+| Round 5: holds fire after a large edit is composed, so it is re-sent | 114 (decision L1, narrowed at review) |
 | Round 5: mocking reference for `fake` in TOML and `monkeypatch.setenv` | 115 (decision M1) |
 | Round 5: Proof rerun after a docstring-only change | 116 (decision N1) |
-| Round 5: closeout while waiting on the user or a background check; a background launch meets Proof (found at review) | 116 (decision O, restated, open) |
+| Round 5: closeout while waiting on the user or a background check; a background launch meets Proof (found at review) | 116 (decision O1, restated) |
 | Round 5: `router-first` after a typed prompt in a briefed session | 117 (decision P1) |
 | Round 5: the `true` carrier call, asked again | No ticket (kept, decision Q1) |
 

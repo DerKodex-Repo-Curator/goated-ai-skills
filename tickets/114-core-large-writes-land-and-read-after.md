@@ -6,11 +6,9 @@
 
 ## Type
 
-HITL until the maintainer confirms decision L1 as narrowed at review
-(2026-11-18); AFK after. The maintainer chose L1 the same day; review
-narrowed it to keep the `design` gate and to hold writes whose lines
-cannot be counted. If the maintainer restores the wider L1, rewrite the
-outcome before starting.
+AFK. Decision L, option 1 as narrowed at review: it keeps the `design`
+gate and holds writes whose lines cannot be counted (the maintainer
+chose and then confirmed it, 2026-11-18).
 
 ## What To Build
 
@@ -37,8 +35,7 @@ with the load stay a hold.
 **Notice kind.** `reads_owed` is new, not a reuse: `closeout_note` is once
 per turn after the first write, and `skip_carried` names a skip. So the
 event model's notice enum gains it and its version moves to 4, and the
-contract's Notices section lists it. Ticket 116 under its O2 option would
-add to the same version; if both land, they share one bump.
+contract's Notices section lists it.
 
 **Skill texts.** `software-design-principles`'s step 4 ("Read now") and
 `skills/README.md`'s description of registry reference signals say that,
@@ -100,7 +97,7 @@ notice kinds follow the version bump.
 
 ## Blocked By
 
-- The maintainer's confirmation of the narrowed L1.
+- None.
 
 ## Overlaps
 

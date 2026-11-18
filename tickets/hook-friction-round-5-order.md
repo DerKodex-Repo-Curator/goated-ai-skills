@@ -6,13 +6,14 @@ Parallel waves, with the other rounds' open tickets:
 [hook-friction-round-3-waves.md](hook-friction-round-3-waves.md)
 
 The maintainer chose the first option of every decision on 2026-11-18;
-decision Q (the carrier call) has no ticket. Review the same day reopened
-O (restated) and narrowed L1, which awaits the maintainer's confirmation.
+decision Q (the carrier call) has no ticket. Review the same day restated
+O and narrowed L1; the maintainer chose the restated O1 and confirmed the
+narrowed L1.
 Listed in the combined ranking's order.
 
 1. `tickets/114-core-large-writes-land-and-read-after.md`
-   - Status: Waiting for the maintainer to confirm L1 as narrowed.
-   - Blocked by: that confirmation.
+   - Status: Ready. Decision L1, narrowed at review.
+   - Blocked by: None.
    - Overlaps: `_closeout_items` and the read-gate rows with 113 and 116,
      which wait for it.
    - Enables: a large edit applied once, its reads asked at the closeout.
@@ -23,10 +24,9 @@ Listed in the combined ranking's order.
    - Overlaps: `gates.py` with 111 and 117 (other functions).
    - Enables: a session that oriented with `cat` not held for orientation.
 3. `tickets/116-core-proof-kept-while-nothing-material-changed.md`
-   - Status: Waiting for decision O (restated) and 114. Decision N1.
-   - Blocked by: decision O; `114` (ordering, `_closeout_items`).
-   - Overlaps: `_closeout_items` with 114; under O2, the event model
-     version with 114.
+   - Status: Waiting for 114. Decisions N1 and O1 (restated).
+   - Blocked by: `114` (ordering, `_closeout_items`).
+   - Overlaps: `_closeout_items` with 114.
    - Enables: no new Proof after a comment-only edit, and no background
      launch passing for a proof.
 4. `tickets/115-core-mocking-pattern-for-code-patches.md`
@@ -71,13 +71,13 @@ and 109's rows first, then round 5's (waves 18 and 19).
 
 ## Ready Frontier
 
+- `tickets/114-core-large-writes-land-and-read-after.md`
 - `tickets/115-core-mocking-pattern-for-code-patches.md`
 - `tickets/117-core-continue-meets-router-first-in-a-briefed-task.md`
 - `tickets/111-core-one-clearing-section-per-message.md`
 - `tickets/112-core-scripted-edit-names-unknown-kinds.md`
 
-114 joins when the maintainer confirms the narrowed L1; 110 once 108 and
-109 merge; 113 once 114 merges; 116 once O is decided and 114 merges.
+110 joins once 108 and 109 merge; 113 and 116 once 114 merges.
 
 ## Coverage
 

@@ -7,11 +7,8 @@ AC6)
 
 ## Type
 
-HITL until the restated decision O is recorded in the parent spec; AFK
-after. Decision N, option 1 (the maintainer, 2026-11-18). The O half is
-written to the restated O's recommended option, O1; if the maintainer
-picks O2, use the "If O2" outcome below, and with O3 only the contract
-changes.
+AFK. Decision N, option 1, and the restated decision O, option 1 (the
+maintainer, 2026-11-18).
 
 ## What To Build
 
@@ -37,15 +34,8 @@ runs has changed, and stops counting a check that has not finished.
   `verification-before-completion`, with what is awaited as its reason,
   clears it, as for waiting on another session (Ticket 102).
 
-**If O2 is chosen instead:** a running background check meets Proof at
-the turn's end, not at a commit, with a new `check_pending` notice; a new
-entry kind records a background shell command finishing, with its exit
-status; a pass proves the change and a failure makes Unfinished needed in
-the turn it arrives, even one with no code change. That adds to this
-ticket's Touches: the event model's entry kinds and notice enum and its
-version (to 4, one bump with Ticket 114's `reads_owed`); the Claude Code
-adapter's transcript reading of the task notification that carries the
-result; and cross-turn session state of pending checks.
+Option O2 (a running check deferring Proof, its result judged when it
+arrives) was not chosen; it would have needed an event model change.
 
 The rules live in the shared core at `adapters/core/goated_core/`: the
 Proof and Unfinished items in `actions._closeout_items`, and
@@ -92,7 +82,6 @@ a check uses the shell reading that already finds checks.
 
 ## Blocked By
 
-- The restated decision O in the parent spec.
 - `tickets/114-core-large-writes-land-and-read-after.md` (ordering: both
   change `_closeout_items` and the Closeout Items table).
 
