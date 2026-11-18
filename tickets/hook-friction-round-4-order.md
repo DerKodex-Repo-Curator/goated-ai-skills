@@ -28,8 +28,7 @@ them landed the remaining need for lasting skips can be judged again.
 
 ## Ready Frontier
 
-Ticket 081 is merged. Tickets 099, 100 and 102 are ready; 101 waits for
-099 and 100.
+Tickets 081, 099, 100 and 102 are merged. Ticket 101 is ready.
 
 ## Coverage
 
