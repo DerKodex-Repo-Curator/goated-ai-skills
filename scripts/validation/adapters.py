@@ -3,9 +3,10 @@
 ADR 0003 makes adapters optional layers: no skill may depend on one, and the
 repo's adapters use only the Python standard library so they install without a
 package manager. Adapter behavior itself is covered by the unit tests; this
-module checks those two boundaries, and that the Claude Code adapter's own
+module checks those two boundaries, that the shared core (`adapters/core/`),
+which every adapter may import, imports no adapter, that the core's own
 registry reader reads the source registry as a full YAML parser does, and
-that every `gate-fires` signal names a gate the adapter observes.
+that every `gate-fires` signal names a gate the core observes.
 """
 
 from __future__ import annotations
@@ -21,9 +22,11 @@ import yaml
 from .shared import Finding, read_text, relative
 
 REGISTRY_PATH = Path("stack") / "goated-stack.yaml"
-# The Claude Code adapter's registry reader: standard library only, so it
-# reads a YAML subset, which this check keeps in step with the registry.
-REGISTRY_READER_PATH = Path("adapters") / "claude-code" / "goated_adapter" / "reference_reads.py"
+# The shared enforcement core every adapter may import (ADR 0004).
+CORE_PACKAGE = Path("adapters") / "core" / "goated_core"
+# The core's registry reader: standard library only, so it reads a YAML
+# subset, which this check keeps in step with the registry.
+REGISTRY_READER_PATH = CORE_PACKAGE / "reference_reads.py"
 
 ADAPTER_REFERENCE_RE = re.compile(r"(?<![\w-])adapters/[a-z0-9-]+|goated_adapter")
 
@@ -34,8 +37,12 @@ def validate_adapter_boundary(repo: Path) -> list[Finding]:
     findings: list[Finding] = []
     adapters_root = repo / "adapters"
     if adapters_root.is_dir():
+        # Every adapter may import the shared core (ADR 0004); the core
+        # imports only itself, so it never learns an adapter's code.
+        shared = {CORE_PACKAGE.name} if (repo / CORE_PACKAGE / "__init__.py").exists() else set()
         for path in sorted(adapters_root.rglob("*.py")):
-            findings.extend(_non_stdlib_imports(path, repo))
+            in_core = (repo / CORE_PACKAGE.parent) in path.parents
+            findings.extend(_non_stdlib_imports(path, repo, set() if in_core else shared))
 
     skills_root = repo / "skills"
     if skills_root.is_dir():
@@ -92,20 +99,20 @@ def validate_registry_reader(repo: Path) -> list[Finding]:
         spec.loader.exec_module(reader)
         found = [(r.skill, r.file, r.signal) for r in reader.load(registry_path)]
     except reader.RegistryUnreadable as exc:
-        return [Finding(label, f"the Claude Code adapter's registry reader cannot read it: {exc}")]
+        return [Finding(label, f"the shared adapter core's registry reader cannot read it: {exc}")]
     finally:
         sys.modules.pop(spec.name, None)
     if found != expected:
         first = next((pair for pair in zip(found, expected) if pair[0] != pair[1]), None)
         detail = f": {first[0]!r} where YAML gives {first[1]!r}" if first else ""
-        return [Finding(label, "the Claude Code adapter's registry reader reads its references "
+        return [Finding(label, "the shared adapter core's registry reader reads its references "
                                f"differently from YAML{detail}")]
     # The schema allows a `gate-fires` signal to name any gate, but the adapter
     # observes only some; an entry naming another would never be enforced.
     observed = ", ".join(sorted(reader.OBSERVED_GATES))
     findings = [
         Finding(label, f"{skill}'s {file} has a gate-fires signal for the {signal['gate']} gate, "
-                       f"which the Claude Code adapter does not observe (it observes: {observed})")
+                       f"which the shared adapter core does not observe (it observes: {observed})")
         for skill, file, signal in found
         if signal.get("kind") == "gate-fires" and signal.get("gate") not in reader.OBSERVED_GATES
     ]
@@ -116,18 +123,21 @@ def validate_registry_reader(repo: Path) -> list[Finding]:
                  if signal.get("kind") == "edit-of-file-kind" and signal.get("file_kind") == "test"]
     if len(test_kind) > 1:
         findings.append(Finding(label, "more than one reference has an edit-of-file-kind signal "
-                                       f"for test files ({', '.join(test_kind)}); the Claude Code "
-                                       "adapter's design gate reads only one"))
+                                       f"for test files ({', '.join(test_kind)}); the shared "
+                                       "adapter core's design gate reads only one"))
     return findings
 
 
-def _non_stdlib_imports(path: Path, repo: Path) -> list[Finding]:
+def _non_stdlib_imports(path: Path, repo: Path, shared: set[str]) -> list[Finding]:
+    """Findings for each import in `path` that is neither the standard
+    library, a module beside it, nor one of the `shared` packages."""
+
     try:
         tree = ast.parse(read_text(path), filename=str(path))
     except SyntaxError as exc:
         return [Finding(relative(path, repo), f"adapter file does not parse: {exc.msg}")]
 
-    local = _local_module_names(path)
+    local = _local_module_names(path) | shared
     findings: list[Finding] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):

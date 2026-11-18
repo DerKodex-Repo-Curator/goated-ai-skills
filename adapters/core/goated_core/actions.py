@@ -2079,21 +2079,23 @@ class Project(NamedTuple):
     cwd: str
 
 
-def find_project(cwd: str | None, project_dir: str | None = None) -> Project | None:
-    """Return the project for a hook input's `cwd`, or None, when every file
-    counts as inside: `cwd` is missing, or a folder below cannot be read for certain.
+def find_project(cwd: str | None, *project_dirs: str | None) -> Project | None:
+    """Return the project for the session's working folder `cwd`, or None,
+    when every file counts as inside: `cwd` is missing, or a folder below
+    cannot be read for certain.
 
     A file is outside only when it is outside every root, so each candidate
-    root is one: `project_dir` (Claude Code's `CLAUDE_PROJECT_DIR`), `cwd`,
-    each in every reading it could have (see `_readings`), and the nearest
-    folder at or above each that holds a `.git` entry. So a session that
-    changed folder below its checkout still has the whole checkout.
+    root is one: each of `project_dirs` (the project's folders, as the
+    harness names them; None for one it does not), `cwd`, each in every
+    reading it could have (see `_readings`), and the nearest folder at or
+    above each that holds a `.git` entry. So a session that changed folder
+    below its checkout still has the whole checkout.
     """
 
     if not cwd:
         return None
     roots: list[str] = []
-    for folder in filter(None, (project_dir, cwd)):
+    for folder in filter(None, (*project_dirs, cwd)):
         readings = _readings(folder, drives=())
         if readings is None:
             return None

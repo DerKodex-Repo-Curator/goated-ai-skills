@@ -14,7 +14,7 @@ import time
 import unittest
 
 from claude_code_adapter_support import decision, reason
-from goated_adapter import shell
+from goated_core import shell
 from test_claude_code_adapter_scripts import SCRIPTED, ScriptTestCase, hold_line, stop
 
 # The command a lead was held on, as reported: a markdown edit through a once-bound name.

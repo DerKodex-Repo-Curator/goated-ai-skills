@@ -1,40 +1,35 @@
-"""The Claude Code adapter's rule modules name nothing of Claude Code (Ticket 080).
+"""The shared core names nothing of Claude Code (Tickets 080 and 081).
 
-ADR 0004 makes the event model the one seam: the rules read calls by kind and
-turns as entries, and only the translation layer (`translation.py`), the
-transcript reader (`transcript.py`), and the hook entry point (`hooks.py`)
-know Claude Code's tool names, transcript fields, and hook fields. This check
-reads each rule module's code, docstrings and comments aside, and fails on
-any of those names in a string or an identifier, on prose that names a tool
-("the Edit tool"), and on a path into Claude Code's own folder.
+ADR 0004 makes the event model the one seam: the rules, in the core at
+`adapters/core/`, read calls by kind and turns as entries, and only the
+Claude Code adapter's translation layer (`translation.py`), transcript
+reader (`transcript.py`), and hook entry point (`hooks.py`) know Claude
+Code's tool names, transcript fields, and hook fields. This check reads each
+core module's code, docstrings and comments aside, and fails on any of those
+names in a string or an identifier, on prose that names a tool ("the Edit
+tool"), and on a path into Claude Code's own folder. It also fails on an
+import of anything but the standard library and the core itself.
 
 The names come from the harness modules themselves: every distinctive name
 in their strings, so a name the translation learns is checked at once, plus
-the names below that the translation does not read yet. Ticket 081 reuses
-this check when the rules move to the core.
+the names below that the translation does not read yet.
 """
 
 from __future__ import annotations
 
 import ast
 import re
+import sys
 import unittest
 from pathlib import Path
 
-from claude_code_adapter_support import ADAPTER_DIR
+from claude_code_adapter_support import ADAPTER_DIR, REPO_ROOT
 
 PACKAGE = ADAPTER_DIR / "goated_adapter"
-# The modules that know Claude Code, whose names make the denylist.
+CORE_DIR = REPO_ROOT / "adapters" / "core"
+CORE_PACKAGE = "goated_core"
+# The Claude Code modules that know Claude Code, whose names make the denylist.
 TRANSLATING_MODULES = ("translation.py", "transcript.py", "hooks.py")
-# Modules not checked. `__init__.py` is the package's entry. `policy.py` and
-# `onboarding.py` write the session-start notices, which are about Claude
-# Code itself: where it keeps instruction files and skills. They hold no
-# rule, so they stay with the adapter.
-UNCHECKED = frozenset({"__init__.py", "policy.py", "onboarding.py", *TRANSLATING_MODULES})
-# Names a rule module may still hold, by module. The saved session state
-# binds its override record to Claude Code's `prompt_id` until the core owns
-# session state (Ticket 081).
-ALLOWED = {"state.py": frozenset({"prompt_id"})}
 
 # A distinctive name: snake_case, camelCase, a compound like `PreToolUse`, or
 # an MCP tool name. A plain word such as `command` or `head` is also the
@@ -116,22 +111,50 @@ def findings(source: str, names: frozenset[str], allowed: frozenset[str] = froze
     return found
 
 
-def rule_modules() -> list[Path]:
-    return sorted(p for p in PACKAGE.glob("*.py") if p.name not in UNCHECKED)
+def core_modules() -> list[Path]:
+    """Every Python file of the core: its package and the command beside it."""
+
+    return sorted(CORE_DIR.rglob("*.py"))
+
+
+def foreign_imports(source: str) -> list[str]:
+    """Each import in `source` of anything but the standard library and the
+    core package, as `line: module`."""
+
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            modules = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            modules = [node.module]
+        else:
+            continue
+        found += [f"{node.lineno}: {module}" for module in modules
+                  if module.split(".")[0] not in sys.stdlib_module_names | {CORE_PACKAGE}]
+    return found
 
 
 class RulePurityTests(unittest.TestCase):
-    def test_no_rule_module_names_a_claude_code_tool_or_field(self) -> None:
+    def test_no_core_module_names_a_claude_code_tool_or_field(self) -> None:
         names = harness_names()
-        modules = [p.name for p in rule_modules()]
+        modules = [p.name for p in core_modules()]
         for expected in ("gates.py", "actions.py", "design_reads.py", "reference_reads.py",
                          "contracts.py", "overrides.py", "friction.py", "events.py", "state.py",
-                         "wording.py"):
+                         "wording.py", "judge.py", "request.py", "goated_judge.py"):
             self.assertIn(expected, modules)
-        for path in rule_modules():
+        for path in core_modules():
             with self.subTest(module=path.name):
-                allowed = ALLOWED.get(path.name, frozenset())
-                self.assertEqual(findings(path.read_text(encoding="utf-8"), names, allowed), [])
+                self.assertEqual(findings(path.read_text(encoding="utf-8"), names), [])
+
+    def test_the_core_imports_only_the_standard_library_and_itself(self) -> None:
+        for path in core_modules():
+            with self.subTest(module=path.name):
+                self.assertEqual(foreign_imports(path.read_text(encoding="utf-8")), [])
+
+    def test_the_import_check_finds_an_adapter_import(self) -> None:
+        source = ("import json\nfrom goated_core import gates\nfrom . import events\n"
+                  "from goated_adapter import translation\nimport yaml\n")
+        self.assertEqual(foreign_imports(source), ["4: goated_adapter", "5: yaml"])
 
     def test_the_denylist_holds_the_translation_s_names(self) -> None:
         # Taken from the harness modules, not typed here.

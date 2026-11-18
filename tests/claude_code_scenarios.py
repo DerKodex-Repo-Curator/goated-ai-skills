@@ -20,7 +20,7 @@ from typing import NamedTuple
 from claude_code_adapter_support import (
     REPO_ROOT, Session, git_branch_with_change, parse, reason,
 )
-from goated_adapter import wording
+from goated_core import wording
 
 REGISTRY = REPO_ROOT / "stack" / "goated-stack.yaml"
 

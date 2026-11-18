@@ -1639,7 +1639,7 @@ class OutOfProjectTests(AdapterTestCase):
 
     @unittest.skipUnless(os.name == "nt", "drive letters exist only on Windows")
     def test_a_one_letter_top_folder_may_be_a_folder_not_a_drive(self) -> None:
-        from goated_adapter.actions import _in_project, find_project
+        from goated_core.actions import _in_project, find_project
 
         project = find_project("C:\\w\\proj")
         self.assertTrue(_in_project("/w/proj/.env", project))
@@ -3949,7 +3949,7 @@ class SkillSkipPhraseTests(AdapterTestCase):
     def test_the_fallback_list_matches_the_registry(self) -> None:
         import yaml
         from claude_code_adapter_support import REPO_ROOT
-        from goated_adapter.overrides import GOATED_SKILLS
+        from goated_core.overrides import GOATED_SKILLS
 
         registry = yaml.safe_load(
             (REPO_ROOT / "stack" / "goated-stack.yaml").read_text(encoding="utf-8")

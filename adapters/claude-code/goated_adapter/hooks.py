@@ -7,8 +7,9 @@ never blocks because of its own failure. A hook that runs after the action
 (`PostToolUse`) has no action to let through, so its failure adds nothing.
 
 Each handler turns its hook input into the event model (`translation`,
-`transcript`), asks the rules, and puts their hold text into Claude Code's
-words (`translation.render`).
+`transcript`), asks the shared core (`goated_core.judge`), and puts its
+decision into Claude Code's hook output, hold text in Claude Code's words
+(`translation.render`).
 """
 
 from __future__ import annotations
@@ -18,13 +19,12 @@ import os
 import re
 from pathlib import Path
 
-from . import actions, friction, gates, onboarding, reference_reads, translation
-from .events import Result
-from .overrides import GOATED_SKILLS, parse_overrides
-from .policy import (
-    installed_skill_names, router_skill_installed, shared_policy_loaded,
-)
-from .state import StateStore, StateUnsafe
+from goated_core import actions, gates, judge
+from goated_core.events import Result
+from goated_core.state import StateStore, StateUnsafe, default_root
+
+from . import onboarding, translation
+from .policy import installed_skill_names, router_skill_installed, shared_policy_loaded
 from .transcript import (
     CONTINUATION,
     NOT_PROMPT,
@@ -56,20 +56,14 @@ POLICY_NOTICE = (
     "`using-goated-ai-skills` router runs from its standalone fallback. To load "
     "it, follow the Claude Code steps in the GOATED install guide."
 )
-RETROSPECTIVE_NOTICE = (
-    "{count} GOATED holds this session were declined or left unanswered. The "
-    "`retrospective` skill can turn that friction into improvements to the "
-    "project's checks, standards, or instructions, such as after a wave of "
-    "delegated tickets is merged. This is a notice; nothing is held."
-)
 ROUTER_NOTICE = (
     f"could not find the `{gates.ROUTER_SKILL}` skill among your user, project, "
     "or plugin skills, so writes, spawns, and commands will stay held. Install it, "
     "or type `skip routing` in a prompt to proceed without it."
 )
-# The turn marker's purpose for the early closeout note (Ticket 096), apart
-# from the unseen-line advice's and each hold's.
-CLOSEOUT_NOTE = "closeout-note"
+# Claude Code's session start sources, in the event model's words.
+SESSION_SOURCES = {"startup": judge.NEW, "resume": judge.RESUMED,
+                   "compact": judge.AFTER_COMPACTION, "clear": judge.CLEARED}
 
 
 class Config:
@@ -113,52 +107,19 @@ class Config:
         namespaces = os.environ.get(NAMESPACES_ENV, "")
         registry = os.environ.get(REGISTRY_ENV)
         return cls(
-            state_dir=Path(override) if override else _default_state_root() / STATE_DIR_NAME,
+            state_dir=Path(override) if override else default_root() / STATE_DIR_NAME,
             skill_namespaces=tuple(n.strip() for n in namespaces.split(",") if n.strip()),
             project_dir=os.environ.get(PROJECT_DIR_ENV) or None,
             registry_path=Path(registry) if registry else DEFAULT_REGISTRY,
             registry_named=bool(registry),
         )
 
+    def settings(self) -> judge.Settings:
+        """The core's settings for this configuration. Sessions saved by the
+        adapter before the core existed are upgraded as they load."""
 
-def _default_state_root() -> Path:
-    """A per-user folder no other local user can pre-create.
-
-    POSIX uses `$XDG_STATE_HOME` or `~/.local/state`, not the shared `/tmp`.
-    Windows uses the per-user temp folder, found as `tempfile` would, without
-    the import cost.
-    """
-
-    if os.name != "nt":
-        xdg = os.environ.get("XDG_STATE_HOME")
-        return Path(xdg) if xdg else Path.home() / ".local" / "state"
-    for name in ("TEMP", "TMP"):
-        value = os.environ.get(name)
-        if value:
-            return Path(value)
-    return Path.home() / "AppData" / "Local" / "Temp"
-
-
-def _project(payload: dict, config: Config) -> actions.Project | None:
-    """The project whose files the action and closeout gates count."""
-
-    return actions.find_project(str(payload.get("cwd") or "") or None, config.project_dir)
-
-
-def _agent_folders(config: Config) -> list[str]:
-    """Claude Code's own configuration folders, where no write is scratch:
-    `~/.claude`, and the one in the configured home."""
-
-    return ["~/.claude", os.path.join(str(config.home), ".claude")]
-
-
-def _load_state(store: StateStore, session_id: str):
-    """`store.load`, with a shell saved by an older adapter as its tool name
-    ("Bash", "PowerShell") read as that tool's shell."""
-
-    state, warning = store.load(session_id)
-    state.shell = translation.COMMAND_TOOLS.get(state.shell, state.shell)
-    return state, warning
+        return judge.Settings(self.state_dir, self.skill_namespaces, self.registry_path,
+                              self.registry_named, upgrade_state=translation.upgrade_state)
 
 
 class _FailOpen(Exception):
@@ -189,153 +150,57 @@ def run_hook(raw_input: str, config: Config) -> str:
         return _fail_open(f"it hit an internal error ({type(exc).__name__})")
 
 
-def _pre_tool_use(payload: dict, config: Config) -> str:
-    tool_name = str(payload.get("tool_name") or "")
-    if not translation.is_judged(tool_name):
-        return ""
-    call = translation.call_of(tool_name, payload.get("tool_input"),
-                               str(payload.get("tool_use_id") or ""))
-    session_id, transcript_path = _session_fields(payload)
-    if payload.get("agent_id"):
-        return _subagent_pre_tool_use(payload, config, tool_name, call, transcript_path)
+# The event model from Claude Code's hook input --------------------------------
 
-    store = StateStore(config.state_dir)
-    state, state_warning = _load_state(store, session_id)
-    try:
-        reading = read_recent_turns(
-            transcript_path,
-            since_key=state.last_turn,
-            prompt_id=_prompt_id(payload),
-            wait_seconds=config.lag_wait_seconds,
-            current_call=call,
-        )
-    except TranscriptUnreadable as exc:
-        raise _FailOpen(str(exc)) from exc
-    turns = reading.turns
-    gates.fold_turns(state, turns, config.skill_namespaces)
-    _settle_holds(state, turns, config)
-    current = turns[-1]
-    overrides = _overrides_for(state, current, reading.prompt_id, payload.get("prompt_id"))
-    unread: list[str] = []
 
-    def spawned() -> dict:
-        # Unreadable subagent transcripts count as no changes, with a warning, as at closeout.
-        found, missed = _spawned_subagents(current, transcript_path)
-        unread.extend(missed)
-        return found
+def _situation(payload: dict, config: Config, session_id: str,
+               transcript_path: str | None = None, agent_id: str | None = None,
+               with_project: bool = True) -> judge.Situation:
+    """Where the hook's event happens: the project Claude Code names (looked
+    up only `with_project`, for the events that judge files), its own
+    folders as the agent's (never scratch), the skills it can find, and the
+    turns of the subagents a turn spawned, read from their transcripts."""
 
-    earlier = _since_compaction(state)
-    registry_warnings: list[str] = []
     cwd = Path(str(payload.get("cwd") or "."))
-    routing = gates.check_routing(
-        state, call, current, overrides,
-        orientation_installed=lambda: gates.ORIENTATION_SKILL in installed_skill_names(cwd, config.home),
-        writes_scratch=lambda: actions.writes_only_scratch(
-            call, _project(payload, config), _agent_folders(config)
-        ),
+    return judge.Situation(
+        session_id,
+        agent_id=agent_id,
+        project=actions.find_project(str(payload.get("cwd") or "") or None, config.project_dir)
+        if with_project else None,
+        # Claude Code's own configuration folders: `~/.claude`, and the
+        # one in the configured home.
+        agent_folders=["~/.claude", os.path.join(str(config.home), ".claude")],
+        installed_skills=lambda: installed_skill_names(cwd, config.home),
+        subagents=lambda turn: _spawned_subagents(turn, transcript_path or ""),
     )
-    # Every gate judges the call, so one message carries every hold (Ticket 095).
-    holds = routing + actions.check_action(
-        call, current, overrides, config.skill_namespaces,
-        _project(payload, config), spawned, earlier,
-        closeout=actions.Closeout(state.spawn_templates_of(current.key),
-                                  _route_intensity(state), state.briefed),
-        references=lambda: _registry_references(config, registry_warnings),
-    )
-    if not holds and call.id:
-        # Which templates a spawn's brief followed, for the closeout.
-        templates = actions.brief_templates(
-            call, current, overrides, config.skill_namespaces, earlier)
-        if templates:
-            state.record_spawn_templates(current.key, call.id, templates)
-    friction.observe(state, current, friction.action_of(call), holds)
-    text = gates.message(holds, lambda purpose: _claim_turn(
-        store, session_id, current.key, purpose), call=True)
-    warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread),
-                *registry_warnings]
-    return _with_warnings(_deny(translation.render(text, tool_name, state.shell)), warnings)
 
 
-def _registry_references(config: Config, warnings: list[str]) -> tuple:
-    """The installed registry's declared references, or () when it cannot be
-    used, failing open: a registry that does not parse, or a missing one the
-    user named, adds a warning to `warnings`; a missing default is silent."""
+def _reader(payload: dict, config: Config, transcript_path: str, call=None):
+    """The core's turn reader for the main agent's transcript: it waits for
+    the hook's prompt to show, and counts `call`, the call being judged,
+    in the current turn. The prompt key is the transcript's id for the
+    current turn's prompt, else the hook input's."""
 
-    try:
-        return reference_reads.load(config.registry_path)
-    except reference_reads.RegistryUnreadable as exc:
-        if not exc.missing or config.registry_named:
-            warnings.append(f"could not use the GOATED registry at {config.registry_path} ({exc}), "
-                            "so the reference-reads gate asked for nothing")
-        return ()
+    def read(since_key: str | None):
+        try:
+            reading = read_recent_turns(
+                transcript_path,
+                since_key=since_key,
+                prompt_id=_prompt_id(payload),
+                wait_seconds=config.lag_wait_seconds,
+                current_call=call,
+            )
+        except TranscriptUnreadable as exc:
+            raise _FailOpen(str(exc)) from exc
+        return reading.turns, reading.prompt_id or payload.get("prompt_id")
 
-
-def _route_intensity(state) -> str | None:
-    """The current task's route intensity (`full`), or None without a `requires:` route."""
-
-    return state.task.route.get("intensity") if state.task else None
-
-
-def _since_compaction(state) -> actions.SinceCompaction:
-    """What the main agent's saved state says counts until the next compaction."""
-
-    return actions.SinceCompaction(
-        frozenset(state.loads), frozenset(state.reference_reads), frozenset(state.template_reads),
-        spans_turns=True, skill_references_read=frozenset(state.skill_reference_reads))
-
-
-def _claim_turn(
-    store: StateStore, session_id: str, turn_key: str, purpose: str,
-    agent_id: str | None = None,
-) -> bool:
-    """`StateStore.claim_turn`, or True when the marker cannot be claimed or
-    read: the hold then gives its full text, and no hook fails."""
-
-    try:
-        return store.claim_turn(session_id, turn_key, purpose, agent_id)
-    except (OSError, StateUnsafe):
-        return True
-
-
-def _subagent_pre_tool_use(
-    payload: dict, config: Config, tool_name: str, call, transcript_path: str
-) -> str:
-    """Apply only the action gates, from the subagent's own transcript (spec R9).
-
-    Routing gates do not apply: the parent's brief carries the route. Claude
-    Code passes the parent's `transcript_path`; the subagent's entries live
-    beside it in `<session>/subagents/agent-<agent_id>.jsonl`. Nobody types a
-    subagent's prompts, so no override applies. A commit meets the closeout
-    of the subagent's own turn (Ticket 098); it was started from its
-    parent's brief, so, as a briefed session, it meets no Review item, and it
-    records no spawn templates, so the `review-intake` gate holds nothing.
-    """
-
-    agent_id = str(payload.get("agent_id"))
-    if not AGENT_ID_RE.match(agent_id):
-        raise _FailOpen("the hook input has an unexpected agent_id")
-    path = _subagent_transcript(transcript_path, agent_id)
-    try:
-        turns = read_recent_turns(
-            path,
-            since_key=None,
-            wait_seconds=0.0,
-            sidechain=True,
-            current_call=call,
-        ).turns
-    except TranscriptUnreadable as exc:
-        raise _FailOpen(f"in a subagent, {exc}") from exc
-    holds = actions.check_action(
-        call, turns[-1], {}, config.skill_namespaces,
-        _project(payload, config), closeout=actions.Closeout(briefed=True),
-    )
-    session_id = str(payload.get("session_id"))
-    text = gates.message(holds, lambda purpose: _claim_turn(
-        StateStore(config.state_dir), session_id, turns[-1].key, purpose, agent_id), call=True)
-    return _with_warnings(_deny(translation.render(text, tool_name, gates.last_shell(turns))), [])
+    return read
 
 
 def _subagent_transcript(transcript_path: str, agent_id: str) -> Path:
+    """Claude Code passes a subagent's hooks the parent's `transcript_path`;
+    the subagent's entries live beside it in `<session>/subagents/agent-<agent_id>.jsonl`."""
+
     main = Path(transcript_path)
     return main.parent / main.stem / "subagents" / f"agent-{agent_id}.jsonl"
 
@@ -361,64 +226,62 @@ def _spawned_subagents(turn, transcript_path: str) -> tuple[dict, list[str]]:
     return found, unread
 
 
+# Handlers ----------------------------------------------------------------------
+
+
+def _pre_tool_use(payload: dict, config: Config) -> str:
+    tool_name = str(payload.get("tool_name") or "")
+    if not translation.is_judged(tool_name):
+        return ""
+    call = translation.call_of(tool_name, payload.get("tool_input"),
+                               str(payload.get("tool_use_id") or ""))
+    session_id, transcript_path = _session_fields(payload)
+    if payload.get("agent_id"):
+        agent_id = str(payload.get("agent_id"))
+        if not AGENT_ID_RE.match(agent_id):
+            raise _FailOpen("the hook input has an unexpected agent_id")
+        path = _subagent_transcript(transcript_path, agent_id)
+
+        def read(since_key):
+            # A subagent's own transcript, where every prompt is its parent's.
+            try:
+                return read_recent_turns(path, since_key=None, wait_seconds=0.0,
+                                         sidechain=True, current_call=call).turns, None
+            except TranscriptUnreadable as exc:
+                raise _FailOpen(f"in a subagent, {exc}") from exc
+
+        decision = judge.judge_call(config.settings(),
+                                    _situation(payload, config, session_id, agent_id=agent_id),
+                                    call, read)
+    else:
+        decision = judge.judge_call(config.settings(),
+                                    _situation(payload, config, session_id, transcript_path),
+                                    call, _reader(payload, config, transcript_path, call))
+    text = translation.render(decision.message(), tool_name, decision.shell)
+    return _with_warnings(_deny(text), decision.texts(judge.WARNING))
+
+
 def _stop(payload: dict, config: Config) -> str:
     """Hold the end of a turn that changed code until its closeout items are met."""
 
     session_id, transcript_path = _session_fields(payload)
-    store = StateStore(config.state_dir)
-    state, state_warning = _load_state(store, session_id)
-    try:
-        reading = read_recent_turns(
-            transcript_path,
-            since_key=state.last_turn,
-            prompt_id=_prompt_id(payload),
-            wait_seconds=config.lag_wait_seconds,
-        )
-    except TranscriptUnreadable as exc:
-        raise _FailOpen(str(exc)) from exc
-    turns = reading.turns
-    gates.fold_turns(state, turns, config.skill_namespaces)
-    _settle_holds(state, turns, config)
-    current = turns[-1]
-    subagents, unread = _spawned_subagents(current, transcript_path)
-    hold = actions.check_closeout(
-        current,
-        _overrides_for(state, current, reading.prompt_id, payload.get("prompt_id")),
-        config.skill_namespaces,
-        str(payload.get("last_assistant_message") or ""),
-        subagents,
-        _project(payload, config),
-        earlier=_since_compaction(state),
-        spawn_templates=state.spawn_templates_of(current.key),
-        intensity=_route_intensity(state),
-        briefed=state.briefed,
-    )
-    holds = [hold] if hold else []
-    friction.observe(state, current, friction.STOP, holds)
-    if hold is None:
-        # The turn ends here, and so do its typed overrides: a subagent's
-        # report arriving later continues the turn (see `is_own_report`)
-        # without them. Another hook may still block this Stop, so the turn
-        # then goes on without its overrides, which only holds more.
-        state.overrides = {}
-    warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread)]
-    text = translation.render(gates.message(holds, lambda purpose: _claim_turn(
-        store, session_id, current.key, purpose)))
+    decision = judge.judge_turn_end(
+        config.settings(), _situation(payload, config, session_id, transcript_path),
+        _reader(payload, config, transcript_path),
+        str(payload.get("last_assistant_message") or ""))
+    text = translation.render(decision.message())
     output = {"decision": "block", "reason": text} if text else {}
-    return _with_warnings(output, warnings)
+    return _with_warnings(output, decision.texts(judge.WARNING))
 
 
 def _post_tool_use(payload: dict, config: Config) -> str:
     """After the main agent's first finished code change of a turn by a file
-    edit tool, add one note naming the closeout items the turn will meet
-    (Ticket 096), as context for the agent. It never holds anything.
+    edit tool, add the core's early closeout note as context for the agent
+    (Ticket 096). It never holds anything.
 
     The call is taken from the hook's own payload, since the transcript may
     not show it yet; the transcript and state say only what the payload
-    cannot, such as which skills count as loaded. A subagent has no
-    closeout, so gets no note; nor does a turn the closeout already held,
-    which has seen its items. The note's claim on the turn marker has its
-    own purpose, and a claim that fails or cannot be made adds no note.
+    cannot, such as which skills count as loaded.
     """
 
     tool_name = str(payload.get("tool_name") or "")
@@ -428,42 +291,13 @@ def _post_tool_use(payload: dict, config: Config) -> str:
     call = translation.call_of(tool_name, payload.get("tool_input"),
                                str(payload.get("tool_use_id") or ""))
     session_id, transcript_path = _session_fields(payload)
-    store = StateStore(config.state_dir)
-    state, _ = _load_state(store, session_id)
-    # The call's PreToolUse saved its turn as the last seen, so a turn that
-    # already has its note is known here without reading the transcript.
-    if state.last_turn and store.turn_claimed(session_id, state.last_turn, CLOSEOUT_NOTE):
+    decision = judge.note_finished_call(
+        config.settings(), _situation(payload, config, session_id, transcript_path),
+        call.finished(Result(ok=True)), _reader(payload, config, transcript_path, call))
+    notes = decision.texts(judge.CLOSEOUT_NOTE_KIND)
+    if not notes:
         return ""
-    try:
-        reading = read_recent_turns(
-            transcript_path,
-            since_key=state.last_turn,
-            prompt_id=_prompt_id(payload),
-            wait_seconds=config.lag_wait_seconds,
-            current_call=call,
-        )
-    except TranscriptUnreadable as exc:
-        raise _FailOpen(str(exc)) from exc
-    # Read only: the hooks that judge calls own the saved state.
-    turns = reading.turns
-    gates.fold_turns(state, turns, config.skill_namespaces)
-    current = turns[-1]
-    if (state.held_gates.get("turn") == current.key
-            and actions.CLOSEOUT_GATE in state.held_gates["gates"]):
-        return ""
-    text = translation.render(actions.closeout_note(
-        current, call.finished(Result(ok=True)),
-        _overrides_for(state, current, reading.prompt_id, payload.get("prompt_id")),
-        config.skill_namespaces, _project(payload, config), _since_compaction(state),
-        _route_intensity(state)))
-    if not text:
-        return ""
-    try:
-        claimed = store.claim_turn(session_id, current.key, CLOSEOUT_NOTE)
-    except (OSError, StateUnsafe):
-        claimed = False  # The note is advice: without a marker it could repeat, so none.
-    if not claimed:
-        return ""
+    text = translation.render(notes[0])
     return json.dumps({"hookSpecificOutput": {
         "hookEventName": "PostToolUse", "additionalContext": _sentence([text])}})
 
@@ -477,107 +311,44 @@ def _finished(tool_response: object) -> bool:
             and not tool_response.get("is_error") and tool_response.get("success") is not False)
 
 
-def _settle_holds(state, turns, config: Config) -> None:
-    """Settle the friction count's open holds against the turns just read."""
-
-    friction.settle(state, turns, lambda raw: gates.goated_skill_name(raw, config.skill_namespaces))
-
-
-def _settle_unseen(state, payload: dict, config: Config) -> None:
-    """Settle open holds against the turns since the last one seen, before a
-    typed prompt closes them: a read or skip line after the last hook call,
-    such as in a turn the user interrupted, answers a hold too. Reading never
-    crosses a compaction, so what came before one stays unseen. Best effort:
-    an unreadable transcript leaves the holds to count as unanswered."""
-
-    path = payload.get("transcript_path")
-    if not state.open_holds or not isinstance(path, str) or not path:
-        return
-    try:
-        turns = read_recent_turns(path, since_key=state.last_turn, wait_seconds=0.0).turns
-    except TranscriptUnreadable:
-        return
-    _settle_holds(state, turns, config)
-
-
-def _unread_warning(unread: list[str]) -> str | None:
-    """The warning for subagents whose transcripts could not be read, whose
-    changes the action and closeout gates therefore left out; None for none."""
-
-    if not unread:
-        return None
-    return ("could not read the transcript of subagent " + ", ".join(unread)
-            + ", so its changes were not checked")
-
-
-def _prompt_id(payload: dict) -> str | None:
-    value = payload.get("prompt_id")
-    return value if isinstance(value, str) and value else None
-
-
-def _deny(text: str) -> dict:
-    """The PreToolUse output that holds a call with the message `text`; {} for none."""
-
-    if not text:
-        return {}
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": text,
-        }
-    }
-
-
 def _session_start(payload: dict, config: Config) -> str:
-    """Reset skill proof after compaction; note a missing policy or router once
-    per session, and missing agent files once per project.
-
-    After compaction or `/clear` every skill must load again, and the design
-    references and spawn-brief templates be read again, because their text
-    was summarized away; the route itself carries over (spec R5). Turns from
-    before the boundary are never folded back in.
-    A new session (`startup`) has no task yet, so `continue` may start one.
-    """
+    """Start the session's context in the core; note a missing policy or
+    router once per session, and missing agent files once per project."""
 
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         raise _FailOpen("the hook input has no session_id")
-    store = StateStore(config.state_dir)
-    state, state_warning = _load_state(store, session_id)
-    if payload.get("source") == "startup" and state.task is None:
-        state.task_unknown = False
-    if payload.get("source") in {"compact", "clear"}:
-        state.forget_context()
-        friction.forget_open(state)
-        state.last_turn = None
-        store.clear_turn_markers(session_id)
+    cwd = Path(str(payload.get("cwd") or "."))
 
-    output: dict = {}
-    notices = []
-    if not state.policy_notice_shown:
-        state.policy_notice_shown = True
-        cwd = Path(str(payload.get("cwd") or "."))
+    def first_notices() -> list[str]:
+        notices = []
         if not shared_policy_loaded(cwd, config.home):
             notices.append(POLICY_NOTICE)
         if not router_skill_installed(cwd, config.home, gates.ROUTER_SKILL):
             notices.append(ROUTER_NOTICE)
+        return notices
+
+    decision = judge.start_session(
+        config.settings(), _situation(payload, config, session_id, with_project=False),
+        SESSION_SOURCES.get(payload.get("source"), judge.RESUMED), first_notices)
+    notices = decision.texts(judge.SESSION_NOTICE)
     record_warnings: list[str] = []
     try:
-        onboarding_notice = _onboarding_notice(store, payload, config, record_warnings)
+        onboarding_notice = _onboarding_notice(StateStore(config.state_dir), payload, config,
+                                               record_warnings)
     except (OSError, StateUnsafe) as exc:
         # The notice is advice: losing it must not lose this start's reset.
         onboarding_notice = None
         record_warnings.append(f"could not check its onboarding notice ({exc})")
     if onboarding_notice:
         notices.append(onboarding_notice)
+    output: dict = {}
     if notices:
         output["hookSpecificOutput"] = {
             "hookEventName": "SessionStart",
             "additionalContext": " ".join(notices),
         }
-    warnings = [*notices, state_warning, _save(store, session_id, state), *record_warnings]
-    return _with_warnings(output, warnings)
+    return _with_warnings(output, [*notices, *decision.texts(judge.WARNING), *record_warnings])
 
 
 def _onboarding_notice(
@@ -635,27 +406,24 @@ def _user_prompt_submit(payload: dict, config: Config) -> str:
         return ""
     if kind != TYPED and is_own_report(str(payload.get("transcript_path") or ""), prompt):
         return ""
-    store = StateStore(config.state_dir)
-    state, state_warning = _load_state(store, session_id)
-    if kind == TYPED:
-        cwd = Path(str(payload.get("cwd") or "."))
-        known = installed_skill_names(cwd, config.home) or GOATED_SKILLS
-        found = parse_overrides(typed_prompt(prompt).text, known)
-        # Holds the last turn left open are unanswered, unless what followed
-        # them, which no hook may have seen, or this prompt's overrides settle them.
-        _settle_unseen(state, payload, config)
-        friction.close_turn(state, found)
-    else:
-        found = parse_overrides("")
-    state.overrides = {"prompt_id": payload.get("prompt_id"), **found}
-    notices = []
-    if found["phrases"]:
-        typed = ", ".join(f'"{phrase}"' for phrase in found["phrases"])
-        notices.append(f"recorded your override for this prompt: {typed}")
-    if kind == TYPED and friction.claim_retrospective_notice(state):
-        notices.append(RETROSPECTIVE_NOTICE.format(count=state.friction))
+    path = payload.get("transcript_path")
 
-    notes = [*notices, state_warning, _save(store, session_id, state)]
+    def unseen(since_key):
+        # Reading never crosses a compaction, so what came before one stays
+        # unseen. Best effort: an unreadable transcript leaves the holds to
+        # count as unanswered.
+        if not isinstance(path, str) or not path:
+            return None
+        try:
+            return read_recent_turns(path, since_key=since_key, wait_seconds=0.0).turns
+        except TranscriptUnreadable:
+            return None
+
+    decision = judge.record_prompt(
+        config.settings(), _situation(payload, config, session_id, with_project=False),
+        typed_prompt(prompt).text if kind == TYPED else None,
+        payload.get("prompt_id"), unseen)
+    notices = decision.texts(judge.OVERRIDE_RECORDED, judge.SESSION_NOTICE)
     output: dict = {}
     if notices:
         # The notices above reach a mod with no text; hook context arrives with
@@ -664,31 +432,29 @@ def _user_prompt_submit(payload: dict, config: Config) -> str:
             "hookEventName": "UserPromptSubmit",
             "additionalContext": _sentence(notices),
         }
-    return _with_warnings(output, notes)
+    return _with_warnings(output, [*notices, *decision.texts(judge.WARNING)])
 
 
-def _overrides_for(state, turn, turn_prompt_id: str | None, payload_prompt_id: object) -> dict:
-    """Return stored overrides only for the typed prompt that opened `turn`,
-    whose id the transcript gives as `turn_prompt_id` (None when it gives
-    none) and the hook input as `payload_prompt_id`."""
+# Hook output ----------------------------------------------------------------------
 
-    stored = state.overrides or {}
-    if not turn.typed:
+
+def _prompt_id(payload: dict) -> str | None:
+    value = payload.get("prompt_id")
+    return value if isinstance(value, str) and value else None
+
+
+def _deny(text: str) -> dict:
+    """The PreToolUse output that holds a call with the message `text`; {} for none."""
+
+    if not text:
         return {}
-    turn_prompt = turn_prompt_id or payload_prompt_id
-    if stored.get("prompt_id") and turn_prompt and stored["prompt_id"] != turn_prompt:
-        return {}
-    return stored
-
-
-def _save(store: StateStore, session_id: str, state) -> str | None:
-    """Save best effort: a hold already decided stands even if saving fails."""
-
-    try:
-        store.save(session_id, state)
-    except OSError as exc:
-        return f"could not save its session state ({exc.strerror or type(exc).__name__})"
-    return None
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": text,
+        }
+    }
 
 
 def _sentence(parts) -> str:

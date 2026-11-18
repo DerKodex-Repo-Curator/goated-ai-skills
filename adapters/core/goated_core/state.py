@@ -1,6 +1,6 @@
-"""Per-session adapter state, one small JSON file per Claude Code session.
+"""Per-session core state, one small JSON file per session id the caller supplies.
 
-State holds only what the transcript's current turn cannot answer on its own:
+State holds only what the current turn cannot answer on its own:
 the current task's route, whether missing or reset state lost the task, what
 counts until the next compaction (whether the router loaded, which GOATED
 skills loaded, which design references, skill references, and spawn-brief
@@ -19,6 +19,7 @@ import json
 import os
 import re
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 UNSAFE_NAME_CHARS = re.compile(r"[^A-Za-z0-9_-]")
@@ -73,6 +74,9 @@ class SessionState:
         # had a task, so `continue` cannot start one until a full route line
         # does, or the session is shown to have none.
         self.task_unknown = False
+        # The overrides a person typed in the latest prompt (`overrides.parse_overrides`),
+        # with `prompt`, the caller's key for that prompt (None when it gave none),
+        # so they apply only to the turn that prompt opened (`judge.overrides_for`).
         self.overrides: dict = {}
         self.policy_notice_shown = False
         # The GOATED skills (`tdd`) loaded since the last compaction.
@@ -187,7 +191,7 @@ class SessionState:
         overrides = _expect(data.get("overrides", {}), dict)
         if overrides:
             state.overrides = {
-                "prompt_id": _expect(overrides.get("prompt_id"), (str, type(None))),
+                "prompt": _expect(overrides.get("prompt"), (str, type(None))),
                 "routing": _expect(overrides.get("routing", False), bool),
                 "skills": _string_list(overrides.get("skills", [])),
                 "commit_message": _expect(overrides.get("commit_message"), (str, type(None))),
@@ -280,6 +284,25 @@ def _valid_route(route) -> dict:
     raise ValueError("unexpected task route")
 
 
+def default_root() -> Path:
+    """A per-user folder no other local user can pre-create, under which a
+    caller keeps its state folder.
+
+    POSIX uses `$XDG_STATE_HOME` or `~/.local/state`, not the shared `/tmp`.
+    Windows uses the per-user temp folder, found as `tempfile` would, without
+    the import cost.
+    """
+
+    if os.name != "nt":
+        xdg = os.environ.get("XDG_STATE_HOME")
+        return Path(xdg) if xdg else Path.home() / ".local" / "state"
+    for name in ("TEMP", "TMP"):
+        value = os.environ.get(name)
+        if value:
+            return Path(value)
+    return Path.home() / "AppData" / "Local" / "Temp"
+
+
 class StateUnsafe(Exception):
     """The state folder could be written by another user, so it cannot be trusted."""
 
@@ -290,10 +313,17 @@ class StateStore:
     The store only uses a directory it owns and that nobody else can write;
     otherwise it raises `StateUnsafe`, because planted state could make holds
     pass.
+
+    `upgrade`, when given, turns a saved session file's data, as read, into
+    this version's shape before it is checked: an adapter whose earlier
+    versions saved state in its own words passes one, so that state keeps
+    working. It must return the data, changed or not.
     """
 
-    def __init__(self, directory: Path) -> None:
+    def __init__(self, directory: Path,
+                 upgrade: Callable[[object], object] | None = None) -> None:
         self.directory = Path(directory)
+        self.upgrade = upgrade
 
     def load(self, session_id: str) -> tuple[SessionState, str | None]:
         """Return the session's state and a warning when stored state was unusable.
@@ -313,7 +343,8 @@ class StateStore:
         if not path.exists():
             return fresh, None
         try:
-            return SessionState.from_json(json.loads(path.read_text(encoding="utf-8"))), None
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return SessionState.from_json(self.upgrade(data) if self.upgrade else data), None
         except (OSError, ValueError):
             return fresh, "its saved session state was unreadable and was reset"
 

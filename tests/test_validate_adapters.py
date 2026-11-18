@@ -54,6 +54,37 @@ class AdapterBoundaryTests(unittest.TestCase):
         self.assertIn("rules.py", messages[0])
         self.assertIn("yaml", messages[0])
 
+    def _core(self, source: str) -> None:
+        """Add the shared core, `adapters/core/goated_core/`, with `source` as one module."""
+
+        core = self.repo / "adapters" / "core" / "goated_core"
+        core.mkdir(parents=True)
+        (core / "__init__.py").write_text("", encoding="utf-8")
+        (core / "gates.py").write_text(source, encoding="utf-8")
+
+    def test_an_adapter_may_import_the_shared_core(self) -> None:
+        self._core("import re\nfrom . import events\n")
+        (self.repo / "adapters" / "example" / "example_adapter" / "rules.py").write_text(
+            "import re\nfrom goated_core import gates\n", encoding="utf-8")
+
+        self.assertEqual(self.messages(), [])
+
+    def test_the_core_importing_an_adapter_is_an_error(self) -> None:
+        self._core("from example_adapter import rules\n")
+
+        messages = self.messages()
+        self.assertEqual(len(messages), 1)
+        self.assertIn("gates.py", messages[0])
+        self.assertIn("example_adapter", messages[0])
+
+    def test_without_the_core_its_import_is_an_error(self) -> None:
+        (self.repo / "adapters" / "example" / "example_adapter" / "rules.py").write_text(
+            "from goated_core import gates\n", encoding="utf-8")
+
+        messages = self.messages()
+        self.assertEqual(len(messages), 1)
+        self.assertIn("goated_core", messages[0])
+
     def test_a_skill_that_references_an_adapter_is_an_error(self) -> None:
         skill = self.repo / "skills" / "engineering" / "demo" / "SKILL.md"
         skill.write_text(
@@ -71,7 +102,7 @@ class RegistryReaderTests(unittest.TestCase):
     reader; the validator fails when that reader and a full YAML parser
     disagree on the source registry's references."""
 
-    READER = Path("adapters") / "claude-code" / "goated_adapter" / "reference_reads.py"
+    READER = Path("adapters") / "core" / "goated_core" / "reference_reads.py"
     ENTRY = (
         "  - name: tdd\n    path: skills/engineering/tdd/SKILL.md\n    references:\n"
         "      - file: test-design.md\n        signal:\n          kind: edit-of-file-kind\n"

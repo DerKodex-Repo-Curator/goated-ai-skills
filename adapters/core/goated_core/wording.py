@@ -55,7 +55,7 @@ def unseen_line_advice(line: str, way_out: str) -> str:
     clear. `line` names the line ("route line", "skip line"); `way_out` is
     the typed override that stands the hold down. A line in reply text may
     never be seen, so the harness says where else it can go, then gives the
-    user's way out. `gates.message` shortens it on every hold of a turn but
+    user's way out. `gates.shown_holds` shortens it on every hold of a turn but
     one (`short_advice`)."""
 
     return _slot(FULL_ADVICE, line, way_out)

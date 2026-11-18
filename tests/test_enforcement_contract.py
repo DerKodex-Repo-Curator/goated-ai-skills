@@ -1,8 +1,8 @@
-"""The enforcement contract names every gate, kind and closeout item the Claude
-Code adapter can return, and the clear ways its scenarios prove (Ticket 079,
+"""The enforcement contract names every gate, kind and closeout item the shared
+core (`adapters/core/`) can return, and the clear ways its scenarios prove (Ticket 079,
 spec AC2).
 
-The adapter's gates and kinds are read from its source: every `Hold(...)` it
+The core's gates and kinds are read from its source: every `Hold(...)` it
 builds, and a `Hold` subclass's `super().__init__(...)`, with the gate and
 kind given by position or keyword. A value is read as a literal, a module
 constant, either branch of a conditional, or a parameter, which is followed
@@ -21,18 +21,18 @@ from enforcement_support import (
     REPO_ROOT, contract_closeout_labels, contract_gates, contract_kinds, scenario_files,
 )
 
-ADAPTER = REPO_ROOT / "adapters" / "claude-code" / "goated_adapter"
+CORE = REPO_ROOT / "adapters" / "core" / "goated_core"
 ITEM_LABEL = re.compile(r"^- ([A-Z][a-z]+): ")
 # How far a parameter is followed back through its callers.
 MAX_FORWARDS = 6
 
 
 class _Package:
-    """The adapter package's source, for reading the values a hold is built with."""
+    """The core package's source, for reading the values a hold is built with."""
 
     def __init__(self) -> None:
         self.modules = [ast.parse(path.read_text(encoding="utf-8"))
-                        for path in sorted(ADAPTER.glob("*.py"))]
+                        for path in sorted(CORE.glob("*.py"))]
         self.constants: dict[str, str] = {}
         for module in self.modules:
             for node in module.body:
@@ -124,8 +124,8 @@ def _argument(call: ast.Call, index: int, name: str):
     return call.args[index] if index < len(call.args) else None
 
 
-def adapter_holds() -> tuple[dict[str, set[str]], list[str]]:
-    """Each gate the adapter can return, with the kinds it can give it, and
+def core_holds() -> tuple[dict[str, set[str]], list[str]]:
+    """Each gate the core can return, with the kinds it can give it, and
     every hold built with a gate or kind the check cannot read."""
 
     package = _Package()
@@ -145,12 +145,12 @@ def adapter_holds() -> tuple[dict[str, set[str]], list[str]]:
     return gates, unreadable
 
 
-def adapter_closeout_labels() -> tuple[set[str], list[str]]:
+def core_closeout_labels() -> tuple[set[str], list[str]]:
     """The labels the closeout's items open with, and any item text the
     check cannot read."""
 
     labels, unreadable = set(), []
-    module = ast.parse((ADAPTER / "actions.py").read_text(encoding="utf-8"))
+    module = ast.parse((CORE / "actions.py").read_text(encoding="utf-8"))
     for node in ast.walk(module):
         if not (isinstance(node, ast.Call) and getattr(node.func, "id", None) == "_Item"):
             continue
@@ -188,28 +188,28 @@ def scenario_clear_ways() -> dict[str, set[str]]:
     return ways
 
 
-class ContractCoversTheAdapterTests(unittest.TestCase):
-    def test_the_check_reads_every_hold_the_adapter_builds(self) -> None:
-        gates, unreadable = adapter_holds()
+class ContractCoversTheCoreTests(unittest.TestCase):
+    def test_the_check_reads_every_hold_the_core_builds(self) -> None:
+        gates, unreadable = core_holds()
         self.assertEqual(unreadable, [])
         # A floor, so a scan that finds nothing cannot pass.
         self.assertGreaterEqual(len(gates), 16)
 
-    def test_every_gate_the_adapter_can_return_is_in_the_contract(self) -> None:
-        gates, _ = adapter_holds()
+    def test_every_gate_the_core_can_return_is_in_the_contract(self) -> None:
+        gates, _ = core_holds()
         self.assertEqual(sorted(set(gates) - set(contract_gates())), [])
 
-    def test_the_contract_names_no_gate_the_adapter_never_returns(self) -> None:
-        gates, _ = adapter_holds()
+    def test_the_contract_names_no_gate_the_core_never_returns(self) -> None:
+        gates, _ = core_holds()
         self.assertEqual(sorted(set(contract_gates()) - set(gates)), [])
 
-    def test_each_gate_has_the_kind_the_adapter_gives_it(self) -> None:
-        gates, _ = adapter_holds()
+    def test_each_gate_has_the_kind_the_core_gives_it(self) -> None:
+        gates, _ = core_holds()
         observed = scenario_kinds()
         for gate, kind in contract_kinds().items():
             with self.subTest(gate):
                 # The source allows it, and the scenarios, run against the
-                # adapter, show it is the one the adapter gives.
+                # core, show it is the one the core gives.
                 self.assertIn(kind, gates.get(gate, set()))
                 self.assertEqual(observed.get(gate), {kind})
 
@@ -220,7 +220,7 @@ class ContractCoversTheAdapterTests(unittest.TestCase):
                 self.assertEqual(proved.get(gate, set()), ways)
 
     def test_the_closeout_labels_are_the_contract_items(self) -> None:
-        labels, unreadable = adapter_closeout_labels()
+        labels, unreadable = core_closeout_labels()
         self.assertEqual(unreadable, [])
         self.assertEqual(sorted(labels), sorted(contract_closeout_labels()))
 
