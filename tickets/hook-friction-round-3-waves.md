@@ -28,8 +28,8 @@ to 4 there are merged.
 | 6 | [092](092-adapter-whole-reads-and-read-order.md) | 3 | adapter and mod | AFK | 078, 089, 091 |
 | 6 | [097](097-adapter-script-write-paths-by-name-and-folder.md) | 3 | adapter | AFK | 093 |
 | 7 | [095](095-adapter-joint-holds-in-one-message.md) | 3 | adapter and mod | AFK | 086 to 094, 097 |
-| 8 (ready now) | [096](096-adapter-early-closeout-note.md) | 3 | adapter | AFK | 095 |
-| 9 | [079](079-enforcement-contract-and-event-model.md) | 2 | core | HITL (maintainer accepts the ADR and event model) | its round 2 blockers (merged), and 086 to 096 |
+| 8 | [096](096-adapter-early-closeout-note.md) | 3 | adapter | AFK | 095 |
+| 9 (ready now) | [079](079-enforcement-contract-and-event-model.md) | 2 | core | HITL (maintainer accepts the ADR and event model) | its round 2 blockers (merged), and 086 to 096 |
 | 10 | [080](080-adapter-rules-read-the-event-model.md) | 2 | adapter | AFK | 079 |
 | 11 | [081](081-shared-enforcement-core.md) | 2 | core | AFK | 080 |
 | 12 | [082](082-neutral-usage-log-and-report.md) | 2 | core | AFK | 078, 081 |
