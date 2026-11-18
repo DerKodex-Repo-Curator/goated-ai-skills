@@ -208,6 +208,22 @@ CHECK_WORD_RE = re.compile(
 )
 
 
+class PullRequest:
+    """One pull request a shell command opens, as its own simple command
+    names it. `base` and `head` are the branches it merges into and from
+    (`--base`/`-B` and `--head`/`-H` for gh, `--target-branch`/`-b` and
+    `--source-branch`/`-s` for glab), else None; `repository` is the
+    repository it names with `--repo` or `-R`, as its path (`owner/repo`,
+    `group/sub/repo`) without any host or URL around it, else None (spec R7)."""
+
+    __slots__ = ("base", "head", "repository")
+
+    def __init__(self, base: str | None, head: str | None, repository: str | None) -> None:
+        self.base = base
+        self.head = head
+        self.repository = repository
+
+
 class ShellCommand:
     """The facts the gates need about one shell command.
 
@@ -220,13 +236,10 @@ class ShellCommand:
     write's files cannot be read from the command (`git apply`, `patch`, a
     download without an output name). `commit` is True for a `git commit`
     that records one (not `--dry-run`); `commit_message` is its message when
-    that commit carries it inline, else None. `opens_pr` covers
-    `gh pr create|new` and `glab mr create|new`; `pr_base` and `pr_head` are
-    the branches such a command names to merge into and from (`--base`/`-B`
-    and `--head`/`-H` for gh, `--target-branch`/`-b` and `--source-branch`/`-s`
-    for glab), else None; `pr_repository` is the repository it names with
-    `--repo` or `-R`, as its path (`owner/repo`, `group/sub/repo`) without
-    any host or URL around it, else None (spec R7). `is_check` says it runs a
+    that commit carries it inline, else None. `pull_requests` holds a
+    `PullRequest` for each `gh pr create|new` and `glab mr create|new` in it,
+    in order, each read from its own simple command's options alone (spec
+    R14); `opens_pr` says there is one. `is_check` says it runs a
     test, lint, build, or check; `non_check_writes` says some simple command
     in it writes and is not itself a check (`sed -i … && pytest`, but not
     `pytest > out.txt`). `unchecked_targets` are the write targets no check
@@ -286,7 +299,7 @@ class ShellCommand:
 
     __slots__ = (
         "writes", "write_targets", "unplaced_targets", "unknown_writes", "commit",
-        "commit_message", "opens_pr", "pr_base", "pr_head", "pr_repository", "is_check",
+        "commit_message", "pull_requests", "is_check",
         "non_check_writes", "unchecked_targets", "unchecked_unknown_writes", "prints_changes",
         "installs_globally", "install_folders", "read_only", "only_reads_and_writes_files",
         "script_targets", "script_unknown_writes", "text_writes", "redirects_into_nul",
@@ -300,10 +313,7 @@ class ShellCommand:
         self.unknown_writes = False
         self.commit = False
         self.commit_message: str | None = None
-        self.opens_pr = False
-        self.pr_base: str | None = None
-        self.pr_head: str | None = None
-        self.pr_repository: str | None = None
+        self.pull_requests: list[PullRequest] = []
         self.is_check = False
         self.non_check_writes = False
         self.unchecked_targets: list[str] = []
@@ -319,6 +329,10 @@ class ShellCommand:
         self.redirects_into_nul = False
         self.shown_files: list[str] = []
         self.shows_git_diff = False
+
+    @property
+    def opens_pr(self) -> bool:
+        return bool(self.pull_requests)
 
 
 def analyze(command: str, shell: str = POSIX) -> ShellCommand:
@@ -505,14 +519,14 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
     elif name in FORGE_DIFFS:
         rest = _skip_options(args, {"-R", "--repo"})
         noun = FORGE_DIFFS[name]
-        if rest[:1] == [noun] and rest[1:2] in (["create"], ["new"]):
-            result.opens_pr = True
-            # `-R`/`--repo` may also come before the noun.
+        if rest[:1] == [noun] and _forge_verb(rest[1:]) in ("create", "new"):
+            # `-R`/`--repo`, the base and the head count before the noun,
+            # between it and the verb, or after the verb.
             named = _pr_options(args, PR_VALUE_OPTIONS[name])
-            result.pr_base = named.get("base") or result.pr_base
-            result.pr_head = named.get("head") or result.pr_head
-            if "repository" in named:
-                result.pr_repository = _repository_path(named["repository"])
+            repository = named.get("repository")
+            result.pull_requests.append(PullRequest(
+                named.get("base"), named.get("head"),
+                None if repository is None else _repository_path(repository)))
         if rest[:2] == [noun, "diff"] and "--name-only" not in rest:
             prints = True
     scripted: list[str] = []  # The files inline interpreter code writes.
@@ -1407,6 +1421,27 @@ def _repository_path(value: str) -> str:
         if "." in host and "/" in rest:
             path = rest
     return path
+
+
+def _forge_verb(words: list[str]) -> str | None:
+    """The verb after `gh pr` or `glab mr`, given the words after the noun,
+    or None when there is none. Options before it are read as their parser
+    (cobra) reads options it does not know: `--x=v`, an attached short form
+    (`-Rx`, `-R=x`) and `--help`/`-h` are one word; any other `--x` or `-x`
+    takes the next word as its value, so `gh pr --state create list` lists.
+    `--` ends the options, and no verb follows it."""
+
+    i = 0
+    while i < len(words):
+        word = words[i]
+        if word == "--":
+            return None
+        if not word.startswith("-") or word == "-":
+            return word
+        whole = "=" in word or word in ("--help", "-h") or (
+            not word.startswith("--") and len(word) > 2)
+        i += 1 if whole else 2
+    return None
 
 
 def _skip_options(args: list[str], takes_value: set[str]) -> list[str]:

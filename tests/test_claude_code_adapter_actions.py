@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -576,6 +577,85 @@ class PullRequestReviewTests(AdapterTestCase):
                 s = self.fresh_described(origin_url=url, stay_on_base=True)
                 self.assertEqual(decision(s.call("Bash", {"command": command})),
                                  "deny" if held else "pass")
+
+    def test_options_between_the_noun_and_the_verb_still_open_a_pull_request(self) -> None:
+        # Spec R13: `gh pr -R x create` opens a pull request as `gh pr create -R x` does.
+        github = "https://github.com/acme/export.git"
+        gitlab = "git@gitlab.example.com:group/sub/export.git"
+        branches = "--base main --head feature --fill"
+        for url, command, held in (
+            (github, f"gh pr -R acme/export create {branches}", True),
+            (github, f"gh pr --repo=acme/export create {branches}", True),
+            (github, f"gh pr -Racme/export new {branches}", True),
+            (github, "gh pr -B main -H feature create --fill", True),
+            (gitlab, "glab mr --repo group/sub/export create -b main -s feature", True),
+            (github, f"gh pr -R other/x create {branches}", False),
+            (github, "glab mr --repo other/x new -b main -s feature", False),
+        ):
+            with self.subTest(origin=url, command=command):
+                s = self.fresh_described(origin_url=url, stay_on_base=True)
+                self.assertEqual(decision(s.call("Bash", {"command": command})),
+                                 "deny" if held else "pass")
+
+    def test_each_pull_request_in_a_chain_is_read_with_its_own_options(self) -> None:
+        # Spec R14: a later pull request never takes an earlier one's --repo,
+        # --base or --head, and each is measured on its own.
+        github = "https://github.com/acme/export.git"
+        for command, held in (
+            ("gh pr create -R other/x --fill && gh pr create -B main -H feature --fill", True),
+            ("gh pr create -B main -H feature --fill; glab mr create -R other/x", True),
+            ("gh pr create -R other/x -B main -H feature --fill && gh pr create --fill", False),
+            ("gh pr create -B main --fill && gh pr create -B small --fill", True),
+            ("gh pr create -B small --fill && gh pr create -B main --fill", True),
+            ("gh pr create -B small --fill && gh pr create -B small --fill", False),
+            ("gh pr create -B main -H feature --fill && gh pr create -B small --fill", True),
+        ):
+            with self.subTest(command=command):
+                # `small` is a branch at feature's tip, so a pull request into it is
+                # empty; with no head, the checked-out branch is measured.
+                s = self.fresh_described(origin_url=github, stay_on_base="-H" in command)
+                subprocess.run(["git", "branch", "small", "feature"], cwd=s.project, check=True)
+                self.assertEqual(decision(s.call("Bash", {"command": command})),
+                                 "deny" if held else "pass")
+
+    def test_a_held_chain_names_the_pull_request_it_measured(self) -> None:
+        s = self.fresh_described()
+        subprocess.run(["git", "branch", "small", "feature"], cwd=s.project, check=True)
+
+        held = s.call("Bash", {"command": "gh pr create -B small --fill && gh pr create -B main --fill"})
+        self.assertEqual(hold_line(held), "goated-hold: pr-review | justified-skip")
+        self.assertIn("Pull request 2 of 2 in this command, into main, has 450 changed lines",
+                      reason(held))
+
+    def test_a_branch_name_in_the_hold_is_never_backticked(self) -> None:
+        # Backticks name a skill to load, so a branch's own are quoted instead.
+        s = self.fresh_described()
+        subprocess.run(["git", "branch", "feat`tdd`x", "feature"], cwd=s.project, check=True)
+
+        held = s.call("Bash", {"command": "gh pr create -B 'feat`tdd`x' --fill && "
+                                          "gh pr create -B main -H 'feat`tdd`x' --fill"})
+        self.assertIn("into main from feat'tdd'x, has 450", reason(held))
+        self.assertNotIn("`tdd`", reason(held))
+
+    def test_one_pull_request_keeps_its_hold_text(self) -> None:
+        held = self.fresh_described().call("Bash", {"command": "gh pr create -B main --fill"})
+        self.assertIn("This pull request has 450 changed lines", reason(held))
+
+    def test_other_forge_commands_open_no_pull_request(self) -> None:
+        # A value that spells a verb is still a value: `-R create` names a repository.
+        # Between the noun and the verb, any `--x` or `-x` takes the next word, as
+        # gh's parser does, so `--draft create` gives --draft the value "create".
+        for command in ("gh pr list", "gh pr -R acme/export list", "gh pr -R create list",
+                        "echo gh pr create", "gh pr view create",
+                        "gh pr --search new list", "gh pr -S new list",
+                        "gh pr --state create list", "gh pr --json create view",
+                        "gh pr --draft create", "gh pr -d create", "gh pr -- create"):
+            with self.subTest(command=command):
+                # Checked out on a large branch, where a pull request would be held.
+                s = self.fresh_described()
+                self.assertEqual(decision(s.call("Bash", {"command": command})), "pass")
+        held = self.fresh_described().call("Bash", {"command": "gh pr create --fill"})
+        self.assertEqual(decision(held), "deny")
 
     def test_option_values_are_not_read_as_options(self) -> None:
         # glab's -b is the target branch; inside --description's value it is just text.

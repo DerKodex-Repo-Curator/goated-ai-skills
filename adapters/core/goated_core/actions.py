@@ -52,7 +52,7 @@ from __future__ import annotations
 import functools
 import os
 import posixpath
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Iterator
 from typing import NamedTuple
 import re
 import subprocess
@@ -532,8 +532,7 @@ def check_action(call: Call, turn: Turn, overrides: dict,
         if command.opens_pr:
             holds.add(lambda: _pr_hold(proof, changes))
             holds.add(lambda: _pr_review_hold(
-                lambda: changed_lines(cwd, command.pr_base, command.pr_head,
-                                      command.pr_repository), proof, changes))
+                lambda: _shell_pr_sizes(cwd, command.pull_requests), proof, changes))
         # Each gate judges every project file the command writes at once, so its
         # one hold asks for everything they need (Ticket 095).
         inside = [t for t in command.write_targets
@@ -558,8 +557,8 @@ def check_action(call: Call, turn: Turn, overrides: dict,
     elif call.kind == events.PULL_REQUEST:
         holds.add(lambda: _pr_hold(proof, changes, by_tool=True))
         holds.add(lambda: _pr_review_hold(
-            lambda: changed_lines(cwd, call.base, call.head, call.repository), proof, changes,
-            by_tool=True))
+            lambda: [(changed_lines(cwd, call.base, call.head, call.repository), None)],
+            proof, changes, by_tool=True))
     elif call.kind == events.COMMIT:
         holds.add(lambda: _commit_hold(call.message, proof, changes, by_tool=True)
                   or at_commit(by_tool=True))
@@ -663,13 +662,17 @@ def _pr_hold(proof: _Proof, changes: Callable[[], "_Changes"],
     )
 
 
-def _pr_review_hold(size_of: Callable[[], int | None], proof: _Proof,
-                    changes: Callable[[], "_Changes"], by_tool: bool = False) -> Hold | None:
-    """Hold a pull request that changes `REVIEW_MIN_LINES` or more lines, as
-    `size_of` measures it (None: unknown), until `standards-and-spec-review`
-    loads and the change is read after the last change, before or after the
-    load (Ticket 092), or a skip line names it. Judged together with the
-    `pull-request` gate (Ticket 095); `size_of` runs only when the turn's
+def _pr_review_hold(sizes: Callable[[], Iterable[tuple[int | None, str | None]]],
+                    proof: _Proof, changes: Callable[[], "_Changes"],
+                    by_tool: bool = False) -> Hold | None:
+    """Hold a call whose pull requests include one that changes
+    `REVIEW_MIN_LINES` or more lines until `standards-and-spec-review` loads
+    and the change is read after the last change, before or after the load
+    (Ticket 092), or a skip line names it. `sizes` gives each pull request's
+    size (None: unknown) and how the hold names it (None: "this pull
+    request", for a call opening only one), measuring each only as it is
+    taken, so the first large one ends the measuring. Judged together with
+    the `pull-request` gate (Ticket 095); `sizes` runs only when the turn's
     proof would not already clear it."""
 
     if proof.skipped(REVIEW_SKILL):
@@ -682,12 +685,15 @@ def _pr_review_hold(size_of: Callable[[], int | None], proof: _Proof,
         )
         if hold is None:
             return None
-    size = size_of()
-    if size is None or size < REVIEW_MIN_LINES:
+    size, name = next(((size, name) for size, name in sizes()
+                       if size is not None and size >= REVIEW_MIN_LINES), (None, None))
+    if size is None:
         return None
     return hold or Hold(
         "pr-review", JUSTIFIED_SKIP,
-        f"This pull request has {size} changed lines of non-test code against its base, "
+        (f"{name[0].upper()}{name[1:]}," if name else "This pull request")
+        + f" has {size} changed lines of "
+        "non-test code against its base, "
         f"{REVIEW_MIN_LINES} or more, so it is large enough to review before it lands. "
         f"Load `{REVIEW_SKILL}` with {SKILL_TOOL}{proof.within} and review the change with "
         "it. If size is not "
@@ -695,11 +701,37 @@ def _pr_review_hold(size_of: Callable[[], int | None], proof: _Proof,
         f"`goated-skip: {REVIEW_SKILL}: <reason>` on its own line instead. Then open the "
         f"pull request again. {CHAINED_STEPS} "
         + unseen_line_advice("skip line", f"skip {REVIEW_SKILL}"),
-        short_form(f"a review of this {size}-line pull request",
+        short_form(f"a review of {name} ({size} lines)" if name
+                   else f"a review of this {size}-line pull request",
                    f"Load `{REVIEW_SKILL}` and review the change with it, or write "
                    f"`goated-skip: {REVIEW_SKILL}: <reason>`. "
                    + short_advice("skip line", f"skip {REVIEW_SKILL}")),
     )
+
+
+def _shell_pr_sizes(cwd: str | None, pull_requests: list[shell.PullRequest]
+                    ) -> Iterator[tuple[int | None, str | None]]:
+    """`_pr_review_hold`'s sizes for the pull requests one shell command
+    opens, each measured with its own base, head and repository (spec R14),
+    under one `SIZE_TIMEOUT_SECONDS` limit for them all; two that name the
+    same base, head and repository are measured once. One alone is named as
+    before; of several, each by its place, its base and any head."""
+
+    deadline = time.monotonic() + SIZE_TIMEOUT_SECONDS
+    measured: dict[tuple, int | None] = {}
+    # Branch names are quoted, not backticked: backticks name a skill to load.
+    quoted = lambda branch: branch.replace("`", "'")
+    for number, pr in enumerate(pull_requests, 1):
+        name = None
+        if len(pull_requests) > 1:
+            name = (f"pull request {number} of {len(pull_requests)} in this command, into "
+                    + (quoted(pr.base) if pr.base else "its default base")
+                    + (f" from {quoted(pr.head)}" if pr.head else ""))
+        key = (pr.base, pr.head, pr.repository)
+        if key not in measured:
+            measured[key] = changed_lines(cwd, pr.base, pr.head, pr.repository,
+                                          deadline=deadline)
+        yield measured[key], name
 
 
 class _WorkingTree:
@@ -716,7 +748,8 @@ WORKING_TREE = _WorkingTree()
 
 
 def changed_lines(cwd: str | None, base: str | None, head: str | _WorkingTree | None = None,
-                  repository: str | None = None) -> int | None:
+                  repository: str | None = None, *, deadline: float | None = None
+                  ) -> int | None:
     """Lines added plus deleted on `head` since it left `base`, as git in `cwd`
     reports them, in code files outside test paths only (`_counts_for_size`);
     None when that cannot be measured.
@@ -739,14 +772,17 @@ def changed_lines(cwd: str | None, base: str | None, head: str | _WorkingTree | 
     work to compare, so it is unknown too.
 
     Two git calls, three with `repository`, five for the working tree, within
-    `SIZE_TIMEOUT_SECONDS` in all. Every name reaches git inside a full ref
-    name (`refs/...`), so none reads as an option, and external diff and
-    text-conversion programs are switched off, so only git runs.
+    `SIZE_TIMEOUT_SECONDS` in all, or by `deadline` (a `time.monotonic()`
+    time) when the call shares one limit with other measures. Every name
+    reaches git inside a full ref name (`refs/...`), so none reads as an
+    option, and external diff and text-conversion programs are switched off,
+    so only git runs.
     """
 
     if not cwd:
         return None
-    deadline = time.monotonic() + SIZE_TIMEOUT_SECONDS
+    if deadline is None:
+        deadline = time.monotonic() + SIZE_TIMEOUT_SECONDS
     if repository is not None:
         if not events.REPOSITORY_RE.match(repository):
             return None

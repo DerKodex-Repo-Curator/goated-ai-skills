@@ -644,9 +644,20 @@ apply is not held.
 
 A shell command commits when one of its simple commands is `git commit`,
 not `--dry-run`. It opens a pull or merge request when one is `gh pr create`
-or `gh pr new`, or `glab mr create` or `glab mr new`. Each is recognized per
-simple command, so `echo gh pr create` opens nothing. A `commit` call and a
-`pull_request` call are judged the same way.
+or `gh pr new`, or `glab mr create` or `glab mr new`, with its options
+before the noun, between the noun and the verb (`gh pr -R x create`), or
+after the verb. An option's value is never read as the verb: between the
+noun and the verb, `--x=v`, an attached short form (`-Rx`, `-R=x`) and
+`--help` or `-h` are one word, any other `--x` or `-x` takes the next word
+as its value, as `gh`'s parser does, and `--` ends the options with no
+verb. So `gh pr -R create list`, `gh pr --state create list` and
+`gh pr --draft create` open nothing. Each is recognized per simple
+command, so `echo gh pr create` opens nothing. A chained command may open
+several, and each is read with its own simple command's options alone: a
+later one never takes an earlier one's `--repo`, `--base` or `--head`, so in
+`gh pr create -R other/x && gh pr create` the second is aimed at the
+working folder's checkout. A `commit` call and a `pull_request` call are
+judged the same way.
 
 The step that asks for a [change read](#change-reads) is skipped for a
 `commit` or `pull_request` call when the turn changed no project file: it
@@ -689,17 +700,29 @@ git diff --numstat -z --no-relative --no-ext-diff --no-textconv <base>...<head> 
   `HEAD`. Only committed work counts, which is what the pull request opens.
 - A `pull_request` call that names a `repository`, or a shell
   `gh pr create|new` or `glab mr create|new` that names one with `--repo` or
-  `-R` (before or after the subcommand, as `-R x`, `--repo=x`, `-R=x` or
-  `-Rx`), is measured only when it matches the checkout's `origin` URL (one
-  more git call). Aimed at another repository, or from a folder with no
-  `origin`, it is not measured. A shell value names its repository by path: a host
-  prefix (`github.com/owner/repo`, `gitlab.example.com/group/sub/repo`) or
+  `-R` (before the noun, between it and the verb, or after the verb, as
+  `-R x`, `--repo=x`, `-R=x` or `-Rx`), is measured only when it matches
+  the checkout's `origin` URL (one more git call). Aimed at another
+  repository, or from a folder with no `origin`, it is not measured. A
+  shell value names its repository by path: a host prefix
+  (`github.com/owner/repo`, `gitlab.example.com/group/sub/repo`) or
   a full HTTPS or SSH URL names the same repository as `owner/repo`; a
   first part holding a dot, before two more parts, is read as a host. A
   value that is not an `owner/repo` path names no checkout and is not
   measured. The `GH_REPO`-style environment variables and a default set
   with `gh repo set-default` are not read: a command without the option is
   measured in the working folder's checkout.
+- A shell command that opens several pull requests has each measured on
+  its own, with its own base, head and repository, in order, and the gate
+  holds when any of them measures 400 or more lines. Measuring stops at the
+  first that does, so each is measured at most once, two naming the same
+  base, head and repository are measured once, and the two-second limit
+  covers every measure of the call together. The hold names the pull
+  request it measured by its place in the command and its base ("its
+  default base" when it names none), adding "from <head>" when it names a
+  head; a backtick in a branch name is shown as a single quote, since
+  backticks name a skill to load. A command opening one pull request is
+  measured and named as before.
 
 Values of the command's other options are never read as options
 (`PR_VALUE_OPTIONS` in `shell.py`), so `--description "-bump deps"` names no

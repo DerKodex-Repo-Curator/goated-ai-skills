@@ -270,3 +270,61 @@ scenarios:
       - call: {kind: shell_command, shell: posix, command: git diff main}
         result: {ok: true, output: "+line 1"}
       - call: {kind: shell_command, shell: posix, command: "gh pr create --repo upstream-owner/export-tool --base main --fill"}
+
+  - name: a shell pull request with its repository between the noun and the verb is measured
+    covers:
+      - {gate: pr-review, case: holds}
+    setup: {branch_changed_lines: 450, origin_url: "https://github.com/acme/export-tool.git"}
+    steps:
+      - prompt: {type: prompt, author: person, text: Open the pull request.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: pr-description}
+      - call: {kind: shell_command, shell: posix, command: git diff main}
+        result: {ok: true, output: "+line 1"}
+      - call: {kind: shell_command, shell: posix, command: "gh pr -R acme/export-tool create --base main --fill"}
+        expect:
+          decision: hold
+          holds: [{gate: pr-review, kind: justified-skip}]
+
+  - name: a shell pull request naming another repository between the noun and the verb is not measured
+    covers:
+      - {gate: pr-review, case: near-miss}
+    setup: {branch_changed_lines: 450, origin_url: "https://github.com/acme/export-tool.git"}
+    steps:
+      - prompt: {type: prompt, author: person, text: Open the pull request upstream.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: pr-description}
+      - call: {kind: shell_command, shell: posix, command: git diff main}
+        result: {ok: true, output: "+line 1"}
+      - call: {kind: shell_command, shell: posix, command: "gh pr -R upstream-owner/export-tool create --base main --fill"}
+
+  - name: each pull request in a chain is measured with its own repository
+    covers:
+      - {gate: pr-review, case: holds}
+    setup: {branch_changed_lines: 450, origin_url: "https://github.com/acme/export-tool.git"}
+    steps:
+      - prompt: {type: prompt, author: person, text: Open both pull requests.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: pr-description}
+      - call: {kind: shell_command, shell: posix, command: git diff main}
+        result: {ok: true, output: "+line 1"}
+      - call: {kind: shell_command, shell: posix, command: "gh pr create --repo upstream-owner/export-tool --base main --fill && gh pr create --base main --fill"}
+        expect:
+          decision: hold
+          holds: [{gate: pr-review, kind: justified-skip}]
+
+  - name: a chain whose pull requests are each aimed elsewhere or unmeasured is not held
+    covers:
+      - {gate: pr-review, case: near-miss}
+    setup: {branch_changed_lines: 450, origin_url: "https://github.com/acme/export-tool.git"}
+    steps:
+      - prompt: {type: prompt, author: person, text: Open both pull requests.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: pr-description}
+      - call: {kind: shell_command, shell: posix, command: git diff main}
+        result: {ok: true, output: "+line 1"}
+      - call: {kind: shell_command, shell: posix, command: "gh pr create --base nowhere --fill && gh pr create --repo upstream-owner/export-tool --base main --fill"}
