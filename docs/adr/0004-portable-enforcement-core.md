@@ -29,7 +29,8 @@ from Claude Code:
   other adapter.
 
 The maintainer also runs agents in a plain API tool loop, Pi Agent, and
-OpenCode. Those sessions get the skills with no holds.
+OpenCode, and is weighing Orca, an environment that runs several agent CLIs
+side by side. Those sessions get the skills with no holds.
 
 ## Decision
 
@@ -139,6 +140,36 @@ loses without them:
   adapter fills `line_text` from a call's description. Another harness whose
   reply text is kept whole leaves `line_text` empty.
 
+### Orca, an environment over other harnesses
+
+Orca is not a harness of its own. It runs other agents' CLIs, such as Claude
+Code, Codex and OpenCode, in parallel, each in its own git worktree [R1].
+That shapes what an adapter needs there:
+
+- **Holds come from the agent inside.** Orca documents no hook that sees or
+  blocks a tool call. It runs the hooks each repository already configures
+  for its agent ("Hooks you already have will run when Orca launches the
+  agent"), and adds its own hooks only to report an agent's status [R2]. So
+  the Claude Code adapter enforces inside Orca as it does anywhere, and an
+  agent with no adapter gets no holds there. Orca needs no adapter of its
+  own.
+- **Each worktree is its own project.** An agent's working folder is its
+  worktree, so `project.folders` comes from the agent's own session, as it
+  does today.
+- **Orca's orchestration is a shell command.** A coordinator agent starts a
+  worker with `orca orchestration worker-start --task <taskId>`, and workers
+  report back with `orca orchestration send` [R3]. To the agent these are
+  shell commands, not spawns, so the `spawn` gate and the closeout's
+  subagent rules do not see them. Counting a worker start as a `spawn`
+  means an adapter maps that command to the `spawn` kind, with the task's
+  brief, which it would have to look up from the task. The core must not
+  learn that command's name. Whether an adapter may classify shell commands
+  this way is open for the maintainer.
+- **Orca installs skills of its own** into the agents' skill folders, loaded
+  through a stub that runs `orca skills get <topic>` [R4]. That load is a
+  shell command, not a `skill_load`, so no GOATED rule counts it, and none
+  needs to.
+
 ### How this stays inside ADRs 0002 and 0003
 
 - **Opt-in only.** The core runs only inside an adapter a user installed.
@@ -189,5 +220,12 @@ Costs and constraints:
 - [O2] OpenCode, Server plugins,
   <https://opencode.ai/docs/build/plugins/server>, read 2026-11-18 (V2 hooks;
   the V1 object form is supported in OpenCode 1.18.29).
+- [R1] Orca, home page, <https://orca.dev/>, read 2026-11-18 (the docs show
+  no version).
+- [R2] Orca, Agent hooks and memory,
+  <https://orca.dev/docs/agents/hooks-memory>, read 2026-11-18.
+- [R3] Orca, Orchestration, <https://orca.dev/docs/cli/orchestration>, read
+  2026-11-18.
+- [R4] Orca, Skills, <https://orca.dev/docs/cli/skills>, read 2026-11-18.
 - `adapters/claude-code/goated_adapter/transcript.py`, `gates.py`,
   `hooks.py`, and `adapters/claude-code/README.md` for Claude Code.
