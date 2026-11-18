@@ -217,12 +217,15 @@ class ShellCommand:
     inline names (`python -c`, `node -e`, a heredoc on `python -`; see
     `_inline_script`), and `script_unknown_writes` says such code writes a
     file it names only at run time; both are also in the facts above.
-    `text_targets` maps each write target the command puts new text into (a
-    redirect, `tee`, `Set-Content`, `Add-Content`, or `Out-File`; Ticket 098)
-    to how many lines of that text the command shows, as a heredoc's body or
-    the arguments of `echo`, `printf`, or `-Value`, or None when it does not
-    show it, as for a program's output. A copy, move, restore, or in-place
-    edit carries no new text, so its targets are not here.
+    `text_writes` lists each write that puts new text into a target (a
+    redirect, `tee`, `Set-Content`, `Add-Content`, `Out-File`, or `New-Item`
+    with a value; Ticket 098), in order, as the target and how many lines of
+    that text the command shows, as a heredoc's body or the arguments of
+    `echo`, `printf`, or `-Value`; or None when it does not show it, as for
+    a program's output or text holding a variable, command substitution,
+    or subexpression. One target may appear more than once, under any
+    spelling. A copy, move, restore, or in-place edit carries no new text,
+    so its targets are not here.
     A package install is one that installs or adds a dependency or tool it
     names (`uv add httpx`), not a bare restore such as `npm install`.
     `installs_globally` says it runs a global, machine, or per-user install
@@ -251,7 +254,7 @@ class ShellCommand:
         "commit_message", "opens_pr", "pr_base", "pr_head", "is_check",
         "non_check_writes", "unchecked_targets", "unchecked_unknown_writes", "prints_changes",
         "installs_globally", "install_folders", "read_only", "only_reads_and_writes_files",
-        "script_targets", "script_unknown_writes", "text_targets",
+        "script_targets", "script_unknown_writes", "text_writes",
     )
 
     def __init__(self) -> None:
@@ -274,7 +277,7 @@ class ShellCommand:
         self.read_only = False
         self.script_targets: list[str] = []
         self.script_unknown_writes = False
-        self.text_targets: dict[str, int | None] = {}
+        self.text_writes: list[tuple[str, int | None]] = []
         self.only_reads_and_writes_files = False
 
 
@@ -401,12 +404,16 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
     when a text producer gives it (see `_piped_text`)."""
 
     targets = [t for t in segment.redirects if t.lower() not in NULL_TARGETS]
-    # The lines of new text each target gets, None when the command does not show it.
-    output = _shown_lines(_piped_text(segment))
-    texts = {t: output if t in segment.out_redirects else None for t in targets}
     unknown = False
     prints = False
     name, original, args = _resolve(segment.words)
+    # The lines of new text each target gets (`text_writes`). Output is shown
+    # when a text producer gives it, or when `cat` with no file passes on
+    # shown text piped into it.
+    output = _piped_text(segment)
+    if output is None and name == "cat" and not _positional(args):
+        output = piped
+    texts = {t: _shown_lines(output) if t in segment.out_redirects else None for t in targets}
     next_directory = directory
     if name in CHANGE_DIRECTORY:
         followed = segment.chained and segment.after in AND_THEN
@@ -416,6 +423,8 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
         targets += named
         if name in TEXT_COPIERS:
             texts.update(dict.fromkeys(named, _shown_lines(piped or _standard_input(segment))))
+        elif name in TEXT_CREATORS and _ps_has_value(args):
+            texts.update(dict.fromkeys(named[:1], _ps_written_lines(name, args, None)))
     elif name in TARGET_IS_LAST_ARG:
         positional = _ps_paths(args) if name.count("-") else _positional(args)
         targets += positional[-1:]
@@ -423,9 +432,7 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
         path = _ps_paths(args)[:1]
         targets += path
         if name in TEXT_WRITERS:
-            value = _ps_value(args)
-            texts.update(dict.fromkeys(path, _shown_lines(
-                (value, True) if value is not None else piped)))
+            texts.update(dict.fromkeys(path, _ps_written_lines(name, args, piped)))
     elif name in ("sed", "perl", "ruby") and _edits_in_place(args):
         targets += _in_place_files(name, args)
     elif name in DOWNLOADERS:
@@ -483,7 +490,7 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
         if from_script:
             result.script_targets.append(result.write_targets[-1])
         elif target in texts:
-            _add_text(result.text_targets, result.write_targets[-1], texts[target])
+            result.text_writes.append((result.write_targets[-1], texts[target]))
     if targets or scripted or unknown:
         result.writes = True
         if not is_check:
@@ -972,13 +979,15 @@ class _Segment:
     is still open (a branch, a loop or function body, a subshell), or starts
     with a keyword (`then`, `!`), so whether and when it runs is not certain.
     `quoted_heredocs` says, for each heredoc, whether its delimiter is quoted
-    (`<<'EOF'`), so the shell expands nothing in its body."""
+    (`<<'EOF'`), so the shell expands nothing in its body. `quoted_words`
+    says, for each word, whether it opened with a quote or here-string."""
 
-    __slots__ = ("words", "redirects", "out_redirects", "heredocs", "quoted_heredocs",
-                 "here_strings", "after", "chained", "nested")
+    __slots__ = ("words", "quoted_words", "redirects", "out_redirects", "heredocs",
+                 "quoted_heredocs", "here_strings", "after", "chained", "nested")
 
     def __init__(self) -> None:
         self.words: list[str] = []
+        self.quoted_words: list[bool] = []
         self.redirects: list[str] = []
         self.out_redirects: list[str] = []
         self.heredocs: list[str] = []
@@ -1004,13 +1013,15 @@ def _segments(command: str) -> list[_Segment]:
     i, n = 0, len(text)
 
     here_string_next = False  # the next word is a `<<<` here-string, fed to standard input
+    word_quoted = False  # the word being read opened with a quote or here-string
 
     def end_word() -> None:
-        nonlocal word, redirect_next, in_test, here_string_next
+        nonlocal word, redirect_next, in_test, here_string_next, word_quoted
         if word is None:
             return
         value = "".join(word)
         word = None
+        quoted, word_quoted = word_quoted, False
         if here_string_next:
             current.here_strings.append(value)
             here_string_next = False
@@ -1028,6 +1039,7 @@ def _segments(command: str) -> list[_Segment]:
         elif value == "]]":
             in_test = False
         current.words.append(value)
+        current.quoted_words.append(quoted)
 
     def end_segment(after: str = "") -> None:
         """End the current segment at separator `after`."""
@@ -1080,14 +1092,17 @@ def _segments(command: str) -> list[_Segment]:
         elif c == "'":
             end = text.find("'", i + 1)
             end = n if end < 0 else end
+            word_quoted = word_quoted if word is not None else True
             word = (word or []) + list(text[i + 1 : end])
             i = end + 1
         elif c == '"':
+            word_quoted = word_quoted if word is not None else True
             value, i = _double_quoted(text, i + 1)
             word = (word or []) + list(value)
         elif c == "@" and word is None and text[i + 1 : i + 2] in ("'", '"') and (
             text[i + 2 : i + 3] in ("\n", "\r")
         ):
+            word_quoted = True
             quote = text[i + 1]
             start = text.find("\n", i) + 1
             end = text.find("\n" + quote + "@", start - 1)
@@ -1603,8 +1618,8 @@ def _piped_text(segment: "_Segment") -> tuple[str, bool] | None:
     or None when `segment` is anything else: `cat` with no file, fed a
     heredoc; `echo`, `printf`, or `Write-Output` with their arguments; or a
     PowerShell string or here-string alone, which outputs itself. A word
-    alone counts as such a string when it holds a space, newline, or
-    parenthesis, which no command name does."""
+    alone counts as such a string when it was quoted, or holds a space,
+    newline, or parenthesis, which no command name does."""
 
     name, _, args = _resolve(segment.words)
     if name == "cat" and not _positional(args):
@@ -1613,54 +1628,72 @@ def _piped_text(segment: "_Segment") -> tuple[str, bool] | None:
         return " ".join(a for a in args if a not in ("-n", "-e", "-E")), True
     if name == "printf" and args:
         return " ".join(args[1:] or args), True
-    if len(segment.words) == 1 and any(c in segment.words[0] for c in " \n("):
+    if len(segment.words) == 1 and (segment.quoted_words[0]
+                                    or any(c in segment.words[0] for c in " \n(")):
         return segment.words[0], True
     return None
 
 
-# Writers that put new text into the files they name (`text_targets`):
-# `tee` copies its input, the cmdlets write their -Value or their input.
+# Writers that put new text into the files they name (`text_writes`): `tee`
+# copies its input; the content cmdlets write their -Value or their input;
+# `New-Item` writes text only when given a -Value.
 TEXT_COPIERS = frozenset({"tee", "tee-object"})
 TEXT_WRITERS = frozenset({"set-content", "sc", "add-content", "ac", "out-file"})
+TEXT_CREATORS = frozenset({"new-item", "ni"})
+# The content cmdlets whose second positional argument, after the path, is
+# the text (`Set-Content f.txt 'x'`); `Out-File`'s is an encoding.
+POSITIONAL_VALUE = frozenset({"set-content", "sc", "add-content", "ac"})
+PS_TEXT_PARAMS = frozenset({"-value", "-inputobject"})
+PS_PATH_NAMES = frozenset({"-path", "-literalpath", "-filepath"})
+# Marks of text the shell fills in when it runs: a variable, a command
+# substitution or subexpression (`$(…)`), or a backtick substitution or escape.
+EXPANSION_MARKS = ("$", "`")
 
 
 def _shown_lines(text: tuple[str, bool] | None) -> int | None:
     """How many lines of written text the command shows, from `text` as
-    `_piped_text` gives it, or None when it shows none. A final newline
-    opens no line; `printf`'s `\\n` escapes are not expanded."""
+    `_piped_text` gives it, or None when it shows none: no text, or text the
+    shell expands that holds an expansion mark, whose result the command
+    does not show. A final newline opens no line; `printf`'s `\\n` escapes
+    are not expanded."""
 
-    if text is None:
+    if text is None or (text[1] and any(mark in text[0] for mark in EXPANSION_MARKS)):
         return None
     return len(text[0].rstrip("\n").split("\n"))
 
 
-def _ps_value(args: list[str]) -> str | None:
-    """The text a PowerShell content cmdlet's `-Value` or `-InputObject`
-    gives, else its second positional argument (`Set-Content f.txt 'x'`), or
-    None when its arguments give none, so the text comes from its input."""
+def _ps_has_value(args: list[str]) -> bool:
+    """Whether a PowerShell cmdlet's arguments name a `-Value` or `-InputObject`."""
 
-    positional = []
+    return any(a.lower().partition(":")[0] in PS_TEXT_PARAMS for a in args)
+
+
+def _ps_written_lines(name: str, args: list[str], piped: tuple[str, bool] | None) -> int | None:
+    """`_shown_lines` of the text PowerShell cmdlet `name` writes: its
+    `-Value` or `-InputObject`; else, for `POSITIONAL_VALUE` cmdlets, the
+    positional argument after the path (the first one when `-Path` names the
+    path); else what is `piped` into it. A value the segment does not hold
+    whole, such as `(Get-Content x)`, which ends the segment, or an `@(…)`
+    array, is not shown."""
+
+    positional: list[str] = []
+    path_named = False
     i = 0
     while i < len(args):
-        param, _, attached = args[i].lower().partition(":")
+        param, colon, attached = args[i].lower().partition(":")
         if param.startswith("-") and len(param) > 1:
-            if param in ("-value", "-inputobject"):
-                return args[i][len(param) + 1:] if attached else _word_at(args, i + 1)
-            i += 2 if param in PS_VALUE_PARAMS and not attached else 1
+            if param in PS_TEXT_PARAMS:
+                value = args[i][len(param) + 1:] if colon else _word_at(args, i + 1)
+                return _shown_lines((value, True)) if value.strip("@") else None
+            path_named = path_named or param in PS_PATH_NAMES
+            i += 2 if param in PS_VALUE_PARAMS and not colon else 1
             continue
         positional.append(args[i])
         i += 1
-    return positional[1] if len(positional) > 1 else None
-
-
-def _add_text(found: dict[str, int | None], target: str, lines: int | None) -> None:
-    """Record that `target` gets `lines` more lines of text; text it gets
-    that the command does not show makes its count unknown (None)."""
-
-    if target in found:
-        before = found[target]
-        lines = None if before is None or lines is None else before + lines
-    found[target] = lines
+    at = 0 if path_named else 1
+    if name in POSITIONAL_VALUE and len(positional) > at:
+        return _shown_lines((positional[at], True))
+    return _shown_lines(piped)
 
 
 def _powershell_code(args: list[str]) -> str | None:

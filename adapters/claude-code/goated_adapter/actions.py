@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import functools
 import os
+import posixpath
 from collections.abc import Callable
 from typing import NamedTuple
 import re
@@ -461,17 +462,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
             # A write naming no project file (`git apply`, a scratch file, an
             # unknown folder) still meets the turn's gate signals (None).
             placed = [_norm(t) for t in inside if t not in command.unplaced_targets]
-            # The design gates judge each file the command writes new text into
-            # (Ticket 098), small when it shows fewer than five lines of it.
-            # Copies, moves, restores, and in-place edits add no text designed
-            # here; a script's files are the scripted-edit gate's; and a write
-            # naming no file shows none whose design could be asked for.
-            designed = {
-                _norm(t): lines is not None and lines < DESIGN_MIN_LINES
-                for t, lines in command.text_targets.items()
-                if _norm(t) in placed and _norm(t) not in scripted
-            }
-            holds.add(lambda: _design_hold(designed, None, proof, project, references))
+            holds.add(lambda: _design_hold(_shell_text_writes(command, project), None, proof,
+                                           project, references))
             holds.add(lambda: _reference_reads_hold(placed or [None], None, proof, project,
                                                     references, changes))
             holds.add(lambda: _repeated_failure_hold(proof, project))
@@ -1148,7 +1140,7 @@ def _design_hold(writes: dict[str, bool], tool_input: dict | None, proof: _Proof
     compaction; a skip line or the user's skip of the skill clears both gates.
 
     `tool_input` is a file edit tool's input, for its one file, or None for a
-    shell write of new text (Ticket 098: `shell.ShellCommand.text_targets`),
+    shell write of new text (Ticket 098: `_shell_text_writes`),
     whose text the gates cannot read: it selects only what its path selects
     (a configuration file, the third code file), and a test file it writes
     selects nothing. One hold asks for what every file needs: `design` when
@@ -1346,8 +1338,10 @@ def _reference_list(references: dict[str, str]) -> str:
 
 
 def _project_code_writes(turn: Turn, project: Project | None) -> list[tuple[str, bool]]:
-    """Each finished edit tool call on a project code file in the turn: its path
-    and whether it is a small edit (`_small_edit`)."""
+    """Each finished write of a project code file in the turn that the design
+    gates judge: an edit tool call, or a shell command's write of new text
+    (`_shell_text_writes`). Each comes as its path and whether it is small
+    (`_small_edit`)."""
 
     writes = []
     for call in turn.calls:
@@ -1355,7 +1349,33 @@ def _project_code_writes(turn: Turn, project: Project | None) -> list[tuple[str,
             path = _norm(str(call.input.get(FILE_WRITE_TOOLS[call.name]) or ""))
             if is_code(path) and _in_project(path, project):
                 writes.append((path, _small_edit(call.input)))
+        elif call.ok and call.name in COMMAND_TOOLS:
+            command = shell.analyze(str(call.input.get("command") or ""), call.name)
+            if command.non_check_writes:
+                writes += [(path, small) for path, small
+                           in _shell_text_writes(command, project).items() if is_code(path)]
     return writes
+
+
+def _shell_text_writes(command: shell.ShellCommand, project: Project | None) -> dict[str, bool]:
+    """Each project file `command` puts new text into, as the design gates
+    judge a shell write (Ticket 098), with whether that text is small: fewer
+    than `DESIGN_MIN_LINES` lines shown in all, text it does not show counting
+    as large. Two spellings of one file (`./src/a.py`, `src\\a.py`) are one
+    file, whose writes add up. A file written from an unknown folder has no
+    place, and a script's files are the `scripted-edit` gate's, so neither
+    is here. Copies, moves, restores, and in-place edits add no text designed
+    in the command, and a write naming no file names none to judge."""
+
+    shown: dict[str, int | None] = {}
+    for target, lines in command.text_writes:
+        if (target in command.unplaced_targets or target in command.script_targets
+                or not _in_project(target, project)):
+            continue
+        path = posixpath.normpath(_norm(target))
+        before = shown.get(path, 0)
+        shown[path] = None if before is None or lines is None else before + lines
+    return {path: lines is not None and lines < DESIGN_MIN_LINES for path, lines in shown.items()}
 
 
 def _repeated_failure_hold(proof: _Proof, project: Project | None) -> Hold | None:

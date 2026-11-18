@@ -116,3 +116,13 @@ lead session's review and merge.
   subagent's hook input, to pin (c).
 - The test that pinned (c) as no closeout now pins the fixed rule; no other
   test's expected outcome changed.
+- **Review fixes (lead review of `3daa05e`).** Text holding a `$` or a
+  backtick, or a `-Value` the segment does not hold whole, counts as not
+  shown; `Set-Content -Path f 'x'` reads its first positional as the value;
+  writes to two spellings of one file add up, summed once in
+  `actions._shell_text_writes`; shell text writes count among the turn's
+  code writes for the first substantial change and the third code file;
+  `New-Item -Value` writes text (the lead's decision); shown text piped
+  through `cat`, and a quoted PowerShell string piped in, count their
+  lines. A bare relative `cd` before a write stays unjudged, as a known
+  limit. The shell fact is now `text_writes`, a list of writes.

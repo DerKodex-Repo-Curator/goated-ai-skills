@@ -131,10 +131,11 @@ project, or plugin skill): the router selects orientation on such a route
 from a brief, and the spawn-brief template says the new session orients
 before its first write by reading the sources its brief names or by loading
 that skill. Either meets it: the skill loads, or Read calls of three
-distinct files finish, anywhere, each a [whole read](#whole-reads), since the
-session started or the last compaction; reads count across turns as loads
-do, and a failed or partial Read does not count (Ticket 098). The route line never names the skill,
-so leaving it out of a corrected line does not drop it; only a corrected
+distinct files finish, anywhere, each a [whole read](#whole-reads), since
+the session started or the last compaction; reads count across turns as
+loads do, and a failed or partial Read does not count (Ticket 098). The
+route line never names the skill, so leaving it out of a corrected line
+does not drop it; only a corrected
 `goated-route: direct` line or a `lightweight` route line does. A typed prompt
 or a compaction ends the brief's route, and the requirement with it, so a
 typed `skip session-start-progressive-disclosure` is never needed. When an API
@@ -159,7 +160,7 @@ the authority for each gate. In Claude Code, with its detection detail:
 | --- | --- | --- | --- |
 | `router-first` | strict | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction; a command made only of [plain reads](#plain-reads) passes, and so does a write whose every file is a scratch file outside the project (see below) | `using-goated-ai-skills` loads; or the session's first prompt is a brief with a route line (see above), until a typed prompt opens a turn |
 | `route-line` | strict | The first write or spawn after each user prompt until the current turn has a valid `goated-route:` line; also `goated-route: continue` when [missing or reset state](#failing-open) lost the task; a write whose every file is a scratch file outside the project (see below) passes | A valid route line appears in the turn |
-| `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded, or, in a session routed by its brief, on a `standard` or `full` route, orientation is unmet while `session-start-progressive-disclosure` is installed (see above); a spawn of a [read-only subagent](#plain-reads) passes, and so does a write whose every file is a scratch file outside the project (see below) | Each listed skill loads, or a corrected route line drops it; the brief's orientation skill loads or three distinct files are read, or a corrected `goated-route: direct` or `lightweight` route line drops it |
+| `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded, or, in a session routed by its brief, on a `standard` or `full` route, orientation is unmet while `session-start-progressive-disclosure` is installed (see above); a spawn of a [read-only subagent](#plain-reads) passes, and so does a write whose every file is a scratch file outside the project (see below) | Each listed skill loads, or a corrected route line drops it; the brief's orientation skill loads or three distinct files are [read whole](#whole-reads), or a corrected `goated-route: direct` or `lightweight` route line drops it |
 | `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` [counts as loaded](#loads), and an inline message (or the tool's `message`) passes the [content check](#content-checks); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file. Once these are met, the commit meets the [closeout](#closeout-at-commit) |
 | `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` [counts as loaded](#loads); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file |
 | `pr-review` | justified-skip | A pull-request command or tool the `pull-request` gate holds, once that gate passes, when the pull request is [large](#large-pull-requests): 400 or more changed lines of non-test code against its base | `standards-and-spec-review` [counts as loaded](#loads); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file. The `pull-request` gate before it asks for the same read, so this read is asked for only when you typed `skip pr-description` |
@@ -762,14 +763,22 @@ a `cd` in the same command is followed, not one in an earlier call.
 `design` and `design-reads` judge a shell command only where it puts new
 text into a project code or configuration file (Ticket 098, the
 maintainer's decision of 2026-11-18): a redirect of output into the file,
-`tee` or `Tee-Object`, or `Set-Content`, `Add-Content`, or `Out-File` and
-their aliases. The text counts by the lines the command shows: a heredoc's
-body fed to `cat` or `tee`, the arguments of `echo`, `printf`, or
-`Write-Output`, a PowerShell string piped in, or a `-Value`. Text it does
-not show, such as `python gen.py > src/a.py`, counts as five or more lines,
-as the closeout counts a shell write. The gates do not read the text for
-signals, so only the path selects a reference (a configuration file, the
-third code file), and a test file selects none.
+`tee` or `Tee-Object`, `Set-Content`, `Add-Content`, or `Out-File` and their
+aliases, or `New-Item` or `ni` with a `-Value`. The text counts by the
+lines the command shows: a heredoc's body fed to `cat` or `tee`, the
+arguments of `echo`, `printf`, or `Write-Output`, shown text piped on
+through `cat`, a quoted PowerShell string piped in, or a `-Value` (or
+`Set-Content`'s and `Add-Content`'s positional value). Text it does not
+show counts as five or more lines, as the closeout counts a shell write:
+a program's output (`python gen.py > src/a.py`), and text the shell fills
+in, holding a `$` or a backtick (`echo "$CODE"`, `-Value $code`,
+`-Value (Get-Content x)`), even inside single quotes, where it would be
+literal. Writes to two spellings of one file in one command add up
+(`src/a.py`, `./src/a.py`, `src\a.py`). A code file written this way
+counts among the turn's code writes when the gates find its first
+substantial change and its third code file. The gates do not read the text for signals, so only the path
+selects a reference (a configuration file, the third code file), and a
+test file selects none.
 
 Other shell writes stay with the routing, `security`, and closeout rules
 only. The reason is what the command adds: a copy, move, restore
@@ -1322,7 +1331,9 @@ A hook call from inside a subagent carries `agent_id`. There:
   though, meets the closeout judged from the subagent's own turn: its
   changes, checks, loads, reads, and skip lines, as a commit's closeout
   holds the main agent (Ticket 098). The subagent was started from its
-  parent's brief, so, as a briefed session, it meets no Review item. Code a
+  parent's brief, so, as a briefed session, it meets no Review item, and it
+  has no route of its own, so a parent's `full` route never brings it the
+  Verification item; a sensitive change or a large branch still does. Code a
   subagent changed also counts toward the closeout of the parent turn that
   spawned it. The parent finds the subagent through the `agentId` that
   Claude Code records in the spawn's result.
@@ -1725,7 +1736,11 @@ of the call's prompt, which is normally already there.
   the change does. Of shell writes, the design gates see only those that put
   new text into a file (see [Shell writes](#shell-writes)): a copy, move,
   restore, or `sed -i` of code is not judged, nor is a write naming no file
-  (`git apply`), and `printf`'s `\n` escapes are not counted as lines.
+  (`git apply`), and `printf`'s `\n` escapes are not counted as lines. A
+  write from a folder the command leaves unknown has no place, so after a
+  bare relative `cd src && cat > export.py <<EOF` the design gates do not
+  judge it (see the `cd` rules under [Shell writes](#shell-writes));
+  `cd ./src` is followed, and its write is judged.
   The design-reads signals are word and shape matches on lines, so a `try` in
   a string selects `errors.md`, and a `NotebookEdit` cell counts all its text
   as added. A `Write`'s file on disk, read to tell what it adds, is the one

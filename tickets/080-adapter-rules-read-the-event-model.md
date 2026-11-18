@@ -35,9 +35,10 @@ keeps the move itself mechanical.
   faithfully. With the translation layer in place, add them, each with a
   conformance scenario: a skill a person invokes by typing `/<skill>`
   (`skill_invoked`), a background agent finishing (`agent_finished`), a
-  report from this session's own subagent that continues the turn, and
-  subagent-role scenarios (`session.agent.role` of `subagent`), which
-  also let a scenario pin Ticket 098's subagent commit rule.
+  report from this session's own subagent that continues the turn, and,
+  in a subagent scenario (`setup.agent: subagent`, which Ticket 098 added
+  to pin its subagent commit rule), the steps the runner still refuses: a
+  turn end, a compaction, and a session start.
 
 ## Recommended First Reads
 

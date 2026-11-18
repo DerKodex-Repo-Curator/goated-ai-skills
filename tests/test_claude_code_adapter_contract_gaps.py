@@ -90,6 +90,86 @@ class ShellWriteDesignTests(DesignTestCase):
         s.read(REFERENCES + "decoupling.md")
         self.assertEqual(decision(s.run(heredoc("config/export.yaml", 6))), "pass")
 
+    def test_a_positional_value_after_a_named_path_is_shown_text(self) -> None:
+        # Review B1: with -Path named, the first positional argument is the value.
+        command = "Set-Content -Path src/export.py 'total = 1'"
+        self.assertEqual(decision(self.routed().run(command, tool="PowerShell")), "pass")
+
+    def test_a_value_that_expands_is_text_the_command_does_not_show(self) -> None:
+        # Review B2: a variable, a command substitution, or a subexpression.
+        for command, tool in (
+                ("$code = Get-Content gen.py -Raw; Set-Content src/export.py -Value $code",
+                 "PowerShell"),
+                ("Set-Content src/export.py -Value (Get-Content gen.py -Raw)", "PowerShell"),
+                ('echo "$(cat gen.py)" > src/export.py', "Bash"),
+                ('CODE=$(python gen.py); echo "$CODE" > src/export.py', "Bash"),
+                ("cat > src/export.py <<EOF\n$(cat gen.py)\nEOF", "Bash")):
+            with self.subTest(command=command):
+                held = self.routed().run(command, tool=tool)
+                self.assertEqual(hold_line(held), DESIGN_HOLD)
+
+    def test_two_spellings_of_one_file_add_up(self) -> None:
+        # Review B3: four lines and four more to the same file are eight.
+        for command, tool in (
+                (heredoc("src/export.py", 4) + "\n"
+                 + heredoc("./src/export.py", 4).replace(" > ", " >> "), "Bash"),
+                ("Set-Content src\\export.py -Value @'\na\nb\nc\nd\n'@\n"
+                 "Add-Content src/export.py -Value @'\ne\nf\ng\nh\n'@", "PowerShell")):
+            with self.subTest(command=command):
+                held = self.routed().run(command, tool=tool)
+                self.assertEqual(hold_line(held), DESIGN_HOLD)
+
+    def test_shown_text_piped_into_cat_or_a_quoted_string_counts_its_lines(self) -> None:
+        # Review B4 and B6.
+        for command, tool in (("echo 'total = 1' | cat > src/export.py", "Bash"),
+                              ("'x' | Out-File src/export.py", "PowerShell"),
+                              ("'x' | Tee-Object src/export.py", "PowerShell")):
+            with self.subTest(command=command):
+                self.assertEqual(decision(self.routed().run(command, tool=tool)), "pass")
+
+    def test_new_item_with_a_value_writes_text(self) -> None:
+        # Review B11: the lead's decision, in the spirit of the maintainer's rule.
+        six = "New-Item -ItemType File src/export.py -Value @'\na\nb\nc\nd\ne\nf\n'@"
+        self.assertEqual(hold_line(self.routed().run(six, tool="PowerShell")), DESIGN_HOLD)
+        one = "New-Item -ItemType File src/export.py -Value 'total = 1'"
+        self.assertEqual(decision(self.routed().run(one, tool="PowerShell")), "pass")
+        # The near miss: New-Item with no value writes no text.
+        bare = "New-Item -ItemType File src/export.py"
+        self.assertEqual(decision(self.routed().run(bare, tool="PowerShell")), "pass")
+
+    def test_a_shell_write_is_the_turns_first_substantial_change(self) -> None:
+        # Review B9: a later edit after a substantial heredoc meets design-reads.
+        s = self.routed()
+        s.load(DESIGN)
+        s.run(heredoc("src/a.py", 6))
+
+        definition = "def export(rows):\n" + "\n".join(f"    total_{n} = {n}" for n in range(5))
+        held = s.call("Edit", {"file_path": "src/b.py", "old_string": "pass",
+                               "new_string": definition})
+        self.assertEqual(hold_line(held), DESIGN_READS_HOLD)
+
+    def test_shell_written_files_count_toward_the_third_code_file(self) -> None:
+        # Review B8 and item 11, both ways round.
+        plain = "\n".join(f"total_{n} = {n}" for n in range(6))
+        s = self.routed()
+        s.load(DESIGN)
+        s.run(heredoc("src/a.py", 6))
+        s.run(heredoc("src/b.py", 6))
+        held = s.call("Edit", {"file_path": "src/c.py", "old_string": "pass", "new_string": plain})
+        self.assertEqual(hold_line(held), DESIGN_READS_HOLD)
+        self.assertIn("the third code file this turn edits", reason(held))
+
+        s = self.routed()
+        s.load(DESIGN)
+        for name in ("a", "b"):
+            s.call("Edit", {"file_path": f"src/{name}.py", "old_string": "pass", "new_string": plain})
+        held = s.run(heredoc("src/c.py", 6))
+        self.assertEqual(hold_line(held), DESIGN_READS_HOLD)
+        self.assertIn("the third code file this turn edits", reason(held))
+
+        # The near miss: a third file by copy adds no text, so it is not judged.
+        self.assertEqual(decision(s.run("cp src/a.py src/d.py")), "pass")
+
     def test_a_script_write_stays_with_the_scripted_edit_gate(self) -> None:
         held = self.routed().run("python - <<'EOF'\nopen('src/export.py', 'w').write(text)\nEOF")
         self.assertEqual(hold_line(held), "goated-hold: scripted-edit | justified-skip")
