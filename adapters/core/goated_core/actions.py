@@ -937,15 +937,16 @@ def _load_or_skip(skill: str, unmet: str) -> str:
 
 
 def _reviewer_returned(call, proof: _Proof, spawn_templates: dict[str, list[str]]) -> bool:
-    """True for a finished spawn of a subagent whose brief followed the
-    reviewer prompt (`spawn_templates`, by call id) and whose report has
-    arrived: at once, or for one started in the background, once its
-    completion arrived in the turn. A held or failed spawn reported nothing.
-    A separate agent's result, such as a side session's, arrives at once but
-    only says its review started, so it never counts."""
+    """True for a finished spawn of a subagent that started work now, whose
+    brief followed the reviewer prompt (`spawn_templates`, by call id) and
+    whose report has arrived: at once, or for one started in the background,
+    once its completion arrived in the turn. A held or failed spawn reported
+    nothing, and one that only proposes the work (`starts_now` false) ran
+    nothing. A separate agent's result, such as a side session's, arrives at
+    once but only says its review started, so it never counts."""
 
     return (
-        call.ok and call.kind == events.SPAWN and not call.separate
+        call.ok and call.kind == events.SPAWN and call.starts_now and not call.separate
         and contracts.REVIEWER_TEMPLATE.reference in spawn_templates.get(call.id, ())
         and (not call.launched_async or call.agent_id in proof.turn.finished_agents)
     )
