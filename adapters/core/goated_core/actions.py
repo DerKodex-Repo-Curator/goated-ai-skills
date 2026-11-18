@@ -191,8 +191,13 @@ CONFLICT_MARKER_RE = re.compile(r"^(?:[ \t]*\d+(?:\t|→))?(?:<{7}|>{7})(?: |\r?
 # before the first hunk, and a marker the diff adds, after the one or two
 # `+` of its prefix (`++<<<<<<<` in a combined diff, `+<<<<<<<` in another).
 GIT_DIFF_SECTION_RE = re.compile(r"^diff --(cc|combined|git) (.*)$")
-GIT_DIFF_NEW_NAME_RE = re.compile(r"^\+\+\+ (?:b/)?(.*)$")
+GIT_DIFF_NEW_NAME_RE = re.compile(r"^\+\+\+ (.*)$")
 GIT_DIFF_MARKER_RE = re.compile(r"^\+{1,2}(?:<{7}|>{7})(?: |$)")
+# A name git quotes, C-style, because it holds a space, a quote, a control
+# character, or a non-ASCII byte, which git writes as three octal digits.
+GIT_QUOTED_NAME_END_RE = re.compile(r'"(?:[^"\\]|\\.)*"$')
+GIT_NAME_ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13,
+                    '"': 34, "\\": 92}
 # `git` and any global options before its subcommand, within one simple command.
 _GIT = r"(?<![\w-])git(?:\.exe)?\s(?:[^;&|\n]*\s)?"
 _GIT_OPERATIONS = r"merge|rebase|cherry-pick|revert"
@@ -1110,17 +1115,42 @@ def _diff_files_adding_markers(output: str) -> list[str]:
             kind, names = section.groups()
             # `diff --git a/x b/x` names the file twice; its `+++` line names it once.
             if kind != "git":
-                path = names
+                path = _git_unquoted(names)
+            elif quoted := GIT_QUOTED_NAME_END_RE.search(names):
+                path = _git_unquoted(quoted.group()).removeprefix("b/")
             else:
                 path = names.rpartition(" b/")[2] if " b/" in names else None
             in_header = True
         elif in_header and line.startswith("@@"):
             in_header = False
         elif in_header and (new_name := GIT_DIFF_NEW_NAME_RE.match(line)):
-            path = None if new_name.group(1) == "/dev/null" else new_name.group(1)
+            name = new_name.group(1)
+            path = None if name == "/dev/null" else _git_unquoted(name).removeprefix("b/")
         elif not in_header and path and path not in files and GIT_DIFF_MARKER_RE.match(line):
             files.append(path)
     return files
+
+
+def _git_unquoted(name: str) -> str:
+    """`name` as git wrote it in a diff header, with git's C-style quoting
+    undone; a name that is not in double quotes is returned unchanged. Octal
+    escapes are the bytes of the name's UTF-8 spelling."""
+
+    if len(name) < 2 or not (name.startswith('"') and name.endswith('"')):
+        return name
+    body, spelled, i = name[1:-1], bytearray(), 0
+    while i < len(body):
+        octal = body[i + 1:i + 4]
+        if body[i] == "\\" and len(octal) == 3 and all(c in "01234567" for c in octal):
+            spelled.append(int(octal, 8) & 0xFF)
+            i += 4
+        elif body[i] == "\\" and body[i + 1:i + 2] in GIT_NAME_ESCAPES:
+            spelled.append(GIT_NAME_ESCAPES[body[i + 1]])
+            i += 2
+        else:
+            spelled += body[i].encode("utf-8")
+            i += 1
+    return spelled.decode("utf-8", errors="replace")
 
 
 def _design_hold(writes: dict[str, bool], write: Call | None, proof: _Proof,

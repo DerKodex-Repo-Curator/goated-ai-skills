@@ -591,7 +591,8 @@ A merge conflict is open in the turn after any of these (`CONFLICT_MARKER_RE`,
     output adds the marker after the diff's `+` or `++` prefix
     (`++<<<<<<<` in a combined diff). A section is named by its
     `diff --cc` line or its `+++` line, as the diff names the file, from the
-    repository's top folder.
+    repository's top folder, with git's quoting of a name undone
+    (`"b/caf\303\251.py"` is `café.py`).
 
   Another command that prints the markers, such as `grep`, `git show`, or
   `git log -p`, shows no file;

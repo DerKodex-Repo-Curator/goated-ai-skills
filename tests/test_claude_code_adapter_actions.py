@@ -2079,6 +2079,23 @@ class ConflictResolutionHoldTests(AdapterTestCase):
                                  CONFLICT_HOLD)
                 self.assertEqual(decision(s.call("Write", write("src/clean.py", 1))), "pass")
 
+    def test_a_git_diff_names_a_quoted_file_as_written(self) -> None:
+        # Git quotes a name with a space or a non-ASCII byte, escaping each
+        # such byte in octal: `"b/caf\303\251.py"` is `café.py`.
+        hunk = "@@ -1 +1,3 @@\n+<<<<<<< HEAD\n+rate = 1\n+>>>>>>> feature\n"
+        cases = (
+            ('diff --git "a/sp ace.py" "b/sp ace.py"\n--- "a/sp ace.py"\n+++ "b/sp ace.py"\n',
+             "sp ace.py"),
+            ('diff --git "a/caf\\303\\251.py" "b/caf\\303\\251.py"\n', "café.py"),
+            ('diff --cc "say \\"hi\\".py"\n--- a/x\n+++ "b/say \\"hi\\".py"\n', 'say "hi".py'),
+        )
+        for header, name in cases:
+            with self.subTest(name=name):
+                s = self.routed()
+                s.run("git diff", output=header + hunk)
+
+                self.assertEqual(hold_line(s.call("Write", write(name, 1))), CONFLICT_HOLD)
+
     def test_a_git_diff_removing_or_mentioning_markers_opens_nothing(self) -> None:
         output = (
             "diff --git a/src/app.py b/src/app.py\n"
