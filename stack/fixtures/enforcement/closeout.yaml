@@ -1,4 +1,4 @@
-event_model: 1
+event_model: 2
 scenarios:
   - name: a code change brings the closeout note, and the turn's end waits for proof and docs
     covers:
@@ -197,3 +197,15 @@ scenarios:
         expect:
           decision: hold
           holds: [{gate: closeout, kind: justified-skip, items: [Setup]}]
+
+  - name: a subagent's turn end meets no closeout
+    covers:
+      - {gate: closeout, case: near-miss}
+    setup: {agent: subagent}
+    steps:
+      - prompt: {type: prompt, author: session, text: Raise the export limit.}
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+      - turn_end: true

@@ -4,7 +4,8 @@ Each file here holds scenarios for the
 [enforcement contract](../../enforcement-contract.md), written in the terms
 of the [event model](../../schemas/enforcement-event-model.schema.json)
 (`$defs/scenario_file`). A scenario is a sequence of steps: prompts, replies,
-calls with their results, compactions, turn ends, and session starts. A
+calls with their results, skills a person invokes, background agents that
+finish, compactions, turn ends, and session starts. A
 judged step carries the decision it must get: `allow` or `hold`, the holds by
 gate and kind in firing order, for a closeout hold exactly the labels of
 the items it lists, and, when given, exactly the notices it carries. A

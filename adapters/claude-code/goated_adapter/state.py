@@ -91,7 +91,7 @@ class SessionState:
         self.files_read: list[str] = []
         # The brief templates (`contracts.BriefTemplate.reference`) each spawn of
         # one turn followed when the spawn gate let it through:
-        # {"turn": <turn key>, "edits": {<tool_use_id>: [<template>]}}.
+        # {"turn": <turn key>, "edits": {<call_id>: [<template>]}}.
         self.spawn_templates: dict = {}
         # The friction count (`friction.py`): holds still open, as
         # `friction.observe` keeps them; the gates that held in one turn,
@@ -101,8 +101,8 @@ class SessionState:
         self.held_gates: dict = {}
         self.friction = 0
         self.retrospective_notice_shown = False
-        # The shell tool ("Bash" or "PowerShell") the session last called, or
-        # None before its first shell call: the carrier a hold names (Ticket 095).
+        # The shell (`events.POSIX` or `events.POWERSHELL`) of the session's last
+        # shell command, or None before its first: the carrier a hold names (Ticket 095).
         self.shell: str | None = None
 
     def forget_context(self) -> None:
@@ -119,14 +119,14 @@ class SessionState:
         self.template_reads = []
         self.files_read = []
 
-    def record_spawn_templates(self, turn: str, tool_use_id: str, templates: list[str]) -> None:
+    def record_spawn_templates(self, turn: str, call_id: str, templates: list[str]) -> None:
         """Keep which brief templates a spawn the spawn gate let through
         followed, for the turn's closeout; an earlier turn's spawns are dropped."""
 
-        self.spawn_templates = _with_call(self.spawn_templates, turn, tool_use_id, templates)
+        self.spawn_templates = _with_call(self.spawn_templates, turn, call_id, templates)
 
     def spawn_templates_of(self, turn: str) -> dict[str, list[str]]:
-        """What `record_spawn_templates` kept for `turn`'s spawns, by tool_use_id."""
+        """What `record_spawn_templates` kept for `turn`'s spawns, by call_id."""
 
         return _calls_of(self.spawn_templates, turn)
 
@@ -196,19 +196,19 @@ class SessionState:
         return state
 
 
-def _with_call(record: dict, turn: str, tool_use_id: str, values: list[str]) -> dict:
+def _with_call(record: dict, turn: str, call_id: str, values: list[str]) -> dict:
     """`record`, a per-turn record of calls ({"turn": <turn key>, "edits":
-    {<tool_use_id>: [<value>]}}), with this call's values kept; a record of an
+    {<call_id>: [<value>]}}), with this call's values kept; a record of an
     earlier turn is replaced."""
 
     if record.get("turn") != turn:
         record = {"turn": turn, "edits": {}}
-    record["edits"][tool_use_id] = list(values)
+    record["edits"][call_id] = list(values)
     return record
 
 
 def _calls_of(record: dict, turn: str) -> dict[str, list[str]]:
-    """The values `_with_call` kept for `turn`'s calls, by tool_use_id."""
+    """The values `_with_call` kept for `turn`'s calls, by call_id."""
 
     return dict(record["edits"]) if record.get("turn") == turn else {}
 

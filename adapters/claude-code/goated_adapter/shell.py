@@ -1,4 +1,4 @@
-"""What a `Bash` or `PowerShell` command does, as far as the gates care.
+"""What a POSIX shell or PowerShell command does, as far as the gates care.
 
 `analyze` reads one command string and answers: does it write files, and
 which; is it a `git commit`, and with what inline message; does it open a pull
@@ -22,6 +22,7 @@ import re
 from typing import NamedTuple
 
 from . import script_writes
+from .events import POSIX, POWERSHELL
 
 NULL_TARGETS = frozenset({"/dev/null", "$null", "nul", "/dev/stderr", "/dev/stdout"})
 DOTNET_WRITE_RE = re.compile(
@@ -281,9 +282,9 @@ class ShellCommand:
         self.only_reads_and_writes_files = False
 
 
-def analyze(command: str, tool: str = "Bash") -> ShellCommand:
-    """Return what `command`, run by `tool` (`Bash` or `PowerShell`), does;
-    never raises on odd input. In a `PowerShell` command, .NET write text
+def analyze(command: str, shell: str = POSIX) -> ShellCommand:
+    """Return what `command`, run in `shell` (`events.POSIX` or `events.POWERSHELL`), does;
+    never raises on odd input. In a PowerShell command, .NET write text
     counts as a write wherever it appears; see `_runs_dotnet_write` for Bash."""
 
     result = ShellCommand()
@@ -311,7 +312,7 @@ def analyze(command: str, tool: str = "Bash") -> ShellCommand:
     result.unchecked_targets += awaiting
     result.unchecked_unknown_writes |= awaiting_unknown
     if DOTNET_WRITE_RE.search(command) and (
-        tool == "PowerShell"
+        shell == POWERSHELL
         or RUNS_POWERSHELL_RE.search(command)
         or any(map(_runs_script, segments))
         or any(_runs_dotnet_write(segments, index) for index in range(len(segments)))
@@ -321,11 +322,11 @@ def analyze(command: str, tool: str = "Bash") -> ShellCommand:
     result.read_only = (
         bool(segments) and not result.writes
         and not NOT_PLAINLY_SPELLED_RE.search(_outside_quoted_arguments(command))
-        and all(_reads_only(segment, index == 0, tool) for index, segment in enumerate(segments))
-    ) or (tool == "PowerShell" and command.strip().lower() == POWERSHELL_NO_OP)
+        and all(_reads_only(segment, index == 0, shell) for index, segment in enumerate(segments))
+    ) or (shell == POWERSHELL and command.strip().lower() == POWERSHELL_NO_OP)
     result.only_reads_and_writes_files = (
         bool(segments) and not result.unknown_writes and not NOT_PLAINLY_SPELLED_RE.search(command)
-        and all(_reads_only(segment, index == 0, tool) or _works_on_files_only(segment, tool)
+        and all(_reads_only(segment, index == 0, shell) or _works_on_files_only(segment, shell)
                 for index, segment in enumerate(segments))
     )
     return result
@@ -694,7 +695,7 @@ def _may_name_network_path(text: str) -> bool:
 FILE_WRITERS = (TARGETS_ARE_ARGS | TARGET_IS_LAST_ARG | TARGET_IS_PATH_PARAM) - {"install", "rename"}
 
 
-def _works_on_files_only(segment: "_Segment", tool: str) -> bool:
+def _works_on_files_only(segment: "_Segment", shell: str) -> bool:
     """True when `segment`, written as the bare command, only changes
     folder, only writes the files it names (`FILE_WRITERS`), or is a plain
     read but for redirecting its output into a file (`cat <<'EOF' > x`)."""
@@ -706,10 +707,10 @@ def _works_on_files_only(segment: "_Segment", tool: str) -> bool:
         return False
     if name in FILE_WRITERS or name in CHANGE_DIRECTORY:
         return True
-    return _reads_only(segment, False, tool, writes_output=True)
+    return _reads_only(segment, False, shell, writes_output=True)
 
 
-def _reads_only(segment: "_Segment", first: bool, tool: str, writes_output: bool = False) -> bool:
+def _reads_only(segment: "_Segment", first: bool, shell: str, writes_output: bool = False) -> bool:
     """True when `segment` is a plain read, written as the bare command.
 
     A wrapper (`sudo`, `xargs`), a variable assignment, or a keyword before
@@ -733,7 +734,7 @@ def _reads_only(segment: "_Segment", first: bool, tool: str, writes_output: bool
     if segment.heredocs and not writes_output:
         return False
     if segment.redirects and not writes_output and not (
-        tool == "Bash" and not segment.out_redirects
+        shell == POSIX and not segment.out_redirects
         and all(target == BASH_NULL_DEVICE for target in segment.redirects)
     ):
         return False

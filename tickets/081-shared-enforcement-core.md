@@ -47,6 +47,23 @@ API loop, cannot call them.
 - **Retarget the contract check.** `tests/test_enforcement_contract.py`
   reads the gates, kinds and closeout labels from
   `adapters/claude-code/goated_adapter/`; point it at `adapters/core/`.
+- **What Ticket 080 left for this one.**
+  - *Hold-text slots.* The rules leave harness wording as slots
+    (`goated_adapter/wording.py`: a name and arguments between two
+    private-use characters), which only the Claude Code translation fills.
+    Either publish that slot grammar and each slot's meaning in
+    `stack/enforcement-contract.md` or the event model's schema, so another
+    adapter can fill them, or have the core render neutral text and drop the
+    slots from its output. The JSON command's decision text must not carry
+    an unfilled slot either way.
+  - *State bound to Claude Code.* Decide, as the state moves to the core:
+    the saved override record's `prompt_id` (`state.py`, allowed by the
+    purity check by name); `hooks._overrides_for`, which ties overrides to
+    Claude Code's prompt ids; and `hooks._load_state`, which reads a shell
+    saved as a tool name (`Bash`, `PowerShell`) as its shell kind. Then
+    drop `state.py`'s allowance from
+    `tests/test_claude_code_adapter_rule_purity.py`, which checks the core's
+    modules too.
 
 ## Recommended First Reads
 

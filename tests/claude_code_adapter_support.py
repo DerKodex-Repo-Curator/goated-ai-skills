@@ -22,6 +22,15 @@ if str(ADAPTER_DIR) not in sys.path:
     sys.path.insert(0, str(ADAPTER_DIR))
 
 from goated_adapter import Config, run_hook  # noqa: E402
+from goated_adapter import overrides as _overrides  # noqa: E402
+from goated_adapter.transcript import typed_prompt  # noqa: E402
+
+
+def parse_overrides(prompt: str, *known_skills) -> dict:
+    """The overrides a typed prompt asks for, as the prompt hook finds them:
+    the adapter cleans the prompt (`typed_prompt`), then the rules read it."""
+
+    return _overrides.parse_overrides(typed_prompt(prompt).text, *known_skills)
 
 ROUTER = "using-goated-ai-skills"
 # A Windows-style install path, so the reader's path matching covers backslashes.
@@ -151,6 +160,7 @@ class Session:
         handback: bool = False,
         same_prompt_id: bool = False,
         first_line: str = "Another Claude session sent a message:",
+        sender: str = "a0123456789abcdef",
     ) -> str:
         """Record a message another agent or session sent, which nobody typed here.
 
@@ -162,10 +172,10 @@ class Session:
         entry is `isMeta` with a `peer` origin. With `same_prompt_id`, the entry
         keeps the previous prompt's id, as some recorded peer entries do. Pass
         another `first_line` to imitate a wrapper the text check does not know.
+        `sender` is the subagent a hand-back comes from.
         """
 
         if handback:
-            sender = "a0123456789abcdef"
             tag, attributes = "agent-message", f'from="{sender}"'
             body = (
                 "[Subagent hand-back] The text below is the final report of a "
@@ -205,12 +215,13 @@ class Session:
             turnOrigin="peer",
         )
 
-    def notify(self, result: str) -> str:
-        """Record a background-task notification, which Claude Code submits as a prompt."""
+    def notify(self, result: str, task_id: str = "a1") -> str:
+        """Record a background-task notification, which Claude Code submits as
+        a prompt. For a background agent, `task_id` is the agent's id."""
 
         self.prompt_id = str(uuid.uuid4())
         text = (
-            "<task-notification> <task-id>a1</task-id> <status>completed</status> "
+            f"<task-notification> <task-id>{task_id}</task-id> <status>completed</status> "
             f"<result>{result}</result> </task-notification>"
         )
         output = self.hook("UserPromptSubmit", prompt=text, prompt_id=self.prompt_id)

@@ -5,6 +5,10 @@
 the action through and returns a `systemMessage` warning the user sees. It
 never blocks because of its own failure. A hook that runs after the action
 (`PostToolUse`) has no action to let through, so its failure adds nothing.
+
+Each handler turns its hook input into the event model (`translation`,
+`transcript`), asks the rules, and puts their hold text into Claude Code's
+words (`translation.render`).
 """
 
 from __future__ import annotations
@@ -14,7 +18,8 @@ import os
 import re
 from pathlib import Path
 
-from . import actions, friction, gates, onboarding, reference_reads
+from . import actions, friction, gates, onboarding, reference_reads, translation
+from .events import Result
 from .overrides import GOATED_SKILLS, parse_overrides
 from .policy import (
     installed_skill_names, router_skill_installed, shared_policy_loaded,
@@ -22,8 +27,6 @@ from .policy import (
 from .state import StateStore, StateUnsafe
 from .transcript import (
     CONTINUATION,
-    Call,
-    LINE_FIELDS,
     NOT_PROMPT,
     TYPED,
     TranscriptUnreadable,
@@ -31,6 +34,7 @@ from .transcript import (
     is_own_report,
     prompt_text_kind,
     read_recent_turns,
+    typed_prompt,
 )
 
 STATE_DIR_ENV = "GOATED_ADAPTER_STATE_DIR"
@@ -141,6 +145,22 @@ def _project(payload: dict, config: Config) -> actions.Project | None:
     return actions.find_project(str(payload.get("cwd") or "") or None, config.project_dir)
 
 
+def _agent_folders(config: Config) -> list[str]:
+    """Claude Code's own configuration folders, where no write is scratch:
+    `~/.claude`, and the one in the configured home."""
+
+    return ["~/.claude", os.path.join(str(config.home), ".claude")]
+
+
+def _load_state(store: StateStore, session_id: str):
+    """`store.load`, with a shell saved by an older adapter as its tool name
+    ("Bash", "PowerShell") read as that tool's shell."""
+
+    state, warning = store.load(session_id)
+    state.shell = translation.COMMAND_TOOLS.get(state.shell, state.shell)
+    return state, warning
+
+
 class _FailOpen(Exception):
     """Raised inside a handler when the adapter must let the action through."""
 
@@ -171,30 +191,31 @@ def run_hook(raw_input: str, config: Config) -> str:
 
 def _pre_tool_use(payload: dict, config: Config) -> str:
     tool_name = str(payload.get("tool_name") or "")
-    if tool_name not in gates.GATED_TOOLS and not actions.is_action_tool(tool_name):
+    if not translation.is_judged(tool_name):
         return ""
-    tool_input = payload.get("tool_input")
-    tool_input = tool_input if isinstance(tool_input, dict) else {}
+    call = translation.call_of(tool_name, payload.get("tool_input"),
+                               str(payload.get("tool_use_id") or ""))
     session_id, transcript_path = _session_fields(payload)
     if payload.get("agent_id"):
-        return _subagent_pre_tool_use(payload, config, tool_name, tool_input, transcript_path)
+        return _subagent_pre_tool_use(payload, config, tool_name, call, transcript_path)
 
     store = StateStore(config.state_dir)
-    state, state_warning = store.load(session_id)
+    state, state_warning = _load_state(store, session_id)
     try:
-        turns = read_recent_turns(
+        reading = read_recent_turns(
             transcript_path,
             since_key=state.last_turn,
             prompt_id=_prompt_id(payload),
             wait_seconds=config.lag_wait_seconds,
-            current_call=_current_call(payload, tool_name, tool_input),
+            current_call=call,
         )
     except TranscriptUnreadable as exc:
         raise _FailOpen(str(exc)) from exc
+    turns = reading.turns
     gates.fold_turns(state, turns, config.skill_namespaces)
     _settle_holds(state, turns, config)
     current = turns[-1]
-    overrides = _overrides_for(state, current, payload.get("prompt_id"))
+    overrides = _overrides_for(state, current, reading.prompt_id, payload.get("prompt_id"))
     unread: list[str] = []
 
     def spawned() -> dict:
@@ -207,41 +228,32 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
     registry_warnings: list[str] = []
     cwd = Path(str(payload.get("cwd") or "."))
     routing = gates.check_routing(
-        state, tool_name, tool_input, current, overrides,
+        state, call, current, overrides,
         orientation_installed=lambda: gates.ORIENTATION_SKILL in installed_skill_names(cwd, config.home),
         writes_scratch=lambda: actions.writes_only_scratch(
-            tool_name, tool_input, _project(payload, config), str(config.home)
+            call, _project(payload, config), _agent_folders(config)
         ),
     )
     # Every gate judges the call, so one message carries every hold (Ticket 095).
     holds = routing + actions.check_action(
-        tool_name, tool_input, current, overrides, config.skill_namespaces,
+        call, current, overrides, config.skill_namespaces,
         _project(payload, config), spawned, earlier,
         closeout=actions.Closeout(state.spawn_templates_of(current.key),
                                   _route_intensity(state), state.briefed),
         references=lambda: _registry_references(config, registry_warnings),
     )
-    tool_use_id = str(payload.get("tool_use_id") or "")
-    if not holds and tool_use_id:
+    if not holds and call.id:
         # Which templates a spawn's brief followed, for the closeout.
         templates = actions.brief_templates(
-            tool_name, tool_input, current, overrides, config.skill_namespaces, earlier)
+            call, current, overrides, config.skill_namespaces, earlier)
         if templates:
-            state.record_spawn_templates(current.key, tool_use_id, templates)
-    friction.observe(state, current, friction.action_of(tool_name, tool_input), holds)
+            state.record_spawn_templates(current.key, call.id, templates)
+    friction.observe(state, current, friction.action_of(call), holds)
     text = gates.message(holds, lambda purpose: _claim_turn(
-        store, session_id, current.key, purpose), _carrier_shell(tool_name, state.shell))
+        store, session_id, current.key, purpose), call=True)
     warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread),
                 *registry_warnings]
-    return _with_warnings(_deny(text), warnings)
-
-
-def _carrier_shell(tool_name: str, shell_tool: str | None) -> str | None:
-    """The shell whose carrier a hold on `tool_name` names (`gates.message`):
-    None for a tool with a line field, else the session's shell tool, or
-    Bash before its first shell call, since Claude Code always has Bash."""
-
-    return None if tool_name in LINE_FIELDS else shell_tool or "Bash"
+    return _with_warnings(_deny(translation.render(text, tool_name, state.shell)), warnings)
 
 
 def _registry_references(config: Config, warnings: list[str]) -> tuple:
@@ -286,7 +298,7 @@ def _claim_turn(
 
 
 def _subagent_pre_tool_use(
-    payload: dict, config: Config, tool_name: str, tool_input: dict, transcript_path: str
+    payload: dict, config: Config, tool_name: str, call, transcript_path: str
 ) -> str:
     """Apply only the action gates, from the subagent's own transcript (spec R9).
 
@@ -309,25 +321,18 @@ def _subagent_pre_tool_use(
             since_key=None,
             wait_seconds=0.0,
             sidechain=True,
-            current_call=_current_call(payload, tool_name, tool_input),
-        )
+            current_call=call,
+        ).turns
     except TranscriptUnreadable as exc:
         raise _FailOpen(f"in a subagent, {exc}") from exc
     holds = actions.check_action(
-        tool_name, tool_input, turns[-1], {}, config.skill_namespaces,
+        call, turns[-1], {}, config.skill_namespaces,
         _project(payload, config), closeout=actions.Closeout(briefed=True),
     )
     session_id = str(payload.get("session_id"))
     text = gates.message(holds, lambda purpose: _claim_turn(
-        StateStore(config.state_dir), session_id, turns[-1].key, purpose, agent_id),
-        _carrier_shell(tool_name, gates.last_shell_tool(turns)))
-    return _with_warnings(_deny(text), [])
-
-
-def _current_call(payload: dict, tool_name: str, tool_input: dict) -> tuple[str, str, dict]:
-    """The call being judged, whose own route and skip lines count for it."""
-
-    return str(payload.get("tool_use_id") or ""), tool_name, tool_input
+        StateStore(config.state_dir), session_id, turns[-1].key, purpose, agent_id), call=True)
+    return _with_warnings(_deny(translation.render(text, tool_name, gates.last_shell(turns))), [])
 
 
 def _subagent_transcript(transcript_path: str, agent_id: str) -> Path:
@@ -350,7 +355,7 @@ def _spawned_subagents(turn, transcript_path: str) -> tuple[dict, list[str]]:
                 since_key=ALL_TURNS,
                 wait_seconds=0.0,
                 sidechain=True,
-            )
+            ).turns
         except TranscriptUnreadable:
             unread.append(agent_id)
     return found, unread
@@ -361,9 +366,9 @@ def _stop(payload: dict, config: Config) -> str:
 
     session_id, transcript_path = _session_fields(payload)
     store = StateStore(config.state_dir)
-    state, state_warning = store.load(session_id)
+    state, state_warning = _load_state(store, session_id)
     try:
-        turns = read_recent_turns(
+        reading = read_recent_turns(
             transcript_path,
             since_key=state.last_turn,
             prompt_id=_prompt_id(payload),
@@ -371,13 +376,14 @@ def _stop(payload: dict, config: Config) -> str:
         )
     except TranscriptUnreadable as exc:
         raise _FailOpen(str(exc)) from exc
+    turns = reading.turns
     gates.fold_turns(state, turns, config.skill_namespaces)
     _settle_holds(state, turns, config)
     current = turns[-1]
     subagents, unread = _spawned_subagents(current, transcript_path)
     hold = actions.check_closeout(
         current,
-        _overrides_for(state, current, payload.get("prompt_id")),
+        _overrides_for(state, current, reading.prompt_id, payload.get("prompt_id")),
         config.skill_namespaces,
         str(payload.get("last_assistant_message") or ""),
         subagents,
@@ -396,8 +402,8 @@ def _stop(payload: dict, config: Config) -> str:
         # then goes on without its overrides, which only holds more.
         state.overrides = {}
     warnings = [state_warning, _save(store, session_id, state), _unread_warning(unread)]
-    text = gates.message(holds, lambda purpose: _claim_turn(
-        store, session_id, current.key, purpose))
+    text = translation.render(gates.message(holds, lambda purpose: _claim_turn(
+        store, session_id, current.key, purpose)))
     output = {"decision": "block", "reason": text} if text else {}
     return _with_warnings(output, warnings)
 
@@ -416,39 +422,40 @@ def _post_tool_use(payload: dict, config: Config) -> str:
     """
 
     tool_name = str(payload.get("tool_name") or "")
-    if (tool_name not in actions.FILE_WRITE_TOOLS or payload.get("agent_id")
+    if (tool_name not in translation.FILE_WRITE_TOOLS or payload.get("agent_id")
             or not _finished(payload.get("tool_response"))):
         return ""
-    tool_input = payload.get("tool_input")
-    tool_input = tool_input if isinstance(tool_input, dict) else {}
+    call = translation.call_of(tool_name, payload.get("tool_input"),
+                               str(payload.get("tool_use_id") or ""))
     session_id, transcript_path = _session_fields(payload)
     store = StateStore(config.state_dir)
-    state, _ = store.load(session_id)
+    state, _ = _load_state(store, session_id)
     # The call's PreToolUse saved its turn as the last seen, so a turn that
     # already has its note is known here without reading the transcript.
     if state.last_turn and store.turn_claimed(session_id, state.last_turn, CLOSEOUT_NOTE):
         return ""
     try:
-        turns = read_recent_turns(
+        reading = read_recent_turns(
             transcript_path,
             since_key=state.last_turn,
             prompt_id=_prompt_id(payload),
             wait_seconds=config.lag_wait_seconds,
-            current_call=_current_call(payload, tool_name, tool_input),
+            current_call=call,
         )
     except TranscriptUnreadable as exc:
         raise _FailOpen(str(exc)) from exc
     # Read only: the hooks that judge calls own the saved state.
+    turns = reading.turns
     gates.fold_turns(state, turns, config.skill_namespaces)
     current = turns[-1]
     if (state.held_gates.get("turn") == current.key
             and actions.CLOSEOUT_GATE in state.held_gates["gates"]):
         return ""
-    call = Call(tool_name, tool_input, ok=True, tool_id=str(payload.get("tool_use_id") or ""))
-    text = actions.closeout_note(
-        current, call, _overrides_for(state, current, payload.get("prompt_id")),
+    text = translation.render(actions.closeout_note(
+        current, call.finished(Result(ok=True)),
+        _overrides_for(state, current, reading.prompt_id, payload.get("prompt_id")),
         config.skill_namespaces, _project(payload, config), _since_compaction(state),
-        _route_intensity(state))
+        _route_intensity(state)))
     if not text:
         return ""
     try:
@@ -487,7 +494,7 @@ def _settle_unseen(state, payload: dict, config: Config) -> None:
     if not state.open_holds or not isinstance(path, str) or not path:
         return
     try:
-        turns = read_recent_turns(path, since_key=state.last_turn, wait_seconds=0.0)
+        turns = read_recent_turns(path, since_key=state.last_turn, wait_seconds=0.0).turns
     except TranscriptUnreadable:
         return
     _settle_holds(state, turns, config)
@@ -537,7 +544,7 @@ def _session_start(payload: dict, config: Config) -> str:
     if not isinstance(session_id, str) or not session_id:
         raise _FailOpen("the hook input has no session_id")
     store = StateStore(config.state_dir)
-    state, state_warning = store.load(session_id)
+    state, state_warning = _load_state(store, session_id)
     if payload.get("source") == "startup" and state.task is None:
         state.task_unknown = False
     if payload.get("source") in {"compact", "clear"}:
@@ -629,11 +636,11 @@ def _user_prompt_submit(payload: dict, config: Config) -> str:
     if kind != TYPED and is_own_report(str(payload.get("transcript_path") or ""), prompt):
         return ""
     store = StateStore(config.state_dir)
-    state, state_warning = store.load(session_id)
+    state, state_warning = _load_state(store, session_id)
     if kind == TYPED:
         cwd = Path(str(payload.get("cwd") or "."))
         known = installed_skill_names(cwd, config.home) or GOATED_SKILLS
-        found = parse_overrides(prompt, known)
+        found = parse_overrides(typed_prompt(prompt).text, known)
         # Holds the last turn left open are unanswered, unless what followed
         # them, which no hook may have seen, or this prompt's overrides settle them.
         _settle_unseen(state, payload, config)
@@ -660,13 +667,15 @@ def _user_prompt_submit(payload: dict, config: Config) -> str:
     return _with_warnings(output, notes)
 
 
-def _overrides_for(state, turn, payload_prompt_id: object) -> dict:
-    """Return stored overrides only for the typed prompt that opened `turn`."""
+def _overrides_for(state, turn, turn_prompt_id: str | None, payload_prompt_id: object) -> dict:
+    """Return stored overrides only for the typed prompt that opened `turn`,
+    whose id the transcript gives as `turn_prompt_id` (None when it gives
+    none) and the hook input as `payload_prompt_id`."""
 
     stored = state.overrides or {}
     if not turn.typed:
         return {}
-    turn_prompt = turn.prompt_id or payload_prompt_id
+    turn_prompt = turn_prompt_id or payload_prompt_id
     if stored.get("prompt_id") and turn_prompt and stored["prompt_id"] != turn_prompt:
         return {}
     return stored

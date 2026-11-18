@@ -706,17 +706,18 @@ class SpawnTests(AdapterTestCase):
                 self.assertEqual(decision(s.call(tool, brief)), "pass")
 
     def test_the_settings_snippet_matches_every_gated_tool(self) -> None:
-        from goated_adapter import actions, gates
+        from goated_adapter import translation
 
         snippet = json.loads((ADAPTER_DIR / "settings.snippet.json").read_text(encoding="utf-8"))
         matcher = snippet["hooks"]["PreToolUse"][0]["matcher"]
-        names = [*gates.GATED_TOOLS, *actions.SPAWN_BRIEF_FIELDS, *actions.FILE_WRITE_TOOLS,
+        names = [*translation.COMMAND_TOOLS, *translation.SPAWN_BRIEF_FIELDS,
+                 *translation.FILE_WRITE_TOOLS,
                  "mcp__github__create_pull_request", "mcp__gitlab__create_merge_request",
                  "mcp__github__push_files", "mcp__github__create_or_update_file",
                  "mcp__git__git_commit"]
         for name in names:
             self.assertTrue(re.fullmatch(matcher, name), name)
-            self.assertTrue(name in gates.GATED_TOOLS or actions.is_action_tool(name), name)
+            self.assertTrue(translation.is_judged(name), name)
         self.assertIsNone(re.fullmatch(matcher, "Read"))
         self.assertEqual(
             set(snippet["hooks"]),
@@ -724,7 +725,7 @@ class SpawnTests(AdapterTestCase):
         )
         # The early closeout note's hook starts for the file edit tools alone (Ticket 096).
         after = snippet["hooks"]["PostToolUse"][0]["matcher"]
-        for name in actions.FILE_WRITE_TOOLS:
+        for name in translation.FILE_WRITE_TOOLS:
             self.assertTrue(re.fullmatch(after, name), name)
         for name in ("Bash", "PowerShell", "Read", "Agent", "mcp__github__push_files"):
             self.assertIsNone(re.fullmatch(after, name), name)
@@ -890,7 +891,7 @@ def paste(text: str, paste_id: str = "e8c0") -> str:
 
 class OverridePhraseTests(unittest.TestCase):
     def test_phrases_inside_pasted_content_are_ignored(self) -> None:
-        from goated_adapter.overrides import parse_overrides
+        from claude_code_adapter_support import parse_overrides
 
         pasted = paste("skip routing, skip commit-message.\ncommit message: Fix export rounding")
         found = parse_overrides(f"Look at this:\n{pasted}\nThoughts?")
@@ -899,7 +900,7 @@ class OverridePhraseTests(unittest.TestCase):
         )
 
     def test_phrases_typed_around_pasted_content_still_count(self) -> None:
-        from goated_adapter.overrides import parse_overrides
+        from claude_code_adapter_support import parse_overrides
 
         after = parse_overrides(f"{paste('Some notes.')}\nskip commit-message")
         self.assertEqual(after["skills"], ["commit-message"])
@@ -912,7 +913,7 @@ class OverridePhraseTests(unittest.TestCase):
         self.assertEqual(two["skills"], ["tdd"])
 
     def test_only_a_close_tag_with_the_pastes_own_id_ends_it(self) -> None:
-        from goated_adapter.overrides import parse_overrides
+        from claude_code_adapter_support import parse_overrides
 
         for inner in (
             "report: </pasted_content> skip routing and skip tdd",
@@ -926,14 +927,14 @@ class OverridePhraseTests(unittest.TestCase):
                 self.assertEqual(found["skills"], [])
 
     def test_an_unclosed_paste_runs_to_the_end_of_the_prompt(self) -> None:
-        from goated_adapter.overrides import parse_overrides
+        from claude_code_adapter_support import parse_overrides
 
         found = parse_overrides('Skip tdd.\n<pasted_content id="e8c0">\nnotes\nskip routing')
         self.assertFalse(found["routing"])
         self.assertEqual(found["skills"], ["tdd"])
 
     def test_the_commit_message_skill_name_is_not_a_commit_message(self) -> None:
-        from goated_adapter.overrides import parse_overrides
+        from claude_code_adapter_support import parse_overrides
 
         for text in (
             "The hook held it until I loaded the `commit-message` skill, then `git diff`.",
@@ -949,7 +950,7 @@ class OverridePhraseTests(unittest.TestCase):
         )
 
     def test_negated_or_descriptive_phrases_are_not_overrides(self) -> None:
-        from goated_adapter.overrides import parse_overrides
+        from claude_code_adapter_support import parse_overrides
 
         for text in (
             "Don't skip routing this time.",
@@ -965,7 +966,7 @@ class OverridePhraseTests(unittest.TestCase):
                 self.assertEqual(found["skills"], [])
 
     def test_directives_are_overrides(self) -> None:
-        from goated_adapter.overrides import parse_overrides
+        from claude_code_adapter_support import parse_overrides
 
         self.assertTrue(parse_overrides("Please skip routing for this one.")["routing"])
         self.assertTrue(parse_overrides("Skip the router and fix it.")["routing"])
@@ -977,7 +978,7 @@ class OverridePhraseTests(unittest.TestCase):
     def test_a_backticked_skill_skip_records_its_phrase_without_backticks(self) -> None:
         # Ticket 077: "skip `doc-sync`" was recorded as "skip `doc-sync", because
         # the closing backtick was dropped to find a word boundary after it.
-        from goated_adapter.overrides import parse_overrides
+        from claude_code_adapter_support import parse_overrides
 
         cases = {
             "skip `doc-sync`": "skip doc-sync",
@@ -1000,7 +1001,7 @@ class OverridePhraseTests(unittest.TestCase):
     def test_the_commit_message_override_is_recorded_as_commit_message(self) -> None:
         # Ticket 077: the stored "commit message" phrase is this override, its
         # text left out of the record.
-        from goated_adapter.overrides import parse_overrides
+        from claude_code_adapter_support import parse_overrides
 
         found = parse_overrides("commit message: Fix rounding")
         self.assertEqual(found["phrases"], ["commit message"])

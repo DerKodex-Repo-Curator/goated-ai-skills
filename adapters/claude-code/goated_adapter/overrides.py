@@ -1,8 +1,9 @@
 """The phrases a user can type to stand a hold down for one turn.
 
-Only the user-prompt hook calls this, on the `prompt` field Claude Code passes
-it, and the gates apply the result only to a turn the transcript shows a
-person typed, so an agent's or another session's text never produces an
+It reads a prompt a person typed, as the event model holds it: the adapter
+has removed the blocks its harness inserts and moved pasted text out, so
+neither is read. The gates apply the result only to a turn whose opener a
+person wrote, so an agent's or another session's text never produces an
 override (spec R8). The phrase set is documented in the adapter README; change
 both together.
 """
@@ -38,17 +39,6 @@ QUOTED_RES = (
     re.compile(r"`([^`\n]+)`"),
     re.compile(r"'([^'\n]+)'"),
 )
-# Text the user did not type: harness `<system-reminder>` blocks, and text the
-# user pasted (a pasted agent report may quote an override). Claude Code wraps a
-# paste as `<pasted_content id="X">` ... `</pasted_content id="X">`, so a paste
-# ends only at a close tag repeating its own id: a bare or other-id close tag
-# inside it, or a nested paste, cannot end it early. An unclosed paste runs to
-# the end of the prompt.
-NOT_TYPED_RE = re.compile(
-    r"<system-reminder>.*?</system-reminder>"
-    r'|<pasted_content\b[^>]*?\bid="([^"]*)"[^>]*>.*?(?:</pasted_content\s+id="\1"\s*>|\Z)',
-    re.DOTALL,
-)
 NOT_SKILLS = frozenset({"routing", "router"})
 # The GOATED registry's skill names (`stack/goated-stack.yaml`), used when no
 # installed skill can be found. A test keeps this list equal to the registry.
@@ -71,19 +61,17 @@ GOATED_SKILLS = frozenset(
 
 
 def parse_overrides(prompt: str, known_skills: frozenset[str] = GOATED_SKILLS) -> dict:
-    """Return the overrides a typed prompt asks for.
+    """Return the overrides a typed prompt's own text (`Prompt.text`) asks for.
 
     The result has `routing` (stand down router-first, route-line, and pipeline
     holds), `skills` (skills whose holds stand down), `commit_message` (the
     commit message the user supplied, or None), and `phrases` (the matched
     text, for the record). `skip <name>` counts only when `<name>` is in
     `known_skills`, so "skip line" or "skip the first two lines" is not an
-    override. Harness-injected `<system-reminder>` blocks and pasted
-    `<pasted_content>` blocks are not typed by the user and are ignored, as
-    are negated phrases.
+    override. Negated phrases are ignored.
     """
 
-    text = NOT_TYPED_RE.sub(" ", prompt or "")
+    text = prompt or ""
     routing = [m.group(0) for m in ROUTING_RE.finditer(text) if not _negated(text, m.start())]
     phrases = list(routing)
     skills: list[str] = []

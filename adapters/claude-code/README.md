@@ -99,6 +99,34 @@ action and closeout rules in
 [`goated_adapter/actions.py`](goated_adapter/actions.py). A skip line's
 reason stays in the transcript, where the skill-usage mod reads it.
 
+The rule modules know nothing of Claude Code (Ticket 080): they read the
+[event model](../../stack/schemas/enforcement-event-model.schema.json), as
+[`goated_adapter/events.py`](goated_adapter/events.py) holds it, and judge
+calls by kind. Three modules translate. The transcript reader
+([`goated_adapter/transcript.py`](goated_adapter/transcript.py)) builds the
+model's turns from the transcript and removes the reminder and pasted blocks
+from a typed prompt before overrides are read.
+[`goated_adapter/translation.py`](goated_adapter/translation.py) maps each tool
+and its input to a call (which tools are file writes, shell commands, spawns,
+commits, or pull requests; the line field of each; which spawns are read-only,
+start a side session, or only show a card; which edits make a missing file;
+and each call's action key for the friction count) and fills the slots the
+rules leave in hold text
+([`goated_adapter/wording.py`](goated_adapter/wording.py)) with Claude Code's
+words: the Skill and Read tools, the line advice, and the carrier sentence.
+A slot is marked by two private-use characters, so text a hold quotes, such
+as a malformed route line, is never filled.
+The hook entry point ([`goated_adapter/hooks.py`](goated_adapter/hooks.py))
+passes Claude Code's own folders as the agent's folders, where no write is
+scratch. Three other modules stay with the adapter: `policy.py` and
+`onboarding.py` write the session-start notices, which are about where
+Claude Code keeps instruction files and skills, and
+[`goated_adapter/state.py`](goated_adapter/state.py), the saved session
+state, still binds its override record to Claude Code's `prompt_id` until
+the core owns session state (Ticket 081). A test fails when a rule module,
+or `state.py` beyond that one name, names a Claude Code tool, input,
+transcript or hook field, a tool in prose, or Claude Code's own folder.
+
 Route and skip lines are read from the agent's reply text and
 from one field
 of some built-in tool calls: the `description` of a `Bash`, `PowerShell`,
@@ -963,7 +991,7 @@ routing gate (see [Subagents](#subagents)). Any other type, a spawn with no
 type, and side sessions are held as before. The exemption trusts the name: a
 project or user agent file named `claude-code-guide` replaces the built-in,
 with whatever tools it lists, and is exempt too. The list is
-`READ_ONLY_SUBAGENTS` in `gates.py`.
+`READ_ONLY_SUBAGENTS` in `translation.py`.
 
 ### Closeout at commit
 
@@ -1516,8 +1544,12 @@ turn gave, or the [early closeout note](#early-closeout-note). Claims for
 different purposes in one turn never meet. A claim in a new turn drops its
 owner's markers of other turns, and a `SessionStart` after compaction or
 `/clear` deletes the session's and its subagents'. The state also keeps the
-shell tool the session last called, which names the carrier a hold offers for
-a line. An `onboarding-notices/` folder holds one file per project, named by
+shell the session last called (`posix` or `powershell`), which names the
+carrier a hold offers for a line. A state file an adapter from before Ticket
+080 saved names the tool instead (`Bash`, `PowerShell`) and is read the same.
+An older adapter reading a newer state file takes the shell as a tool name,
+so until the session's next shell call its carrier sentence names a
+`posix` or `powershell` call, with Bash's command `true` either way. An `onboarding-notices/` folder holds one file per project, named by
 a digest of the project's path, listing the skills its onboarding notice last
 named.
 The action and closeout gates keep no state of their own: they read the
@@ -1547,6 +1579,25 @@ about 4 ms: on the recorded 20 KB fixture, 30 runs each, the median went from
 transcript of each subagent the turn spawned, as the closeout does, to find
 the changes its change read must follow; other calls never read them. That
 case was not measured.
+
+Translating Claude Code's calls and transcript into the event model (Ticket
+080) adds 1 to 1.5 ms of work per hook. Measured on 2026-11-18 on the same
+machine with the uv-managed Python 3.14, before and after, in two rounds:
+
+| Case | Before | After |
+| --- | --- | --- |
+| In process (`run_hook`), 300-call turn, 150 runs: `PreToolUse` of an `Edit` | 19.3, 19.9 ms | 20.7, 21.2 ms |
+| The same, `PreToolUse` of a `Bash` command | 6.3, 6.8 ms | 7.8, 7.7 ms |
+| The same, `Stop` | 11.9, 12.3 ms | 13.5, 13.9 ms |
+| Spawned in exec form, 202 KB transcript, 30 runs: `PreToolUse` of an `Edit` | 211, 209 ms | 208, 201 ms |
+| The same, `Stop` | 202, 202 ms | 200, 195 ms |
+
+Spawned, the difference is lost in the run-to-run spread. Those medians are
+about three times the table above because they were measured with a
+different interpreter: the project's virtual environment of the uv-managed
+Python 3.14 takes 41 ms to start alone, against 22 ms for the system Python
+3.13 the table used, and it imports more slowly too (see the Ticket 095
+paragraph below). Compare them with each other, not with the table.
 
 The `pr-review` gate's size check (see [Large pull requests](#large-pull-requests))
 runs only on a pull-request call that no load or skip line has cleared of
@@ -1884,3 +1935,7 @@ checks the adapter's marker parser against `stack/fixtures/markers/lines.yaml`.
 Verification items against scratch git repositories.
 `tests/test_claude_code_adapter_closeout_note.py` covers the early closeout
 note.
+`tests/test_claude_code_adapter_rule_purity.py` fails when a rule module
+names Claude Code (see [What It Holds](#what-it-holds)), and
+`tests/test_claude_code_adapter_translation_parity.py` pins the behaviour the
+translation layer must keep (Ticket 080).

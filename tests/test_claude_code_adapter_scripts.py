@@ -222,16 +222,16 @@ class PipedScriptTests(unittest.TestCase):
 
     def test_code_piped_or_fed_as_a_here_string_is_read(self) -> None:
         for tool, command in (
-            ("Bash", "cat <<'EOF' | python -\nopen('src/a.py', 'w').write('x')\nEOF"),
-            ("Bash", "cat <<EOF | python\nopen('src/a.py', 'w').write('x')\nEOF"),
-            ("Bash", "echo \"open('src/a.py', 'w').write('x')\" | python"),
-            ("Bash", "printf '%s' \"open('src/a.py', 'w')\" | python3 -"),
-            ("Bash", "python <<< \"open('src/a.py', 'w').write('x')\""),
-            ("Bash", "node <<< \"require('fs').writeFileSync('src/a.py', 'x')\""),
-            ("PowerShell", "@'\nopen('src/a.py','w').write('x')\n'@ | python -"),
-            ("PowerShell", "@'\nopen('src/a.py','w').write('x')\n'@ | python"),
-            ("PowerShell", "\"open('src/a.py','w')\" | python -"),
-            ("PowerShell", "Write-Output \"open('src/a.py','w')\" | python"),
+            ("posix", "cat <<'EOF' | python -\nopen('src/a.py', 'w').write('x')\nEOF"),
+            ("posix", "cat <<EOF | python\nopen('src/a.py', 'w').write('x')\nEOF"),
+            ("posix", "echo \"open('src/a.py', 'w').write('x')\" | python"),
+            ("posix", "printf '%s' \"open('src/a.py', 'w')\" | python3 -"),
+            ("posix", "python <<< \"open('src/a.py', 'w').write('x')\""),
+            ("posix", "node <<< \"require('fs').writeFileSync('src/a.py', 'x')\""),
+            ("powershell", "@'\nopen('src/a.py','w').write('x')\n'@ | python -"),
+            ("powershell", "@'\nopen('src/a.py','w').write('x')\n'@ | python"),
+            ("powershell", "\"open('src/a.py','w')\" | python -"),
+            ("powershell", "Write-Output \"open('src/a.py','w')\" | python"),
         ):
             with self.subTest(command=command):
                 result = shell.analyze(command, tool)
@@ -239,12 +239,12 @@ class PipedScriptTests(unittest.TestCase):
 
     def test_text_piped_into_a_script_file_or_from_a_file_is_not_read(self) -> None:
         for tool, command in (
-            ("Bash", "echo \"open('src/a.py', 'w')\" | python tools/gen.py"),
-            ("Bash", "cat notes.txt | python -"),
-            ("Bash", "echo \"open('src/a.py', 'w')\" | grep open"),
-            ("Bash", "python tools/gen.py <<< \"open('src/a.py', 'w')\""),
-            ("Bash", "echo \"print(open('src/a.py').read())\" | python"),
-            ("PowerShell", "@'\nprint(1)\n'@ | python -"),
+            ("posix", "echo \"open('src/a.py', 'w')\" | python tools/gen.py"),
+            ("posix", "cat notes.txt | python -"),
+            ("posix", "echo \"open('src/a.py', 'w')\" | grep open"),
+            ("posix", "python tools/gen.py <<< \"open('src/a.py', 'w')\""),
+            ("posix", "echo \"print(open('src/a.py').read())\" | python"),
+            ("powershell", "@'\nprint(1)\n'@ | python -"),
         ):
             with self.subTest(command=command):
                 self.assertEqual(shell.analyze(command, tool).script_targets, [])
@@ -255,13 +255,13 @@ class ShellExpandedPathTests(unittest.TestCase):
 
     def test_a_path_the_shell_expands_is_an_unnamed_write(self) -> None:
         for tool, command in (
-            ("Bash", "python -c \"open('$F', 'w').write('x')\""),
-            ("Bash", "python -c \"open('src/$NAME.py', 'w')\""),
-            ("Bash", "python -c \"open('$(ls src | head -1)', 'w')\""),
-            ("Bash", "python - <<EOF\nopen('$F', 'w').write('x')\nEOF"),
-            ("Bash", "python - <<EOF\nopen('`echo src/a.py`', 'w')\nEOF"),
-            ("Bash", "node -e \"require('fs').writeFileSync('$F', 'x')\""),
-            ("PowerShell", "python -c \"open('$env:F','w')\""),
+            ("posix", "python -c \"open('$F', 'w').write('x')\""),
+            ("posix", "python -c \"open('src/$NAME.py', 'w')\""),
+            ("posix", "python -c \"open('$(ls src | head -1)', 'w')\""),
+            ("posix", "python - <<EOF\nopen('$F', 'w').write('x')\nEOF"),
+            ("posix", "python - <<EOF\nopen('`echo src/a.py`', 'w')\nEOF"),
+            ("posix", "node -e \"require('fs').writeFileSync('$F', 'x')\""),
+            ("powershell", "python -c \"open('$env:F','w')\""),
         ):
             with self.subTest(command=command):
                 result = shell.analyze(command, tool)

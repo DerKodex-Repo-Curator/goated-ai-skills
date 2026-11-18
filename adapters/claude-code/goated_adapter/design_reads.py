@@ -20,6 +20,8 @@ import os
 import re
 from typing import NamedTuple
 
+from .events import Call
+
 SKILL_REFERENCES = "software-design-principles/references/"
 # The design references whose reads count, in the skill's order.
 REFERENCES = (
@@ -89,54 +91,56 @@ def applies(path: str, *, is_code: bool, is_test: bool) -> bool:
     return is_code or (_is_config(path) and not is_test)
 
 
-def required(path: str, tool_input: dict, *, is_code: bool, is_test: bool, small: bool,
+def required(path: str, edit: Call | None, *, is_code: bool, is_test: bool, small: bool,
              written_before: bool, other_code_files: int,
              cwd: str | None, test_edit: str | None = None) -> dict[str, str]:
-    """The references an edit's signals select, each with why, in the skill's order.
+    """The references a file write's signals select, each with why, in the
+    skill's order. `edit` is the write, a `file_write` call, or None for a
+    write whose text is unknown.
 
     `small`: the edit adds too few lines for the `design` gate, so no signal
     selects a reference by the kind of file or text it touches (see
     `_signals`). `written_before`: the turn already
     wrote this file. `other_code_files`: how many other non-test code files
-    the turn has edited. A Write is compared with the file on disk, a
-    relative path taken from `cwd`, so only what it adds counts.
+    the turn has edited. A whole-file write is compared with the file on
+    disk, a relative path taken from `cwd`, so only what it adds counts.
     `test_edit`: for a test file, why the edit designs a test, which selects
     `coding.md`, or None when it does not; the caller judges it by the
     registry's rule for test edits.
     """
 
-    on_disk = _disk_text(path, cwd) if "content" in tool_input else None
     found = _signals(
-        path, _Added(tool_input, on_disk),
-        new_file=is_code and creates_file(path, tool_input, written_before=written_before, cwd=cwd),
+        path, _Added(edit, path, cwd),
+        new_file=is_code and creates_file(path, edit, written_before=written_before, cwd=cwd),
         is_test=is_test, small=small, test_edit=test_edit,
         code_files=other_code_files + 1 if is_code and not is_test else 0,
     )
     return {name: found[name] for name in REFERENCES if name in found}
 
 
-def creates_file(path: str, tool_input: dict, *, written_before: bool, cwd: str | None) -> bool:
-    """Whether an edit creates `path`: a Write, or an Edit with no old text
-    (which Claude Code lets make a file), to a file no earlier write in the
-    turn made (`written_before`) and that is not on disk, a relative path
+def creates_file(path: str, edit: Call | None, *, written_before: bool, cwd: str | None) -> bool:
+    """Whether a file write creates `path`: it writes the whole file, or is an
+    edit that makes a missing file (`creates`), to a file no earlier write in
+    the turn made (`written_before`) and that is not on disk, a relative path
     taken from `cwd`. A file a shell command made is on disk, so it is not."""
 
-    writes_whole = "content" in tool_input or (
-        tool_input.get("old_string") == "" and "edits" not in tool_input)
-    return writes_whole and not written_before and _disk_text(path, cwd) is None
+    if edit is None:
+        return False
+    makes = edit.whole_file or edit.creates
+    return makes and not written_before and _disk_text(path, cwd) is None
 
 
-def added_code(path: str, tool_input: dict, cwd: str | None) -> list[str]:
-    """The code of each line an edit of `path` adds, as the design signals
-    read it: comments and docstrings removed, "" for a comment line. A Write
-    is compared with the file on disk, a relative path taken from `cwd`."""
+def added_code(path: str, edit: Call | None, cwd: str | None) -> list[str]:
+    """The code of each line a file write of `path` adds, as the design
+    signals read it: comments and docstrings removed, "" for a comment line.
+    A whole-file write is compared with the file on disk, a relative path
+    taken from `cwd`."""
 
-    on_disk = _disk_text(path, cwd) if "content" in tool_input else None
-    return _Added(tool_input, on_disk).code
+    return _Added(edit, path, cwd).code
 
 
 def reference_read(path: str) -> str | None:
-    """The reference file a Read of `path` read, such as `errors.md`, or None."""
+    """The reference file a read of `path` read, such as `errors.md`, or None."""
 
     path = path.replace("\\", "/").lower()
     for name in REFERENCES:
@@ -147,7 +151,7 @@ def reference_read(path: str) -> str | None:
 
 
 def reads_in(calls) -> list[str]:
-    """The references that finished Read calls among `calls` read whole, in
+    """The references that finished file reads among `calls` read whole, in
     order (`Call.whole_read_path`). A shell command printing one does not
     count, as for the red flags."""
 
@@ -164,21 +168,21 @@ class _Added:
     comments and docstrings removed; `comment` whether any adds a comment or
     docstring; `definitions` the names of top-level definitions it adds, a
     definition whose name the old text already defined (a signature change)
-    left out. Indentation alone does not make a line added.
+    left out. Indentation alone does not make a line added. Text a write
+    replaces without saying what (None) counts as empty, so all it adds is
+    new; a whole-file write replaces the file on disk at `path`.
     """
 
-    def __init__(self, tool_input: dict, on_disk: str | None) -> None:
-        pairs = [(on_disk, tool_input.get("content")), (None, tool_input.get("new_source")),
-                 (tool_input.get("old_string"), tool_input.get("new_string"))]
-        edits = tool_input.get("edits")
-        if isinstance(edits, list):
-            pairs += [(e.get("old_string"), e.get("new_string")) for e in edits if isinstance(e, dict)]
+    def __init__(self, edit: Call | None, path: str, cwd: str | None) -> None:
         self.code: list[str] = []
         self.comment = False
         self.definitions: list[str] = []
-        for old, new in pairs:
-            if isinstance(new, str):
-                self._add(old if isinstance(old, str) else "", new)
+        if edit is None:
+            return
+        on_disk = _disk_text(path, cwd) if edit.whole_file else None
+        for removed, added in edit.edits:
+            if added is not None:
+                self._add((on_disk if edit.whole_file else removed) or "", added)
 
     def _add(self, old: str, new: str) -> None:
         old_lines = old.split("\n")
@@ -224,31 +228,28 @@ MULTILINE_STRING_MARKS = ('"""', "'''", "`")
 QUOTE_MARKS = ('"', "'", "`")
 
 
-def comment_only(path: str, tool_input: dict) -> bool:
-    """Whether an edit of `path` adds and removes only comments and docstrings:
-    each text it replaces holds the same code lines, indentation included, as
-    the text it writes. The comment syntax is the one `COMMENT_SYNTAX` gives
-    the file's extension.
+def comment_only(path: str, edit: Call) -> bool:
+    """Whether a file write of `path` adds and removes only comments and
+    docstrings: each text it replaces holds the same code lines, indentation
+    included, as the text it writes. The comment syntax is the one
+    `COMMENT_SYNTAX` gives the file's extension.
 
-    It errs toward "a change": a file of another language, a Write or a
-    notebook edit (they replace text this cannot see), an input with no old
-    and new text, and any text it cannot read for certain (`_code_lines`) is
-    not comment-only. These rules are stricter than `_Added`'s, which lean
-    toward selecting a reference rather than toward finding no change.
+    It errs toward "a change": a file of another language, a whole-file
+    write or an edit whose replaced text is unknown (they replace text this
+    cannot see), a write with no edits, and any text it cannot read for
+    certain (`_code_lines`) is not comment-only. These rules are stricter
+    than `_Added`'s, which lean toward selecting a reference rather than
+    toward finding no change.
     """
 
     syntax = COMMENT_SYNTAX.get(os.path.splitext(path)[1].lstrip(".").lower())
-    if syntax is None or "content" in tool_input or "new_source" in tool_input:
+    if syntax is None or edit.whole_file:
         return False
-    pairs = [(tool_input["old_string"], tool_input.get("new_string"))] if "old_string" in tool_input else []
-    edits = tool_input.get("edits")
-    if isinstance(edits, list):
-        pairs += [(e.get("old_string"), e.get("new_string")) if isinstance(e, dict) else (None, None)
-                  for e in edits]
-    return bool(pairs) and all(
-        isinstance(old, str) and isinstance(new, str)
-        and (code := _code_lines(old, syntax)) is not None and code == _code_lines(new, syntax)
-        for old, new in pairs
+    return bool(edit.edits) and all(
+        removed is not None and added is not None
+        and (code := _code_lines(removed, syntax)) is not None
+        and code == _code_lines(added, syntax)
+        for removed, added in edit.edits
     )
 
 

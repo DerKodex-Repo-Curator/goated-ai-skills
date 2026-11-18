@@ -3920,7 +3920,7 @@ class SkillSkipPhraseTests(AdapterTestCase):
     """`skip <name>` is an override only when `<name>` is a skill."""
 
     def test_skip_followed_by_an_ordinary_word_is_not_an_override(self) -> None:
-        from goated_adapter.overrides import parse_overrides
+        from claude_code_adapter_support import parse_overrides
 
         for prompt in (
             "If it does not apply, decline it with a goated-skip line instead of loading the skill.",

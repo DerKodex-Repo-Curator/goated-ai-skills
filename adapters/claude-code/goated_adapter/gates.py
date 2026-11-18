@@ -16,8 +16,14 @@ gates. The rules enforce contracts defined elsewhere, never new ones
   counts from its call until the next compaction (spec R3), when its text
   leaves the context. In a session routed by its brief, the router's
   orientation skill, when installed, joins a `standard` or `full` route;
-  Read calls of `ORIENTATION_READS` distinct files meet it as well as its
+  whole reads of `ORIENTATION_READS` distinct files meet it as well as its
   load does (spec R3), since targeted reading is that skill's own work.
+
+The routing gates judge file writes, shell commands, and spawns. A spawn
+that only proposes work (`starts_now` false) runs nothing, so it passes
+them all; a spawn of a read-only agent only delegates reads, so it passes
+`pipeline` (and the `spawn` gate in actions.py) but still needs the router
+and a route line.
 
 A write whose every file is scratch, outside the project and any other checkout
 (`actions.writes_only_scratch`), meets none of these holds (spec R4): routing
@@ -28,39 +34,19 @@ from __future__ import annotations
 
 import hashlib
 import os
-import re
 from typing import Callable, NamedTuple
 
-from . import contracts, design_reads, reference_reads, shell
+from . import contracts, design_reads, events, reference_reads, shell, wording
+from .events import Call, Turn
 from .state import SessionState, Task
-from .transcript import Turn
+from .wording import NO_RANGE, READ, SKILL_TOOL, short_advice, unseen_line_advice
 
 ROUTER_SKILL = "using-goated-ai-skills"
 ORIENTATION_SKILL = "session-start-progressive-disclosure"
 # How many distinct files a briefed session reads to orient without the skill.
 ORIENTATION_READS = 3
-
-WRITE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
-START_SESSION = "mcp__ccd_session__start_session"
-# Spawning hands work to another agent or session, so it is held like a write.
-SPAWN_TOOLS = frozenset({"Agent", "Task", START_SESSION, "mcp__ccd_session__hand_off_to_session"})
-# A `start_session` call with one of these `initiation` values, and no
-# `proposal_id` (the field that starts a saved proposal), only shows a card:
-# nothing runs until the user starts it, so it is not a spawn (spec R7). Any
-# other value, or none, starts a session and is held.
-CARD_INITIATIONS = frozenset({"offer", "own_initiative"})
-COMMAND_TOOLS = frozenset({"Bash", "PowerShell"})
-HELD_LIKE_WRITES = WRITE_TOOLS | SPAWN_TOOLS
-GATED_TOOLS = HELD_LIKE_WRITES | COMMAND_TOOLS
-# Subagent types Claude Code ships with no edit, write, or shell tool, so a
-# spawn of one only delegates reads: `claude-code-guide` has Glob, Grep, Read,
-# WebFetch, and WebSearch. The holds that guard writes and handed-off work
-# (`pipeline`, and `spawn` in actions.py) do not apply to it; it still needs
-# the router and a route line. `Explore` and `Plan` are not here: they keep
-# Bash and PowerShell, and a subagent's own calls meet no routing gate. The
-# name is trusted: a project or user agent file of the same name replaces the
-# built-in. Names match exactly, so any other type, or none, is held as before.
-READ_ONLY_SUBAGENTS = frozenset({"claude-code-guide"})
+# The call kinds the routing gates judge.
+ROUTED_KINDS = frozenset({events.FILE_WRITE, events.SHELL_COMMAND, events.SPAWN})
 
 STRICT = "strict"
 
@@ -115,57 +101,6 @@ def short_form(unmet: str, clear: str) -> ShortForm:
     return ShortForm(unmet, f"Still unmet: {unmet}. {clear}")
 
 
-# Opens the full unseen-line advice.
-FULL_ADVICE_OPENING = "in reply text may not be seen: Claude Code records a message only"
-
-
-def unseen_line_advice(line: str, way_out: str) -> str:
-    """Recovery advice for a hold that a route or skip line can clear.
-
-    `line` names the line ("route line", "skip line"); `way_out` is the typed
-    override that stands the hold down. A line in reply text may never be seen
-    (README "Known Limits"), so the advice points to the fields of a tool call
-    the adapter reads (`transcript.call_line_text`), then to the user's way
-    out. It names those fields without backticks, since the skill-usage mod
-    reads every backticked bare word in a hold as a skill.
-
-    This is the full advice; `message` shortens it on every hold of the turn
-    but one.
-    """
-
-    return (
-        f"A {line} {FULL_ADVICE_OPENING} "
-        "after this check, and can store the text of a message that makes a tool call "
-        "as a summary that drops the line. A line in the description field of a shell "
-        "or agent call, or in a Skill call's args, is read as written and counts from "
-        f"that call on. Put the {line} on its own line there, in this call's description "
-        "if it has one or else in a call made in an earlier message of this turn (a call "
-        "in the same message is not seen yet), and make the call again. If that is held "
-        f"again, tell the user they can type `{way_out}` in their prompt."
-    )
-
-
-def short_advice(line: str, way_out: str) -> str:
-    """The one sentence that stands for `unseen_line_advice` once a turn has had it."""
-
-    return (
-        f"Put the {line} on its own line in a shell or agent call's description or a "
-        "Skill call's args, as this turn's first such hold explained, or tell the user "
-        f"they can type `{way_out}` in their prompt."
-    )
-
-
-# Finds the full advice in a hold's text, built from `unseen_line_advice` itself
-# so the wording has one owner.
-_LINE, _WAY = "\x00line\x00", "\x00way\x00"
-_FULL_ADVICE_RE = re.compile(
-    re.escape(unseen_line_advice(_LINE, _WAY))
-    .replace(re.escape(_LINE), r"(?P<line>[^`.]+?)", 1)
-    .replace(re.escape(_LINE), r"(?P=line)")
-    .replace(re.escape(_WAY), r"(?P<way_out>[^`]+)")
-)
-
-
 # The turn marker's purpose for the unseen-line advice; a hold's ask has its
 # own purpose (`ask_purpose`).
 ADVICE = "advice"
@@ -174,7 +109,7 @@ ADVICE = "advice"
 # asks for a change read; no command is backticked, since the skill-usage mod
 # reads a backticked name as a skill to load.
 CHANGE_READ = (
-    "print its diff with a git diff or git show command, or Read a file you changed; "
+    f"print its diff with a git diff or git show command, or {READ} a file you changed; "
     "a listing of names or counts, such as --stat or --name-only, does not count"
 )
 CHAINED_STEPS = "The whole command was held, so rerun any steps chained before it too."
@@ -183,7 +118,7 @@ UNFINISHED_READ = ("A read chained in the same command, or made in parallel with
 SKIP_LINE_RULE = "A skip line must name the skill and give a reason of three or more words."
 # Each shared paragraph, with what its later copies in one message become.
 _SHARED_TEXTS = (
-    (CHANGE_READ, "print the diff or Read a file you changed, as above"),
+    (CHANGE_READ, f"print the diff or {READ} a file you changed, as above"),
     (CHAINED_STEPS + " ", ""),
     (CHAINED_STEPS, ""),
     (UNFINISHED_READ + " ", ""),
@@ -201,11 +136,11 @@ def _once(text: str, full: str, again: str) -> str:
     return text[:end] + text[end:].replace(full, again)
 
 
-def message(holds: list[Hold], claim: Callable[[str], bool],
-            shell_tool: str | None = None) -> str:
-    """The one message that carries `holds`, every hold one call or `Stop`
+def message(holds: list[Hold], claim: Callable[[str], bool], call: bool = False) -> str:
+    """The one message that carries `holds`, every hold one call or turn end
     meets, in the order the gates fire (Ticket 095): each hold's own
-    `goated-hold:` line and text, with a blank line between holds.
+    `goated-hold:` line and text, with a blank line between holds. Its
+    harness wording is still in `wording` slots.
 
     `claim(purpose)` claims the turn's marker for `purpose` and returns True
     only for its first claim in the turn, so calls held in parallel, which
@@ -217,42 +152,36 @@ def message(holds: list[Hold], claim: Callable[[str], bool],
     turn; every other hold that carries it gets one sentence that keeps its
     typed override. Every other shared paragraph is given once per message.
 
-    `shell_tool` is the session's shell tool, for a call with no field a line
-    can go in, such as an edit: when a hold a line can clear holds it, the
-    message ends by naming a carrier in that shell (`carrier`). None for a
-    call that has a line field.
+    `call`: the holds are a call's. When a hold a line can clear holds it,
+    the message ends with the carrier slot, where the harness names a call
+    that can carry the line if this call has no field for one.
     """
 
     advice_given = line_clears = False
     texts = []
     for hold in holds:
-        line_clears = line_clears or _FULL_ADVICE_RE.search(hold.instruction) is not None
+        line_clears = line_clears or _full_advice(hold.instruction) is not None
         text = hold.text(claim)
-        found = _FULL_ADVICE_RE.search(text)
+        found = _full_advice(text)
         if found is not None:
             if advice_given or not claim(ADVICE):
-                short = short_advice(found["line"], found["way_out"])
+                short = short_advice(found[2], found[3])
                 text = text[:found.start()] + short + text[found.end():]
             advice_given = True
         texts.append(f"goated-hold: {hold.gate} | {hold.kind}\n{text}")
     joined = "\n\n".join(texts)
     for full, again in _SHARED_TEXTS:
         joined = _once(joined, full, again)
-    if line_clears and shell_tool:
-        joined += f"\n{carrier(shell_tool)}"
+    if line_clears and call:
+        joined += f"\n{wording.CARRIER}"
     return joined
 
 
-def carrier(shell_tool: str) -> str:
-    """The sentence naming a call that carries a line for a call with no field
-    for one, in `shell_tool` ("Bash" or "PowerShell"): a plain read that passes
-    every hold. Nothing in it is backticked, since the skill-usage mod reads a
-    backticked word as a skill."""
+def _full_advice(text: str):
+    """The first full unseen-line advice slot in `text`, as a match, or None."""
 
-    command = shell.POWERSHELL_NO_OP if shell_tool == "PowerShell" else "true"
-    return (f"This call has no field for a line: put it on its own line in the description "
-            f"of a {shell_tool} call with the command {command}, then make this call again in a "
-            "later message.")
+    return next((found for found in wording.ADVICE_RE.finditer(text)
+                 if found[1] == wording.FULL_ADVICE), None)
 
 
 def goated_skill_name(raw: str, namespaces: tuple[str, ...]) -> str | None:
@@ -277,7 +206,7 @@ def fold_turns(
     turn again to pick up anything written after they last looked.
     """
 
-    if turns and turns[0].opens_transcript:
+    if turns and turns[0].opens_session:
         # Every turn of the session is in hand, so whether it has a task is
         # known again even if saved state was missing or reset.
         state.task_unknown = False
@@ -317,20 +246,20 @@ def fold_turns(
             [*state.template_reads, *contracts.templates_read(turn.calls)]
         )
         state.files_read = _unique([*state.files_read, *_files_read(turn.calls)])[:ORIENTATION_READS]
-        state.shell = last_shell_tool([turn]) or state.shell
+        state.shell = last_shell([turn]) or state.shell
         state.last_turn = turn.key
 
 
-def last_shell_tool(turns: list[Turn]) -> str | None:
-    """The shell tool ("Bash" or "PowerShell") of the last shell call in
-    `turns`, oldest first, or None when they hold none."""
+def last_shell(turns: list[Turn]) -> str | None:
+    """The shell (`events.POSIX` or `events.POWERSHELL`) of the last shell
+    command in `turns`, oldest first, or None when they hold none."""
 
-    return next((call.name for turn in reversed(turns) for call in reversed(turn.calls)
-                 if call.name in COMMAND_TOOLS), None)
+    return next((call.shell for turn in reversed(turns) for call in reversed(turn.calls)
+                 if call.kind == events.SHELL_COMMAND), None)
 
 
 def _files_read(calls) -> list[str]:
-    """A digest of each file a finished Read call among `calls` read whole, in
+    """A digest of each file a finished file read among `calls` read whole, in
     order. Partial reads never count, as for every read a hold asks for.
 
     Two spellings of one path (case and separators on Windows) give one digest.
@@ -353,50 +282,22 @@ def _task_route_in(turn: Turn) -> dict | None:
     return next((route for route in reversed(turn.routes) if route["form"] != "continue"), None)
 
 
-def writes_like_an_edit(tool_name: str, tool_input: dict) -> bool:
-    """True for a write or spawn tool, or a shell command that writes files.
+def writes_like_an_edit(call: Call) -> bool:
+    """True for a file write, a spawn that starts work now, or a shell command
+    that writes files. A spawn that only proposes work runs nothing."""
 
-    A session card (`shows_a_card`) is not a spawn: it runs nothing.
-    """
-
-    if tool_name in HELD_LIKE_WRITES:
-        return not shows_a_card(tool_name, tool_input)
-    if tool_name in COMMAND_TOOLS:
-        return shell.analyze(str(tool_input.get("command") or ""), tool_name).writes
+    if call.kind == events.FILE_WRITE:
+        return True
+    if call.kind == events.SPAWN:
+        return call.starts_now
+    if call.kind == events.SHELL_COMMAND:
+        return shell.analyze(call.command, call.shell).writes
     return False
-
-
-def shows_a_card(tool_name: str, tool_input: dict) -> bool:
-    """True for a `start_session` call that only shows a card (`CARD_INITIATIONS`).
-
-    An `own_initiative` card's brief still meets the `spawn` gate in
-    actions.py, since it runs when the user starts the card. Only a string
-    `initiation` can name a card: any other value is held as a spawn, since
-    an unhashable one would raise and fail the hook open.
-    """
-
-    initiation = tool_input.get("initiation")
-    return (
-        tool_name == START_SESSION
-        and isinstance(initiation, str)
-        and initiation in CARD_INITIATIONS
-        and tool_input.get("proposal_id") is None
-    )
-
-
-def spawns_a_reader(tool_name: str, tool_input: dict) -> bool:
-    """True for a subagent spawn whose type is in `READ_ONLY_SUBAGENTS`.
-
-    Side sessions are never readers: they run with every tool.
-    """
-
-    return tool_name in ("Agent", "Task") and tool_input.get("subagent_type") in READ_ONLY_SUBAGENTS
 
 
 def check_routing(
     state: SessionState,
-    tool_name: str,
-    tool_input: dict,
+    call: Call,
     turn: Turn,
     overrides: dict,
     orientation_installed: Callable[[], bool],
@@ -411,8 +312,8 @@ def check_routing(
     this turn (see `overrides.parse_overrides`).
     Commands meet only router-first unless they write files, and a command
     made only of plain reads (`shell.ShellCommand.read_only`) passes it too.
-    A spawn of a read-only subagent type passes pipeline, and a session card
-    (`shows_a_card`) passes every routing gate. `orientation_installed` says
+    A spawn of a read-only agent passes pipeline, and a spawn that only
+    proposes work passes every routing gate. `orientation_installed` says
     whether the orientation skill is installed; it is asked only when a
     briefed route would require that skill (`_brief_orientation`).
     `writes_scratch` says whether the call is a write whose every file is
@@ -420,20 +321,21 @@ def check_routing(
     and it is asked only of a call one of them would otherwise hold.
     """
 
-    if tool_name not in GATED_TOOLS or overrides.get("routing") or shows_a_card(tool_name, tool_input):
+    if (call.kind not in ROUTED_KINDS or overrides.get("routing")
+            or (call.kind == events.SPAWN and not call.starts_now)):
         return []
     user_skipped = set(overrides.get("skills") or ())
     routed = state.router_loaded or state.brief_routed or ROUTER_SKILL in user_skipped
     holds = []
     if not routed:
-        if tool_name in COMMAND_TOOLS and shell.analyze(str(tool_input.get("command") or ""), tool_name).read_only:
+        if call.kind == events.SHELL_COMMAND and shell.analyze(call.command, call.shell).read_only:
             return []
         if writes_scratch():
             return []
         holds.append(Hold(
             "router-first",
             STRICT,
-            f"Load the `{ROUTER_SKILL}` skill with the Skill tool before the first "
+            f"Load the `{ROUTER_SKILL}` skill with {SKILL_TOOL} before the first "
             "write, spawn, or command of a task, and follow the route it selects. "
             "Reads stay free, and so does a shell command made only of read-only "
             "commands, such as cat, grep, ls, git diff, or git branch, perhaps "
@@ -441,10 +343,10 @@ def check_routing(
             "that skill is not installed, tell the user: they can type "
             "`skip routing` in their prompt to proceed without it.",
             short_form(f"the `{ROUTER_SKILL}` skill has not loaded",
-                       "Load it with the Skill tool, or tell the user they can type "
+                       f"Load it with {SKILL_TOOL}, or tell the user they can type "
                        "`skip routing` in their prompt."),
         ))
-    if not writes_like_an_edit(tool_name, tool_input) or writes_scratch():
+    if not writes_like_an_edit(call) or writes_scratch():
         return holds
     if turn.route is None:
         return holds + [Hold("route-line", STRICT, *_route_line_texts(turn))]
@@ -461,7 +363,7 @@ def check_routing(
     task = state.task
     if not routed or task is None or task.route["form"] != "route":
         return holds  # `direct` exempts the task; pipeline waits for the router.
-    if spawns_a_reader(tool_name, tool_input):
+    if call.kind == events.SPAWN and call.read_only:
         return holds
 
     def unmet(skill: str) -> bool:
@@ -487,14 +389,14 @@ def check_routing(
         parts.append(
             f"A session started from a brief loads `{ORIENTATION_SKILL}` before its "
             "first write or spawn when its route is standard or full, or orients by "
-            "finishing Read calls of three distinct files, each read whole with no "
-            "limit, offset, or pages, such as the sources its brief names."
+            f"finishing {READ} calls of three distinct files, each read whole {NO_RANGE}, "
+            "such as the sources its brief names."
         )
         # The mod reads this sentence's opening for the skill the brief added.
         missing.append(f"A session started from a brief loads `{ORIENTATION_SKILL}` or "
-                       "finishes Read calls of three distinct files, each whole")
+                       f"finishes {READ} calls of three distinct files, each whole")
     parts.append(
-        "Load each with the Skill tool and follow it. A load counts until the next "
+        f"Load each with {SKILL_TOOL} and follow it. A load counts until the next "
         "compaction, in this turn or an earlier one"
         + (", and so does a read." if orient else ".")
     )
