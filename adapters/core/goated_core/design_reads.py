@@ -34,10 +34,17 @@ MANY_CODE_FILES = 3
 MAX_COMPARED_BYTES = 2 * 1024 * 1024
 
 # A definition at a line start, with no indentation, as most languages write
-# top-level ones; `export NAME=` is a shell variable, not one.
+# top-level ones; `export NAME=` is a shell variable, not one. `async` starts
+# one only before `def`, `function` or `fn`, and Rust's `pub` (`pub(crate)` and
+# its forms too) only before a definition keyword, so `pub use x;` re-exports
+# and defines nothing.
+PUB_DEFINITION_KEYWORDS = (
+    r"(?:async\s+fn|unsafe\s+fn|fn|struct|enum|trait|type|const|static|mod|union|impl|extern)"
+)
 DEFINITION_START_RE = re.compile(
-    r"^(?!export\s+\w+=)(?:export|async|def|class|function|func|fn|pub|public|interface|struct"
-    r"|enum|trait|impl|defmodule)\b"
+    r"^(?!export\s+\w+=)(?:export|def|class|function|func|fn|public|interface|struct"
+    r"|enum|trait|impl|defmodule|async\s+(?:def|function|fn)"
+    rf"|pub(?:\s*\([^)]*\))?\s+{PUB_DEFINITION_KEYWORDS})\b"
 )
 GO_RECEIVER_RE = re.compile(r"^func\s*\([^)]*\)")
 NAME_RE = re.compile(r"[A-Za-z_$][\w$]*")
@@ -129,7 +136,7 @@ def required(path: str, edit: Call | None, *, is_code: bool, is_test: bool, smal
     found = _signals(
         path, _Added(edit, path, cwd),
         new_file=is_code and creates_file(path, edit, written_before=written_before, cwd=cwd),
-        is_test=is_test, small=small, test_edit=test_edit,
+        is_code=is_code, is_test=is_test, small=small, test_edit=test_edit,
         code_files=other_code_files + 1 if is_code and not is_test else 0,
     )
     return {name: found[name] for name in REFERENCES if name in found}
@@ -318,9 +325,11 @@ def _code_lines(text: str, syntax: _CommentSyntax) -> list[str] | None:
     return lines
 
 
-def _signals(path: str, added: _Added, *, new_file: bool, is_test: bool, small: bool,
-             test_edit: str | None, code_files: int) -> dict[str, str]:
-    """The references an edit's signals select, each with why.
+def _signals(path: str, added: _Added, *, new_file: bool, is_code: bool, is_test: bool,
+             small: bool, test_edit: str | None, code_files: int) -> dict[str, str]:
+    """The references an edit's signals select, each with why. Only a code
+    file (`is_code`) adds a public definition: a configuration key such as
+    YAML's `class: foo` defines nothing.
 
     A test file selects `coding.md` only when the edit designs a test
     (`test_edit`, the registry's rule). Otherwise a small edit selects none
@@ -334,7 +343,7 @@ def _signals(path: str, added: _Added, *, new_file: bool, is_test: bool, small: 
         # Test code needs the reasoning on tests, not on interfaces or errors.
         return {"coding.md": test_edit} if test_edit else {}
     found: dict[str, str] = {}
-    public = next((name for name in added.definitions if not name.startswith("_")), None)
+    public = next((name for name in added.definitions if is_code and not name.startswith("_")), None)
     if new_file or public is not None:
         why = "a new code file" if new_file else f'adds a public top-level definition ("{public}")'
         for name in ("process.md", "complexity-and-modules.md", "readability.md"):

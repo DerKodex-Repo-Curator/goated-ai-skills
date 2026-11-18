@@ -1007,6 +1007,38 @@ class DesignReferenceReadTests(AdapterTestCase):
                 named = set(re.findall(r"references/([a-z-]+\.md)`", reason(held)))
                 self.assertEqual(named, selects, reason(held))
 
+    def test_a_definition_start_reads_its_keyword_in_code_files_only(self) -> None:
+        # Ticket 106: `async` and `pub` start a definition only before a
+        # definition keyword, and a configuration file defines nothing.
+        defines = (
+            ("src/a.rs", "pub fn run() {}"),
+            ("src/a.rs", "pub(crate) struct S;"),
+            ("src/a.rs", "pub(in crate::x) enum E {}"),
+            ("src/a.rs", "pub async fn run() {}"),
+            ("src/a.rs", "pub unsafe fn run() {}"),
+            ("src/a.py", "async def run():"),
+            ("src/a.js", "async function run() {}"),
+            ("src/a.py", "class Run:"),
+        )
+        defines_nothing = (
+            ("src/a.rs", "pub use x;"),
+            ("src/a.rs", "pub(crate) use x::y;"),
+            ("src/a.py", "async_helper = 1"),
+            ("src/a.py", "async"),
+            ("src/a.rs", "public_rate = 1"),
+            ("config/app.yaml", "class: foo"),
+            ("config/app.yaml", "async: true"),
+            ("config/app.toml", "pub = 1"),
+        )
+        for path, line in defines:
+            with self.subTest(defines=line):
+                held = self.designing(s=self.fresh_routed()).call("Edit", edit(path, line))
+                self.assertIn("references/process.md` (adds a public top-level definition", reason(held))
+        for path, line in defines_nothing:
+            with self.subTest(defines_nothing=line):
+                self.assertEqual(
+                    decision(self.designing(s=self.fresh_routed()).call("Edit", edit(path, line))), "pass")
+
     def test_a_third_code_file_selects_decoupling(self) -> None:
         s = self.designing()
         for path in ("src/a.py", "src/b.py", "src/a.py"):
