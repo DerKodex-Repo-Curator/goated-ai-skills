@@ -343,7 +343,37 @@ def writes_like_an_edit(call: Call) -> bool:
     return False
 
 
+# What a hold adds for a posix command that redirects into nul (Ticket 104).
+POSIX_NUL_NOTE = (
+    "In a posix shell nul is no null device: this command writes a file named nul. "
+    "To discard output there, redirect it into /dev/null."
+)
+
+
 def check_routing(
+    state: SessionState,
+    call: Call,
+    turn: Turn,
+    overrides: dict,
+    orientation_installed: Callable[[], bool],
+    writes_scratch: Callable[[], bool],
+) -> list[Hold]:
+    """The routing holds that apply to this main-agent call, in order, as
+    `_routing_holds` judges them. When the call is a posix command that
+    redirects into nul (`shell.ShellCommand.redirects_into_nul`), the last
+    hold's full and short texts end with `POSIX_NUL_NOTE`."""
+
+    holds = _routing_holds(state, call, turn, overrides, orientation_installed, writes_scratch)
+    if (holds and call.kind == events.SHELL_COMMAND
+            and shell.analyze(call.command, call.shell).redirects_into_nul):
+        last = holds[-1]
+        last.instruction = f"{last.instruction} {POSIX_NUL_NOTE}"
+        if last.short:
+            last.short = last.short._replace(text=f"{last.short.text} {POSIX_NUL_NOTE}")
+    return holds
+
+
+def _routing_holds(
     state: SessionState,
     call: Call,
     turn: Turn,

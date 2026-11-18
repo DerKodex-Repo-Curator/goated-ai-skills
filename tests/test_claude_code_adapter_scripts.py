@@ -378,5 +378,51 @@ class ScriptWriteTableTests(unittest.TestCase):
                 self.assertFalse(shell.analyze(command).writes, command)
 
 
+class JavaScriptReceiverTests(ScriptTestCase):
+    """A JavaScript method other objects share writes only on a file-system
+    receiver, or on one the reading cannot name (Ticket 104, decision E1)."""
+
+    def test_a_shared_method_on_another_object_writes_nothing(self) -> None:
+        for command in (
+            "node -e \"window.open(u,'width=200')\"",
+            "node -e \"db.rm(id)\"",
+            "node -e \"db?.rm(id)\"",
+            "node -e \"store.cache.unlink('a.js')\"",
+            "node -e \"zip.copyFile('a.js', 'b.js')\"",
+            "node -e \"this.rename('a.js', 'b.js')\"",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(shell.analyze(command).writes, command)
+
+    def test_a_file_system_receiver_still_writes(self) -> None:
+        for command, targets in (
+            ("node -e \"fs.promises.rm('a.js')\"", ["a.js"]),
+            ("node -e \"fs?.promises?.rm('a.js')\"", ["a.js"]),
+            ("node -e \"fs.open('a.js','w')\"", ["a.js"]),
+            ("node -e \"fsPromises.cp('a.js', 'b.js')\"", ["b.js"]),
+            ("node -e \"const f = require('node:fs'); f.unlink('a.js')\"", ["a.js"]),
+            ("node -e \"const f = require('fs').promises; f.rm('a.js')\"", ["a.js"]),
+            ("node -e \"const { rm } = require('fs'); rm('a.js')\"", ["a.js"]),
+            ("node -e \"const { promises: p } = require('fs'); p.rm('a.js')\"", ["a.js"]),
+            ("node - <<'EOF'\nimport * as f from 'fs/promises'\nawait f.rename('a.js', 'b.js')\nEOF",
+             ["a.js", "b.js"]),
+            ("node - <<'EOF'\nimport f from 'node:fs'\nf.truncate('a.js')\nEOF", ["a.js"]),
+            # A receiver the reading cannot name counts, as before.
+            ("node -e \"require('fs').rm('a.js')\"", ["a.js"]),
+            ("node -e \"a[b].rm('a.js')\"", ["a.js"]),
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(shell.analyze(command).write_targets, targets)
+        self.assertTrue(shell.analyze("node -e \"fs.rmSync(p)\"").script_unknown_writes)
+
+    def test_a_look_alike_receiver_meets_no_scripted_edit_hold(self) -> None:
+        s = self.routed()
+        for command in ("node -e \"window.open(u,'width=200')\"", "node -e \"db.rm(id)\""):
+            with self.subTest(command=command):
+                self.assertEqual(decision(s.call("Bash", {"command": command})), "pass")
+        held = s.call("Bash", {"command": "node -e \"fs.rmSync(p)\""})
+        self.assertEqual(hold_line(held), SCRIPTED)
+
+
 if __name__ == "__main__":
     unittest.main()

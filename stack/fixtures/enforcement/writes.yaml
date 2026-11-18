@@ -694,6 +694,47 @@ scenarios:
       - reply: "goated-route: direct"
       - call: {kind: shell_command, shell: posix, command: "python -c \"import sys; print(sys.version)\""}
 
+  - name: a JavaScript method on another object than a file system writes nothing
+    covers:
+      - {gate: scripted-edit, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Open the export preview.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: shell_command, shell: posix, command: "node -e \"window.open(u,'width=200')\""}
+      - call: {kind: shell_command, shell: posix, command: "node -e \"db.rm(id)\""}
+
+  - name: the same JavaScript method on a file system is held
+    covers:
+      - {gate: scripted-edit, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Remove the old export.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: shell_command, shell: posix, command: "node -e \"fs.promises.rm('src/export.js')\""}
+        expect:
+          decision: hold
+          holds: [{gate: scripted-edit, kind: justified-skip}]
+
+  - name: a posix redirect into nul writes a file named nul
+    covers:
+      - {gate: route-line, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Quiet the build output.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - call: {kind: shell_command, shell: posix, command: "echo x > nul"}
+        expect:
+          decision: hold
+          holds: [{gate: route-line, kind: strict}]
+
+  - name: a powershell redirect into nul is the null device and writes nothing
+    covers:
+      - {gate: route-line, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Quiet the build output.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - call: {kind: shell_command, shell: powershell, command: "echo x > nul"}
+
   - name: an edit inside an open merge conflict waits for the conflict skill
     covers:
       - {gate: conflict-resolution, case: holds}
