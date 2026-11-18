@@ -2,17 +2,18 @@
 
 Tickets 086 to 097 grouped by which can run at the same time, together
 with the tickets of round 2 that had not started when round 3 was planned
-(078 to 085) and the tickets of round 4 (099 to 102). The order files
-remain the source of truth for blockers:
+(078 to 085), the tickets of round 4 (099 to 107) and those of round 5
+(110 to 113). The order files remain the source of truth for blockers:
 [low-signal holds](adapter-low-signal-holds-order.md) and
 [hold delivery and coverage](adapter-hold-delivery-and-coverage-order.md)
 for round 3,
 [skill-usage data detail](skill-usage-data-detail-order.md) and
 [portable enforcement core](portable-enforcement-core-order.md) for
-round 2, and [hook friction round 4](hook-friction-round-4-order.md) for
-round 4. A ticket's wave is one after the latest of its blockers' waves.
-This one table holds the waves of all three rounds; round 4 has no table
-of its own.
+round 2, [hook friction round 4](hook-friction-round-4-order.md) for
+round 4, and [hook friction round 5](hook-friction-round-5-order.md) for
+round 5. A ticket's wave is one after the latest of its blockers' waves.
+This one table holds the waves of all four rounds; rounds 4 and 5 have no
+table of their own.
 
 This table replaces waves 5 to 10 of
 [hook-friction-round-2-waves.md](hook-friction-round-2-waves.md). Waves 1
@@ -56,8 +57,10 @@ waves 16 and 17. Their tickets were archived under `tickets/archive/` on
 | 14 (merged) | [107](archive/107-core-a-reviewer-starts-work.md) | 4 | core | AFK | 081 |
 | 15 (merged) | [106](archive/106-core-definition-starts-read-their-keyword.md) | 4 | core | AFK | 081, 101 |
 | 15 | [085](085-opencode-adapter.md) | 2 | new adapter | HITL (build decision after research) | 084 |
-| 16 (merged) | [108](archive/108-core-pull-request-options-between-noun-and-verb.md) | 4 | core | AFK | 103 (merged) |
-| 17 (merged) | [109](archive/109-core-one-pull-request-per-simple-command.md) | 4 | core | AFK | 108 (same lines) |
+| 16 (decision needed) | [110](110-core-whole-shell-prints-orient.md) | 5 | core | HITL (decision H) | None |
+| 16 (decision needed) | [111](111-core-one-clearing-section-per-message.md) | 5 | core and adapter | HITL (decision I) | None |
+| 16 (decision needed) | [112](112-core-scripted-edit-names-unknown-kinds.md) | 5 | core | HITL (decision J) | None |
+| 16 (decision needed) | [113](113-core-design-reads-sized-by-substance.md) | 5 | core | HITL (decisions K1, K2) | None |
 
 ## Decisions Recorded Here
 
@@ -140,6 +143,22 @@ Round 4 comes from the agents of Tickets 079, 095, 096 and 098.
   behaves in `design_reads.py` and its contract row; running them apart
   avoids a merge clash in the same rules.
 
+## Round 5 (planned 2026-11-18)
+
+Round 5 comes from Ticket 108's agent, curated by the lead
+([round 5 spec](../docs/specs/2026-11-18-hook-friction-round-5.md),
+[order](hook-friction-round-5-order.md)).
+
+- **Tickets 110 to 113 wait for the maintainer's decisions** H, I, J and
+  K, and nothing else; each is written to the recommended option. They can
+  run in one wave.
+- **Only 110 touches `shell.py`**, in its file printers, not the pull
+  request reading that 108 and 109 change; resolve the shared file at
+  merge time.
+- **Item 6 (a hold pointing at a section) is deferred**, and the second
+  source's items 7 to 12 are recorded in the spec, not ticketed (decision
+  L).
+
 ## Where Each Feedback Item Went
 
 | Feedback item | Ticket |
@@ -170,6 +189,12 @@ Round 4 comes from the agents of Tickets 079, 095, 096 and 098.
 | Round 4: `route-line` holds after a lead's or peer's message | 102 (decision D1.2) |
 | Round 4: Proof asked while a session waits on another | 102 (decision D2.1) |
 | Round 4: the `true` carrier call for a line | No ticket (kept) |
+| Round 5: orientation held after `cat` reads | 110 (decision H) |
+| Round 5: `readability.md` for a short code edit with a comment; `coding.md` for new test cases | 113 (decisions K1, K2) |
+| Round 5: clearing advice repeated per hold in one message | 111 (decision I) |
+| Round 5: `scripted-edit` calls a markdown file code | 112 (decision J) |
+| Round 5: a reference hold pointing at a section | Deferred (needs its own spec) |
+| Round 5, second source: items 7 to 12 | Recorded in the spec, not ticketed (decision L) |
 
 ## Notes
 

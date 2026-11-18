@@ -1,0 +1,88 @@
+# Ticket 110: Whole Shell Prints Orient
+
+## Parent Spec
+
+`docs/specs/2026-11-18-hook-friction-round-5.md` (R1; AC1, AC5, AC6)
+
+## Type
+
+HITL until decision H is recorded in the parent spec; AFK after. Written
+to the recommended option, H1. If the maintainer picks H2 or H3, rewrite
+this ticket's outcome before starting.
+
+## What To Build
+
+A session routed by its brief orients by whole shell prints as it does by
+whole file reads. A finished, successful shell command whose plain file
+printer prints a file whole counts as a whole read of that file toward the
+`pipeline` gate's three distinct files. A print is whole when the printer
+is `cat`, or PowerShell's `Get-Content`, `gc` or `type` without
+`-TotalCount`, `-Head`, `-First`, `-Tail` or `-Last`, and its output is
+not piped into another command. `cat a b c` prints three files.
+
+`head`, `tail`, `sed`, `grep` and every other command never count. Every
+other rule that asks for a whole read (design and registry references,
+red flags, spawn templates) keeps asking for a file read: this widens
+orientation only. The orientation hold's text says a whole print counts.
+
+The rule lives in the shared core at `adapters/core/goated_core/`: the file
+printer reading in `shell.py` (`FILE_PRINTERS`, which the conflict rule
+already uses to name the files a printer shows), and where orientation
+counts files (`gates._files_read`, `ORIENTATION_READS`, the orientation
+hold text). The contract and a conformance scenario change with the code,
+as `AGENTS.md` requires: the contract's Terms (Whole read), the `pipeline`
+row and Shell Reading; a scenario under `stack/fixtures/enforcement/`.
+
+**`shell.py`'s pull request reading:** not touched. This ticket edits the
+file printers in the same file, which Tickets 108 and 109 also edit in
+another part; resolve the shared file at merge time.
+
+## Recommended First Reads
+
+- The parent spec, R1 and decision H.
+- `stack/enforcement-contract.md`: Terms (Whole read), the `pipeline` row,
+  Conflicts (how a printer names files) and Shell Reading.
+- The core's `gates.py` (`_files_read`, `_brief_orientation`, the
+  orientation hold) and `shell.py` (`FILE_PRINTERS` and the function that
+  names a printer's files).
+- `tickets/archive/105-core-conflicts-opened-by-shell-reads-and-ended-by-commits.md`,
+  which made printers name their files.
+
+## Acceptance Criteria
+
+- [ ] Three finished `cat` commands of three distinct files, or one
+      `cat a b c`, clear orientation in a briefed `standard` session with
+      the orientation skill installed and not loaded.
+- [ ] `head a`, `sed -n 1,50p a`, `grep x a`, `cat a | head`, and
+      `Get-Content a -TotalCount 5` do not count; `Get-Content a` does.
+- [ ] A failed command, or one still running, does not count.
+- [ ] A shell print of a design reference still does not clear
+      `design-reads`.
+- [ ] Two spellings of one path count as one file, as for file reads.
+- [ ] The orientation hold's text says a whole shell print counts.
+- [ ] The contract states the rule, and a conformance scenario covers the
+      hold and each near-miss kind.
+- [ ] The repo checks in `AGENTS.md` pass.
+
+## Expected Proof
+
+- The conformance scenarios through the core.
+- The core's gate and shell tests, with the new cases.
+- The Claude Code adapter's tests through its hook.
+- The repo checks in `AGENTS.md`.
+
+## Blocked By
+
+- Decision H in the parent spec.
+
+## Overlaps
+
+- `shell.py` with Tickets 108 and 109 (pull request reading, another
+  part of the file).
+- `gates.py` with Ticket 111 (`shown_holds`, another function).
+
+## Scope Exclusions
+
+- Counting reads of the files a brief names.
+- Partial reads toward orientation.
+- Shell prints for any rule but orientation.
