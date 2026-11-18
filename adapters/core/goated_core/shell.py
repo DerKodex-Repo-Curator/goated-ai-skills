@@ -61,6 +61,21 @@ PS_VALUE_PARAMS = PS_PATH_PARAMS | frozenset(
     {"-value", "-encoding", "-itemtype", "-name", "-include", "-exclude", "-filter",
      "-delimiter", "-inputobject", "-newname", "-uri", "-method"}
 )
+# Commands that print the files they name (spec R10), each with its options
+# that take a value that is no file: a count, a delimiter, or an encoding
+# (`cat -n` only numbers lines). `type` and `gc` are Get-Content's aliases in
+# PowerShell, which takes its parameters by name; `type` in Bash describes
+# commands, so its output never holds a file's text.
+_COUNTS = frozenset({"-n", "-c", "--lines", "--bytes"})
+_GET_CONTENT_VALUES = frozenset(
+    {"-totalcount", "-head", "-first", "-tail", "-last", "-readcount", "-delimiter",
+     "-encoding", "-stream"}
+)
+FILE_PRINTERS = {
+    "cat": frozenset(), "head": _COUNTS, "tail": _COUNTS,
+    "get-content": _GET_CONTENT_VALUES, "gc": _GET_CONTENT_VALUES, "type": _GET_CONTENT_VALUES,
+}
+PS_FILE_PRINTERS = frozenset({"get-content", "gc", "type"})
 # Writes whose files cannot be read from the command line.
 UNKNOWN_TARGET_COMMANDS = frozenset({"patch"})
 DOWNLOADERS = frozenset({"curl", "wget", "invoke-webrequest", "iwr", "invoke-restmethod", "irm"})
@@ -226,6 +241,10 @@ class ShellCommand:
     content to the agent: a git diff or show, a patch log, or patches on
     stdout; a listing of names or counts (`--stat`, `--name-only`) does not.
     Only git is read; another version control system's diff is not seen.
+    `shown_files` are the files a file printer (`FILE_PRINTERS`, such as
+    `cat` or `Get-Content`) in it names, from where the command started, so
+    its output may hold their text; `shows_git_diff` says it runs `git diff`,
+    whose output names each file's section (spec R10).
     `script_targets` are the write targets that code given to an interpreter
     inline names (`python -c`, `node -e`, a heredoc on `python -`; see
     `_inline_script`), and `script_unknown_writes` says such code writes a
@@ -271,6 +290,7 @@ class ShellCommand:
         "non_check_writes", "unchecked_targets", "unchecked_unknown_writes", "prints_changes",
         "installs_globally", "install_folders", "read_only", "only_reads_and_writes_files",
         "script_targets", "script_unknown_writes", "text_writes", "redirects_into_nul",
+        "shown_files", "shows_git_diff",
     )
 
     def __init__(self) -> None:
@@ -297,6 +317,8 @@ class ShellCommand:
         self.text_writes: list[tuple[str, int | None]] = []
         self.only_reads_and_writes_files = False
         self.redirects_into_nul = False
+        self.shown_files: list[str] = []
+        self.shows_git_diff = False
 
 
 def analyze(command: str, shell: str = POSIX) -> ShellCommand:
@@ -476,6 +498,10 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
                 result.commit_message = message
         if _git_prints_changes(sub, rest):
             prints = True
+        if sub == "diff":
+            result.shows_git_diff = True
+    elif name in FILE_PRINTERS:
+        result.shown_files += [_from_directory(directory, f) for f in _printed_files(name, args)]
     elif name in FORGE_DIFFS:
         rest = _skip_options(args, {"-R", "--repo"})
         noun = FORGE_DIFFS[name]
@@ -1292,6 +1318,15 @@ def _bare(word: str) -> str:
     return name
 
 
+def _printed_files(name: str, args: list[str]) -> list[str]:
+    """The files the file printer `name` prints, read from `args`."""
+
+    values = FILE_PRINTERS[name]
+    if name in PS_FILE_PRINTERS:
+        return _ps_paths(args, values)
+    return _positional(_drop_values(args, values))
+
+
 def _positional(args: list[str]) -> list[str]:
     out = []
     after_dashes = False
@@ -1303,8 +1338,9 @@ def _positional(args: list[str]) -> list[str]:
     return out
 
 
-def _ps_paths(args: list[str]) -> list[str]:
-    """PowerShell-style arguments: -Path values first, then positional ones."""
+def _ps_paths(args: list[str], values: frozenset[str] = frozenset()) -> list[str]:
+    """PowerShell-style arguments: -Path values first, then positional ones.
+    `values` names more parameters, in lower case, whose value is no path."""
 
     named, positional = [], []
     i = 0
@@ -1313,7 +1349,7 @@ def _ps_paths(args: list[str]) -> list[str]:
         low = arg.lower()
         if low.startswith("-") and len(arg) > 1:
             param, _, attached = low.partition(":")
-            if param in PS_VALUE_PARAMS:
+            if param in PS_VALUE_PARAMS or param in values:
                 value = args[i][len(param) + 1 :] if attached else (
                     args[i + 1] if i + 1 < len(args) else ""
                 )

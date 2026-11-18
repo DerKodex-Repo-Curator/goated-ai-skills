@@ -201,7 +201,7 @@ file (see [Holds](#holds)).
 | `review-intake` | justified-skip | A write to a code file inside the project once a reviewer agent has reported in the turn: an agent started now by a spawn whose brief followed `subagent-driven-development`'s reviewer template, whose result arrived or, started in the background, whose completion did. Any other brief, and a held or failed spawn, trigger nothing | `receiving-code-review` counts as loaded | `proof`, `skip-line`, `override` | `receiving-code-review` |
 | `security` | justified-skip | A write to a security-sensitive path inside the project: dependency manifests and lockfiles, env and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files | `code-security-review` counts as loaded | `proof`, `skip-line`, `override` | `code-security-review` |
 | `scripted-edit` | justified-skip | A shell command whose inline script writes a code file inside the project, or a file it names only at run time. It follows `security` and `review-intake` for the same file | A skip line naming `software-design-principles`; loading the skill does not clear it | `skip-line`, `override` | `software-design-principles`: change code with the file edit tools |
-| `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an edit whose removed text has a conflict marker at a line start, a write to a file a read showed with one, or any write after a merge, rebase, cherry-pick, revert, or pull reported a conflict, until it finishes or is aborted | `resolving-merge-conflicts` counts as loaded | `proof`, `skip-line`, `override` | `resolving-merge-conflicts` |
+| `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an edit whose removed text has a conflict marker at a line start, a write to a file a read, a file printer, or `git diff` showed with one, or any write after a merge, rebase, cherry-pick, revert, or pull reported a conflict, until it finishes or is aborted | `resolving-merge-conflicts` counts as loaded | `proof`, `skip-line`, `override` | `resolving-merge-conflicts` |
 | `repeated-failure` | justified-skip | A write once the same check has failed twice in a row in the turn. A run that only fails to load a missing module, the first run after a test file was written, a run with fewer failures than the one before, and a call that never ran (held, refused, or interrupted) neither add nor reset | `diagnose` counts as loaded | `proof`, `skip-line`, `override` | `diagnose` ("a check that keeps failing") |
 | `closeout` | justified-skip | A commit the `commit` gate passes, or the turn's end, in a turn that changed code or a security-sensitive file or setup, while a [closeout item](#closeout-items) is unmet | Every item is met or skipped | `proof`, `skip-line`, `override` | The shared policy's closeout and the skills each item names |
 
@@ -600,30 +600,43 @@ same condition, its runs counted the same way.
 ### Conflicts
 
 A merge conflict is open in the turn after any of these (`CONFLICT_MARKER_RE`,
-`GIT_CONFLICT_COMMAND_RE`, `GIT_CONFLICT_RESULT_RE`, and
-`GIT_CONFLICT_END_RE` in `actions.py`):
+`GIT_CONFLICT_COMMAND_RE`, `GIT_CONFLICT_RESULT_RE`,
+`GIT_CONFLICT_END_RE`, and the `GIT_DIFF_*_RE` patterns in `actions.py`, and
+`FILE_PRINTERS` in `shell.py`):
 
 - an edit whose removed text has a `<<<<<<<` or `>>>>>>>` marker at a line
   start, followed by a space or the line's end;
-- a finished file read in the turn that showed a file with such a marker,
-  which opens the conflict for writes to that file, by a file write or a
-  shell command such as `git checkout --theirs`. Only a file read call opens
-  it this way: a shell command that prints the markers (`cat`, `git diff`)
-  does not;
+- a finished call in the turn that showed a file with such a marker, which
+  opens the conflict for writes to that file, by a file write or a shell
+  command such as `git checkout --theirs`. Three calls show a file this way:
+  - a file read whose text has the marker;
+  - a shell command that runs a file printer (`cat`, `head`, `tail`, or
+    PowerShell's `Get-Content`, `gc`, or `type`) and whose output has the
+    marker. It shows every file the printers name, so `cat a b` opens the
+    conflict for both, whichever held the marker;
+  - a shell command that runs `git diff`, for each file whose section of the
+    output adds the marker after the diff's `+` or `++` prefix
+    (`++<<<<<<<` in a combined diff). A section is named by its
+    `diff --cc` line or its `+++` line, as the diff names the file, from the
+    repository's top folder, with git's quoting of a name undone
+    (`"b/caf\303\251.py"` is `café.py`).
+
+  Another command that prints the markers, such as `grep`, `git show`, or
+  `git log -p`, shows no file;
 - a git merge, rebase, cherry-pick, revert, or pull whose result in the turn
   reported a conflict, which opens it for any write.
 
 A marker line may be preceded by a line number and a tab or `→`, as a file
-read's numbered output shows it.
+read's or `cat -n`'s numbered output shows it.
 
 A finished shell command that runs `--abort`, `--quit`, `--continue`, or
-`--skip` of a git merge, rebase, cherry-pick, or revert, or a finished shell
-`git commit`, ends the conflict and drops the reads before it, unless that
-same command reports a new conflict. A `commit` call does not end it, and
-neither does `git pull --abort`. Only the turn is
+`--skip` of a git merge, rebase, cherry-pick, or revert, a finished shell
+`git commit`, or a finished `commit` call ends the conflict and drops the
+files shown before it, unless that same command reports a new conflict. A
+held or failed one ends nothing. Only the turn is
 read, not the repository, so a conflict opened in an earlier turn is caught
 only by markers the turn shows: an edit whose removed text spans only
-`=======` and one side, in a file not read this turn, is not held, because
+`=======` and one side, in a file not shown this turn, is not held, because
 `=======` alone is also a heading underline. A conflicting stash pop or
 apply is not held.
 

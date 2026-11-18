@@ -1999,6 +1999,155 @@ class ConflictResolutionHoldTests(AdapterTestCase):
         overridden = self.conflicted("Merge it and skip resolving-merge-conflicts.")
         self.assertEqual(decision(overridden.call("Edit", edit)), "pass")
 
+    def test_a_finished_commit_call_ends_the_conflict(self) -> None:
+        # R10: a commit tool's finished call ends it, as a shell `git commit` does.
+        s = self.conflicted('Merge it. Commit message: "Merge feature"')
+        s.read("src/app.py", content=CONFLICTED_READ)
+        committed = s.call("mcp__git__git_commit", {"message": "Merge feature"})
+        self.assertEqual(decision(committed), "pass")
+
+        edit = {"file_path": "notes.md", "old_string": "a", "new_string": "b"}
+        self.assertEqual(decision(s.call("Edit", edit)), "pass")
+        self.assertEqual(decision(s.call("Write", write("src/app.py", 1))), "pass")
+
+    def test_a_held_or_failed_commit_call_ends_nothing(self) -> None:
+        edit = {"file_path": "notes.md", "old_string": "a", "new_string": "b"}
+        held = self.conflicted()  # No message given, so the commit gate holds the call.
+        self.assertEqual(decision(held.call("mcp__git__git_commit", {"message": "Merge feature"})),
+                         "deny")
+        self.assertEqual(hold_line(held.call("Edit", edit)), CONFLICT_HOLD)
+
+        failed = self.conflicted('Merge it. Commit message: "Merge feature"')
+        failed.call("mcp__git__git_commit", {"message": "Merge feature"}, failed=True,
+                    result="error: committing is not possible because you have unmerged files")
+        self.assertEqual(hold_line(failed.call("Edit", edit)), CONFLICT_HOLD)
+
+    def test_a_plain_read_showing_markers_opens_the_conflict_for_its_files(self) -> None:
+        # R10, decision G: per file, as a file read.
+        shown = "<<<<<<< HEAD\nrate = 1\n=======\nrate = 2\n>>>>>>> feature\n"
+        cases = (
+            ("Bash", "cat src/app.py"),
+            ("Bash", "head -n 20 src/app.py"),
+            ("Bash", "tail -n 20 src/app.py"),
+            ("Bash", "cat -n src/app.py | head -n 40"),
+            ("PowerShell", "Get-Content src/app.py"),
+            ("PowerShell", "Get-Content -Path src/app.py -TotalCount 20"),
+            ("PowerShell", "type src/app.py"),
+            ("PowerShell", "gc src/app.py"),
+        )
+        for tool, command in cases:
+            with self.subTest(command=command):
+                s = self.routed()
+                s.run(command, tool=tool, output=shown)
+
+                self.assertEqual(hold_line(s.call("Write", write("src/app.py", 1))),
+                                 CONFLICT_HOLD)
+                self.assertEqual(decision(s.call("Write", write("src/other.py", 1))), "pass")
+
+    def test_a_command_naming_several_files_opens_the_conflict_for_each(self) -> None:
+        s = self.routed()
+        s.run("cat src/app.py src/b.py", output="<<<<<<< HEAD\nrate = 1\n=======\n>>>>>>> x\n")
+
+        self.assertEqual(hold_line(s.call("Write", write("src/app.py", 1))), CONFLICT_HOLD)
+        self.assertEqual(hold_line(s.call("Write", write("src/b.py", 1))), CONFLICT_HOLD)
+
+    def test_a_plain_read_without_markers_opens_nothing(self) -> None:
+        cases = (
+            ("cat src/app.py", "rate = 2\n", True),
+            ("cat src/app.py", "rate = 2\nGit writes <<<<<<< around a conflict.\n", True),
+            ("cat src/app.py", "<<<<<<< HEAD\n", False),  # The read failed.
+            ("grep -n rate src/app.py", "<<<<<<< HEAD\n", True),  # Not a file printer.
+        )
+        for command, output, success in cases:
+            with self.subTest(command=command, output=output):
+                s = self.routed()
+                s.run(command, output=output, success=success)
+
+                self.assertEqual(decision(s.call("Write", write("src/app.py", 1))), "pass")
+
+    def test_a_git_diff_showing_markers_opens_the_conflict_for_those_paths(self) -> None:
+        combined = (
+            "diff --cc src/app.py\n"
+            "index 1a2b3c4,5d6e7f8..0000000\n"
+            "--- a/src/app.py\n"
+            "+++ b/src/app.py\n"
+            "@@@ -1,1 -1,1 +1,5 @@@\n"
+            "++<<<<<<< HEAD\n"
+            " +rate = 1\n"
+            "++=======\n"
+            "+ rate = 2\n"
+            "++>>>>>>> feature\n"
+            "diff --cc src/clean.py\n"
+            "index 1a2b3c4,5d6e7f8..0000000\n"
+            "--- a/src/clean.py\n"
+            "+++ b/src/clean.py\n"
+            "@@@ -1,1 -1,1 +1,1 @@@\n"
+            "- limit = 1\n"
+            " -limit = 2\n"
+            "++limit = 3\n"
+        )
+        two_way = (
+            "diff --git a/src/app.py b/src/app.py\n"
+            "index 1a2b3c4..5d6e7f8 100644\n"
+            "--- a/src/app.py\n"
+            "+++ b/src/app.py\n"
+            "@@ -1 +1,5 @@\n"
+            "-rate = 1\n"
+            "+<<<<<<< HEAD\n"
+            "+rate = 1\n"
+            "+=======\n"
+            "+rate = 2\n"
+            "+>>>>>>> feature\n"
+        )
+        for command, output in (("git diff", combined), ("git diff HEAD", two_way)):
+            with self.subTest(command=command):
+                s = self.routed()
+                s.run(command, output=output)
+
+                self.assertEqual(hold_line(s.call("Write", write("src/app.py", 1))),
+                                 CONFLICT_HOLD)
+                self.assertEqual(decision(s.call("Write", write("src/clean.py", 1))), "pass")
+
+    def test_a_git_diff_names_a_quoted_file_as_written(self) -> None:
+        # Git quotes a name with a space or a non-ASCII byte, escaping each
+        # such byte in octal: `"b/caf\303\251.py"` is `café.py`.
+        hunk = "@@ -1 +1,3 @@\n+<<<<<<< HEAD\n+rate = 1\n+>>>>>>> feature\n"
+        cases = (
+            ('diff --git "a/sp ace.py" "b/sp ace.py"\n--- "a/sp ace.py"\n+++ "b/sp ace.py"\n',
+             "sp ace.py"),
+            ('diff --git "a/caf\\303\\251.py" "b/caf\\303\\251.py"\n', "café.py"),
+            ('diff --cc "say \\"hi\\".py"\n--- a/x\n+++ "b/say \\"hi\\".py"\n', 'say "hi".py'),
+        )
+        for header, name in cases:
+            with self.subTest(name=name):
+                s = self.routed()
+                s.run("git diff", output=header + hunk)
+
+                self.assertEqual(hold_line(s.call("Write", write(name, 1))), CONFLICT_HOLD)
+
+    def test_a_git_diff_removing_or_mentioning_markers_opens_nothing(self) -> None:
+        output = (
+            "diff --git a/src/app.py b/src/app.py\n"
+            "--- a/src/app.py\n"
+            "+++ b/src/app.py\n"
+            "@@ -1,5 +1 @@\n"
+            "-<<<<<<< HEAD\n"
+            "-rate = 1\n"
+            "->>>>>>> feature\n"
+            "+rate = 2 # was <<<<<<< once\n"
+        )
+        s = self.routed()
+        s.run("git diff", output=output)
+
+        self.assertEqual(decision(s.call("Write", write("src/app.py", 1))), "pass")
+
+    def test_a_commit_drops_the_files_a_shell_read_showed(self) -> None:
+        s = self.routed(prompt='Fix it. Commit message: "Merge feature"')
+        s.run("cat src/app.py", output="<<<<<<< HEAD\nrate = 1\n>>>>>>> feature\n")
+        s.run('git commit -am "Merge feature"')
+
+        self.assertEqual(decision(s.call("Write", write("src/app.py", 1))), "pass")
+
     def test_the_commit_gate_still_fires_once_the_conflict_gate_clears(self) -> None:
         s = self.conflicted()
         s.load("resolving-merge-conflicts")

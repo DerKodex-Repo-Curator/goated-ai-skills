@@ -186,6 +186,18 @@ DIFF_ONLY_READ = (
 # alone is also a heading underline, so it is not one.
 CONFLICT_SKILL = "resolving-merge-conflicts"
 CONFLICT_MARKER_RE = re.compile(r"^(?:[ \t]*\d+(?:\t|→))?(?:<{7}|>{7})(?: |\r?$)", re.MULTILINE)
+# In `git diff` output (spec R10): the line opening a file's section, which
+# names the file for a combined diff (`--cc`), its new name in a `+++` line
+# before the first hunk, and a marker the diff adds, after the one or two
+# `+` of its prefix (`++<<<<<<<` in a combined diff, `+<<<<<<<` in another).
+GIT_DIFF_SECTION_RE = re.compile(r"^diff --(cc|combined|git) (.*)$")
+GIT_DIFF_NEW_NAME_RE = re.compile(r"^\+\+\+ (.*)$")
+GIT_DIFF_MARKER_RE = re.compile(r"^\+{1,2}(?:<{7}|>{7})(?: |$)")
+# A name git quotes, C-style, because it holds a space, a quote, a control
+# character, or a non-ASCII byte, which git writes as three octal digits.
+GIT_QUOTED_NAME_END_RE = re.compile(r'"(?:[^"\\]|\\.)*"$')
+GIT_NAME_ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13,
+                    '"': 34, "\\": 92}
 # `git` and any global options before its subcommand, within one simple command.
 _GIT = r"(?<![\w-])git(?:\.exe)?\s(?:[^;&|\n]*\s)?"
 _GIT_OPERATIONS = r"merge|rebase|cherry-pick|revert"
@@ -1135,11 +1147,11 @@ def _scripted_edit_hold(paths: list[str], unknown: bool, proof: _Proof) -> Hold 
 def _conflict_hold(paths: list[str], call: Call, proof: _Proof) -> Hold | None:
     """Hold a write to `paths`, by `call`, while a conflict is open in the
     turn (spec G1): the write removes conflict markers, writes a file the
-    turn read with markers in it, or follows a git merge, rebase, cherry-pick,
-    revert, or pull whose result reported a conflict that no later abort,
-    continue, or commit ended. Only the turn is read, never the repository on
-    disk, so a conflict opened in an earlier turn is seen only through its
-    markers."""
+    turn showed with markers in it (see `_open_conflict`), or follows a git
+    merge, rebase, cherry-pick, revert, or pull whose result reported a
+    conflict that no later abort, continue, or commit ended. Only the turn is
+    read, never the repository on disk, so a conflict opened in an earlier
+    turn is seen only through its markers."""
 
     if proof.loaded_or_skipped(CONFLICT_SKILL):
         return None
@@ -1162,13 +1174,18 @@ def _conflict_hold(paths: list[str], call: Call, proof: _Proof) -> Hold | None:
 
 def _open_conflict(turn: Turn) -> tuple[bool, list[str]]:
     """Read the turn's calls in order and return whether a git conflict is still
-    open, and the files a file read showed with markers since the last
-    conflict ended.
+    open, and the files shown with markers since the last conflict ended.
 
     A git merge, rebase, cherry-pick, revert, or pull whose result reports a
     conflict opens one (a conflicting stash pop or apply prints none of git's
-    stop lines). A finished abort, quit, continue, or skip of one of them, or
-    a finished commit, ends it, unless that same call reports a new conflict.
+    stop lines). A finished abort, quit, continue, or skip of one of them, a
+    finished shell `git commit`, or a finished `commit` call ends it, unless
+    that same call reports a new conflict.
+
+    A file is shown with markers by a finished file read whose text has one,
+    by a finished command whose output has one and that runs a file printer
+    naming the file (spec R10, so `cat a b` shows both), or by a finished
+    `git diff` whose section for the file adds one.
     """
 
     git_open, marked_files = False, []
@@ -1176,15 +1193,74 @@ def _open_conflict(turn: Turn) -> tuple[bool, list[str]]:
         if call.kind == events.FILE_READ:
             if call.ok and CONFLICT_MARKER_RE.search(call.output):
                 marked_files.append(call.path)
-            continue
-        if call.kind != events.SHELL_COMMAND:
-            continue
-        command = call.command
-        if GIT_CONFLICT_COMMAND_RE.search(command) and GIT_CONFLICT_RESULT_RE.search(call.output):
-            git_open = True
-        elif call.ok and (GIT_CONFLICT_END_RE.search(command) or shell.analyze(command).commit):
-            git_open, marked_files = False, []
+        elif call.kind == events.COMMIT:
+            if call.ok:
+                git_open, marked_files = False, []
+        elif call.kind == events.SHELL_COMMAND:
+            command = call.command
+            if GIT_CONFLICT_COMMAND_RE.search(command) and GIT_CONFLICT_RESULT_RE.search(call.output):
+                git_open = True
+                continue
+            if not call.ok:
+                continue
+            analysis = shell.analyze(command, call.shell)
+            if GIT_CONFLICT_END_RE.search(command) or analysis.commit:
+                git_open, marked_files = False, []
+                continue
+            if CONFLICT_MARKER_RE.search(call.output):
+                marked_files += analysis.shown_files
+            if analysis.shows_git_diff:
+                marked_files += _diff_files_adding_markers(call.output)
     return git_open, marked_files
+
+
+def _diff_files_adding_markers(output: str) -> list[str]:
+    """The files whose section of `git diff` output adds a conflict marker,
+    named as the diff names them (from the repository's top folder)."""
+
+    files, path, in_header = [], None, False
+    for line in output.splitlines():
+        section = GIT_DIFF_SECTION_RE.match(line)
+        if section:
+            kind, names = section.groups()
+            # `diff --git a/x b/x` names the file twice; its `+++` line names it once.
+            if kind != "git":
+                path = _git_unquoted(names)
+            elif quoted := GIT_QUOTED_NAME_END_RE.search(names):
+                path = _git_unquoted(quoted.group()).removeprefix("b/")
+            else:
+                path = names.rpartition(" b/")[2] if " b/" in names else None
+            in_header = True
+        elif in_header and line.startswith("@@"):
+            in_header = False
+        elif in_header and (new_name := GIT_DIFF_NEW_NAME_RE.match(line)):
+            name = new_name.group(1)
+            path = None if name == "/dev/null" else _git_unquoted(name).removeprefix("b/")
+        elif not in_header and path and path not in files and GIT_DIFF_MARKER_RE.match(line):
+            files.append(path)
+    return files
+
+
+def _git_unquoted(name: str) -> str:
+    """`name` as git wrote it in a diff header, with git's C-style quoting
+    undone; a name that is not in double quotes is returned unchanged. Octal
+    escapes are the bytes of the name's UTF-8 spelling."""
+
+    if len(name) < 2 or not (name.startswith('"') and name.endswith('"')):
+        return name
+    body, spelled, i = name[1:-1], bytearray(), 0
+    while i < len(body):
+        octal = body[i + 1:i + 4]
+        if body[i] == "\\" and len(octal) == 3 and all(c in "01234567" for c in octal):
+            spelled.append(int(octal, 8) & 0xFF)
+            i += 4
+        elif body[i] == "\\" and body[i + 1:i + 2] in GIT_NAME_ESCAPES:
+            spelled.append(GIT_NAME_ESCAPES[body[i + 1]])
+            i += 2
+        else:
+            spelled += body[i].encode("utf-8")
+            i += 1
+    return spelled.decode("utf-8", errors="replace")
 
 
 def _design_hold(writes: dict[str, bool], write: Call | None, proof: _Proof,

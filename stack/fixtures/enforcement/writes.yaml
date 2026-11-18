@@ -1135,6 +1135,83 @@ scenarios:
           path: docs/notes.md
           edits: [{removed: "Export\n=======", added: "Exports\n======="}]
 
+  - name: a failed commit call leaves the conflict open
+    covers:
+      - {gate: conflict-resolution, case: holds}
+    steps:
+      - prompt: &commit_prompt {type: prompt, author: person, text: "Merge the feature branch and commit it. Commit message: \"Merge feature\""}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *merge
+        result: *conflicted
+      - call: &commit_call {kind: commit, message: Merge feature}
+        result: {ok: false, output: "error: committing is not possible because you have unmerged files"}
+      - call: &notes_edit
+          kind: file_write
+          path: docs/notes.md
+          edits: [{removed: "limit 1", added: "limit 2"}]
+        expect:
+          decision: hold
+          holds: [{gate: conflict-resolution, kind: justified-skip}]
+
+  - name: a finished commit call ends the conflict
+    covers:
+      - {gate: conflict-resolution, case: near-miss}
+    steps:
+      - prompt: *commit_prompt
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *merge
+        result: *conflicted
+      - call: *commit_call
+      - call: *notes_edit
+
+  - name: a cat of a file showing a marker opens the conflict for that file only
+    covers:
+      - {gate: conflict-resolution, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Finish the export merge.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: shell_command, shell: posix, command: cat src/export.py}
+        result: {ok: true, output: "<<<<<<< HEAD\nlimit = 1\n=======\nlimit = 2\n>>>>>>> feature\n"}
+      - call: *notes_edit
+      - call: *resolve
+        expect:
+          decision: hold
+          holds: [{gate: conflict-resolution, kind: justified-skip}]
+
+  - name: a cat of a file with no marker opens nothing
+    covers:
+      - {gate: conflict-resolution, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Raise the export limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: shell_command, shell: posix, command: cat src/export.py}
+        result: {ok: true, output: "limit = 1\n"}
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+
+  - name: a git diff adding a marker opens the conflict for that file's section
+    covers:
+      - {gate: conflict-resolution, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Finish the export merge.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: shell_command, shell: posix, command: git diff}
+        result:
+          ok: true
+          output: "diff --cc src/export.py\nindex 1a2b3c4,5d6e7f8..0000000\n--- a/src/export.py\n+++ b/src/export.py\n@@@ -1,1 -1,1 +1,5 @@@\n++<<<<<<< HEAD\n +limit = 1\n++=======\n+ limit = 2\n++>>>>>>> feature\n"
+      - call: *notes_edit
+      - call: *resolve
+        expect:
+          decision: hold
+          holds: [{gate: conflict-resolution, kind: justified-skip}]
+
   - name: a write after the same check fails twice waits for diagnosis
     covers:
       - {gate: repeated-failure, case: holds}
