@@ -190,6 +190,29 @@ class RunnerCommandTests(unittest.TestCase):
         self.assertEqual(done.returncode, 2)
         self.assertIn("no translator file", done.stderr)
 
+    def test_the_command_refuses_a_translator_that_cannot_load(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            broken = Path(folder) / "syntax_error.py"
+            broken.write_text("def make_translator(setup:\n", encoding="utf-8")
+            done = self.run_command(str(broken))
+        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+        self.assertIn("could not load the translator", done.stderr)
+        self.assertIn("SyntaxError", done.stderr)
+        self.assertNotIn("Traceback", done.stderr)
+
+    def test_the_command_refuses_a_scenario_file_it_does_not_have(self) -> None:
+        done = self.run_command(str(EXAMPLE_TRANSLATOR), "--file", "nonexistent")
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("no scenario file 'nonexistent'", done.stderr)
+        self.assertIn("closeout, handing-on, routing, writes", done.stderr)
+
+    def test_the_command_takes_a_scenario_file_with_its_suffix(self) -> None:
+        # The near miss: `routing.yaml` names the same file as `routing`.
+        done = self.run_command(str(EXAMPLE_TRANSLATOR), "--file", "routing.yaml",
+                                "--only", "routing: ")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertNotIn("\n0 of 0", done.stdout)
+
     def test_the_command_fails_when_no_scenario_matches(self) -> None:
         done = self.run_command(str(EXAMPLE_TRANSLATOR), "--only", "no such scenario")
         self.assertEqual(done.returncode, 1)

@@ -92,7 +92,11 @@ first. A turn has a `key`, an `opener`, and its `entries`:
 - **Entries.** Reply text (`reply_text`), each finished call with its result
   (`call`), a skill a person invoked (`skill_invoked`), a background agent
   finishing (`agent_finished`), the turn's end (`turn_ended`), and a prompt
-  that arrives mid-turn (a `prompt` entry, not an opener).
+  that arrives mid-turn (a `prompt` entry, not an opener). A harness whose
+  calls can finish in another order than they were made adds a
+  `call_finished` entry with the call's `id` where each one finished. The
+  result stays on the call's own entry, and a call with no result yet is
+  still running.
 - **Keys.** A turn's key must stay the same in every request, since the core
   keeps facts per turn. Use something the harness never renumbers, such as
   the opener's message id.
@@ -155,11 +159,42 @@ input and read the decision as JSON on standard output:
 python adapters/core/goated_judge.py --state-dir /path/to/state < request.json
 ```
 
-The command always exits 0 with a decision. `--registry PATH` (or
+For any request, even one it cannot read, the command prints a decision and
+exits 0. It exits 2 only for arguments it does not know. `--registry PATH` (or
 `GOATED_CORE_REGISTRY`) names an installed registry, `GOATED_CORE_STATE_DIR`
 sets the state folder, and `GOATED_CORE_SKILL_NAMESPACES` lists plugin
 namespaces whose `ns:skill` loads count. [`README.md`](README.md#the-shared-core)
-says more about both ways in. The example's `python_judge` and
+says more about both ways in.
+
+**The usage log.** The core appends what each judged event showed to a
+local usage log in JSON Lines, as `stack/schemas/usage-log.schema.json`
+defines it:
+
+- **What it records:** each hold with its gate, kind and what it asks for;
+  each hold's outcome; each skill load with its cause; route and skip
+  lines; and reference reads.
+- **What each entry carries:** the adapter's name, the session id and a
+  project key.
+- **What it never writes:** prompt text, hold text, file content, or a
+  project path.
+
+Writing the log is best effort, and a failed write never blocks a call.
+
+- **Name your adapter.** Use a short name, such as `my-loop`. With the
+  command or `settings_from_environment`, set `GOATED_CORE_ADAPTER`. When
+  you build `Settings` yourself, pass `usage_log=UsageLog(path, "my-loop")`
+  (`goated_core.usage_log`). An adapter that names none is logged as
+  `core`.
+- **Choose where it goes.** By default the log goes to a per-user data
+  folder, never a project's. To place it elsewhere, use `--usage-log PATH`
+  for the command, `GOATED_USAGE_LOG`, or the `log_path` argument of
+  `settings_from_environment`.
+- **Keep it out of tests.** Tests, and runs of the conformance runner,
+  must never write the default log, or test sessions land in the person's
+  real record. Point the log at a temporary file, or, with the Python call,
+  build `Settings` with `usage_log=None`, which keeps no log.
+
+The example's `python_judge` and
 `command_judge` are one of each.
 
 ## 4. Show A Hold To The Agent
@@ -285,8 +320,13 @@ Run every scenario through your translator:
 uv run python scripts/run_conformance.py path/to/your_translator.py
 ```
 
+The runner is a repo tool, not adapter code, so it lives in `scripts/`: it
+reads the YAML scenarios with PyYAML, which `uv sync` installs. Your adapter
+and translator still need only the standard library.
+
 `path.py:factory` names a factory other than `make_translator`. `--file
-routing` runs one scenario file (repeat it for more), and `--only TEXT` runs
+routing` (or `routing.yaml`) runs one scenario file, and you can repeat it
+for more. `--only TEXT` runs
 the scenarios whose name contains `TEXT`. The runner prints `PASS` or `FAIL`
 and each scenario's name. Under a failure it prints each step that went
 wrong, with the decision the scenario expected and the one your adapter
@@ -298,8 +338,10 @@ FAIL writes: a substantial code change waits for design principles
 0 of 1 scenarios passed
 ```
 
-It exits 0 when every scenario it ran passed, 1 otherwise, and 2 when it
-cannot load the translator. A scenario your harness cannot support at all
+It exits 0 when every scenario it ran passed, and 1 when one failed or none
+matched. It exits 2 when it cannot load the translator, for any reason, or
+when `--file` names a scenario file it does not have; it then lists the
+files it has. A scenario your harness cannot support at all
 is a gap to document, not one to make pass.
 
 ## The Worked Example

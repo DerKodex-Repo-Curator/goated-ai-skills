@@ -12,8 +12,10 @@ scenarios, builds each one's project, plays its steps through a fresh
 translator, compares each judged step's decision with the step's
 expectation, and reports each scenario as passing or failing, naming the
 step with the decision it expected and the one it got. The command exits 0
-when every scenario it ran passes, 1 when one fails or none ran, and 2 for
-arguments it cannot use.
+when every scenario it ran passes, and 1 when one fails or none ran. It
+exits 2 for arguments it cannot use: a translator it cannot load for any
+reason, or a `--file` naming no scenario file (`routing` and `routing.yaml`
+name the same one).
 
 A translator has these methods, each called once per step of its kind:
 
@@ -320,14 +322,28 @@ def main(argv: list[str] | None = None) -> int:
                         help="run only this scenario file, such as `routing`; repeatable")
     try:
         args = parser.parse_args(argv)
-        make_translator = load_translator(args.translator)
     except SystemExit as exc:
         return 2 if exc.code else 0
-    except (FileNotFoundError, AttributeError) as exc:
+    scenarios = load_scenarios()
+    files = sorted({name.split(":", 1)[0] for name, _ in scenarios})
+    # `routing` or `routing.yaml`, as a person may name the file either way.
+    wanted = {name.removesuffix(".yaml") for name in args.file}
+    unknown = sorted(wanted.difference(files))
+    if unknown:
+        print(f"run_conformance: no scenario file {unknown[0]!r}; the files are "
+              f"{', '.join(files)}", file=sys.stderr)
+        return 2
+    try:
+        make_translator = load_translator(args.translator)
+    except FileNotFoundError as exc:
         print(f"run_conformance: {exc}", file=sys.stderr)
         return 2
-    scenarios = [(name, scenario) for name, scenario in load_scenarios()
-                 if not args.file or name.split(":", 1)[0] in args.file]
+    except Exception as exc:  # noqa: BLE001 - any failure to load the author's file is exit 2
+        print(f"run_conformance: could not load the translator {args.translator} "
+              f"({type(exc).__name__}: {exc})", file=sys.stderr)
+        return 2
+    scenarios = [(name, scenario) for name, scenario in scenarios
+                 if not wanted or name.split(":", 1)[0] in wanted]
     results = run_scenarios(make_translator, scenarios, args.only)
     for result in results:
         print(f"{'PASS' if result.passed else 'FAIL'} {result.name}")
