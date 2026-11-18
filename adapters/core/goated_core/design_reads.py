@@ -35,22 +35,27 @@ MAX_COMPARED_BYTES = 2 * 1024 * 1024
 
 # A definition at a line start, with no indentation, as most languages write
 # top-level ones; `export NAME=` is a shell variable, not one. `async` starts
-# one only before `def`, `function` or `fn`, and Rust's `pub` (`pub(crate)` and
-# its forms too) only before a definition keyword, so `pub use x;` re-exports
-# and defines nothing.
-PUB_DEFINITION_KEYWORDS = (
-    r"(?:async\s+fn|unsafe\s+fn|fn|struct|enum|trait|type|const|static|mod|union|impl|extern)"
-)
+# one only before `def`, `function` or `fn`, and Rust's or Zig's `pub`
+# (`pub(crate)` and its forms too) only before a definition keyword, after any
+# qualifiers, so `pub use x;` and `pub extern crate x;` re-export and define
+# nothing.
+PUB_QUALIFIERS = r'(?:(?:const|async|unsafe|default|inline|extern(?:\s+"[^"]*")?)\s+)*'
+PUB_DEFINITION_KEYWORDS = r"(?!extern\s+crate\b)(?:fn|struct|enum|trait|type|const|static|mod|union|impl|extern|var)"
 DEFINITION_START_RE = re.compile(
     r"^(?!export\s+\w+=)(?:export|def|class|function|func|fn|public|interface|struct"
     r"|enum|trait|impl|defmodule|async\s+(?:def|function|fn)"
-    rf"|pub(?:\s*\([^)]*\))?\s+{PUB_DEFINITION_KEYWORDS})\b"
+    rf"|pub(?:\s*\([^)]*\))?\s+{PUB_QUALIFIERS}{PUB_DEFINITION_KEYWORDS})\b"
 )
+# Neither a string literal, such as the ABI in `extern "C"`, nor the path in a
+# visibility such as `pub(in crate::x)` names the definition.
+STRING_LITERAL_RE = re.compile(r'"[^"]*"')
+PUB_VISIBILITY_RE = re.compile(r"^pub\s*\([^)]*\)")
 GO_RECEIVER_RE = re.compile(r"^func\s*\([^)]*\)")
 NAME_RE = re.compile(r"[A-Za-z_$][\w$]*")
 NOT_NAMES = frozenset(
     "export default async def class function func fn pub crate super self public static final "
     "abstract sealed interface struct enum trait impl defmodule const let var type record void"
+    " unsafe extern mod union inline"
     .split()
 )
 # A whole line of comment, as the lines a code check skips.
@@ -343,7 +348,8 @@ def _signals(path: str, added: _Added, *, new_file: bool, is_code: bool, is_test
         # Test code needs the reasoning on tests, not on interfaces or errors.
         return {"coding.md": test_edit} if test_edit else {}
     found: dict[str, str] = {}
-    public = next((name for name in added.definitions if is_code and not name.startswith("_")), None)
+    public = next((name for name in added.definitions if not name.startswith("_")),
+                  None) if is_code else None
     if new_file or public is not None:
         why = "a new code file" if new_file else f'adds a public top-level definition ("{public}")'
         for name in ("process.md", "complexity-and-modules.md", "readability.md"):
@@ -392,7 +398,8 @@ def _definition(part: str) -> str | None:
     match = DEFINITION_START_RE.match(part)
     if match is None:
         return None
-    rest = GO_RECEIVER_RE.sub("func", part)
+    rest = GO_RECEIVER_RE.sub("func", PUB_VISIBILITY_RE.sub("pub", part))
+    rest = STRING_LITERAL_RE.sub(" ", rest)
     return next((n for n in NAME_RE.findall(rest) if n not in NOT_NAMES), match.group(0))
 
 

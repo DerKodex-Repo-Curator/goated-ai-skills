@@ -251,7 +251,7 @@ scenarios:
           decision: hold
           holds: [{gate: design-reads, kind: justified-skip}]
 
-  - name: a re-export, a word starting async, and a configuration key define nothing
+  - name: a re-export, an async arrow function, and a configuration key define nothing
     covers:
       - {gate: design-reads, case: near-miss}
     steps:
@@ -265,8 +265,8 @@ scenarios:
           edits: [{removed: "", added: "pub use export::run;"}]
       - call:
           kind: file_write
-          path: src/export.py
-          edits: [{removed: "", added: "async_helper = 1"}]
+          path: src/export.js
+          edits: [{removed: "", added: "async () => run()"}]
       - call:
           kind: file_write
           path: config/export.yaml
