@@ -1198,9 +1198,10 @@ def _design_hold(writes: dict[str, bool], write: Call | None, proof: _Proof,
     test edit is judged by the registry's rule for test edits, from
     `references` (`_test_edit`). A load or a read counts until the next
     compaction; a skip line or the user's skip of the skill clears both gates.
-    A skip line that clears a `design-reads` hold lasts the task for its
-    references on files of the same kind (spec R4, `_unexcused`); every other
-    skip lasts its turn.
+    Once the skill counts as loaded, both gates ask only for reads, so a skip
+    line that clears them lasts the task for those references on files of
+    the same kind (spec R4, `_unexcused`), keyed as `design-reads`. A skip
+    line that clears a `design` hold asking for the load lasts its turn.
 
     `write` is the call's file write, for its one file, or None for a
     shell write of new text (Ticket 098: `_shell_text_writes`),
@@ -1225,7 +1226,7 @@ def _design_hold(writes: dict[str, bool], write: Call | None, proof: _Proof,
                       if name not in proof.references_read]
     if not judged:
         return None
-    if loaded and not first:
+    if loaded:
         needs = _unexcused(proof, "design-reads", needs,
                            lambda name: f"`{design_reads.SKILL_REFERENCES}{name}`")
     elif DESIGN_SKILL in proof.skips:

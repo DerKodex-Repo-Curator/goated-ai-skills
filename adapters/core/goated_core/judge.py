@@ -229,7 +229,8 @@ def judge_call(settings: Settings, situation: Situation, call: Call,
         store, situation.session_id, current.key, purpose), call=True)
     log = _logged(settings, situation, lambda r: (r.turns(turns, pending=call),
                                                   r.outcomes(settled), r.holds(shown)))
-    notices = [Notice(SKIP_CARRIED, text) for text in task_skips.notices]
+    # A held call did not go through, so no lasting skip let it through.
+    notices = [] if holds else [Notice(SKIP_CARRIED, text) for text in task_skips.notices]
     notices += _warnings(state_warning, _save(store, situation.session_id, state),
                          _unread_warning(unread), *registry_warnings, log)
     return Decision(shown, notices, state.shell)
