@@ -85,6 +85,12 @@ SKILL_BODY_PREFIX = "Base directory for this skill:"
 # A call this adapter held: Claude Code 2.1.3xx records the deny reason as
 # `PreToolUse:<tool> hook error: <reason>`, and the reason opens with the hold line.
 HOLD_RESULT_RE = re.compile(r"(?:PreToolUse:\S+ hook error: )?goated-hold: ")
+# A result whose call never ran: a permission refusal, a hook's denial (this
+# adapter's or another's), or an interruption, as Claude Code 2.1.3xx words it.
+NOT_RUN_RE = re.compile(
+    r"(?:The user doesn[’']t want to|Permission for this \w+ was denied|PreToolUse:\S+ hook error"
+    r"|\[Request interrupted by user)"
+)
 # Text in a prompt the user did not type: `<system-reminder>` blocks, and text
 # the user pasted (a pasted agent report may quote an override). Claude Code
 # wraps a paste as `<pasted_content id="X">` ... `</pasted_content id="X">`, so
@@ -502,6 +508,7 @@ def _result(entry: dict, block: dict) -> Result:
         ok=not failed, held=failed and bool(HOLD_RESULT_RE.match(text)), output=text,
         agent_id=agent if isinstance(agent, str) else None,
         background=found.get("status") == "async_launched" or found.get("isAsync") is True,
+        ran=not NOT_RUN_RE.match(text),
     )
 
 

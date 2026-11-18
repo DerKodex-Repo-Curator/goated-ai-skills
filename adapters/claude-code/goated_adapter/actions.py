@@ -110,11 +110,6 @@ FAILURE_COUNT_SIGNS = tuple(
         (r"^test result: FAILED\. (.*)$", r"\b(\d+) failed\b"),
     )
 )
-# A failed call that never ran: a permission refusal, another hook's denial, or an interruption.
-NOT_RUN_RE = re.compile(
-    r"(?:The user doesn[’']t want to|Permission for this \w+ was denied|PreToolUse:\S+ hook error"
-    r"|\[Request interrupted by user)"
-)
 # What test runners, linters, and compilers print when they fail.
 FAILURE_SIGNS_RE = re.compile(
     r"\b[1-9]\d* (?:failed|failing|errors?|fail)\b|^FAILED\b|^FAIL\b|--- FAIL|npm ERR!"
@@ -1387,7 +1382,7 @@ def _repeated_check(turn: Turn, project: Project | None) -> str | None:
         # A shell command's own test write comes after its run, never before.
         test_writes_before = test_writes
         test_writes += _writes_a_test(call, project)
-        if call.kind != events.SHELL_COMMAND or call.held or NOT_RUN_RE.match(call.output):
+        if call.kind != events.SHELL_COMMAND or not call.ran:
             continue
         command = call.command
         check = _check_key(command, cwd)

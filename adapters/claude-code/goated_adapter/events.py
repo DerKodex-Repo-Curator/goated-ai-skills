@@ -50,16 +50,18 @@ class Edit(NamedTuple):
 
 class Result(NamedTuple):
     """How a call finished. `ok` is False when it failed or was refused; `held`
-    is True when a GOATED hold refused it, so it never ran. For a spawn,
-    `agent_id` is the agent it started and `background` says it started in
-    the background, so its work is done only once an `AgentFinished` entry
-    names it."""
+    is True when a GOATED hold refused it; `ran` is False when it never ran:
+    held, refused by the harness or another hook, or interrupted. For a
+    spawn, `agent_id` is the agent it started and `background` says it
+    started in the background, so its work is done only once an
+    `AgentFinished` entry names it."""
 
     ok: bool
     held: bool = False
     output: str = ""
     agent_id: str | None = None
     background: bool = False
+    ran: bool = True
 
 
 class Call:
@@ -135,6 +137,12 @@ class Call:
     @property
     def held(self) -> bool:
         return self.result is not None and self.result.held
+
+    @property
+    def ran(self) -> bool:
+        """The call has finished and did run, whatever its outcome."""
+
+        return self.result is not None and self.result.ran and not self.result.held
 
     @property
     def output(self) -> str:
