@@ -6,9 +6,7 @@
 
 ## Type
 
-HITL until decision M is recorded in the parent spec; AFK after. Written
-to the recommended option, M1. M2 swaps the outcome for removing the two
-words; M3 closes this ticket.
+AFK. Decision M, option 1 (the maintainer, 2026-11-18).
 
 ## What To Build
 
@@ -68,7 +66,7 @@ conformance scenario change with it, as `AGENTS.md` requires.
 
 ## Blocked By
 
-- Decision M in the parent spec.
+- None.
 
 ## Overlaps
 

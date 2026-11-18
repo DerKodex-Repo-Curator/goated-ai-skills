@@ -6,9 +6,7 @@
 
 ## Type
 
-HITL until decision P is recorded in the parent spec; AFK after. Written
-to the recommended option, P1. If the maintainer picks P2, rewrite the
-outcome; P3 closes this ticket.
+AFK. Decision P, option 1 (the maintainer, 2026-11-18).
 
 ## What To Build
 
@@ -66,7 +64,7 @@ scenario, change with the code, as `AGENTS.md` requires.
 
 ## Blocked By
 
-- Decision P in the parent spec.
+- None.
 
 ## Overlaps
 

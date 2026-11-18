@@ -57,14 +57,14 @@ waves 16 and 17. Their tickets were archived under `tickets/archive/` on
 | 14 (merged) | [107](archive/107-core-a-reviewer-starts-work.md) | 4 | core | AFK | 081 |
 | 15 (merged) | [106](archive/106-core-definition-starts-read-their-keyword.md) | 4 | core | AFK | 081, 101 |
 | 15 | [085](085-opencode-adapter.md) | 2 | new adapter | HITL (build decision after research) | 084 |
-| 16 (decision needed) | [110](110-core-whole-shell-prints-orient.md) | 5 | core | HITL (decision H) | None |
-| 16 (decision needed) | [111](111-core-one-clearing-section-per-message.md) | 5 | core and adapter | HITL (decision I) | None |
-| 16 (decision needed) | [112](112-core-scripted-edit-names-unknown-kinds.md) | 5 | core | HITL (decision J) | None |
-| 16 (decision needed) | [114](114-core-large-writes-land-and-read-after.md) | 5 | core | HITL (decision L) | None |
-| 16 (decision needed) | [115](115-core-mocking-pattern-for-code-patches.md) | 5 | core and registry | HITL (decision M) | None |
-| 16 (decision needed) | [117](117-core-continue-meets-router-first-in-a-briefed-task.md) | 5 | core | HITL (decision P) | None |
-| 17 (decision needed) | [113](113-core-design-reads-sized-by-substance.md) | 5 | core | HITL (decisions K1, K2) | 114 (same rows) |
-| 17 (decision needed) | [116](116-core-proof-kept-while-nothing-material-changed.md) | 5 | core | HITL (decisions N, O) | 114 (same closeout items) |
+| 16 (ready) | [110](110-core-whole-shell-prints-orient.md) | 5 | core | AFK | None |
+| 16 (ready) | [111](111-core-one-clearing-section-per-message.md) | 5 | core and adapter | AFK | None |
+| 16 (ready) | [112](112-core-scripted-edit-names-unknown-kinds.md) | 5 | core | AFK | None |
+| 16 (ready) | [114](114-core-large-writes-land-and-read-after.md) | 5 | core | AFK | None |
+| 16 (ready) | [115](115-core-mocking-pattern-for-code-patches.md) | 5 | core and registry | AFK | None |
+| 16 (ready) | [117](117-core-continue-meets-router-first-in-a-briefed-task.md) | 5 | core | AFK | None |
+| 17 (decision needed) | [113](113-core-design-reads-sized-by-substance.md) | 5 | core | HITL (decision K1) | 114 (same rows) |
+| 17 | [116](116-core-proof-kept-while-nothing-material-changed.md) | 5 | core | AFK | 114 (same closeout items) |
 
 ## Decisions Recorded Here
 
@@ -156,8 +156,10 @@ Round 5 comes from Ticket 108's agent, curated by the lead
 Its second source, a product ticket in another project, added items 7
 to 13 the same day; the lead brought 7 to 12 into the spec.
 
-- **Tickets 110 to 117 wait for the maintainer's decisions** H to P;
-  each is written to the recommended option.
+- **The maintainer's decisions (2026-11-18),** each the recommended
+  option, for all but K1, which is open: H1 (110), I1 (111), J1 (112),
+  K2.1 (113), L1 (114), M1 (115), N1 and O1 (116), P1 (117), and Q1, the
+  `true` carrier call kept with no ticket.
 - **113 and 116 wait for 114**, which changes the read-gate rows and the
   closeout items they also change; 114 ranks first. That puts them in
   wave 17.
@@ -198,17 +200,17 @@ to 13 the same day; the lead brought 7 to 12 into the spec.
 | Round 4: `route-line` holds after a lead's or peer's message | 102 (decision D1.2) |
 | Round 4: Proof asked while a session waits on another | 102 (decision D2.1) |
 | Round 4: the `true` carrier call for a line | No ticket (kept) |
-| Round 5: orientation held after `cat` reads | 110 (decision H) |
-| Round 5: `readability.md` for a short code edit with a comment; `coding.md` for new test cases | 113 (decisions K1, K2) |
-| Round 5: clearing advice repeated per hold in one message | 111 (decision I) |
-| Round 5: `scripted-edit` calls a markdown file code | 112 (decision J) |
+| Round 5: orientation held after `cat` reads | 110 (decision H1) |
+| Round 5: `readability.md` for a short code edit with a comment; `coding.md` for new test cases | 113 (decisions K1, open; K2.1) |
+| Round 5: clearing advice repeated per hold in one message | 111 (decision I1) |
+| Round 5: `scripted-edit` calls a markdown file code | 112 (decision J1) |
 | Round 5: a reference hold pointing at a section | Deferred (needs its own spec) |
-| Round 5: holds fire after a large edit is composed, so it is re-sent | 114 (decision L) |
-| Round 5: mocking reference for `fake` in TOML and `monkeypatch.setenv` | 115 (decision M) |
-| Round 5: Proof rerun after a docstring-only change | 116 (decision N) |
-| Round 5: closeout while waiting on the user or a background check | 116 (decision O) |
-| Round 5: `router-first` after a typed prompt in a briefed session | 117 (decision P) |
-| Round 5: the `true` carrier call, asked again | No ticket unless decision Q changes it |
+| Round 5: holds fire after a large edit is composed, so it is re-sent | 114 (decision L1) |
+| Round 5: mocking reference for `fake` in TOML and `monkeypatch.setenv` | 115 (decision M1) |
+| Round 5: Proof rerun after a docstring-only change | 116 (decision N1) |
+| Round 5: closeout while waiting on the user or a background check | 116 (decision O1) |
+| Round 5: `router-first` after a typed prompt in a briefed session | 117 (decision P1) |
+| Round 5: the `true` carrier call, asked again | No ticket (kept, decision Q1) |
 
 ## Notes
 

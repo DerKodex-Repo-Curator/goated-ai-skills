@@ -6,9 +6,7 @@
 
 ## Type
 
-HITL until decision L is recorded in the parent spec; AFK after. Written
-to the recommended option, L1. If the maintainer picks L2 or L3, rewrite
-the outcome before starting; L4 closes this ticket.
+AFK. Decision L, option 1 (the maintainer, 2026-11-18).
 
 ## What To Build
 
@@ -74,7 +72,7 @@ fails when a closeout item lacks scenarios).
 
 ## Blocked By
 
-- Decision L in the parent spec.
+- None.
 
 ## Overlaps
 

@@ -2,12 +2,13 @@
 
 ## Status
 
-Decision Needed, 2026-11-18. R1 to R4 follow the lead's curation of the
-round 5 feedback, items 1 to 4. R5 to R8 cover the second source's items
+Decision Needed, for K1 only, 2026-11-18. R1 to R4 follow the lead's
+curation of the round 5 feedback, items 1 to 4. R5 to R8 cover the second source's items
 7 to 11, added to this spec by the lead on 2026-11-18; item 12 is a
-decision with no ticket. Each item has open options, H to Q, with a
-recommendation ([Decisions](#decisions)); the tickets are written to the
-recommended options and change if the maintainer picks another. Builds on
+decision with no ticket. The maintainer chose the recommended option of
+every decision but K1 on 2026-11-18: H1, I1, J1, K2.1, L1, M1, N1, O1, P1
+and Q1 ([Decisions](#decisions)). K1 is open; Ticket 113 is written to its
+recommended option and changes if another is chosen. Builds on
 [the round 4 spec](2026-11-18-hook-friction-round-4.md): every change is
 made once, in the shared core at `adapters/core/goated_core/`, and stated
 in [the enforcement contract](../../stack/enforcement-contract.md).
@@ -302,11 +303,13 @@ hook, and its translation tests show R3's section.
 
 ## Decisions
 
-Each decision is open. The recommended option is first.
+The maintainer chose the first option of each decision but K1 on
+2026-11-18. K1 is open, its recommended option first. The other options
+are kept as the record of what was weighed.
 
 ### H. What orients a session (R1)
 
-1. **Recommended: a whole shell print counts, for orientation only**, as
+1. **Chosen: a whole shell print counts, for orientation only**, as
    R1 states. Orientation asks for a look at the project, and `cat` is how
    agents look. Trade-off: the harness may cut a long output, so a "whole"
    print may not have been seen whole; orientation tolerates that,
@@ -326,7 +329,7 @@ already counts them when they are printed whole.
 
 ### I. Clearing several holds (R3)
 
-1. **Recommended: one closing section per message**, as R3 states.
+1. **Chosen: one closing section per message**, as R3 states.
    Trade-off: an agent reading one hold alone must look to the message's
    end to learn where the line goes.
 2. **Merge only identical sentences.** Each hold keeps a placement
@@ -337,7 +340,7 @@ already counts them when they are printed whole.
 
 ### J. The `scripted-edit` words (R4)
 
-1. **Recommended: wording only**, as R4 states. Cheap, and the steering
+1. **Chosen: wording only**, as R4 states. Cheap, and the steering
    stays. Trade-off: a markdown file named at run time is still held.
 2. **Wording, and a visible extension decides the kind.** A run-time path
    whose literal tail ends in an extension (`f"{d}/notes.md"`,
@@ -359,7 +362,7 @@ K1 and K2 are separate choices.
      four-line fix with a long comment meets no design gate at all.
   3. **No change.** Trade-off: the reported hold stays.
 - **K2, new cases in an existing test.**
-  1. **Recommended: case-data lines do not count** toward the test-file
+  1. **Chosen: case-data lines do not count** toward the test-file
      threshold, as R2 states. The test's design was judged when it was
      written; new rows extend it. Trade-off: one rule decides both
      `coding.md` and `test-design.md`, so choosing the new cases no longer
@@ -376,7 +379,7 @@ K1 and K2 are separate choices.
 The read gates judge a write by its text, so they can only hold it once
 it is composed. The options differ in when the agent learns what it needs.
 
-1. **Recommended: large writes land, and the reads move to the
+1. **Chosen: large writes land, and the reads move to the
    closeout**, as R5 states. Re-sent content costs in proportion to its
    size, so a short edit keeps the hold (cheap to send again) and a long
    one keeps its content. Trade-off: for a large write the reads review
@@ -399,7 +402,7 @@ Options 1 and 2 can combine; 1 alone removes the reported cost.
 
 ### M. The mocking pattern (R6)
 
-1. **Recommended: `monkeypatch` only as a patch of code, and multi-line
+1. **Chosen: `monkeypatch` only as a patch of code, and multi-line
    strings are strings**, as R6 states. Trade-off: `monkeypatch.setitem`
    on a module's dict patches code and goes unasked; reading where a
    multi-line string opens needs the edit's context.
@@ -411,7 +414,7 @@ Options 1 and 2 can combine; 1 alone removes the reported cost.
 
 ### N. Proof after a comment-only edit (R7)
 
-1. **Recommended: a comment-only edit of any size keeps the proof**, as
+1. **Chosen: a comment-only edit of any size keeps the proof**, as
    R7 states. Comments do not run. Trade-off: a docstring a tool reads
    (doctests, a docstring-driven CLI or schema) can break a check; the
    agent must judge that case itself.
@@ -422,7 +425,7 @@ Options 1 and 2 can combine; 1 alone removes the reported cost.
 
 ### O. Closeout while waiting (R7)
 
-1. **Recommended: a background check still running meets Proof at the
+1. **Chosen: a background check still running meets Proof at the
    turn's end; waiting on the user is named in the Proof text**, as R7
    states. Trade-off: the closeout trusts that the background job is a
    check that will report; its result is judged a turn later.
@@ -435,7 +438,7 @@ Options 1 and 2 can combine; 1 alone removes the reported cost.
 
 ### P. Router-first on a continued prompt (R8)
 
-1. **Recommended: a `continue` route line meets `router-first` in a
+1. **Chosen: a `continue` route line meets `router-first` in a
    briefed session's task**, as R8 states. The router would only say
    `continue`. Trade-off: the agent judges the prompt continues the task
    without the router's classification.
@@ -451,7 +454,7 @@ Claude Code records a message only after the hook's check, and may store
 a message that makes a tool call as a summary without the line, so a line
 in reply text cannot be trusted and a call's field must carry it.
 
-1. **Recommended: keep it; no ticket.** R3's one clearing section
+1. **Chosen: keep it; no ticket.** R3's one clearing section
    shortens the advice around it, and R5 removes the holds most often
    cleared this way. Trade-off: one extra call per held call without a
    field for its line.
@@ -476,9 +479,12 @@ decision H.
 
 ## Open Questions
 
-- H to Q above. The combined ranking orders the work: L (item 7), H
-  (item 1), N and O (items 9 and 10), M (item 8), P (item 11), I and J
-  (items 3 and 4), K (item 2), Q (item 12).
+- K1 (the maintainer): whether code lines, not all added lines, size the
+  comment signal for `readability.md`.
+
+The combined ranking orders the work: L (item 7), H (item 1), N and O
+(items 9 and 10), M (item 8), P (item 11), I and J (items 3 and 4), K
+(item 2). Q (item 12) has no ticket.
 
 ## Sources
 

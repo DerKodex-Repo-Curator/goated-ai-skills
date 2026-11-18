@@ -7,10 +7,7 @@ AC6)
 
 ## Type
 
-HITL until decisions N and O are recorded in the parent spec; AFK after.
-Written to the recommended options, N1 and O1. If the maintainer picks
-another option for either, rewrite that half; if both are "no change",
-close this ticket.
+AFK. Decisions N and O, option 1 each (the maintainer, 2026-11-18).
 
 ## What To Build
 
@@ -74,7 +71,6 @@ command is a check uses the shell reading that already finds checks.
 
 ## Blocked By
 
-- Decisions N and O in the parent spec.
 - `tickets/114-core-large-writes-land-and-read-after.md` (ordering: both
   change `_closeout_items` and the Closeout Items table).
 

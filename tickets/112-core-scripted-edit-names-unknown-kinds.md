@@ -6,9 +6,7 @@
 
 ## Type
 
-HITL until decision J is recorded in the parent spec; AFK after. Written
-to the recommended option, J1. If the maintainer picks J2, add its
-extension rule to the outcome before starting.
+AFK. Decision J, option 1 (the maintainer, 2026-11-18).
 
 ## What To Build
 
@@ -53,7 +51,7 @@ checks the text changes with it.
 
 ## Blocked By
 
-- Decision J in the parent spec.
+- None.
 
 ## Overlaps
 

@@ -6,9 +6,7 @@
 
 ## Type
 
-HITL until decision H is recorded in the parent spec; AFK after. Written
-to the recommended option, H1. If the maintainer picks H2 or H3, rewrite
-this ticket's outcome before starting.
+AFK. Decision H, option 1 (the maintainer, 2026-11-18).
 
 ## What To Build
 
@@ -73,7 +71,7 @@ another part; resolve the shared file at merge time.
 
 ## Blocked By
 
-- Decision H in the parent spec.
+- None.
 
 ## Overlaps
 

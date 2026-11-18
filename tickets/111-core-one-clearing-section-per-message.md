@@ -6,9 +6,7 @@
 
 ## Type
 
-HITL until decision I is recorded in the parent spec; AFK after. Written
-to the recommended option, I1. If the maintainer picks I2, narrow the
-outcome to merging identical sentences; I3 closes this ticket.
+AFK. Decision I, option 1 (the maintainer, 2026-11-18).
 
 ## What To Build
 
@@ -70,7 +68,7 @@ the code, as `AGENTS.md` requires.
 
 ## Blocked By
 
-- Decision I in the parent spec.
+- None.
 
 ## Overlaps
 
