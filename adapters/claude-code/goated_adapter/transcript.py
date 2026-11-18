@@ -22,7 +22,9 @@ from typing import NamedTuple
 
 from . import events, translation
 from .markers import parse_reply
-from .events import AgentFinished, Call, Compaction, Prompt, ReplyText, Result, SkillInvoked
+from .events import (
+    AgentFinished, Call, CallFinished, Compaction, Prompt, ReplyText, Result, SkillInvoked,
+)
 
 BLOCK_SIZE = 256 * 1024
 MAX_BYTES = 64 * 1024 * 1024
@@ -429,8 +431,9 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
     """One turn's entries, given oldest first, opener included, in the event
     model's terms.
 
-    A call is an entry where its result is, so finished calls come in the
-    order they finished; a call with no result yet stays where it was made.
+    A call's entry stays where its tool_use is and takes its result when the
+    result arrives, which a `CallFinished` entry marks. A tool_use id
+    recorded twice keeps both entries; the result goes to the newer.
     """
 
     opener = entries[0] if kind else None
@@ -472,8 +475,6 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                     model.append(ReplyText(str(block.get("text", ""))))
                 elif block.get("type") == "tool_use":
                     tool_id = str(block.get("id", ""))
-                    if tool_id in made:
-                        model.remove(made[tool_id])
                     made[tool_id] = translation.call_of(
                         str(block.get("name", "")), block.get("input"), tool_id)
                     model.append(made[tool_id])
@@ -486,11 +487,12 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
             for block in content:
                 if not isinstance(block, dict) or block.get("type") != "tool_result":
                     continue
-                call = made.pop(str(block.get("tool_use_id", "")), None)
+                tool_id = str(block.get("tool_use_id", ""))
+                call = made.pop(tool_id, None)
                 if call is None:
                     continue
-                model.remove(call)
-                model.append(call.finished(_result(entry, block)))
+                model[model.index(call)] = call.finished(_result(entry, block))
+                model.append(CallFinished(tool_id))
     return chunk
 
 

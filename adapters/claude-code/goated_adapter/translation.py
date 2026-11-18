@@ -79,11 +79,16 @@ def call_of(tool_name: str, tool_input: object, tool_id: str = "") -> Call:
 
     tool_input = tool_input if isinstance(tool_input, dict) else {}
     line = tool_input.get(LINE_FIELDS.get(tool_name, ""))
-    common = {"id": tool_id, "line_text": line if isinstance(line, str) else ""}
+    common = {"id": tool_id, "line_text": line if isinstance(line, str) else "",
+              "action": _action(tool_name)}
     if tool_name in FILE_WRITE_TOOLS:
+        # Claude Code lets an Edit with empty old text, and no `edits` list,
+        # make the file it names.
+        creates = ("content" not in tool_input and tool_input.get("old_string") == ""
+                   and "edits" not in tool_input)
         return Call(events.FILE_WRITE, path=_text(tool_input.get(FILE_WRITE_TOOLS[tool_name])),
-                    whole_file="content" in tool_input, edits=_edits(tool_name, tool_input),
-                    **common)
+                    whole_file="content" in tool_input, creates=creates,
+                    edits=_edits(tool_name, tool_input), **common)
     if tool_name in COMMAND_TOOLS:
         return Call(events.SHELL_COMMAND, command=_text(tool_input.get("command")),
                     shell=COMMAND_TOOLS[tool_name],
@@ -93,7 +98,7 @@ def call_of(tool_name: str, tool_input: object, tool_id: str = "") -> Call:
                     starts_now=not _shows_a_card(tool_name, tool_input),
                     read_only=(tool_name in SUBAGENT_TOOLS
                                and tool_input.get("subagent_type") in READ_ONLY_SUBAGENTS),
-                    **common)
+                    separate=tool_name not in SUBAGENT_TOOLS, **common)
     if tool_name == "Read":
         return Call(events.FILE_READ, path=_text(tool_input.get("file_path")),
                     whole=not READ_RANGE_FIELDS & tool_input.keys(), **common)
@@ -103,10 +108,21 @@ def call_of(tool_name: str, tool_input: object, tool_id: str = "") -> Call:
         return Call(events.COMMIT, message=_known(tool_input.get("message")), **common)
     if PR_TOOL_RE.match(tool_name):
         owner, repo = _named(tool_input, "owner"), _named(tool_input, "repo")
+        repository = f"{owner}/{repo}" if owner and repo else None
         return Call(events.PULL_REQUEST, base=_named(tool_input, "base", "target_branch"),
                     head=_named(tool_input, "head", "source_branch"),
-                    repository=f"{owner}/{repo}" if owner and repo else None, **common)
+                    repository=(repository if repository and events.REPOSITORY_RE.match(repository)
+                                else None), **common)
     return Call(events.OTHER, **common)
+
+
+def _action(tool_name: str) -> str:
+    """The call's `action` key, the tool that makes it, so calls of one kind
+    by different tools count apart: a spawn tool's as `spawn:<tool>`, any
+    other's as `tool:<tool>`, as sessions saved before the event model hold
+    them. The rules key file writes, reads, and commands themselves."""
+
+    return ("spawn:" if tool_name in SPAWN_BRIEF_FIELDS else "tool:") + tool_name
 
 
 def skill_name(value: object) -> str:
@@ -129,13 +145,15 @@ def _edits(tool_name: str, tool_input: dict) -> tuple[Edit, ...]:
     """A file edit tool's changes; text that is not a string is unknown (None).
 
     An input with `content` writes the whole file: its one edit adds the
-    content. A notebook edit does not say which cell text it replaces, and a
-    delete adds none. An edit's old and new strings come first, then each
-    entry of `edits`, an entry that is not an edit being wholly unknown.
+    content, replacing whatever the file held. A notebook edit does not say
+    which cell text it replaces, and a delete adds none. An edit's old and
+    new strings come first, then each entry of `edits`, an entry that is not
+    an edit being wholly unknown. An input that names no text at all is one
+    unknown edit; an empty `edits` list alone is no edit.
     """
 
     if "content" in tool_input:
-        return (Edit("", _known(tool_input.get("content"))),)
+        return (Edit(None, _known(tool_input.get("content"))),)
     if tool_name == "NotebookEdit":
         return (Edit(None, _known(tool_input.get("new_source"))),)
     edits = []
@@ -146,6 +164,8 @@ def _edits(tool_name: str, tool_input: dict) -> tuple[Edit, ...]:
     if isinstance(listed, list):
         edits += [Edit(_known(e.get("old_string")), _known(e.get("new_string")))
                   if isinstance(e, dict) else Edit(None, None) for e in listed]
+    elif not edits:
+        edits.append(Edit(None, None))
     return tuple(edits)
 
 
@@ -182,7 +202,6 @@ PHRASES = {
     wording.NO_RANGE: "with no limit, offset, or pages",
     wording.FILE_EDIT_TOOLS: "(Edit, MultiEdit, or Write)",
 }
-_PHRASE_RE = re.compile("|".join(map(re.escape, PHRASES)))
 
 
 def render(text: str, tool_name: str | None = None, session_shell: str | None = None) -> str:
@@ -191,15 +210,26 @@ def render(text: str, tool_name: str | None = None, session_shell: str | None = 
     `tool_name` is the held call's tool, None for a held `Stop`. The carrier
     slot names a call that can carry a line only for a tool with no field for
     one, in the session's shell (`session_shell`, a shell kind), or in Bash
-    before the session's first shell call, since Claude Code always has Bash.
+    before the session's first shell call, since Claude Code always has Bash;
+    otherwise it goes, with the line break before it. Raises ValueError for a
+    slot with no wording here, a rule's mistake.
     """
 
-    text = wording.ADVICE_RE.sub(_advice, text)
-    if tool_name is None or tool_name in LINE_FIELDS:
+    carries = tool_name is not None and tool_name not in LINE_FIELDS
+    if not carries:
         text = text.replace("\n" + wording.CARRIER, "")
-    else:
-        text = text.replace(wording.CARRIER, _carrier(shell_tool(session_shell) or "Bash"))
-    return _PHRASE_RE.sub(lambda match: PHRASES[match.group(0)], text)
+
+    def fill(slot: re.Match) -> str:
+        if slot[0] == wording.CARRIER:
+            return _carrier(shell_tool(session_shell) or "Bash") if carries else ""
+        if slot[0] in PHRASES:
+            return PHRASES[slot[0]]
+        advice = wording.ADVICE_RE.fullmatch(slot[0])
+        if advice is None:
+            raise ValueError(f"no Claude Code wording for the slot {slot[1]!r}")
+        return _advice(advice)
+
+    return wording.SLOT_RE.sub(fill, text)
 
 
 def _advice(match: re.Match) -> str:

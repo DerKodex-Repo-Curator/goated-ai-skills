@@ -12,6 +12,7 @@ this bridge with the core itself.
 from __future__ import annotations
 
 import copy
+import json
 import re
 from pathlib import Path
 from typing import NamedTuple
@@ -19,6 +20,7 @@ from typing import NamedTuple
 from claude_code_adapter_support import (
     REPO_ROOT, Session, git_branch_with_change, parse, reason,
 )
+from goated_adapter import wording
 
 REGISTRY = REPO_ROOT / "stack" / "goated-stack.yaml"
 
@@ -102,7 +104,8 @@ class _Run:
             elif "call" in step:
                 self._call(step)
             elif "skill_invoked" in step:
-                self._skill_invoked(step["skill_invoked"])
+                self._skill_invoked(step["skill_invoked"],
+                                    before=steps[number - 2] if number > 1 else {})
             elif "agent_finished" in step:
                 self._agent_finished(step["agent_finished"])
             elif "compaction" in step:
@@ -187,10 +190,16 @@ class _Run:
         if result.get("agent"):
             self.agents.append(result["agent"]["id"])
 
-    def _skill_invoked(self, skill: str) -> None:
+    def _skill_invoked(self, skill: str, before: dict) -> None:
         """Claude Code adds the body of a skill invoked by its command after
-        the prompt (`_prompt`), which proves the load."""
+        the prompt (`_prompt`), which proves the load. `before` is the step
+        before this one, which must be that prompt."""
 
+        prompt = before.get("prompt") or {}
+        if prompt.get("author") != "person" or before.get("continues"):
+            raise ValueError(f"step {self.number}: Claude Code records a skill a person "
+                             "invokes only right after the prompt that invokes it, one a "
+                             "person types that opens a turn")
         self.s._append({"type": "user", "isMeta": True, "message": {"role": "user", "content": [
             {"type": "text", "text": f"Base directory for this skill: {skill}"}]}})
         self._entry({"type": "skill_invoked", "skill": skill})
@@ -220,8 +229,10 @@ class _Run:
 
     def _turn_end(self, step: dict) -> None:
         if self.in_subagent:
-            # Claude Code ends a subagent's turn with its own hook event,
-            # which the adapter does not hold.
+            # Claude Code ends a subagent's turn with its own hook event. The
+            # adapter registers no SubagentStop hook, so Claude Code never
+            # runs it, and the step is trivially allowed; the bridge calls it
+            # to show the adapter would allow it if it were registered.
             output = parse(self.s.hook("SubagentStop", stop_hook_active=False,
                                        last_assistant_message="", **self.subagent_fields))
         else:
@@ -235,8 +246,9 @@ class _Run:
     def _session_start(self, step: dict) -> None:
         event = {"type": "session_start", "source": step["session_start"]}
         if self.in_subagent:
-            # A subagent starts with its own hook event, which the adapter
-            # does not handle.
+            # A subagent starts with its own hook event. The adapter registers
+            # no SubagentStart hook, so the step is trivially allowed, as for
+            # SubagentStop above.
             output = parse(self.s.hook("SubagentStart", **self.subagent_fields))
         else:
             output = parse(self.s.hook("SessionStart",
@@ -249,6 +261,9 @@ class _Run:
         """The Claude Code tool and input that make `call`."""
 
         kind, line = call["kind"], call.get("line_text")
+        if "action" in call:
+            raise ValueError(f"step {self.number}: Claude Code gives each call its own "
+                             "action key, from its tool and input")
         # Claude Code reads a line only from a shell or agent call's
         # description and a Skill call's args; anything else cannot carry one.
         if line is not None and not (kind in ("shell_command", "skill_load")
@@ -257,9 +272,21 @@ class _Run:
                              f"line_text on a {kind} call")
         if kind == "file_write":
             path, edits = self._expand(call["path"]), call["edits"]
+            if call.get("whole_file"):
+                if len(edits) != 1 or edits[0]["removed"] is not None or edits[0]["added"] is None:
+                    raise ValueError(f"step {self.number}: Claude Code writes a whole file "
+                                     "as one edit that adds the content")
+                return "Write", {"file_path": path, "content": edits[0]["added"]}
+            if call.get("creates"):
+                # Claude Code lets an Edit with empty old text make a file.
+                if len(edits) != 1 or edits[0]["removed"] != "" or edits[0]["added"] is None:
+                    raise ValueError(f"step {self.number}: Claude Code makes a file by an "
+                                     "edit only with one edit that removes nothing")
+                return "Edit", {"file_path": path, "old_string": "",
+                                "new_string": edits[0]["added"]}
             if any(e["removed"] is None for e in edits):
                 # Only a notebook edit writes text without saying what it replaces.
-                if call.get("whole_file") or len(edits) != 1:
+                if len(edits) != 1:
                     raise ValueError(f"step {self.number}: Claude Code leaves replaced text "
                                      "unknown only in a notebook edit of one cell")
                 added = edits[0]["added"]
@@ -268,11 +295,11 @@ class _Run:
             if any(e["added"] is None for e in edits):
                 raise ValueError(f"step {self.number}: Claude Code shows the text of every "
                                  "edit but a notebook cell's")
-            if call.get("whole_file"):
-                return "Write", {"file_path": path, "content": edits[0]["added"]}
             pairs = [{"old_string": e["removed"], "new_string": e["added"]} for e in edits]
-            if len(pairs) == 1:
+            if len(pairs) == 1 and pairs[0]["old_string"] != "":
                 return "Edit", {"file_path": path, **pairs[0]}
+            # A MultiEdit never makes a file, so an edit that removes nothing
+            # without `creates` goes in one.
             return "MultiEdit", {"file_path": path, "edits": pairs}
         if kind == "shell_command":
             tool_input = {"command": self._expand(call["command"])}
@@ -291,6 +318,12 @@ class _Run:
                 initiation = "own_initiative" if call["brief"] else "offer"
                 return START_SESSION, {"initiation": initiation, "title": "Task",
                                        "prompt": call["brief"]}
+            if call.get("separate"):
+                if line or call.get("read_only"):
+                    raise ValueError(f"step {self.number}: Claude Code's side session "
+                                     "carries no line and no agent type")
+                return START_SESSION, {"initiation": "user_asked", "title": "Task",
+                                       "prompt": call["brief"]}
             tool_input = {"prompt": call["brief"],
                           "subagent_type": READ_ONLY_AGENT if call.get("read_only")
                           else "general-purpose"}
@@ -303,7 +336,7 @@ class _Run:
             tool_input = {"title": "Change", "body": "What changed."}
             tool_input.update({key: call[key] for key in ("base", "head") if key in call})
             if "repository" in call:
-                tool_input["owner"], tool_input["repo"] = call["repository"].split("/")
+                tool_input["owner"], tool_input["repo"] = call["repository"].rsplit("/", 1)
             return PULL_REQUEST_TOOL, tool_input
         return OTHER_TOOL, {"url": "https://example.invalid"}
 
@@ -386,6 +419,9 @@ def _decision(output: dict, shape: str) -> dict:
     puts a hold: `tool` (a denied call), `stop` (a blocked end), or `context`
     (a hook that never holds). `items` are the closeout hold's item labels."""
 
+    shown = json.dumps(output)
+    if wording.OPEN in shown or wording.CLOSE in shown:
+        raise AssertionError(f"a wording slot was left unfilled: {shown}")
     if shape == "tool":
         text = reason(output)
     elif shape == "stop":

@@ -32,7 +32,7 @@ scenarios:
           kind: file_write
           path: "{outside}/notes.py"
           whole_file: true
-          edits: [{removed: "", added: "note = 1\n"}]
+          edits: [{removed: null, added: "note = 1\n"}]
 
   - name: the brief that starts a session carries its route until a person's prompt
     covers:

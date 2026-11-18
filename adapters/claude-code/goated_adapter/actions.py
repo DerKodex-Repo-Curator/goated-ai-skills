@@ -933,15 +933,15 @@ def _load_or_skip(skill: str, unmet: str) -> str:
 
 
 def _reviewer_returned(call, proof: _Proof, spawn_templates: dict[str, list[str]]) -> bool:
-    """True for a finished spawn of an agent whose brief followed the reviewer
-    prompt (`spawn_templates`, by call id) and whose report has arrived: at
-    once, or for one started in the background, once its completion arrived in
-    the turn. A held or failed spawn reported nothing. A spawn whose result
-    names no agent, such as a side session's, only says its review started,
-    so it never counts."""
+    """True for a finished spawn of a subagent whose brief followed the
+    reviewer prompt (`spawn_templates`, by call id) and whose report has
+    arrived: at once, or for one started in the background, once its
+    completion arrived in the turn. A held or failed spawn reported nothing.
+    A separate agent's result, such as a side session's, arrives at once but
+    only says its review started, so it never counts."""
 
     return (
-        call.ok and call.kind == events.SPAWN and call.agent_id is not None
+        call.ok and call.kind == events.SPAWN and not call.separate
         and contracts.REVIEWER_TEMPLATE.reference in spawn_templates.get(call.id, ())
         and (not call.launched_async or call.agent_id in proof.turn.finished_agents)
     )
@@ -2160,7 +2160,9 @@ def writes_only_scratch(call: Call, project: Project | None, agent_folders: list
         return False
     agents: list[str] = []
     for folder in agent_folders:
-        readings = _readings(folder, ())
+        # A folder under `~` is read as a shell would; any other is taken as
+        # written, since the harness named it and no shell expands it.
+        readings = _readings(folder, ()) if folder.startswith("~") else [_comparable(folder)]
         if readings is None:
             return False
         agents += readings
@@ -2403,10 +2405,10 @@ def security_category(path: str) -> str | None:
 
 def countable_lines(write: Call) -> int | None:
     """The lines a file write adds, every line of each edit's added text, or
-    None when they cannot be counted: it has no edits, or one adds text it
-    does not show."""
+    None when they cannot be counted: an edit adds text it does not show.
+    A write with no edits adds none."""
 
-    if not write.edits or any(added is None for _, added in write.edits):
+    if any(added is None for _, added in write.edits):
         return None
     return sum(len(added.split("\n")) for _, added in write.edits if added)
 

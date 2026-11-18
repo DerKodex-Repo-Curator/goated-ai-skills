@@ -44,8 +44,14 @@ The event model is at version 2. Every change to it bumps the version
 (ADR 0004), so a version-1 request is refused. Version 2 (Ticket 080) added
 what the rules read and version 1 could not carry: a pull request's `base`,
 `head`, and `repository`, for its size; an edit's `removed` or `added` text
-as null when the call does not show it, such as a notebook cell's; and a
-result's `ran`, false for a call that never ran, which no check counts.
+as null when the call does not show it, such as a whole-file write's or a
+notebook cell's; a write's `creates`, for an edit that makes a missing file;
+a spawn's `separate`, for an agent whose report never comes back as the
+call's result; a call's `action`, an opaque key that keeps calls the model
+shows alike apart where repeated actions are counted; a `call_finished`
+entry, so a call's lines count where it was made while calls still finish in
+order; and a result's `ran`, false for a call that never ran for a reason
+other than a hold, which no check counts.
 
 - **Write**: a `file_write` call, or a `shell_command` that writes files.
   **Spawn**: a `spawn` call that starts work now (`starts_now`), or that
@@ -170,7 +176,7 @@ route line in the brief that started the session.
 | `security` | justified-skip | A write to a security-sensitive path inside the project: dependency manifests and lockfiles, env and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files | `code-security-review` counts as loaded | `proof`, `skip-line`, `override` | `code-security-review` |
 | `scripted-edit` | justified-skip | A shell command whose inline script writes a code file inside the project, or a file it names only at run time. It follows `security` and `review-intake` for the same file | A skip line naming `software-design-principles`; loading the skill does not clear it | `skip-line`, `override` | `software-design-principles`: change code with the file edit tools |
 | `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an edit whose removed text has a conflict marker at a line start, a write to a file a read showed with one, or any write after a merge, rebase, cherry-pick, revert, or pull reported a conflict, until it finishes or is aborted | `resolving-merge-conflicts` counts as loaded | `proof`, `skip-line`, `override` | `resolving-merge-conflicts` |
-| `repeated-failure` | justified-skip | A write once the same check has failed twice in a row in the turn. A run that only fails to load a missing module, the first run after a test file was written, and a run with fewer failures than the one before neither add nor reset | `diagnose` counts as loaded | `proof`, `skip-line`, `override` | `diagnose` ("a check that keeps failing") |
+| `repeated-failure` | justified-skip | A write once the same check has failed twice in a row in the turn. A run that only fails to load a missing module, the first run after a test file was written, a run with fewer failures than the one before, and a call that never ran (held, refused, or interrupted) neither add nor reset | `diagnose` counts as loaded | `proof`, `skip-line`, `override` | `diagnose` ("a check that keeps failing") |
 | `closeout` | justified-skip | A commit the `commit` gate passes, or the turn's end, in a turn that changed code or a security-sensitive file or setup, while a [closeout item](#closeout-items) is unmet | Every item is met or skipped | `proof`, `skip-line`, `override` | The shared policy's closeout and the skills each item names |
 
 ## Closeout Items

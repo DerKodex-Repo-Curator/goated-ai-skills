@@ -273,7 +273,7 @@ const skillArgument = (value: unknown) => short(String(value ?? '').trim().repla
 
 // The tools that start a subagent; `Task` is the Agent tool's older name.
 const SPAWN_TOOLS = new Set(['Agent', 'Task'])
-// The tools that start a side session, as the adapter names them (`SPAWN_TOOLS` in goated_adapter/gates.py).
+// The tools that start a side session, as the adapter names them (`SPAWN_BRIEF_FIELDS` in goated_adapter/translation.py).
 const START_SESSION = 'mcp__ccd_session__start_session'
 const HAND_OFF = 'mcp__ccd_session__hand_off_to_session'
 // What the adapter holds like a write (adapters/claude-code/README.md): edits, and spawns, which hand work on.
@@ -313,7 +313,7 @@ function isCodeFile(path: string): boolean {
  * Claude Code keeps as written even when it saves the reply's text as a
  * summary that drops the lines. Other tools, MCP tools included, carry none,
  * since their `description` is often the payload, such as an issue body. The
- * adapter keeps the same table (`LINE_FIELDS` in goated_adapter/transcript.py).
+ * adapter keeps the same table (`LINE_FIELDS` in goated_adapter/translation.py).
  */
 const LINE_FIELDS: Readonly<Record<string, string>> = { Bash: 'description', PowerShell: 'description', Agent: 'description', Task: 'description', Skill: 'args' }
 

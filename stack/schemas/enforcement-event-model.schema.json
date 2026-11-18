@@ -198,7 +198,7 @@
           }
         },
         {
-          "description": "A call, with its result once it has finished. A call with no result is still running.",
+          "description": "A call, where it was made, with its result once it has finished. A call with no result is still running. Its route and skip lines count here, where it was made; it finished where a call_finished entry names its id, or, with none, here.",
           "type": "object",
           "additionalProperties": false,
           "required": ["type", "call"],
@@ -206,6 +206,16 @@
             "type": {"const": "call"},
             "call": {"$ref": "#/$defs/call"},
             "result": {"$ref": "#/$defs/result"}
+          }
+        },
+        {
+          "description": "Where a call made earlier in the turn finished, for calls that finish in another order than they were made. The result stays on the call's own entry.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "id"],
+          "properties": {
+            "type": {"const": "call_finished"},
+            "id": {"type": "string", "minLength": 1}
           }
         },
         {
@@ -238,7 +248,7 @@
       ]
     },
     "call": {
-      "description": "A call by its kind, one branch per kind. `line_text` is the one field a route or skip line may be read from, for a harness that may not keep reply text whole; leave it out otherwise.",
+      "description": "A call by its kind, one branch per kind. `line_text` is the one field a route or skip line may be read from, for a harness that may not keep reply text whole; leave it out otherwise. `action` is an opaque key the harness may give so that calls the model shows alike, such as spawns by two different tools, count as different actions where the core counts repeated actions.",
       "type": "object",
       "required": ["kind"],
       "oneOf": [
@@ -246,23 +256,27 @@
           "additionalProperties": false,
           "required": ["path", "edits"],
           "properties": {
-            "id": {"type": "string"}, "line_text": {"type": "string"},
+            "id": {"type": "string"}, "line_text": {"type": "string"}, "action": {"type": "string"},
             "kind": {"const": "file_write"},
             "path": {"type": "string", "minLength": 1},
             "whole_file": {
-              "description": "The call writes the whole file, creating or replacing it; its one edit's added text is the content.",
+              "description": "The call writes the whole file, creating or replacing it; its one edit's added text is the content, and its removed text is null, since the call does not say what the file held.",
+              "type": "boolean"
+            },
+            "creates": {
+              "description": "An edit, not a whole-file write, that makes the file when it is missing, as a harness may let an edit with no removed text do.",
               "type": "boolean"
             },
             "edits": {
+              "description": "The call's changes; empty when it changes nothing.",
               "type": "array",
-              "minItems": 1,
               "items": {
                 "type": "object",
                 "additionalProperties": false,
                 "required": ["removed", "added"],
                 "properties": {
                   "removed": {
-                    "description": "The text the edit replaces; null when the call does not say, such as a notebook cell's replacement.",
+                    "description": "The text the edit replaces; null when the call does not say, such as a whole-file write or a notebook cell's replacement.",
                     "type": ["string", "null"]
                   },
                   "added": {
@@ -279,7 +293,7 @@
           "additionalProperties": false,
           "required": ["command", "shell"],
           "properties": {
-            "id": {"type": "string"}, "line_text": {"type": "string"},
+            "id": {"type": "string"}, "line_text": {"type": "string"}, "action": {"type": "string"},
             "kind": {"const": "shell_command"},
             "command": {"type": "string"},
             "shell": {"enum": ["posix", "powershell"]},
@@ -290,7 +304,7 @@
           "additionalProperties": false,
           "required": ["skill"],
           "properties": {
-            "id": {"type": "string"}, "line_text": {"type": "string"},
+            "id": {"type": "string"}, "line_text": {"type": "string"}, "action": {"type": "string"},
             "kind": {"const": "skill_load"},
             "skill": {
               "description": "The name as the harness gave it, namespace included; the core decides whether it counts.",
@@ -303,7 +317,7 @@
           "additionalProperties": false,
           "required": ["path", "whole"],
           "properties": {
-            "id": {"type": "string"}, "line_text": {"type": "string"},
+            "id": {"type": "string"}, "line_text": {"type": "string"}, "action": {"type": "string"},
             "kind": {"const": "file_read"},
             "path": {"type": "string", "minLength": 1},
             "whole": {"description": "False when the call asked for part of the file.", "type": "boolean"}
@@ -314,7 +328,7 @@
           "additionalProperties": false,
           "required": ["brief", "starts_now"],
           "properties": {
-            "id": {"type": "string"}, "line_text": {"type": "string"},
+            "id": {"type": "string"}, "line_text": {"type": "string"}, "action": {"type": "string"},
             "kind": {"const": "spawn"},
             "brief": {"type": "string"},
             "starts_now": {
@@ -324,6 +338,10 @@
             "read_only": {
               "description": "The spawned agent has no write, edit, or shell tool.",
               "type": "boolean"
+            },
+            "separate": {
+              "description": "The agent runs apart from the acting session, as another session does, so its report never comes back as this call's result. A call that only proposes the work starts nothing that reports back either.",
+              "type": "boolean"
             }
           }
         },
@@ -331,7 +349,7 @@
           "description": "A tool that only records a commit.",
           "additionalProperties": false,
           "properties": {
-            "id": {"type": "string"}, "line_text": {"type": "string"},
+            "id": {"type": "string"}, "line_text": {"type": "string"}, "action": {"type": "string"},
             "kind": {"const": "commit"},
             "message": {"type": ["string", "null"]}
           }
@@ -340,14 +358,14 @@
           "description": "A tool that only opens a pull or merge request.",
           "additionalProperties": false,
           "properties": {
-            "id": {"type": "string"}, "line_text": {"type": "string"},
+            "id": {"type": "string"}, "line_text": {"type": "string"}, "action": {"type": "string"},
             "kind": {"const": "pull_request"},
             "base": {"description": "The branch it merges into, when the call names one.", "type": "string", "minLength": 1},
             "head": {"description": "The branch it merges from, when the call names one.", "type": "string", "minLength": 1},
             "repository": {
-              "description": "The repository it is opened in, as owner/name, when the call names one; a change of another repository is not measured.",
+              "description": "The repository it is opened in, as owner/name, the owner perhaps a path of groups (group/subgroup/name), when the call names one; a change of another repository is not measured.",
               "type": "string",
-              "pattern": "^[^/]+/[^/]+$"
+              "pattern": "^[^/]+(?:/[^/]+)+$"
             }
           }
         },
@@ -355,7 +373,7 @@
           "description": "Any other call. Never held.",
           "additionalProperties": false,
           "properties": {
-            "id": {"type": "string"}, "line_text": {"type": "string"},
+            "id": {"type": "string"}, "line_text": {"type": "string"}, "action": {"type": "string"},
             "kind": {"const": "other"}
           }
         }
@@ -369,7 +387,7 @@
         "ok": {"description": "False when the call failed or was refused.", "type": "boolean"},
         "held": {"description": "A GOATED hold refused it, so it never ran.", "type": "boolean"},
         "ran": {
-          "description": "False when the call never ran: held, refused by the harness or another hook, or interrupted. A run that never happened neither fails nor passes a check. Absent means it ran unless held.",
+          "description": "False when the call never ran for a reason other than a GOATED hold, which `held` says: refused by the harness or another hook, or interrupted. A run that never happened neither fails nor passes a check. Absent means it ran unless held.",
           "type": "boolean"
         },
         "output": {"type": "string"},
@@ -388,7 +406,19 @@
             }
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "description": "A held call never ran, and `held` alone says so.",
+          "if": {"required": ["held"], "properties": {"held": {"const": true}}},
+          "then": {"properties": {"ok": {"const": false}, "ran": {"const": true}}}
+        },
+        {
+          "description": "A call that never ran did not succeed.",
+          "if": {"required": ["ran"], "properties": {"ran": {"const": false}}},
+          "then": {"properties": {"ok": {"const": false}}}
+        }
+      ]
     },
     "skill_name": {
       "description": "A bare skill name. The marker grammar in stack/fixtures/markers/README.md owns this shape.",

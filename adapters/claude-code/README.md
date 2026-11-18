@@ -108,14 +108,24 @@ model's turns from the transcript and removes the reminder and pasted blocks
 from a typed prompt before overrides are read.
 [`goated_adapter/translation.py`](goated_adapter/translation.py) maps each tool
 and its input to a call (which tools are file writes, shell commands, spawns,
-commits, or pull requests; the line field of each; which spawns are read-only
-or only show a card) and fills the slots the rules leave in hold text
+commits, or pull requests; the line field of each; which spawns are read-only,
+start a side session, or only show a card; which edits make a missing file;
+and each call's action key for the friction count) and fills the slots the
+rules leave in hold text
 ([`goated_adapter/wording.py`](goated_adapter/wording.py)) with Claude Code's
 words: the Skill and Read tools, the line advice, and the carrier sentence.
+A slot is marked by two private-use characters, so text a hold quotes, such
+as a malformed route line, is never filled.
 The hook entry point ([`goated_adapter/hooks.py`](goated_adapter/hooks.py))
 passes Claude Code's own folders as the agent's folders, where no write is
-scratch. A test fails when a rule module names a Claude Code tool, input,
-transcript, or hook field.
+scratch. Three other modules stay with the adapter: `policy.py` and
+`onboarding.py` write the session-start notices, which are about where
+Claude Code keeps instruction files and skills, and
+[`goated_adapter/state.py`](goated_adapter/state.py), the saved session
+state, still binds its override record to Claude Code's `prompt_id` until
+the core owns session state (Ticket 081). A test fails when a rule module,
+or `state.py` beyond that one name, names a Claude Code tool, input,
+transcript or hook field, a tool in prose, or Claude Code's own folder.
 
 Route and skip lines are read from the agent's reply text and
 from one field
@@ -1534,8 +1544,12 @@ turn gave, or the [early closeout note](#early-closeout-note). Claims for
 different purposes in one turn never meet. A claim in a new turn drops its
 owner's markers of other turns, and a `SessionStart` after compaction or
 `/clear` deletes the session's and its subagents'. The state also keeps the
-shell tool the session last called, which names the carrier a hold offers for
-a line. An `onboarding-notices/` folder holds one file per project, named by
+shell the session last called (`posix` or `powershell`), which names the
+carrier a hold offers for a line. A state file an adapter from before Ticket
+080 saved names the tool instead (`Bash`, `PowerShell`) and is read the same.
+An older adapter reading a newer state file takes the shell as a tool name,
+so until the session's next shell call its carrier sentence names a
+`posix` or `powershell` call, with Bash's command `true` either way. An `onboarding-notices/` folder holds one file per project, named by
 a digest of the project's path, listing the skills its onboarding notice last
 named.
 The action and closeout gates keep no state of their own: they read the
@@ -1567,12 +1581,23 @@ the changes its change read must follow; other calls never read them. That
 case was not measured.
 
 Translating Claude Code's calls and transcript into the event model (Ticket
-080) added under 1 ms. Measured on 2026-11-18 with Python 3.14, in-process
-through `run_hook` on a turn of 300 finished calls, 150 runs each, two rounds:
-the median `PreToolUse` of an `Edit` went from 19.4 and 20.4 ms to 21.0 and
-20.7 ms, of a `Bash` command from 6.5 to 7.1 to 7.3 ms, and a `Stop` from 12.2
-to 13.0 ms. Spawned in exec form, 30 runs each, the same cases' medians stayed
-within the machine's run-to-run spread, about 200 to 235 ms that day.
+080) adds 1 to 1.5 ms of work per hook. Measured on 2026-11-18 on the same
+machine with the uv-managed Python 3.14, before and after, in two rounds:
+
+| Case | Before | After |
+| --- | --- | --- |
+| In process (`run_hook`), 300-call turn, 150 runs: `PreToolUse` of an `Edit` | 19.3, 19.9 ms | 20.7, 21.2 ms |
+| The same, `PreToolUse` of a `Bash` command | 6.3, 6.8 ms | 7.8, 7.7 ms |
+| The same, `Stop` | 11.9, 12.3 ms | 13.5, 13.9 ms |
+| Spawned in exec form, 202 KB transcript, 30 runs: `PreToolUse` of an `Edit` | 211, 209 ms | 208, 201 ms |
+| The same, `Stop` | 202, 202 ms | 200, 195 ms |
+
+Spawned, the difference is lost in the run-to-run spread. Those medians are
+about three times the table above because they were measured with a
+different interpreter: the project's virtual environment of the uv-managed
+Python 3.14 takes 41 ms to start alone, against 22 ms for the system Python
+3.13 the table used, and it imports more slowly too (see the Ticket 095
+paragraph below). Compare them with each other, not with the table.
 
 The `pr-review` gate's size check (see [Large pull requests](#large-pull-requests))
 runs only on a pull-request call that no load or skip line has cleared of
@@ -1910,3 +1935,7 @@ checks the adapter's marker parser against `stack/fixtures/markers/lines.yaml`.
 Verification items against scratch git repositories.
 `tests/test_claude_code_adapter_closeout_note.py` covers the early closeout
 note.
+`tests/test_claude_code_adapter_rule_purity.py` fails when a rule module
+names Claude Code (see [What It Holds](#what-it-holds)), and
+`tests/test_claude_code_adapter_translation_parity.py` pins the behaviour the
+translation layer must keep (Ticket 080).

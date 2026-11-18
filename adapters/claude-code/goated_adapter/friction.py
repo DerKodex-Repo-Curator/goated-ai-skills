@@ -49,13 +49,12 @@ _COUNTED_TURN_PARTS = ("loads", "skips", "calls")
 
 def action_of(call: Call) -> str:
     """The action a gated call takes, as a later call repeating it would: the
-    file a write changes, a spawn, a commit or pull request whatever its
-    message, or else the command or the kind of call."""
+    file a write or read names, a commit or pull request whatever its
+    message, the command, or else the harness's own key for the call
+    (`Call.action`), or its kind."""
 
-    if call.kind == events.FILE_WRITE and call.path:
+    if call.kind in (events.FILE_WRITE, events.FILE_READ) and call.path:
         return "file:" + call.path.replace("\\", "/").lower()
-    if call.kind == events.SPAWN:
-        return "spawn"
     if call.kind == events.SHELL_COMMAND:
         found = shell.analyze(call.command, call.shell)
         if found.commit:
@@ -63,7 +62,7 @@ def action_of(call: Call) -> str:
         if found.opens_pr:
             return "pull-request"
         return "command:" + call.command.strip()
-    return "call:" + call.kind
+    return call.action or "call:" + call.kind
 
 
 def observe(state, turn: Turn, action: str, holds: list) -> None:

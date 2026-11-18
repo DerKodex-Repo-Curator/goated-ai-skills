@@ -14,6 +14,7 @@ route and skip lines, and its finished calls in the order they finished.
 
 from __future__ import annotations
 
+import re
 from typing import NamedTuple
 
 from .markers import ReplyMarkers, parse_reply
@@ -38,6 +39,10 @@ SESSION = "session"
 HOST = "host"
 UNKNOWN = "unknown"
 
+# A pull request's repository, `owner/name`; the owner may be a path of
+# groups (`group/subgroup/name`). The schema's pattern is the same.
+REPOSITORY_RE = re.compile(r"^[^/]+(?:/[^/]+)+$")
+
 
 class Edit(NamedTuple):
     """One change a file write makes: the text it `removed` and the text it
@@ -50,8 +55,9 @@ class Edit(NamedTuple):
 
 class Result(NamedTuple):
     """How a call finished. `ok` is False when it failed or was refused; `held`
-    is True when a GOATED hold refused it; `ran` is False when it never ran:
-    held, refused by the harness or another hook, or interrupted. For a
+    is True when a GOATED hold refused it, so it never ran; `ran` is False
+    when it never ran for any other reason: refused by the harness or another
+    hook, or interrupted. Either one means `ok` is False. For a
     spawn, `agent_id` is the agent it started and `background` says it
     started in the background, so its work is done only once an
     `AgentFinished` entry names it."""
@@ -68,38 +74,48 @@ class Call:
     """A call by its kind, with the fields of that kind, and its `result` once
     it has finished (None while it runs, or while it is being judged).
 
-    Every kind has `id` ("" when the harness gives none) and `line_text`, the
-    one text a route or skip line may be read from. The other fields belong
-    to one kind each:
+    Every kind has `id` ("" when the harness gives none), `line_text`, the
+    one text a route or skip line may be read from, and `action`, an opaque
+    key the harness may give so that calls the model shows alike, such as
+    spawns by two different tools, count as different actions ("" when it
+    gives none). The other fields belong to one kind each:
 
     - file_write: `path`, `whole_file` (the call writes the whole file, its
-      one edit's added text being the content), `edits`;
+      one edit's added text being the content and its replaced text None),
+      `creates` (an edit, not a whole-file write, that makes the file when
+      it is missing, as a harness may let it), `edits` (empty when the call
+      changes nothing);
     - shell_command: `command`, `shell` (`POSIX` or `POWERSHELL`), `background`;
     - skill_load: `skill`, the name as the harness gave it;
     - file_read: `path`, `whole` (False when it asked for part of the file);
     - spawn: `brief`, `starts_now` (False when it only proposes the work),
-      `read_only` (the agent has no write, edit, or shell tool);
+      `read_only` (the agent has no write, edit, or shell tool), `separate`
+      (the agent runs apart from the acting session, as another session
+      does, so its report never comes back as this call's result);
     - commit: `message`, None when unknown;
-    - pull_request: `base`, `head`, `repository` (`owner/name`), each None
-      when the call does not name it.
+    - pull_request: `base`, `head`, `repository` (`owner/name`, the owner
+      perhaps a path of groups, as `REPOSITORY_RE` reads it), each None when
+      the call does not name it.
     """
 
-    __slots__ = ("kind", "id", "line_text", "path", "whole_file", "edits", "command", "shell",
-                 "background", "skill", "whole", "brief", "starts_now", "read_only", "message",
-                 "base", "head", "repository", "result")
+    __slots__ = ("kind", "id", "line_text", "action", "path", "whole_file", "creates", "edits",
+                 "command", "shell", "background", "skill", "whole", "brief", "starts_now",
+                 "read_only", "separate", "message", "base", "head", "repository", "result")
 
-    def __init__(self, kind: str, *, id: str = "", line_text: str = "", path: str = "",
-                 whole_file: bool = False, edits: tuple[Edit, ...] = (), command: str = "",
-                 shell: str = POSIX, background: bool = False, skill: str = "",
-                 whole: bool = True, brief: str = "", starts_now: bool = True,
-                 read_only: bool = False, message: str | None = None, base: str | None = None,
-                 head: str | None = None, repository: str | None = None,
-                 result: Result | None = None) -> None:
+    def __init__(self, kind: str, *, id: str = "", line_text: str = "", action: str = "",
+                 path: str = "", whole_file: bool = False, creates: bool = False,
+                 edits: tuple[Edit, ...] = (), command: str = "", shell: str = POSIX,
+                 background: bool = False, skill: str = "", whole: bool = True, brief: str = "",
+                 starts_now: bool = True, read_only: bool = False, separate: bool = False,
+                 message: str | None = None, base: str | None = None, head: str | None = None,
+                 repository: str | None = None, result: Result | None = None) -> None:
         self.kind = kind
         self.id = id
         self.line_text = line_text
+        self.action = action
         self.path = path
         self.whole_file = whole_file
+        self.creates = creates
         self.edits = tuple(edits)
         self.command = command
         self.shell = shell
@@ -109,6 +125,7 @@ class Call:
         self.brief = brief
         self.starts_now = starts_now
         self.read_only = read_only
+        self.separate = separate
         self.message = message
         self.base = base
         self.head = head
@@ -203,6 +220,18 @@ class AgentFinished(NamedTuple):
     agent_id: str
 
 
+class CallFinished(NamedTuple):
+    """Where the call with id `call_id`, made earlier in the turn, finished.
+
+    The call's entry stays where it was made and carries the result; this
+    entry gives only the place, so a call's lines count where it was made
+    while finished calls come in the order they finished. A finished call
+    with no such entry finished where it was made.
+    """
+
+    call_id: str
+
+
 class Turn:
     """One turn: its `key`, its `opener` (a `Prompt`, a `Compaction`, or None
     when no opener was read), and its `entries` in order, with what the rules
@@ -213,10 +242,11 @@ class Turn:
     ok, and each skill a person invoked. `route` is the winning route line,
     `routes` every valid one in order, `malformed` the route-like lines that
     failed the grammar, and `skips` the valid skip lines; they come from
-    reply texts and from each call's `line_text`, a call's counting once per
-    call id. `texts` are the reply texts and `call_texts` the calls' line
-    texts, in order. `calls` are the finished calls in the order they
-    finished, `unfinished` the calls with no result yet. `brief_route` is the
+    reply texts and from each call's `line_text` where the call was made, a
+    call's counting once per call id, at its first entry. `texts` are the
+    reply texts and `call_texts` the calls' line texts, in order. `calls`
+    are the finished calls in the order they finished (see `CallFinished`),
+    `unfinished` the calls with no result yet. `brief_route` is the
     route line of the brief that started the session, which is also the
     turn's first route line. `finished_agents` are the background agents
     whose completion arrived in the turn. `opens_session` says no earlier
@@ -257,15 +287,25 @@ class Turn:
             if self.brief_route is not None:
                 self.route = self.brief_route
                 self.routes.append(self.brief_route)
-        for entry in entries:
+        marked = {entry.call_id for entry in entries if isinstance(entry, CallFinished)}
+        # The newest entry of each call id: an id recorded twice is one call,
+        # whose lines count at its first entry.
+        newest = {entry.id: index for index, entry in enumerate(entries)
+                  if isinstance(entry, Call) and entry.id}
+        awaiting: dict[str, Call] = {}  # Finished calls whose place is marked later.
+        for index, entry in enumerate(entries):
             if isinstance(entry, Call):
                 self._count_lines(entry)
                 if entry.result is None:
-                    self.unfinished.append(entry)
-                    continue
-                self.calls.append(entry)
-                if entry.kind == SKILL_LOAD and entry.ok and entry.skill:
-                    self.loads.append(entry.skill)
+                    if not entry.id or newest[entry.id] == index:
+                        self.unfinished.append(entry)
+                elif entry.id in marked:
+                    awaiting[entry.id] = entry
+                else:
+                    self._finish(entry)
+            elif isinstance(entry, CallFinished):
+                if entry.call_id in awaiting:
+                    self._finish(awaiting.pop(entry.call_id))
             elif isinstance(entry, ReplyText):
                 self.texts.append(entry.text)
                 self.add_markers(parse_reply(entry.text))
@@ -275,6 +315,13 @@ class Turn:
                 self.finished_agents.add(entry.agent_id)
         if pending is not None:
             self._count_lines(pending)
+
+    def _finish(self, call: Call) -> None:
+        """Take `call` as the next call to finish."""
+
+        self.calls.append(call)
+        if call.kind == SKILL_LOAD and call.ok and call.skill:
+            self.loads.append(call.skill)
 
     def add_markers(self, markers: ReplyMarkers) -> None:
         """Count the marker lines of one reply text or one call, in order."""

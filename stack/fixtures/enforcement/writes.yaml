@@ -187,7 +187,7 @@ scenarios:
           kind: file_write
           path: config/export.json
           whole_file: true
-          edits: [{removed: "", added: "{\n  \"limit\": 2,\n  \"format\": \"csv\",\n  \"header\": true,\n  \"quote\": \"minimal\"\n}\n"}]
+          edits: [{removed: null, added: "{\n  \"limit\": 2,\n  \"format\": \"csv\",\n  \"header\": true,\n  \"quote\": \"minimal\"\n}\n"}]
         expect:
           decision: hold
           holds: [{gate: design-reads, kind: justified-skip}]
@@ -238,7 +238,42 @@ scenarios:
           kind: file_write
           path: docs/export.md
           whole_file: true
-          edits: [{removed: "", added: "# Export\n\nThe limit is two.\n"}]
+          edits: [{removed: null, added: "# Export\n\nThe limit is two.\n"}]
+
+  - name: an edit that makes a missing code file waits for the new-file references
+    covers:
+      - {gate: design-reads, case: holds}
+      - {gate: design-reads, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export limit module.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: &make_module
+          kind: file_write
+          path: src/export_limit.py
+          creates: true
+          edits: [{removed: "", added: "LIMIT = 2\n"}]
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+      - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/process.md", whole: true}
+      - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/complexity-and-modules.md", whole: true}
+      - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/readability.md", whole: true}
+      - call: *make_module
+
+  - name: an edit that removes nothing but makes no file selects no new-file reference
+    covers:
+      - {gate: design-reads, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export limit module.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call:
+          kind: file_write
+          path: src/export_limit.py
+          edits: [{removed: "", added: "LIMIT = 2\n"}]
 
   - name: a new test file waits for the test reference the registry declares
     covers:
@@ -253,7 +288,7 @@ scenarios:
           kind: file_write
           path: tests/test_export.py
           whole_file: true
-          edits: [{removed: "", added: "def test_limit():\n    assert 2 == 2\n"}]
+          edits: [{removed: null, added: "def test_limit():\n    assert 2 == 2\n"}]
         expect:
           decision: hold
           holds: [{gate: reference-reads, kind: justified-skip}]
@@ -385,6 +420,23 @@ scenarios:
           kind: file_write
           path: docs/export.md
           edits: [{removed: "Limit one.", added: "Limit two."}]
+
+  - name: a reviewer briefed as a separate session has reported nothing yet
+    covers:
+      - {gate: review-intake, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: "Have the export change reviewed, then act on it."}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: subagent-driven-development}
+      - call: *reviewer_prompt
+      - call:
+          kind: spawn
+          starts_now: true
+          separate: true
+          brief: "## Review Mode\n\nSpec review.\n\n## Review Inputs\n\n- The export change.\n\n## Required Report Format\n\n- Findings.\n\ngoated-skills: standards-and-spec-review\n"
+        result: {ok: true, output: "Session started.", agent: {id: reviewer-1}}
+      - call: *fix
 
   - name: a dependency manifest waits for the security review skill
     covers:

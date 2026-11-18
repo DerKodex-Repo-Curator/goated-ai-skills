@@ -119,16 +119,15 @@ def required(path: str, edit: Call | None, *, is_code: bool, is_test: bool, smal
 
 
 def creates_file(path: str, edit: Call | None, *, written_before: bool, cwd: str | None) -> bool:
-    """Whether a file write creates `path`: it writes the whole file, or makes
-    one edit that removes nothing (as a harness may let an edit make a file),
-    to a file no earlier write in the turn made (`written_before`) and that is
-    not on disk, a relative path taken from `cwd`. A file a shell command made
-    is on disk, so it is not."""
+    """Whether a file write creates `path`: it writes the whole file, or is an
+    edit that makes a missing file (`creates`), to a file no earlier write in
+    the turn made (`written_before`) and that is not on disk, a relative path
+    taken from `cwd`. A file a shell command made is on disk, so it is not."""
 
     if edit is None:
         return False
-    writes_whole = edit.whole_file or (len(edit.edits) == 1 and edit.edits[0].removed == "")
-    return writes_whole and not written_before and _disk_text(path, cwd) is None
+    makes = edit.whole_file or edit.creates
+    return makes and not written_before and _disk_text(path, cwd) is None
 
 
 def added_code(path: str, edit: Call | None, cwd: str | None) -> list[str]:
