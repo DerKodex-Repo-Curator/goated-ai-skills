@@ -172,7 +172,7 @@ defines it:
 
 - **What it records:** each hold with its gate, kind and what it asks for;
   each hold's outcome; each skill load with its cause; route and skip
-  lines; and reference reads.
+  lines; reference reads; and code changes and turn ends.
 - **What each entry carries:** the adapter's name, the session id and a
   project key.
 - **What it never writes:** prompt text, hold text, file content, or a
@@ -180,22 +180,27 @@ defines it:
 
 Writing the log is best effort, and a failed write never blocks a call.
 
-- **Name your adapter.** Use a short name, such as `my-loop`. With the
-  command or `settings_from_environment`, set `GOATED_CORE_ADAPTER`. When
-  you build `Settings` yourself, pass `usage_log=UsageLog(path, "my-loop")`
-  (`goated_core.usage_log`). An adapter that names none is logged as
-  `core`.
-- **Choose where it goes.** By default the log goes to a per-user data
-  folder, never a project's. To place it elsewhere, use `--usage-log PATH`
-  for the command, `GOATED_USAGE_LOG`, or the `log_path` argument of
-  `settings_from_environment`.
-- **Keep it out of tests.** Tests, and runs of the conformance runner,
-  must never write the default log, or test sessions land in the person's
-  real record. Point the log at a temporary file, or, with the Python call,
-  build `Settings` with `usage_log=None`, which keeps no log.
+- **Choose where it goes.** The core keeps no log unless one is named. Name
+  one with `--usage-log PATH` for the command, the `log_path` argument of
+  `settings_from_environment`, or `GOATED_USAGE_LOG` for either. With the
+  Python call you can also set `Settings.usage_log` to
+  `UsageLog(path, adapter)` from `goated_core.usage_log`. `off`, as a path
+  or in the variable, keeps none, and so does `usage_log=None`. Use the
+  per-user file that [`README.md`](README.md#the-usage-log) gives when you
+  want your sessions counted with the Claude Code adapter's. Never put the
+  log in a project folder.
+- **Name your adapter.** Use a short name, such as `my-loop`: set
+  `GOATED_CORE_ADAPTER` for the command or `settings_from_environment`, or
+  pass it as `UsageLog`'s `adapter`. An adapter that names none is logged
+  as `core`.
+- **Keep it out of tests.** Tests, and runs of the conformance runner, must
+  never write a person's real log, which may come from their environment.
+  Pass `off` or a temporary file explicitly rather than relying on the
+  environment. The runner's `setup` gives `usage_log: None` for this.
 
-The example's `python_judge` and
-`command_judge` are one of each.
+The example's `python_judge` and `command_judge` are one of each. Both
+take an explicit `log_path`, write as `toy-loop-example`, and keep no log
+when given none, whatever the environment names.
 
 ## 4. Show A Hold To The Agent
 
@@ -293,7 +298,8 @@ as a decision.
 | `session_start(source)` | a session starts | the decision |
 
 `setup` gives the scenario's folders and session: `home`, `project` (under
-`home`), `outside`, `state_dir`, `installed_skills` (None when the scenario
+`home`), `outside`, `state_dir`, `usage_log` (always None: give your adapter
+no log), `installed_skills` (None when the scenario
 does not say), and `agent`, the event model's `session.agent`. It gives no
 agent configuration folder, so pick one under `home`. The call's `result` is
 `{"ok": true}` when the scenario gives none. Each step is its own method

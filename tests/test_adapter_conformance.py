@@ -11,6 +11,8 @@ name, with the expected and actual decision.
 
 from __future__ import annotations
 
+import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -18,6 +20,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import usage_log_guard
 from enforcement_support import validator
 
 from scripts import run_conformance
@@ -33,6 +36,17 @@ sys.path.insert(0, str(EXAMPLE))
 import conformance_translator as example  # noqa: E402
 import goated_example_adapter as adapter  # noqa: E402
 import toy_loop  # noqa: E402
+
+make_example = example.make_translator
+
+
+def _log_entries(path: Path) -> list[dict]:
+    """The entries of the usage log at `path`; none when there is no file."""
+
+    if not path.is_file():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()]
 
 
 def _run_all(make) -> dict[str, list[str]]:
@@ -92,6 +106,41 @@ class WorkedExampleTests(unittest.TestCase):
         for result in results:
             with self.subTest(result.name):
                 self.assertEqual(result.failures, [])
+
+    def test_the_example_logs_under_its_own_name_where_it_is_told(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            for way in ("python", "command"):
+                log = Path(folder) / f"{way}.jsonl"
+
+                def logged(setup: dict, way=way, log=log):
+                    judge = (adapter.python_judge if way == "python"
+                             else adapter.command_judge)(setup["state_dir"], log)
+                    return _example_with(setup, judge=judge)
+
+                [result] = run_conformance.run_scenarios(logged, only=DESIGN_HOLDS)
+                self.assertEqual(result.failures, [])
+                entries = _log_entries(log)
+                with self.subTest(way):
+                    self.assertTrue(entries)
+                    self.assertEqual({e["adapter"] for e in entries}, {adapter.LOG_NAME})
+                    self.assertIn("hold", {e["type"] for e in entries})
+
+    def test_the_runner_and_the_example_keep_no_log_unless_told(self) -> None:
+        # The near miss: the environment names a log, as a person's shell or
+        # the test suite's guard may, and still nothing of this run lands in it.
+        environment_log = Path(os.environ[usage_log_guard.LOG_ENV])
+        before = _log_entries(environment_log)
+        [result] = run_conformance.run_scenarios(make_example, only=DESIGN_HOLDS)
+        self.assertEqual(result.failures, [])
+        # `off` keeps none by either way in, as the core reads it, rather
+        # than naming a file `off` in the working folder.
+        for judge in (adapter.python_judge, adapter.command_judge):
+            [result] = run_conformance.run_scenarios(
+                lambda setup, judge=judge: _example_with(
+                    setup, judge=judge(setup["state_dir"], "off")), only=DESIGN_HOLDS)
+            self.assertEqual(result.failures, [])
+        self.assertFalse((Path.cwd() / "off").exists())
+        self.assertEqual(_log_entries(environment_log), before)
 
     def test_an_agent_in_the_loop_answers_a_hold_and_its_call_then_runs(self) -> None:
         ran: list[str] = []

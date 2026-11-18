@@ -39,7 +39,7 @@ class Translator:
         self.adapter = adapter or GoatedAdapter(
             setup["project"], setup["home"], "conformance-session",
             installed_skills=setup["installed_skills"], agent=setup["agent"],
-            judge=python_judge(setup["state_dir"]))
+            judge=python_judge(setup["state_dir"], setup["usage_log"]))
         self.result: dict = {"ok": True}
         self.loop = ToolLoop({name: self._run for name in TOOLS}, self.adapter)
 

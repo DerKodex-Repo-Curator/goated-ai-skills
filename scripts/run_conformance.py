@@ -42,8 +42,10 @@ hold's `gate` and `kind`, and `notices` with each notice's `kind`. Hold
 text is read only for a closeout hold's item lines. `setup`, given to
 `make_translator`, is a dict: `home`; `project`, `<home>/work/project`,
 already made; `outside`, a folder outside the project and any checkout;
-`state_dir`, an empty folder the adapter may keep state in;
-`installed_skills`, a list, or None when the scenario does not say; and
+`state_dir`, an empty folder the adapter may keep state in; `usage_log`,
+the usage log the adapter should write, always None, so a scenario run
+writes no log, whatever the environment names; `installed_skills`, a
+list, or None when the scenario does not say; and
 `agent`, the event model's `session.agent`. Every path is a `Path`.
 """
 
@@ -218,6 +220,8 @@ class _Run:
         self.translator = self._translated("setup", lambda: make_translator({
             "home": home, "project": project, "outside": self.outside,
             "state_dir": root / "state",
+            # Scenario sessions are tests: they never belong in a person's log.
+            "usage_log": None,
             "installed_skills": (list(setup["installed_skills"])
                                  if "installed_skills" in setup else None),
             "agent": ({"role": "subagent", "id": SUBAGENT_ID}

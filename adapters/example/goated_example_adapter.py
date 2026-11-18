@@ -17,6 +17,7 @@ as a harness written in another language would.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from collections.abc import Callable
@@ -30,12 +31,16 @@ if str(CORE_DIR) not in sys.path:
 
 try:
     from goated_core.request import EVENT_MODEL, decide, settings_from_environment
+    from goated_core.usage_log import UsageLog
 except ImportError as exc:  # The core is not beside this adapter: fail open, visibly.
     decide = None
     EVENT_MODEL = 2
     MISSING_CORE = exc.name or str(exc)
 
 NAME = "GOATED example adapter"
+# The adapter's name in the core's usage log, so its entries are told apart
+# from another harness's.
+LOG_NAME = "toy-loop-example"
 # What only this harness can say about where a route or skip line goes: the
 # toy loop keeps reply text whole, so a line there counts.
 WHERE_LINES_GO = ("In this loop, a route or skip line goes on its own line in your reply "
@@ -44,27 +49,37 @@ WHERE_LINES_GO = ("In this loop, a route or skip line goes on its own line in yo
 Judge = Callable[[dict], dict]
 
 
-def python_judge(state_dir: Path | None = None) -> Judge:
+def python_judge(state_dir: Path | None = None, log_path: Path | None = None) -> Judge:
     """Ask the core by the Python call, keeping its state under `state_dir`
-    (by default where `GOATED_CORE_STATE_DIR` or the core's default says)."""
+    (by default where `GOATED_CORE_STATE_DIR` or the core's default says).
+    The core logs each event to `log_path` as `LOG_NAME`; with none, or
+    `off`, it keeps no log, whatever the environment names."""
 
     if decide is None:
         return lambda request: _fail_open(f"it could not import {MISSING_CORE}")
-    settings = settings_from_environment(str(state_dir) if state_dir else None)
+    # The core reads the path, `off` included; only the adapter's name is ours.
+    settings = settings_from_environment(str(state_dir) if state_dir else None,
+                                         log_path=str(log_path) if log_path else "off")
+    if settings.usage_log is not None:
+        settings.usage_log = UsageLog(settings.usage_log.path, LOG_NAME)
     return lambda request: decide(request, settings)
 
 
-def command_judge(state_dir: Path | None = None) -> Judge:
-    """Ask the core by its JSON command, one process per request."""
+def command_judge(state_dir: Path | None = None, log_path: Path | None = None) -> Judge:
+    """Ask the core by its JSON command, one process per request, with the
+    same state folder and log as `python_judge`."""
 
-    command = [sys.executable, str(CORE_DIR / "goated_judge.py")]
+    command = [sys.executable, str(CORE_DIR / "goated_judge.py"),
+               "--usage-log", str(log_path) if log_path else "off"]
     if state_dir:
         command += ["--state-dir", str(state_dir)]
+    environment = {**os.environ, "GOATED_CORE_ADAPTER": LOG_NAME}
 
     def judge(request: dict) -> dict:
         try:
             done = subprocess.run(command, input=json.dumps(request).encode("utf-8"),
-                                  capture_output=True, check=True, timeout=60)
+                                  capture_output=True, check=True, timeout=60,
+                                  env=environment)
             return json.loads(done.stdout.decode("utf-8"))
         except (OSError, subprocess.SubprocessError, ValueError) as exc:
             return _fail_open(f"it could not run the core's command ({type(exc).__name__})")
