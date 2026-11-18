@@ -1316,7 +1316,7 @@ def _pr_options(args: list[str], value_options: dict) -> dict[str, str]:
     """The values a pull-request command's `args` name, by role ("base",
     "head", "repository"; see `PR_VALUE_OPTIONS`), the last of each winning.
     An option takes its value as the next word, after `=`, or attached to a
-    short option (`-Bmain`); a value is never read as an option."""
+    short option (`-Bmain`, `-B=main`); a value is never read as an option."""
 
     named: dict[str, str] = {}
     i = 0
@@ -1329,7 +1329,7 @@ def _pr_options(args: list[str], value_options: dict) -> dict[str, str]:
         elif arg.startswith("--") and "=" in arg:
             name, value = arg.split("=", 1)
         elif not arg.startswith("--") and arg[:2] in value_options and len(arg) > 2:
-            name, value = arg[:2], arg[2:]
+            name, value = arg[:2], arg[2:].removeprefix("=")  # `-Bmain` or `-B=main`
         else:
             continue
         role = value_options.get(name)

@@ -559,6 +559,8 @@ class PullRequestReviewTests(AdapterTestCase):
             (github, f"gh pr create -R acme/export {branches}", True),
             (github, f"gh pr create --repo=Acme/Export {branches}", True),
             (github, f"gh pr create -Racme/export {branches}", True),
+            (github, f"gh pr create -R=acme/export {branches}", True),
+            (github, "gh pr create -R acme/export -B=main -H=feature --fill", True),
             (github, f"gh pr new -R github.com/acme/export {branches}", True),
             (github, f"gh pr create -R https://github.com/acme/export.git {branches}", True),
             (github, f"gh pr create -R git@github.com:acme/export.git {branches}", True),
