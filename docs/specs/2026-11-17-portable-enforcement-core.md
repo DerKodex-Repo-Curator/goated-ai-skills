@@ -143,6 +143,12 @@ But nothing lets another harness use the rules:
   adapter supplies. An adapter that can supply the whole turn each time
   may run the core statelessly for that turn; loads and reads that count
   until compaction still live in the core's state.
+  *Note, 2026-11-18:* the maintainer settled this in Ticket 079. Requests
+  carry every turn since the last compaction, and the core keeps only the
+  session facts that outlast them; see the State section of
+  [ADR 0004](../adr/0004-portable-enforcement-core.md#state). R3's
+  "session end" became the event model's `turn_end` event, since every
+  harness's hook fires per turn.
 - **Languages.** The core stays in Python, as the adapter is today. The
   command form lets a TypeScript plugin, or any other harness, call it
   with no Python of its own.

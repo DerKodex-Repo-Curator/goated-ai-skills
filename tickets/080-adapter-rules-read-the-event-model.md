@@ -30,6 +30,14 @@ keeps the move itself mechanical.
 - Hold texts that name a Claude Code tool keep their wording through a
   table the translation layer supplies, so the rules hold no harness
   wording.
+- **The scenario runner's missing steps.** Ticket 079's runner
+  (`tests/claude_code_scenarios.py`) raises on steps it cannot record
+  faithfully. With the translation layer in place, add them, each with a
+  conformance scenario: a skill a person invokes by typing `/<skill>`
+  (`skill_invoked`), a background agent finishing (`agent_finished`), a
+  report from this session's own subagent that continues the turn, and
+  subagent-role scenarios (`session.agent.role` of `subagent`), which
+  also let a scenario pin Ticket 098's subagent commit rule.
 
 ## Recommended First Reads
 
@@ -60,6 +68,7 @@ keeps the move itself mechanical.
 ## Blocked By
 
 - `tickets/079-enforcement-contract-and-event-model.md`
+- `tickets/098-adapter-contract-gaps.md`
 
 ## Scope Exclusions
 

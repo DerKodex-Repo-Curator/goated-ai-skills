@@ -1,0 +1,545 @@
+event_model: 1
+scenarios:
+  - name: a substantial code change waits for design principles
+    covers:
+      - {gate: design, case: holds}
+      - {gate: design, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export totals.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: &totals
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "pass", added: "total_0 = 0\ntotal_1 = 1\ntotal_2 = 2\ntotal_3 = 3\ntotal_4 = 4\ntotal_5 = 5"}]
+        expect:
+          decision: hold
+          holds: [{gate: design, kind: justified-skip}]
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *totals
+
+  - name: a skip line clears the design hold
+    covers:
+      - {gate: design, case: clears, way: skip-line}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export totals.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *totals
+        expect:
+          decision: hold
+          holds: [{gate: design, kind: justified-skip}]
+      - reply: "goated-skip: software-design-principles: one mechanical list of constants"
+      - call: *totals
+
+  - name: a person's skip clears the design hold
+    covers:
+      - {gate: design, case: clears, way: override}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export totals.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *totals
+        expect:
+          decision: hold
+          holds: [{gate: design, kind: justified-skip}]
+      - prompt: {type: prompt, author: person, text: Skip software-design-principles and add the export totals.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - reply: "goated-route: continue"
+      - call: *totals
+
+  - name: a test file never meets the design hold
+    covers:
+      - {gate: design, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the totals test.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call:
+          kind: file_write
+          path: tests/test_export.py
+          edits: [{removed: "pass", added: "total_0 = 0\ntotal_1 = 1\ntotal_2 = 2\ntotal_3 = 3\ntotal_4 = 4\ntotal_5 = 5"}]
+
+  - name: "gap (b): a shell write of six code lines meets no design hold"
+    covers:
+      - {gate: design, case: gap}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export totals.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call:
+          kind: shell_command
+          shell: posix
+          command: "cat > src/export.py <<'EOF'\ntotal_0 = 0\ntotal_1 = 1\ntotal_2 = 2\ntotal_3 = 3\ntotal_4 = 4\ntotal_5 = 5\nEOF"
+
+  - name: a configuration change waits for the reference it selects
+    covers:
+      - {gate: design-reads, case: holds}
+      - {gate: design-reads, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export settings.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: &settings
+          kind: file_write
+          path: config/export.json
+          whole_file: true
+          edits: [{removed: "", added: "{\n  \"limit\": 2,\n  \"format\": \"csv\",\n  \"header\": true,\n  \"quote\": \"minimal\"\n}\n"}]
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+      - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/decoupling.md", whole: true}
+      - call: *settings
+
+  - name: a skip line clears the design-reads hold
+    covers:
+      - {gate: design-reads, case: clears, way: skip-line}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export settings.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *settings
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+      - reply: "goated-skip: software-design-principles: one setting with no design in it"
+      - call: *settings
+
+  - name: a person's skip clears the design-reads hold
+    covers:
+      - {gate: design-reads, case: clears, way: override}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export settings.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *settings
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+      - prompt: {type: prompt, author: person, text: Skip software-design-principles and add the export settings.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - reply: "goated-route: continue"
+      - call: *settings
+
+  - name: a docs change selects no design reference
+    covers:
+      - {gate: design-reads, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Document the export settings.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call:
+          kind: file_write
+          path: docs/export.md
+          whole_file: true
+          edits: [{removed: "", added: "# Export\n\nThe limit is two.\n"}]
+
+  - name: a new test file waits for the test reference the registry declares
+    covers:
+      - {gate: reference-reads, case: holds}
+      - {gate: reference-reads, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export test first.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: standard | requires: tdd"
+      - call: {kind: skill_load, skill: tdd}
+      - call: &new_test
+          kind: file_write
+          path: tests/test_export.py
+          whole_file: true
+          edits: [{removed: "", added: "def test_limit():\n    assert 2 == 2\n"}]
+        expect:
+          decision: hold
+          holds: [{gate: reference-reads, kind: justified-skip}]
+      - call: {kind: file_read, path: "{outside}/skills/tdd/references/test-design.md", whole: true}
+      - call: *new_test
+
+  - name: a skip line clears the reference-reads hold
+    covers:
+      - {gate: reference-reads, case: clears, way: skip-line}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export test first.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: standard | requires: tdd"
+      - call: {kind: skill_load, skill: tdd}
+      - call: *new_test
+        expect:
+          decision: hold
+          holds: [{gate: reference-reads, kind: justified-skip}]
+      - reply: "goated-skip: tdd: the test only copies an existing one"
+      - call: *new_test
+
+  - name: a person's skip clears the reference-reads hold
+    covers:
+      - {gate: reference-reads, case: clears, way: override}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export test first.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: standard | requires: tdd"
+      - call: {kind: skill_load, skill: tdd}
+      - call: *new_test
+        expect:
+          decision: hold
+          holds: [{gate: reference-reads, kind: justified-skip}]
+      - prompt: {type: prompt, author: person, text: Skip tdd and add the export test.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - reply: "goated-route: continue"
+      - call: *new_test
+
+  - name: a small edit to an existing test selects no reference
+    covers:
+      - {gate: reference-reads, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export test.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: standard | requires: tdd"
+      - call: {kind: skill_load, skill: tdd}
+      - call:
+          kind: file_write
+          path: tests/test_export.py
+          edits: [{removed: "assert 2 == 3", added: "assert 2 == 2"}]
+
+  - name: a code change after a reviewer reports waits for review intake
+    covers:
+      - {gate: review-intake, case: holds}
+      - {gate: review-intake, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: "Have the export change reviewed, then act on it."}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: subagent-driven-development}
+      - call: &reviewer_prompt {kind: file_read, path: "{outside}/skills/subagent-driven-development/references/reviewer-prompt.md", whole: true}
+      - call: &review
+          kind: spawn
+          starts_now: true
+          brief: "## Review Mode\n\nSpec review.\n\n## Review Inputs\n\n- The export change.\n\n## Required Report Format\n\n- Findings.\n\ngoated-skills: standards-and-spec-review\n"
+        result: {ok: true, output: "One finding: the limit is off by one.", agent: {id: reviewer-1}}
+      - call: &fix
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+        expect:
+          decision: hold
+          holds: [{gate: review-intake, kind: justified-skip}]
+      - call: {kind: skill_load, skill: receiving-code-review}
+      - call: *fix
+
+  - name: a skip line clears the review-intake hold
+    covers:
+      - {gate: review-intake, case: clears, way: skip-line}
+    steps:
+      - prompt: {type: prompt, author: person, text: "Have the export change reviewed, then act on it."}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: subagent-driven-development}
+      - call: *reviewer_prompt
+      - call: *review
+        result: {ok: true, output: "One finding.", agent: {id: reviewer-1}}
+      - call: *fix
+        expect:
+          decision: hold
+          holds: [{gate: review-intake, kind: justified-skip}]
+      - reply: "goated-skip: receiving-code-review: the one finding is a typo to fix"
+      - call: *fix
+
+  - name: a person's skip clears the review-intake hold
+    covers:
+      - {gate: review-intake, case: clears, way: override}
+    steps:
+      - prompt: {type: prompt, author: person, text: "Have the export change reviewed, then act on it."}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: subagent-driven-development}
+      - call: *reviewer_prompt
+      - call: *review
+        result: {ok: true, output: "One finding.", agent: {id: reviewer-1}}
+      - call: *fix
+        expect:
+          decision: hold
+          holds: [{gate: review-intake, kind: justified-skip}]
+      - prompt: {type: prompt, author: person, text: "Skip receiving-code-review; review it again and fix it."}
+        expect: {decision: allow, notices: [override_recorded]}
+      - reply: "goated-route: continue"
+      - call: *review
+        result: {ok: true, output: "One finding.", agent: {id: reviewer-2}}
+      - call: *fix
+
+  - name: a docs change after a review is not held for intake
+    covers:
+      - {gate: review-intake, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: "Have the export change reviewed, then note it."}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: subagent-driven-development}
+      - call: *reviewer_prompt
+      - call: *review
+        result: {ok: true, output: "One finding.", agent: {id: reviewer-1}}
+      - call:
+          kind: file_write
+          path: docs/export.md
+          edits: [{removed: "Limit one.", added: "Limit two."}]
+
+  - name: a dependency manifest waits for the security review skill
+    covers:
+      - {gate: security, case: holds}
+      - {gate: security, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Pin the requests version.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: &manifest
+          kind: file_write
+          path: requirements.txt
+          edits: [{removed: "requests", added: "requests==2.32.0"}]
+        expect:
+          decision: hold
+          holds: [{gate: security, kind: justified-skip}]
+      - call: {kind: skill_load, skill: code-security-review}
+      - call: *manifest
+
+  - name: a skip line clears the security hold
+    covers:
+      - {gate: security, case: clears, way: skip-line}
+    steps:
+      - prompt: {type: prompt, author: person, text: Pin the requests version.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *manifest
+        expect:
+          decision: hold
+          holds: [{gate: security, kind: justified-skip}]
+      - reply: "goated-skip: code-security-review: a version pin to an audited release"
+      - call: *manifest
+
+  - name: a person's skip clears the security hold
+    covers:
+      - {gate: security, case: clears, way: override}
+    steps:
+      - prompt: {type: prompt, author: person, text: Pin the requests version.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *manifest
+        expect:
+          decision: hold
+          holds: [{gate: security, kind: justified-skip}]
+      - prompt: {type: prompt, author: person, text: Skip code-security-review and pin the requests version.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - reply: "goated-route: continue"
+      - call: *manifest
+
+  - name: a sensitive word inside a longer name is not sensitive
+    covers:
+      - {gate: security, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the tokenizer limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call:
+          kind: file_write
+          path: src/tokenizer.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+
+  - name: an inline script that writes code is held, and a skip line clears it
+    covers:
+      - {gate: scripted-edit, case: holds}
+      - {gate: scripted-edit, case: clears, way: skip-line}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: &script
+          kind: shell_command
+          shell: posix
+          command: "python -c \"open('src/export.py', 'w').write('limit = 2')\""
+        expect:
+          decision: hold
+          holds: [{gate: scripted-edit, kind: justified-skip}]
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *script
+        expect:
+          decision: hold
+          holds: [{gate: scripted-edit, kind: justified-skip}]
+      - reply: "goated-skip: software-design-principles: the same rewrite across forty files"
+      - call: *script
+
+  - name: a person's skip clears the scripted-edit hold
+    covers:
+      - {gate: scripted-edit, case: clears, way: override}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *script
+        expect:
+          decision: hold
+          holds: [{gate: scripted-edit, kind: justified-skip}]
+      - prompt: {type: prompt, author: person, text: Skip software-design-principles and fix the export limit.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - reply: "goated-route: continue"
+      - call: *script
+
+  - name: an inline script that writes nothing is not held
+    covers:
+      - {gate: scripted-edit, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Check the Python version.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: shell_command, shell: posix, command: "python -c \"import sys; print(sys.version)\""}
+
+  - name: an edit inside an open merge conflict waits for the conflict skill
+    covers:
+      - {gate: conflict-resolution, case: holds}
+      - {gate: conflict-resolution, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Merge the feature branch.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: &merge {kind: shell_command, shell: posix, command: git merge feature}
+        result: &conflicted {ok: false, output: "CONFLICT (content): Merge conflict in src/export.py\nAutomatic merge failed; fix conflicts and then commit the result."}
+      - call: &resolve
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "<<<<<<< HEAD\nlimit = 1\n=======\nlimit = 2\n>>>>>>> feature", added: "limit = 2"}]
+        expect:
+          decision: hold
+          holds: [{gate: conflict-resolution, kind: justified-skip}]
+      - call: {kind: skill_load, skill: resolving-merge-conflicts}
+      - call: *resolve
+
+  - name: a skip line clears the conflict hold
+    covers:
+      - {gate: conflict-resolution, case: clears, way: skip-line}
+    steps:
+      - prompt: {type: prompt, author: person, text: Merge the feature branch.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *merge
+        result: *conflicted
+      - call: *resolve
+        expect:
+          decision: hold
+          holds: [{gate: conflict-resolution, kind: justified-skip}]
+      - reply: "goated-skip: resolving-merge-conflicts: the feature side replaces one constant"
+      - call: *resolve
+
+  - name: a person's skip clears the conflict hold
+    covers:
+      - {gate: conflict-resolution, case: clears, way: override}
+    steps:
+      - prompt: {type: prompt, author: person, text: Merge the feature branch.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *merge
+        result: *conflicted
+      - call: *resolve
+        expect:
+          decision: hold
+          holds: [{gate: conflict-resolution, kind: justified-skip}]
+      - prompt: {type: prompt, author: person, text: Skip resolving-merge-conflicts and merge the feature branch.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - reply: "goated-route: continue"
+      - call: *merge
+        result: *conflicted
+      - call: *resolve
+
+  - name: a heading underline is not a conflict marker
+    covers:
+      - {gate: conflict-resolution, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Retitle the export notes.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call:
+          kind: file_write
+          path: docs/notes.md
+          edits: [{removed: "Export\n=======", added: "Exports\n======="}]
+
+  - name: a write after the same check fails twice waits for diagnosis
+    covers:
+      - {gate: repeated-failure, case: holds}
+      - {gate: repeated-failure, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Make the export tests pass.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: &check {kind: shell_command, shell: posix, command: pytest -q}
+        result: &failed {ok: false, output: "F\n1 failed in 0.10s"}
+      - call: *check
+        result: *failed
+      - call: &patch
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+        expect:
+          decision: hold
+          holds: [{gate: repeated-failure, kind: justified-skip}]
+      - call: {kind: skill_load, skill: diagnose}
+      # Once diagnose counts as loaded, the registry's signal for this gate
+      # asks for its tracing reference.
+      - call: *patch
+        expect:
+          decision: hold
+          holds: [{gate: reference-reads, kind: justified-skip}]
+      - call: {kind: file_read, path: "{outside}/skills/diagnose/references/root-cause-tracing.md", whole: true}
+      - call: *patch
+
+  - name: a skip line clears the repeated-failure hold
+    covers:
+      - {gate: repeated-failure, case: clears, way: skip-line}
+    steps:
+      - prompt: {type: prompt, author: person, text: Make the export tests pass.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *check
+        result: *failed
+      - call: *check
+        result: *failed
+      - call: *patch
+        expect:
+          decision: hold
+          holds: [{gate: repeated-failure, kind: justified-skip}]
+      - reply: "goated-skip: diagnose: the failure names the wrong constant directly"
+      - call: *patch
+
+  - name: a person's skip clears the repeated-failure hold
+    covers:
+      - {gate: repeated-failure, case: clears, way: override}
+    steps:
+      - prompt: {type: prompt, author: person, text: Make the export tests pass.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *check
+        result: *failed
+      - call: *check
+        result: *failed
+      - call: *patch
+        expect:
+          decision: hold
+          holds: [{gate: repeated-failure, kind: justified-skip}]
+      - prompt: {type: prompt, author: person, text: Skip diagnose and make the export tests pass.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - reply: "goated-route: continue"
+      - call: *check
+        result: *failed
+      - call: *check
+        result: *failed
+      - call: *patch
+
+  - name: a second run with fewer failures is progress, not a repeat
+    covers:
+      - {gate: repeated-failure, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Make the export tests pass.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *check
+        result: {ok: false, output: "FFF\n3 failed in 0.10s"}
+      - call: *check
+        result: {ok: false, output: "F..\n1 failed, 2 passed in 0.10s"}
+      - call: *patch

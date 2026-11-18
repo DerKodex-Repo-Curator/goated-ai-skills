@@ -75,7 +75,9 @@ Do not bulk-read the repo when a targeted read will do.
 - `stack/`: V2 shared policy, registry, schema, templates, and fixtures.
 - `adapters/`: opt-in framework enforcement adapters under ADR 0003, one
   subfolder per framework, such as `adapters/claude-code/`. Adapters enforce
-  portable contracts and no skill may depend on one.
+  portable contracts and no skill may depend on one. The rules they enforce
+  are stated in `stack/enforcement-contract.md`, over the event model in
+  `stack/schemas/enforcement-event-model.schema.json` (ADR 0004).
 - `issues/`: historical V1 PRDs and archived issue handoffs. Do not add new work there or rewrite archived records.
 
 ## GOATED Skill Routing
@@ -138,6 +140,12 @@ Public docs may mention private forks or private deployments generically, but th
   update that skill's `references` entry in `stack/goated-stack.yaml` in the
   same change, with a signal or an advisory reason, as `skills/README.md`
   describes.
+- When changing an enforced rule (a gate, what it holds or clears, a
+  closeout item, the hold format, or an override), update
+  `stack/enforcement-contract.md` and a conformance scenario under
+  `stack/fixtures/enforcement/` in the same change. A test fails when a gate
+  or closeout item the adapter can return is missing from the contract, or a
+  gate lacks scenarios for holding, each way it clears, and a near miss.
 - Keep this file the single root instruction file. Add a tool-specific root
   file only when a tool cannot read `AGENTS.md`, and make it import this file
   instead of copying it.

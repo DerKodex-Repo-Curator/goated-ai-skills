@@ -29,13 +29,14 @@ to 4 there are merged.
 | 6 | [097](097-adapter-script-write-paths-by-name-and-folder.md) | 3 | adapter | AFK | 093 |
 | 7 | [095](095-adapter-joint-holds-in-one-message.md) | 3 | adapter and mod | AFK | 086 to 094, 097 |
 | 8 | [096](096-adapter-early-closeout-note.md) | 3 | adapter | AFK | 095 |
-| 9 (ready now) | [079](079-enforcement-contract-and-event-model.md) | 2 | core | HITL (maintainer accepts the ADR and event model) | its round 2 blockers (merged), and 086 to 096 |
-| 10 | [080](080-adapter-rules-read-the-event-model.md) | 2 | adapter | AFK | 079 |
-| 11 | [081](081-shared-enforcement-core.md) | 2 | core | AFK | 080 |
-| 12 | [082](082-neutral-usage-log-and-report.md) | 2 | core | AFK | 078, 081 |
-| 12 | [083](083-adapter-guide-and-worked-example.md) | 2 | docs | AFK | 081 |
-| 13 | [084](084-pi-agent-adapter.md) | 2 | new adapter | HITL (build decision after research) | 082, 083 |
-| 14 | [085](085-opencode-adapter.md) | 2 | new adapter | HITL (build decision after research) | 084 |
+| 9 (in review) | [079](079-enforcement-contract-and-event-model.md) | 2 | core | HITL (maintainer accepts the ADR and event model) | its round 2 blockers (merged), and 086 to 096 |
+| 10 | [098](098-adapter-contract-gaps.md) | 2 | adapter | AFK | 079 |
+| 11 | [080](080-adapter-rules-read-the-event-model.md) | 2 | adapter | AFK | 079, 098 |
+| 12 | [081](081-shared-enforcement-core.md) | 2 | core | AFK | 080 |
+| 13 | [082](082-neutral-usage-log-and-report.md) | 2 | core | AFK | 078, 081 |
+| 13 | [083](083-adapter-guide-and-worked-example.md) | 2 | docs | AFK | 081 |
+| 14 | [084](084-pi-agent-adapter.md) | 2 | new adapter | HITL (build decision after research) | 082, 083 |
+| 15 | [085](085-opencode-adapter.md) | 2 | new adapter | HITL (build decision after research) | 084 |
 
 ## Decisions Recorded Here
 
@@ -64,6 +65,11 @@ The maintainer decided these on 2026-11-17, when round 3 was planned:
   certainly outside the project is placed there. It runs in wave 6. It
   shares no function with 090 or 092, which do not touch the reading of
   inline scripts. Ticket 095 waits for it, and 079 through 095.
+- **Ticket 098 was added by Ticket 079's review (2026-11-18).** Where the
+  adapter is looser than the contract (orientation by partial reads, the
+  design gates and shell writes, a subagent's commit), the contract states
+  today's behaviour and marks each gap, and 098 fixes the code before 080
+  moves it. That moved 080 to wave 11 and each later ticket one wave on.
 - **Ticket 071's skills line stays as shipped.** A brief must carry a
   `goated-skills:` line, and `goated-skills: none: <reason>` is its
   justified skip. No ticket.
