@@ -14,9 +14,9 @@ every change here is made once, in the shared core that
 
 R7 to R12 are an addendum of 2026-11-18
 ([Addendum](#addendum-rule-gaps-left-by-ticket-081)): rule gaps Ticket 081
-found and documented in the contract instead of fixing. R7, R11, R12 and
-R10's commit half are ticket ready; R8, R9 and R10's shell-read half wait
-on decisions E, F and G.
+found and documented in the contract instead of fixing. The maintainer
+decided E, F and G on 2026-11-18, each option 1, the recommended one; all
+of R7 to R12 are ticket ready.
 
 ## Mode
 
@@ -260,7 +260,7 @@ weighed.
 
 ## Open Questions
 
-Decisions E, F and G of the addendum.
+None.
 
 ## Addendum: Rule Gaps Left By Ticket 081
 
@@ -290,24 +290,34 @@ nothing. A pull's conflict ends with `git merge --abort` or
     measures `opens_pr` with `changed_lines(cwd, base, head)` and no
     repository.
   - Contract: Commits And Pull Requests (the `repository` bullet).
-- **R8, JavaScript writes need a file-system receiver** (decision E).
-  `.open`, `.rename`, `.rm`, `.unlink`, `.rmdir`, `.truncate`, `.cp` and
-  `.copyFile` count as writes only where the receiver is a file-system
-  module, so `window.open(url, 'width=200')` and `db.rm(id)` write nothing.
+- **R8, JavaScript writes need a file-system receiver** (decision E,
+  option 1). `.open`, `.rename`, `.rm`, `.unlink`, `.rmdir`, `.truncate`,
+  `.cp` and `.copyFile` count as writes only on `fs`, `fs.promises`,
+  `fsPromises`, `Deno`, or a name the script binds to a `require` or
+  `import` of `fs`, `node:fs`, `fs/promises` or `node:fs/promises`, a
+  destructured name included. A receiver the core cannot name (`a[b].rm(`)
+  counts, as today. So `window.open(url, 'width=200')` and `db.rm(id)`
+  write nothing.
   - Today: `script_writes.py`'s `js` table matches `.<name>(` on any
     receiver, and judges `.open` by its second argument alone.
   - Contract: Shell Reading, the script writes table and the paragraph
     after it.
-- **R9, `nul` in a posix shell** (decision F). A `posix` command's
-  redirect into `nul` writes a file named `nul`, as bash does; `nul` stays
-  a null device in a `powershell` command.
+- **R9, `nul` in a posix shell** (decision F, option 1). Null devices are
+  per shell. A `posix` command's redirect into `nul` (any case) writes a
+  file named `nul`, as bash does, and is held as a write; the hold text
+  names `/dev/null` as the posix null device. `nul` stays a null device in
+  a `powershell` command.
   - Today: `shell.NULL_TARGETS` holds `nul` for both shells.
   - Contract: Shell Reading (the `NULL_TARGETS` bullet).
 - **R10, conflicts opened and ended.**
   - A finished `commit` call ends an open conflict, as a finished shell
     `git commit` does.
-  - Decision G: a shell command whose output shows conflict markers opens
-    the conflict, as a file read's does.
+  - Decision G, option 1: per file, as a file read. A plain-read command
+    (`cat`, `head`, `tail`, `type`, `Get-Content`) whose finished output
+    has a marker at a line start opens the conflict for writes to the
+    files it names; a `git diff` opens it for each path whose
+    combined-diff section shows a marker after the diff prefix
+    (`++<<<<<<<`, `+<<<<<<<`).
   - Today: `actions._open_conflict` reads markers from `file_read` calls
     only, and ends a conflict on shell commands only.
   - Contract: Conflicts.
@@ -336,11 +346,13 @@ nothing. A pull's conflict ends with `git merge --abort` or
 - [ ] **AC10.** R8: `node -e "window.open(u,'width=200')"` and
       `node -e "db.rm(id)"` meet no `scripted-edit` hold;
       `fs.rmSync(p)`, `fs.promises.rm(p)` and `fs.open(p,'w')` still do.
-- [ ] **AC11.** R9 as decision F settles it, with scenarios for a posix
-      `> nul` and a powershell `> nul`.
+- [ ] **AC11.** R9: a posix `echo x > nul` is a write that meets the
+      write gates; the same in a `powershell` command is not. Scenarios
+      cover both.
 - [ ] **AC12.** R10: after a conflicted merge, a finished `commit` call
-      ends the conflict; decision G's shell-read case has a hold and a
-      near miss.
+      ends the conflict; a `cat` of a marked file opens it for a write to
+      that file and not to another, and a scenario covers the hold and
+      the near miss.
 - [ ] **AC13.** R11: an added `pub use x;` or `async_helper = 1` line, or
       a YAML `class: foo` key, selects no `process.md`; `pub fn run()`,
       `async def run()` and `async function run()` still do.
@@ -351,9 +363,12 @@ nothing. A pull's conflict ends with `git merge --abort` or
 
 ### Addendum Decisions
 
+The maintainer decided E, F and G on 2026-11-18, each option 1, the
+recommended one. The options are kept as the record of what was weighed.
+
 #### E. Which receivers write (R8)
 
-1. **Recommended: known file-system receivers.** The calls count on `fs`,
+1. **Chosen: known file-system receivers.** The calls count on `fs`,
    `fs.promises`, `fsPromises`, `Deno`, or a name the script binds to a
    `require` or `import` of `fs`, `node:fs`, `fs/promises` or
    `node:fs/promises`, a destructured name included. A receiver the core
@@ -368,7 +383,7 @@ nothing. A pull's conflict ends with `git merge --abort` or
 
 #### F. `nul` in a posix shell (R9)
 
-1. **Recommended: null devices per shell.** A posix `> nul` writes a file
+1. **Chosen: null devices per shell.** A posix `> nul` writes a file
    named `nul` and is held as a write; the hold text names `/dev/null` for
    a posix command. Trade-off: one more held call where an agent types the
    Windows habit, though the file it leaves is real (and on Windows hard
@@ -379,7 +394,7 @@ nothing. A pull's conflict ends with `git merge --abort` or
 
 #### G. Markers a shell command shows (R10)
 
-1. **Recommended: per file, as a file read.** A plain-read command (`cat`,
+1. **Chosen: per file, as a file read.** A plain-read command (`cat`,
    `head`, `tail`, `type`, `Get-Content`) whose output has a marker at a
    line start opens the conflict for the files it names; `git diff`
    output opens it for each path whose combined-diff section shows a

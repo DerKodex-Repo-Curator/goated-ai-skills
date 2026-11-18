@@ -39,14 +39,14 @@ also change.
   - Enables: a shell pull request aimed at another repository measured
     as the tool call is.
 - `tickets/104-core-script-receivers-and-posix-nul.md`
-  - Decisions: E and F, open (HITL).
-  - Blocked by: `tickets/081-shared-enforcement-core.md`, decisions E, F
-  - Overlaps: 102 only if F changes a `gates.py` hold text.
+  - Decisions: E and F option 1 (the maintainer, 2026-11-18).
+  - Blocked by: `tickets/081-shared-enforcement-core.md`
+  - Overlaps: 102, if the `/dev/null` hold text lives in `gates.py`.
   - Enables: `window.open` and `db.rm` in a script not held as writes;
     a posix `> nul` seen as the file it makes.
 - `tickets/105-core-conflicts-opened-by-shell-reads-and-ended-by-commits.md`
-  - Decision: G, open (HITL, the shell-read half only).
-  - Blocked by: `tickets/081-shared-enforcement-core.md`, decision G
+  - Decision: G option 1 (the maintainer, 2026-11-18).
+  - Blocked by: `tickets/081-shared-enforcement-core.md`
   - Overlaps: none with 099, 100, 102 in code; shares `writes.yaml`.
   - Enables: a `commit` call ending a conflict; markers shown by `cat`
     or `git diff` opening one.
@@ -63,9 +63,9 @@ also change.
 ## Ready Frontier
 
 Ticket 081 is merged. Tickets 099, 100 and 102 are ready; 101 waits for
-099 and 100. Of the unscheduled tickets, 103, 106 and 107 are ready (106
-best after 099 and 100); 104 waits for decisions E and F, and 105's
-shell-read half for G.
+099 and 100. All five unscheduled tickets, 103 to 107, are ready; 106 is
+best landed after 099 and 100, and 104 after 102 if its hold text lives in
+`gates.py`.
 
 ## Coverage
 

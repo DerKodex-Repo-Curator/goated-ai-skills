@@ -7,10 +7,8 @@ AC7, AC8)
 
 ## Type
 
-HITL: decision G in the parent spec's addendum must be made before the
-shell-read half starts. Recommended: G option 1. The commit half needs no
-decision. If G is option 3, the ticket is AFK and only the commit half
-remains.
+AFK. The maintainer decided G on 2026-11-18: option 1, in the parent
+spec's addendum.
 
 ## What To Build
 
@@ -20,17 +18,22 @@ share a ticket.
 
 - **A `commit` call ends a conflict.** A finished `commit` call ends an
   open conflict and drops the reads before it, as a finished shell
-  `git commit` does today.
-- **Markers a shell command shows (decision G).** Under option 1, a
-  plain-read command (`cat`, `head`, `tail`, `type`, `Get-Content`) whose
-  finished output has a marker at a line start opens the conflict for
-  writes to the files it names, as a file read does; a `git diff` whose
-  output shows a marker after the combined-diff prefix (`++<<<<<<<`,
-  `+<<<<<<<`) opens it for that section's path. Today only `file_read`
-  calls open a conflict by markers.
+  `git commit` does today. A held or failed one ends nothing.
+- **Markers a shell command shows (decision G).** Per file, as a file
+  read. A plain-read command (`cat`, `head`, `tail`, `type`,
+  `Get-Content`) whose finished output has a marker at a line start opens
+  the conflict for writes to the files it names. A `git diff` opens it for
+  each path whose combined-diff section shows a marker after the diff
+  prefix (`++<<<<<<<`, `+<<<<<<<`), which today's line-start pattern does
+  not match. Today only `file_read` calls open a conflict by markers.
 
-`git pull --abort` is not part of this ticket: git has no such option, so
-it can end nothing. The contract's sentence naming it goes when this
+Trade-off the maintainer accepted: more reading of command output, and a
+command naming several files opens the conflict for all of them.
+
+`git pull --abort` is not part of this ticket: git has no such option
+(git 2.55 answers `unknown option 'abort'`), so it can end nothing. A
+pull's conflict ends with `git merge --abort` or `git rebase --abort`,
+which already end it. The contract's sentence naming it goes when this
 paragraph changes.
 
 The rule lives in the shared core at `adapters/core/goated_core/`:
@@ -43,9 +46,9 @@ scenarios change with the code, as `AGENTS.md` requires:
   `commit` call and `git pull --abort` end nothing; the
   `conflict-resolution` row only if its wording no longer fits;
 - `stack/fixtures/enforcement/writes.yaml` (the conflict scenarios): a
-  conflict ended by a `commit` call; under G, a `cat` of a marked file
-  then an edit of it, held, beside a near miss (an edit of another file,
-  or a `cat` of a file with no markers).
+  conflict ended by a `commit` call; a `cat` of a marked file then an edit
+  of it, held, beside a near miss (an edit of another file, or a `cat` of
+  a file with no markers); a `git diff` showing `++<<<<<<<`.
 
 ## Recommended First Reads
 
@@ -61,10 +64,10 @@ scenarios change with the code, as `AGENTS.md` requires:
 - [ ] After a merge reports a conflict, a finished `commit` call ends it:
       a later write in the turn meets no `conflict-resolution` hold.
 - [ ] A held or failed `commit` call ends nothing.
-- [ ] Under G option 1: a `cat` of a file showing a `<<<<<<<` line opens
-      the conflict for a write to that file and not for a write to
-      another; a `git diff` showing `++<<<<<<<` in a path's section opens
-      it for that path.
+- [ ] A `cat` of a file showing a `<<<<<<<` line opens the conflict for a
+      write to that file and not for a write to another.
+- [ ] A `git diff` showing `++<<<<<<<` in a path's section opens it for
+      that path.
 - [ ] The contract states each rule, and conformance scenarios cover each
       hold and near miss above.
 - [ ] The repo checks in `AGENTS.md` pass.
@@ -78,7 +81,6 @@ scenarios change with the code, as `AGENTS.md` requires:
 ## Blocked By
 
 - `tickets/081-shared-enforcement-core.md` (merged)
-- Maintainer decision G, for the shell-read half only.
 
 ## Overlaps
 
