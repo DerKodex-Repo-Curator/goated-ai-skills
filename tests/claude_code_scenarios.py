@@ -164,6 +164,12 @@ class _Run:
             output = self.s.peer(text)
         elif author == "host" and continues:
             output = self.s.notify(text)
+        elif author == "host":
+            # A prompt the desktop app writes itself opens a turn.
+            output = self.s.prompt(text, origin=None, turnOrigin="host_synthetic")
+        elif author == "unknown" and not continues:
+            # An origin kind the adapter does not know.
+            output = self.s.prompt(text, origin={"kind": "unrecognized"})
         else:
             raise ValueError(f"step {self.number}: the bridge cannot record a "
                              f"{'continuing ' if continues else ''}{author} prompt")

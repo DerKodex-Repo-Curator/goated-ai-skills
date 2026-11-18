@@ -1710,11 +1710,15 @@ def _code_items(changes: "_Changes", proof: _Proof) -> list[_Item]:
     # Loading a verification skill is not proof; a check run, or a skip, is.
     if unproven and not checks and not proof.skipped(PROOF_SKILL):
         skip = f"`goated-skip: {PROOF_SKILL}: <reason>`"
+        # Spec R6: a session waiting on another's result meets it with the same skip.
+        waiting = f"`goated-skip: {PROOF_SKILL}: <what it waits for>`"
         items.append(_Item(
             "- Proof: no test, lint, build, or check command ran after the last code "
             f"change. Run the relevant check, or, if none can run, write {skip} and tell "
-            "the user it is unverified.",
-            f"- Proof: run a check after the last code change, or write {skip}."))
+            "the user it is unverified. If you are waiting on another session's result "
+            f"before checking, write {waiting}.",
+            f"- Proof: run a check after the last code change, or write {skip}; when "
+            f"waiting on another session's result, {waiting}."))
     if checks and not checks[-1].ok and not proof.loaded_or_skipped(HANDOFF_SKILL):
         skip = f"`goated-skip: {HANDOFF_SKILL}: <reason>`"
         items.append(_Item(

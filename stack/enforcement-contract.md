@@ -167,7 +167,7 @@ route line in the brief that started the session.
 | Gate | Kind | Holds | Clears | Clear ways | Enforces |
 | --- | --- | --- | --- | --- | --- |
 | `router-first` | strict | A write, spawn, or command while the router does not count as loaded; a command made only of plain reads passes | The router counts as loaded; or, until a person's prompt opens a turn, the session's first prompt is a brief with a route line | `proof`, `brief-route`, `override` | The router's "use at the start of each new task before the first edit or command" |
-| `route-line` | strict | The first write or spawn after each prompt until the turn has a valid route line; also `goated-route: continue` when no task is known | A valid route line in the turn | `route-line`, `override` | The router's output contract |
+| `route-line` | strict | The first write or spawn after each prompt until the turn has a valid route line, except in a turn another session's prompt opened in a session with a task, which runs as `continue` (see [Prompts, Turns, And Tasks](#prompts-turns-and-tasks)); also `goated-route: continue` when no task is known | A valid route line in the turn | `route-line`, `override` | The router's output contract |
 | `pipeline` | strict | A write or spawn while a `requires:` skill of the task does not count as loaded; in a session routed by its brief on a `standard` or `full` route, also while orientation is unmet and the orientation skill is installed. A spawn of a read-only agent passes | Each listed skill counts as loaded; orientation by its skill's load or whole reads of three distinct files; partial reads never count | `proof`, `route-line`, `override` | The router's route line ("must load before the first write") and the shared policy's corrected route line |
 | `commit` | strict | A commit, by a git command (not a dry run) or a `commit` call | `commit-message` counts as loaded, an inline message passes the content check, and a change read follows the last change to any project file | `proof`, `override` | `commit-message` ("use before any Git commit") |
 | `pull-request` | strict | Opening a pull or merge request, by a `gh` or `glab` command or a `pull_request` call | `pr-description` counts as loaded, and a change read follows the last change to any project file | `proof`, `override` | `pr-description` |
@@ -200,6 +200,8 @@ that change is already proved.
 | `Security` | `code-security-review` counts as loaded and a security-sensitive file changed | A change read after the last sensitive change | `code-security-review` |
 | `Setup` | The turn installed or added a named package or tool, or wrote an env or settings file inside the project | `setup-scribe` counts as loaded, before or after the change | `setup-scribe` |
 
+A session waiting on another session's result meets Proof with the same
+skip line, giving what it waits for as the reason; the Proof text says so.
 The Setup item is not judged against code changes. A bare install that only
 restores what a manifest records, or installs a local path, does not count.
 
@@ -254,7 +256,15 @@ A recorded override brings an `override_recorded` notice.
 ## Prompts, Turns, And Tasks
 
 - A prompt with `author: person` opens a turn and may carry overrides. A
-  prompt from another session opens a turn with no override. A prompt the
+  prompt from another session (`author: session`) opens a turn with no
+  override. In a session with a task, that turn's route is `continue` until
+  a route line in it says otherwise, so `route-line` does not hold it; its
+  skip lines, checks, and change reads still start empty. A route-like line
+  in that turn that fails the grammar ends the carried route: `route-line`
+  holds, quoting it, until a valid line. In a session with no task, or as
+  the brief that starts a session, it meets `route-line` as a person's
+  prompt does, and so does every prompt with `author: host` or `unknown`
+  that opens a turn. A prompt the
   harness wrote, or a report from an agent this session spawned, continues
   the current turn as an entry: the turn's lines, overrides, checks, and
   change reads stand.

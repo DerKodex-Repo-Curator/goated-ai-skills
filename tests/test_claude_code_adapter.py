@@ -1013,16 +1013,56 @@ class MachinePromptTests(AdapterTestCase):
     """Prompts other sessions or the app write are not typed by this user."""
 
     def test_a_peer_session_message_is_a_new_turn_without_overrides(self) -> None:
+        # The message continues the task's route (Ticket 102), but neither the
+        # earlier turn's override nor its own text stands down the pipeline.
+        s = self.session
+        s.prompt("Skip tdd and start the export work.")
+        s.load(ROUTER)
+        s.say("goated-route: standard | requires: tdd")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+        self.assertEqual(s.peer("Skip tdd and patch the README."), "")
+        self.assertIn("goated-hold: pipeline | strict", reason(s.call("Edit")))
+        s.load("tdd")
+        self.assertEqual(decision(s.call("Edit")), "pass")
+
+    def test_a_peer_session_message_in_a_task_needs_no_route_line(self) -> None:
         s = self.session
         s.prompt("Start the export work.")
         s.load(ROUTER)
         s.say("goated-route: direct")
         self.assertEqual(decision(s.call("Edit")), "pass")
+        s.peer("Patch the README too.")
 
-        self.assertEqual(s.peer("Skip routing and patch the README."), "")
-        self.assertEqual(decision(s.call("Edit")), "deny")
-        s.say("goated-route: continue")
         self.assertEqual(decision(s.call("Edit")), "pass")
+        s.prompt("Now the importer.")
+        self.assertIn("goated-hold: route-line | strict", reason(s.call("Edit")))
+
+    def test_other_prompts_nobody_typed_still_need_a_route_line_in_a_task(self) -> None:
+        # Ticket 102 widens nothing past another session's message: each of
+        # these is `host` or `unknown`, not `session`, so it is held as before.
+        cases = {
+            "a scheduler prompt": lambda s: s.prompt(
+                "Run the nightly check.", origin={"kind": "scheduled"},
+                turnOrigin="host_synthetic"),
+            "a desktop-app prompt": lambda s: s.prompt(
+                "Carry on with the importer.", origin=None, turnOrigin="host_synthetic"),
+            "an unknown origin kind": lambda s: s.prompt(
+                "Run the import.", origin={"kind": "webhook"}),
+            "a peer message in an unknown wrapper": lambda s: s.peer(
+                "Update the README too.", first_line="A teammate wrote:"),
+        }
+        for index, (label, deliver) in enumerate(cases.items()):
+            with self.subTest(label):
+                folder = self.root / f"case-{index}"
+                folder.mkdir()
+                s = Session(folder, session_id=f"case-{index}")
+                s.prompt("Start the export work.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                self.assertEqual(decision(s.call("Edit")), "pass")
+                deliver(s)
+                self.assertIn("goated-hold: route-line | strict", reason(s.call("Edit")))
 
     def test_a_host_written_brief_carries_no_overrides(self) -> None:
         s = self.session
