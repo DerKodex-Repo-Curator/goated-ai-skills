@@ -21,7 +21,7 @@ without it.
 | The session's project, as a key: the first ten hex digits of the SHA-256 digest of the install's salt and the project folder's path, which the key does not reveal. The folder is the repository's root, the main working tree's for a worktree, so a repository's worktrees count as one project; outside a repository, or when that lookup fails, the session's project root. When neither can be read, the session is stored with no project key. Neither the folder's path nor its name is stored | The session's repository or project root, read once per session |
 | The mod's data version, on each summary: 4 for this version; summaries stored before it carry none | The mod itself |
 | Turns that write, by whether a route line came before the first write, only after it, or not at all | The main agent's edits and spawns, the calls the adapter holds like writes; a call whose result is an error, such as a held one, did not write |
-| Justified skips, with their reasons; a skip declines a justified-skip hold naming that skill in the same turn. The reason of each skip that declined a hold is kept by skill and gate: each path-like word in it (one starting with a drive such as `C:/`, a slash, or `~/`, or holding a backslash) replaced by `<path>`, then cut to 160 characters. Nothing else is stored beside it, and other words, a project name among them, are kept as written | `goated-skip:` lines in replies, and in the same call fields as route lines |
+| Justified skips, with their reasons; a skip declines a justified-skip hold naming that skill in the same turn. The reason of each skip that declined a hold is kept by skill and gate: each path in a word, its wrapping quotes, backticks, brackets and trailing punctuation kept, replaced by `<path>` (a path starts with a drive such as `C:/`, a slash, or `~/`, holds a backslash or `://`, or holds a slash and either a second one or a file extension at its end, as `src/x.ts` and `a/b/c` do; `and/or` stays), then cut to 160 characters. The GOATED core masks reasons the same way for its usage log, and the tests check both against the same cases. Nothing else is stored beside it, and other words, a project name among them, are kept as written | `goated-skip:` lines in replies, and in the same call fields as route lines |
 | The adapter's holds by gate and kind, and each held skill's outcome: loaded, files read, declined, overridden by you, ended by a new prompt, unanswered, or waiting | Denied calls whose reason starts `goated-hold: <gate> \| <kind>`, and the blocked `Stop` that carries the closeout hold |
 | Closeout items: each item a closeout hold lists, such as Proof, Unfinished, Docs, Design, Security, Setup, or one added later, with its own outcome | The item lines of the closeout hold's text, `- <Label>: …`, at a commit or a `Stop`; the item's skill is the first it backticks, else the skill of the skip line it offers |
 | Your overrides, by phrase | The adapter's sentence `recorded your override for this prompt` in its hook context; its `commit message` phrase shows as `commit message: <text>` |
@@ -205,10 +205,14 @@ mod settles each hold by the rules above.
 
 At each session start the mod reads the log, from the `usageLogPath` option
 (the `skill-usage.usageLogPath` row of Claude Code's settings menu, or
-`pluginConfigs` in `settings.json`) or else the core's per-user default:
-`%LOCALAPPDATA%\goated\usage-log.jsonl` when `LOCALAPPDATA` is set, else
+`pluginConfigs` in `settings.json`) or else where the Claude Code adapter
+puts it by default: on Windows (`OS` is `Windows_NT`),
+`%LOCALAPPDATA%\goated\usage-log.jsonl`, else the per-user temp folder's
+`goated` (`TEMP`, `TMP`, else `%USERPROFILE%\AppData\Local\Temp`); elsewhere
 `$XDG_STATE_HOME/goated/usage-log.jsonl`, else
-`~/.local/state/goated/usage-log.jsonl`. The sessions other adapters logged
+`~/.local/state/goated/usage-log.jsonl`. With `GOATED_USAGE_LOG` set
+elsewhere, set the option to match; the mod does not read that variable.
+The sessions other adapters logged
 there, such as one in another harness, add to All time and the report as
 finished sessions, under the project keys the log gives them, which the
 core salts with its own salt, so they differ from the mod's keys for the
@@ -222,9 +226,14 @@ moments, routes, routed skills, and overrides
 (`tests/usage-log.test.tsx`, over the session `tests/test_skill_usage_mod.py`
 generates by driving the adapter with the log on).
 
-A log with an entry of a version the mod does not know (it knows version 1)
-is refused: nothing of it is counted, and the pane's observer error says
-which line and why until the next save clears it.
+A line of the log that is no entry (not JSON, not an object, or missing a
+field its type needs, such as one a crashed writer cut short) is passed
+over: All time and `/skill-usage report` say how many lines were skipped,
+and the rest still counts. A log with an entry of a version the mod does
+not know (it knows version 1) is refused: nothing of it is counted, and the
+pane's observer error says which line and why until the next save clears
+it. The mod reads the whole log at each session start, and the log is never
+trimmed (about 200 bytes an entry).
 
 ## The Pane
 
@@ -481,6 +490,10 @@ This has not been tested end to end. Keep a backup of both files.
   nothing of the events it missed. The log's facts stand where the core
   judged each event, so a load written in the same reply as a held call
   counts as an answer after the hold, which is what the mod concludes too.
+  The log names a skill's files only for a skill installed where the
+  adapter runs, where the mod's own reading takes any folder under a
+  `skills` folder for a skill's: a session another adapter logged counts no
+  reads of a project's own `skills/` files.
 
 ## Tests
 

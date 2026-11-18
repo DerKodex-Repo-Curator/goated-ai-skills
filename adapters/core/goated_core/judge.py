@@ -369,7 +369,8 @@ def record_prompt(settings: Settings, situation: Situation, typed_text: str | No
     if typed_text is not None:
         known = situation.installed_skills() or GOATED_SKILLS
         found = parse_overrides(typed_text, known)
-        if state.open_holds or logging:
+        # The log reads the last turn's tail too, unless it logged that turn's end.
+        if state.open_holds or (logging and not _recorder(settings, situation).turn_ended()):
             turns = unseen(state.last_turn)
             if turns and state.open_holds:
                 settled = _settle(state, turns, settings)
@@ -456,14 +457,20 @@ def _logged(settings: Settings, situation: Situation,
 
     if settings.usage_log is None:
         return None
-    recorder = usage_log_module.Recorder(
-        settings.usage_log, settings.state_dir, situation.session_id, situation.agent_id,
-        situation.project_folder, lambda: situation.installed_skills() or GOATED_SKILLS)
+    recorder = _recorder(settings, situation)
     try:
         say(recorder)
     except Exception as exc:  # noqa: BLE001 - the log never blocks a call
         return f"could not write the usage log ({type(exc).__name__})"
     return recorder.flush()
+
+
+def _recorder(settings: Settings, situation: Situation) -> usage_log_module.Recorder:
+    """The usage log's recorder for this event; `settings.usage_log` is set."""
+
+    return usage_log_module.Recorder(
+        settings.usage_log, settings.state_dir, situation.session_id, situation.agent_id,
+        situation.project_folder, lambda: situation.installed_skills() or GOATED_SKILLS)
 
 
 def _registry_references(settings: Settings, warnings: list[str]) -> tuple:

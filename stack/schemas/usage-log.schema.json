@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://goated-ai-skills.dev/schemas/usage-log.schema.json",
   "title": "GOATED Usage Log Entry",
-  "description": "One line of the usage log the enforcement core appends to (Ticket 082): JSON Lines, one entry per line, oldest first. Every adapter writes through the core, so a session in any harness leaves the same entries. An entry holds what the skill-usage mod stores and nothing more: no prompt text, hold text, file content, or project path. The log lives where its caller says (`--usage-log`, `GOATED_USAGE_LOG`), by default in a per-user folder, never a project's: `%LOCALAPPDATA%\\goated\\usage-log.jsonl` on Windows, else `$XDG_STATE_HOME/goated/usage-log.jsonl`, else `~/.local/state/goated/usage-log.jsonl`. Its project keys are salted with `usage-log-salt` beside it. A log with an entry of another version is refused by its readers, not guessed at; `adapters/core/goated_usage_report.py` summarises it.",
+  "description": "One line of the usage log the enforcement core appends to (Ticket 082): JSON Lines, one entry per line, oldest first. Every adapter writes through the core, so a session in any harness leaves the same entries. An entry holds what the skill-usage mod stores and nothing more: no prompt text, hold text, file content, or project path. The log lives where its caller says (`--usage-log`, `GOATED_USAGE_LOG`; `off` keeps none). The core's command keeps none unless one is named; the Claude Code adapter's default is a per-user folder, never a project's: `%LOCALAPPDATA%\\goated\\usage-log.jsonl` on Windows (else the per-user temp folder's `goated`), else `$XDG_STATE_HOME/goated/usage-log.jsonl`, else `~/.local/state/goated/usage-log.jsonl`. The folder is the user's alone. Its project keys and file digests are salted with `usage-log-salt` beside it. Writers append each event's lines in one write under a lock on the log, `usage-log.jsonl.lock`. Readers refuse a log with an entry of another version, not guessing at it, and pass over, counting them, lines that are no entry: not JSON, not an object, or missing a field its type needs. `adapters/core/goated_usage_report.py` summarises it. The log is never trimmed.",
   "type": "object",
   "required": ["log", "t", "adapter", "session", "project", "type"],
   "properties": {
@@ -109,7 +109,7 @@
       "unevaluatedProperties": false
     },
     "skip": {
-      "description": "A valid `goated-skip:` line in reply text or a call's line text. `reason`: each path-like word (one starting with a drive, a slash, or `~/`, or holding a backslash) masked as `<path>`, then cut to 160 characters, its last an ellipsis.",
+      "description": "A valid `goated-skip:` line in reply text or a call's line text. `reason`: each path in a word, its wrapping quotes, backticks, brackets and trailing punctuation kept, masked as `<path>` (a path starts with a drive, a slash, or `~/`, holds a backslash or `://`, or holds a slash and either a second one or a file extension at its end; `and/or` stays), then cut to 160 characters, its last an ellipsis.",
       "required": ["skill", "reason"],
       "properties": {"skill": {"$ref": "#/$defs/skill"}, "reason": {"type": "string", "maxLength": 160}},
       "$ref": "#/$defs/common",
@@ -130,7 +130,7 @@
       "unevaluatedProperties": false
     },
     "ref": {
-      "description": "A file read or shell command reached a skill's supporting file: `file` is its path within the skill (`references/test-design.md`). `read_tool`: by a file read, not a command; `partial`: that read had a range, so it answers no hold.",
+      "description": "A file read or shell command reached an installed skill's supporting file: `file` is its path within the skill (`references/test-design.md`). A folder named `skills` whose subfolder is no installed skill, such as a project's own, is never logged. `read_tool`: by a file read, not a command; `partial`: that read had a range, so it answers no hold.",
       "required": ["skill", "file"],
       "properties": {
         "skill": {"type": "string", "minLength": 1},
@@ -142,14 +142,14 @@
       "unevaluatedProperties": false
     },
     "skill_read": {
-      "description": "A main-agent file read or shell command reached into these skill folders (their SKILL.md or any file in them).",
+      "description": "A main-agent file read or shell command reached into these installed skills' folders (their SKILL.md or any file in them).",
       "required": ["skills"],
       "properties": {"skills": {"type": "array", "minItems": 1, "items": {"type": "string"}}},
       "$ref": "#/$defs/common",
       "unevaluatedProperties": false
     },
     "file_read": {
-      "description": "A main-agent file read finished ok. `file` is a digest of the path, never the path: the first 16 hex digits of the SHA-256 digest of the path in comparable form (slashes forward and lowercased for a Windows path, `.` and `..` collapsed), so distinct files can be counted.",
+      "description": "A main-agent file read finished ok. `file` is a digest of the path, never the path: the first 16 hex digits of the SHA-256 digest of the log's salt and the path in comparable form (slashes forward and lowercased for a Windows path, `.` and `..` collapsed), so distinct files can be counted but a guessed path cannot be checked without the salt. None is written when the salt cannot be read.",
       "required": ["file"],
       "properties": {"file": {"type": "string", "pattern": "^[0-9a-f]{16}$"}},
       "$ref": "#/$defs/common",

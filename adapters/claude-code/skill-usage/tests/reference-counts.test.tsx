@@ -303,6 +303,15 @@ test("near miss: the mod's own adapter's sessions in the log are its own reading
   expect(report).not.toContain('doc-sync')
 })
 
+test('lines of the log that are no entry are skipped, and the pane and the report say how many', async ($, on) => {
+  mock.env(on, { HOME: '/home/dev' })
+  const { report, pane, error } = await seen($, world(on, withLog(`not json\n[1]\n${PI_LOG}`)))
+  expect(error).toBeNull()
+  expect(report).toContain('# Skill usage: 2 sessions')
+  expect(report).toContain('GOATED usage log: 2 lines skipped as no entry, so not counted.')
+  expect(pane).toContain('GOATED usage log: 2 lines skipped as no entry, so not counted.')
+})
+
 test('a log of a version the mod does not know is refused with its reason, and the rest of the start still runs', async ($, on) => {
   mock.env(on, { HOME: '/home/dev' })
   const later = `${PI_LOG}${JSON.stringify({ log: 2, t: 1, adapter: 'pi-agent', session: 's', project: null, type: 'prompt' })}\n`

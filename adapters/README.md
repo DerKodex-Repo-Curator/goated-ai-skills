@@ -82,21 +82,42 @@ JSON Lines of one entry each, is
 - **Where it lives.** The caller sets it: `--usage-log PATH` on the command,
   `GOATED_USAGE_LOG` for the command and the Claude Code adapter, or
   `UsageLog(path, adapter)` in `Settings.usage_log` for the Python call
-  (None keeps no log). By default it is a per-user file, never in a project
-  folder: `%LOCALAPPDATA%\goated\usage-log.jsonl` on Windows, else
+  (None keeps no log). `off`, as either value, keeps none. The command and
+  `decide` keep no log unless one is named, so another harness, a test, or
+  the worked example never writes into the user's own log by default. The
+  Claude Code adapter, which a user installs on purpose, logs by default to
+  a per-user file, never in a project folder:
+  `%LOCALAPPDATA%\goated\usage-log.jsonl` on Windows (the per-user temp
+  folder's `goated` when that is unset), else
   `$XDG_STATE_HOME/goated/usage-log.jsonl`, else
-  `~/.local/state/goated/usage-log.jsonl`. Project keys are salted with
+  `~/.local/state/goated/usage-log.jsonl`. The folder is made private to the
+  user, and on POSIX one that is a link, another user's, or writable by
+  others is refused. Project keys and file digests are salted with
   `usage-log-salt`, made once beside it. The command names its adapter
   from `GOATED_CORE_ADAPTER`, `core` when unset; the Claude Code adapter
   writes as `claude-code`.
+- **Many writers.** Each event's lines go in one write under a lock file on
+  the whole log, `usage-log.jsonl.lock`, so hooks of parallel sessions and
+  processes never lose or mix a line. A lock left by a stopped process is
+  broken after ten seconds.
 - **Never in the way.** A log that cannot be written leaves the decision
-  as it was and adds a `warning` notice. Nothing is sent anywhere.
+  as it was and adds one `warning` notice per session. Nothing is sent
+  anywhere.
+- **Reading it.** A line that is no entry (not JSON, not an object, or
+  missing a field its type needs) is passed over and counted; only an entry
+  of a version the reader does not know refuses the log.
 - **The report.** `python <goated-root>/adapters/core/goated_usage_report.py
-  [--log PATH] [--project KEY] [--adapter NAME]` prints a Markdown summary:
-  loads by skill and cause, holds by gate and outcome, closeout items,
-  route lines, and reference reads. A log with an entry of a version it
-  does not know is refused: the reason goes to standard error and the
-  command exits 1.
+  [--log PATH] [--project KEY] [--project-folder PATH] [--adapter NAME]`
+  prints a Markdown summary: the projects by key with their sessions, loads
+  by skill and cause, holds by gate and outcome, closeout items, route
+  lines, reference reads, and how many lines were skipped.
+  `--project-folder` finds a folder's key with the log's salt. A log with an
+  entry of a version it does not know is refused: the reason goes to
+  standard error and the command exits 1.
+- **Size.** The log is never trimmed: each entry is about 200 bytes, so a
+  short session adds a few kilobytes and a long one tens, and the
+  skill-usage mod reads it whole at each session start.
+  Delete it, or point `GOATED_USAGE_LOG` elsewhere, to start afresh.
 - **Outcomes** are the core's own settlement (`goated_core/friction.py`):
   answered, declined, stood down by an override, or unanswered, one per
   gate and turn however often the gate held. The skill-usage mod settles

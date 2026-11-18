@@ -7,9 +7,10 @@ input, one JSON decision on standard output (ADR 0004).
 The request and the decision are the event model's
 (`stack/schemas/enforcement-event-model.schema.json`); the answer is the one
 `goated_core.request.decide` gives. `--state-dir`, `--registry` and
-`--usage-log` win over the environment variables `decide`'s settings read;
-the usage log (`stack/schemas/usage-log.schema.json`) gets each event's
-entries, and `goated_usage_report.py` summarises it. A request the core
+`--usage-log` win over the environment variables `decide`'s settings read.
+The usage log (`stack/schemas/usage-log.schema.json`) gets each event's
+entries only when `--usage-log` or `GOATED_USAGE_LOG` names it (`off` keeps
+none), and `goated_usage_report.py` summarises it. A request the core
 cannot read is answered with `allow` and a `fail_open` notice, so the
 command prints a decision and exits 0 for any input; it exits 2 only for
 arguments it does not know.

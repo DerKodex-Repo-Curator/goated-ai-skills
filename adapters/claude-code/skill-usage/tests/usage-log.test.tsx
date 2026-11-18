@@ -6,6 +6,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { UsageEvent } from '../types'
 import { addSession, rowEvents, summarize } from '../hooks/classify'
+import { storedReason } from '../hooks/holds'
 import type { Row } from '../hooks/classify'
 import { loggedTotal, readUsageLog, usageLogPlace } from '../hooks/usage-log'
 import { USAGE_LOG_SESSION } from './usage-log-session'
@@ -53,10 +54,22 @@ test('the mod counts a recorded session the same from the log as from what it he
 test('a log with an entry of an unknown version is refused, naming the line and the version', async () => {
   const later = `${USAGE_LOG_SESSION.logText}${JSON.stringify({ log: 2, t: 99, adapter: 'pi', session: 's', project: null, type: 'prompt' })}\n`
   expect(readUsageLog(later)).toEqual({ refused: `line ${USAGE_LOG_SESSION.log.length + 1} of the usage log is of log version 2, which the mod does not know (it knows version 1)` })
-  // Near miss: a last line cut short by a writer that stopped is passed over.
-  const cut = `${USAGE_LOG_SESSION.logText}{"log": 1, "t": 9`
-  expect('sessions' in readUsageLog(cut)).toBe(true)
-  expect(readUsageLog(`not json\n${USAGE_LOG_SESSION.logText}`)).toEqual({ refused: 'line 1 of the usage log is not JSON' })
+})
+
+test('lines that are no entry are skipped and counted, and the rest still counts', async () => {
+  const common = { log: 1, t: 1, adapter: 'pi-agent', session: 's', project: null }
+  const bad = ['not json', '{"log": 1, "t": 9', '[1, 2]', JSON.stringify({ ...common, type: 'load', cause: 'agent' }), JSON.stringify({ ...common, type: 'nonsense' })]
+  const read = readUsageLog(`${bad.join('\n')}\n${USAGE_LOG_SESSION.logText}`)
+  if (!('sessions' in read)) throw new Error(read.refused)
+  expect(read.skipped).toBe(5)
+  expect(loggedCounts(read.sessions[0]?.events ?? [])).toEqual(loggedCounts(heardEvents()))
+  // Near miss: a whole log reads with none skipped.
+  const whole = readUsageLog(USAGE_LOG_SESSION.logText)
+  expect('skipped' in whole && whole.skipped).toBe(0)
+})
+
+test('the mod masks paths in skip reasons as the core does', async () => {
+  for (const [reason, kept] of USAGE_LOG_SESSION.reasonCases) expect(storedReason(reason)).toBe(kept)
 })
 
 test("other adapters' sessions add to All time under their project, the mod's own adapter's do not", async () => {
@@ -74,10 +87,15 @@ test("other adapters' sessions add to All time under their project, the mod's ow
   expect('sessions' in own && loggedTotal(own.sessions)).toBe(null)
 })
 
-test("the log is looked for where the option says, else in the core's per-user folder", async () => {
-  expect(usageLogPlace({ configured: ' /logs/usage.jsonl ', localAppData: 'D:\\AppData\\Local' })).toBe('/logs/usage.jsonl')
-  expect(usageLogPlace({ configured: '', localAppData: 'D:\\AppData\\Local' })).toBe('D:\\AppData\\Local/goated/usage-log.jsonl')
-  expect(usageLogPlace({ configured: '', xdgStateHome: '/state' })).toBe('/state/goated/usage-log.jsonl')
-  expect(usageLogPlace({ configured: '', home: '/srv/u/' })).toBe('/srv/u/.local/state/goated/usage-log.jsonl')
-  expect(usageLogPlace({ configured: '' })).toBe(null)
+test("the log is looked for where the option says, else where the core puts it by default", async () => {
+  const windows = { configured: '', isWindows: true }
+  const posix = { configured: '', isWindows: false }
+  expect(usageLogPlace({ ...windows, configured: ' /logs/usage.jsonl ', localAppData: 'D:\\AppData\\Local' })).toBe('/logs/usage.jsonl')
+  expect(usageLogPlace({ ...windows, localAppData: 'D:\\AppData\\Local', xdgStateHome: '/state' })).toBe('D:\\AppData\\Local\\goated\\usage-log.jsonl')
+  // Without LOCALAPPDATA, the core falls back to the per-user temp folder, and so does the mod.
+  expect(usageLogPlace({ ...windows, temp: 'D:\\Temp', xdgStateHome: '/state' })).toBe('D:\\Temp\\goated\\usage-log.jsonl')
+  expect(usageLogPlace({ ...windows, home: 'D:\\u' })).toBe('D:\\u\\AppData\\Local\\Temp\\goated\\usage-log.jsonl')
+  expect(usageLogPlace({ ...posix, xdgStateHome: '/state', localAppData: 'D:\\AppData\\Local' })).toBe('/state/goated/usage-log.jsonl')
+  expect(usageLogPlace({ ...posix, home: '/srv/u/' })).toBe('/srv/u/.local/state/goated/usage-log.jsonl')
+  expect(usageLogPlace(posix)).toBe(null)
 })

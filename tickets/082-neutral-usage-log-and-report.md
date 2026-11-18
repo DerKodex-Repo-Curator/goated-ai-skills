@@ -63,6 +63,15 @@ report, refusal, unwritable log, privacy, format against
 `tests/usage_log_session.py` records. The maintainer's comparison of the
 pane and the report for one real session is still to do.
 
+Lead review fixes (2026-11-18): appends under a log-wide lock in one write
+(8 processes × 600 lose no line); readers skip and count lines that are no
+entry and refuse only an unknown version; only the Claude Code adapter logs
+by default, `GOATED_USAGE_LOG=off` keeps none, and `tests/usage_log_guard.py`
+keeps every test run off the user's own log (`tests/test_usage_log_guard.py`);
+more path forms masked, in step with the mod; file digests salted; only
+installed skills' files logged; one warning per session; a private log
+folder; the report lists projects and takes `--project-folder`.
+
 ## Expected Proof
 
 - Core tests for the log and report, each with a near miss.

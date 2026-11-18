@@ -34,6 +34,21 @@ if str(CORE_DIR) not in sys.path:
 
 from goated_core import usage_log  # noqa: E402
 
+# Skip reasons whose masking the core and the mod must agree on: each is
+# generated with the core's result, which the mod's tests compare with theirs.
+REASON_CASES = (
+    "see `src/export.py` first",
+    'the file "docs/a/b.md" is old',
+    "nothing (a/b/c) needed",
+    "read https://example.com/x today",
+    "edit src/x.ts, then stop",
+    "and/or ~5 words stay",
+    "C:\\work\\x and ~/notes and /tmp/y",
+    "[x/y.md], <a/b/c> and 'q/r.txt'!",
+    "a/b is kept, a.b too, and a/b. too",
+    "x" * 170,
+)
+
 # The command a blocked Stop names, as Claude Code quotes it.
 STOP_COMMAND = "python /tools/goated-adapter/goated_hook.py"
 PROJECT_KEY = "0123456789"
@@ -46,6 +61,9 @@ class _Recording:
         self.session = Session(root, "recorded-session")
         clock = itertools.count(1)
         self.log_path = root / "logs" / "usage-log.jsonl"
+        # A fixed salt, so the file digests, which it salts, are the same each run.
+        self.log_path.parent.mkdir(mode=0o700)
+        (self.log_path.parent / usage_log.SALT_NAME).write_text("0" * 32, encoding="utf-8")
         self.session.config.usage_log = usage_log.UsageLog(
             self.log_path, "claude-code", clock=lambda: float(next(clock)))
         self.steps: list[dict] = []
@@ -107,12 +125,13 @@ class _Recording:
 
     def log(self) -> list[dict]:
         return [{**e, "project": PROJECT_KEY if e.get("project") else None}
-                for e in usage_log.read_entries(self.log_path)]
+                for e in usage_log.read_log(self.log_path).entries]
 
 
 def recorded_session() -> dict:
     """The recorded session's mod rows and turn ends (`steps`), and its log,
-    as the entries (`log`) and as the file's text (`logText`)."""
+    as the entries (`log`) and as the file's text (`logText`); and each of
+    `REASON_CASES` with the reason the core keeps (`reasonCases`)."""
 
     with tempfile.TemporaryDirectory() as tmp:
         r = _Recording(Path(tmp))
@@ -145,7 +164,9 @@ def recorded_session() -> dict:
         r.stop()
         log = r.log()
         text = "".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in log)
-        return {"steps": r.steps, "log": log, "logText": text}
+        return {"steps": r.steps, "log": log, "logText": text,
+                "reasonCases": [[reason, usage_log.stored_reason(reason)]
+                                for reason in REASON_CASES]}
 
 
 if __name__ == "__main__":

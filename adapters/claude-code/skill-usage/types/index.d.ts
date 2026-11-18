@@ -236,7 +236,12 @@ export type AllTime = {
   byProject?: Record<string, AllTime>
   /** Holds from summaries stored before versions were recorded, kept apart so their retired gate names add to no current count. */
   earlier?: EarlierHolds
+  /** How many lines of the GOATED core's usage log were skipped as no entry, when any were; on the whole total only. */
+  logSkipped?: number
 } & Measures
+
+/** What the mod kept of the GOATED core's usage log at session start: other adapters' totals, and lines skipped. */
+export type LoggedReading = { total: AllTime | null; skipped: number }
 
 /**
  * What summaries stored by earlier versions of the mod held that is keyed by gate or tied to one: holds by gate and by
@@ -275,9 +280,9 @@ declare module 'claude-code' {
       allTime: Shaped<AllTime | null>
       /**
        * The totals of the sessions other adapters wrote to the GOATED core's usage log (hooks/usage-log.ts), read once
-       * per session and added to All time; null when the log holds none or could not be read.
+       * per session and added to All time, with how many lines were skipped; null when the log could not be read.
        */
-      logged: Shaped<AllTime | null>
+      logged: Shaped<LoggedReading | null>
       /** This session's project key, worked out once (hooks/project.ts); `''` when no project folder could be read. */
       project: string | null
       /** The project key All time is filtered to; null for every project. */

@@ -62,20 +62,23 @@ def settings_from_environment(state_dir: str | None = None,
     given winning: the state folder (`GOATED_CORE_STATE_DIR`, by default a
     per-user folder), GOATED skill namespaces (`GOATED_CORE_SKILL_NAMESPACES`,
     comma-separated), the registry (`GOATED_CORE_REGISTRY`, by default the
-    distribution's), and the usage log (`GOATED_USAGE_LOG`, by default
-    `usage_log.default_path()`), written as the adapter `GOATED_CORE_ADAPTER`
-    names itself, `core` when it names none."""
+    distribution's), and the usage log (`log_path`, else `GOATED_USAGE_LOG`;
+    none when neither names one, or either says `off`), written as the
+    adapter `GOATED_CORE_ADAPTER` names itself, `core` when it names none.
+    The command keeps no log unless asked, so a harness, a test or a worked
+    example never writes into the user's own log by default."""
 
     state_dir = state_dir or os.environ.get(STATE_DIR_ENV)
     named = registry or os.environ.get(REGISTRY_ENV)
     namespaces = os.environ.get(NAMESPACES_ENV, "")
+    log = usage_log.path_from_environment(log_path, default=False)
     return Settings(
         Path(state_dir) if state_dir else default_root() / STATE_DIR_NAME,
         tuple(n.strip() for n in namespaces.split(",") if n.strip()),
         Path(named) if named else DEFAULT_REGISTRY,
         registry_named=bool(named),
-        usage_log=usage_log.UsageLog(usage_log.path_from_environment(log_path),
-                                     os.environ.get(ADAPTER_ENV) or DEFAULT_ADAPTER),
+        usage_log=(usage_log.UsageLog(log, os.environ.get(ADAPTER_ENV) or DEFAULT_ADAPTER)
+                   if log else None),
     )
 
 

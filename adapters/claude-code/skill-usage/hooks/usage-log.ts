@@ -20,43 +20,62 @@ export type LoggedSession = { adapter: string; session: string; project: string 
 
 type Entry = { log: number; t: number; adapter: string; session: string; project: string | null; agent?: string; type: string; [field: string]: unknown }
 
-/**
- * Where the mod looks for the log: the path set in its `usageLogPath` option, else the core's per-user default:
- * `%LOCALAPPDATA%\goated\usage-log.jsonl` on Windows (`localAppData`), else `$XDG_STATE_HOME/goated/`, else
- * `~/.local/state/goated/`. Null when none can be named.
- */
-export function usageLogPlace(where: { configured: string; localAppData?: string; xdgStateHome?: string; home?: string }): string | null {
-  if (where.configured.trim()) return where.configured.trim()
-  const folder = where.localAppData || where.xdgStateHome || (where.home ? `${where.home.replace(/[\\/]+$/, '')}/.local/state` : '')
-  return folder ? `${folder.replace(/[\\/]+$/, '')}/goated/usage-log.jsonl` : null
+/** The fields each entry type needs besides the common ones, as the core's reader (`goated_core/usage_log.py`) checks. */
+const NEEDS: Readonly<Record<string, readonly string[]>> = {
+  prompt: ['named'], override: ['phrases'], load: ['skill', 'cause'], hold: ['gate', 'kind', 'named'], outcome: ['gate', 'outcome'],
+  skip: ['skill', 'reason'], route: ['form'], ref: ['skill', 'file'], skill_read: ['skills'], file_read: ['file'], change: [], turn_end: [], compaction: [],
 }
 
 /**
- * The sessions a log's text holds, each as the events the mod makes, in the log's order. A line that is not an entry,
- * or an entry of a version other than `LOG_VERSION`, refuses the whole log with a message saying which line and why; a
- * last line cut short, as by a writer that stopped mid-line, is passed over.
+ * Where the mod looks for the log: the path set in its `usageLogPath` option, else where the core puts it by default.
+ * On Windows (`isWindows`): `%LOCALAPPDATA%\goated\usage-log.jsonl`, else the per-user temp folder's `goated`
+ * (`TEMP`, `TMP`, else `~\AppData\Local\Temp`). Elsewhere: `$XDG_STATE_HOME/goated/`, else `~/.local/state/goated/`.
+ * Null when none can be named.
  */
-export function readUsageLog(text: string): { sessions: LoggedSession[] } | { refused: string } {
-  const lines = text.split(/\r?\n/)
+export function usageLogPlace(where: { configured: string; isWindows: boolean; localAppData?: string; temp?: string; xdgStateHome?: string; home?: string }): string | null {
+  if (where.configured.trim()) return where.configured.trim()
+  const home = where.home?.replace(/[\\/]+$/, '')
+  const folder = where.isWindows
+    ? where.localAppData || where.temp || (home ? `${home}\\AppData\\Local\\Temp` : '')
+    : where.xdgStateHome || (home ? `${home}/.local/state` : '')
+  const slash = where.isWindows ? '\\' : '/'
+  return folder ? `${folder.replace(/[\\/]+$/, '')}${slash}goated${slash}usage-log.jsonl` : null
+}
+
+/**
+ * The sessions a log's text holds, each as the events the mod makes, in the log's order, and how many lines were
+ * `skipped` as no entry: not JSON, not an object, or missing a field its type needs, such as a line a crashed writer
+ * cut short. An entry of a version other than `LOG_VERSION` refuses the whole log, with a message saying which line.
+ */
+export function readUsageLog(text: string): { sessions: LoggedSession[]; skipped: number } | { refused: string } {
   const sessions = new Map<string, LoggedSession>()
-  for (const [index, line] of lines.entries()) {
+  let skipped = 0
+  for (const [index, line] of text.split(/\r?\n/).entries()) {
     if (!line.trim()) continue
     let entry: unknown
     try {
       entry = JSON.parse(line)
     } catch {
-      if (lines.slice(index + 1).every(rest => !rest.trim())) continue
-      return { refused: `line ${index + 1} of the usage log is not JSON` }
+      entry = null
     }
-    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return { refused: `line ${index + 1} of the usage log is not an entry` }
-    const e = entry as Entry
-    if (e.log !== LOG_VERSION) return { refused: `line ${index + 1} of the usage log is of log version ${JSON.stringify(e.log ?? null)}, which the mod does not know (it knows version ${LOG_VERSION})` }
+    const e = (typeof entry === 'object' && entry !== null && !Array.isArray(entry) ? entry : {}) as Partial<Entry>
+    if (Number.isInteger(e.log) && e.log !== LOG_VERSION) return { refused: `line ${index + 1} of the usage log is of log version ${e.log}, which the mod does not know (it knows version ${LOG_VERSION})` }
+    if (!isComplete(e)) {
+      skipped += 1
+      continue
+    }
     const key = `${e.adapter}\n${e.session}`
-    const found = sessions.get(key) ?? { adapter: String(e.adapter), session: String(e.session), project: typeof e.project === 'string' ? e.project : null, events: [] }
+    const found = sessions.get(key) ?? { adapter: e.adapter, session: e.session, project: typeof e.project === 'string' ? e.project : null, events: [] }
     sessions.set(key, found)
     found.events.push(...eventsOf(e))
   }
-  return { sessions: [...sessions.values()] }
+  return { sessions: [...sessions.values()], skipped }
+}
+
+/** Whether `e` is an entry of this version with every field its type needs. */
+function isComplete(e: Partial<Entry>): e is Entry {
+  const needs = typeof e.type === 'string' ? NEEDS[e.type] : undefined
+  return e.log === LOG_VERSION && needs !== undefined && typeof e.t === 'number' && typeof e.adapter === 'string' && typeof e.session === 'string' && needs.every(field => field in e)
 }
 
 /**
@@ -85,7 +104,7 @@ function eventsOf(e: Entry): UsageEvent[] {
         ...(e.stop ? { isStop: true as const } : {}),
         ...(Array.isArray(e.skip_only) ? { skipOnly: list(e.skip_only) } : {}),
         ...(Array.isArray(e.refs) ? { refs: list(e.refs) } : {}),
-        ...(Array.isArray(e.items) ? { items: e.items as CloseoutItem[] } : {}),
+        ...(Array.isArray(e.items) ? { items: (e.items as Partial<CloseoutItem>[]).filter((i): i is CloseoutItem => typeof i?.label === 'string' && typeof i?.skill === 'string') } : {}),
         ...(Array.isArray(e.brief_added) ? { briefAdded: list(e.brief_added) } : {}),
         ...agent,
       }

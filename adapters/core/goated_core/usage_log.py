@@ -7,20 +7,22 @@ adapter's name, the session id, the project key and, for a subagent, its
 id. The entries are what the skill-usage mod stores and nothing more: a
 person's prompt only as the skills it names, a hold only as its gate, kind
 and what it asks for, skip reasons masked and cut as the mod keeps them,
-skill files as paths within the skill, and other files read only as
-digests. No prompt text, hold text, file content or project path is written.
+installed skills' files as paths within the skill, and other files read
+only as digests salted with the log's salt. No prompt text, hold text, file
+content or project path is written.
 
 `Recorder` is the one way in: `judge` makes one per event and says, in
 order, what the event read (`turns`: the route and skip lines, loads with
 their cause, reference reads and code changes no earlier event logged) and
 what it showed (outcomes, holds, a prompt, a turn end). `flush` writes it
-all. How far each turn was read lives in a small cursor file per session
-and agent under the core's state folder. Writing is best effort: `flush`
-never raises, and a log that cannot be written leaves the decision as it
-was, with a warning.
+all, one batch of lines per event under a lock on the whole log, so writers
+in many processes never lose or mix a line. How far each turn was read
+lives in a small cursor file per session and agent under the core's state
+folder. Writing is best effort: `flush` never raises, and a log that cannot
+be written leaves the decision as it was, with one warning per session.
 
-`read_entries` reads a log back, refusing one with an entry of a version it
-does not know.
+`read_log` reads a log back: it refuses a log with an entry of a version it
+does not know, and passes over, counting them, lines that are no entry.
 """
 
 from __future__ import annotations
@@ -32,18 +34,30 @@ import re
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 from . import actions, events, markers, wording
 from .events import Call, CallFinished, Prompt, ReplyText, SkillInvoked, Turn
 from .gates import ROUTER_SKILL
-from .state import _safe_name, _write_json, default_root
+from .state import (
+    StateUnsafe, _safe_name, _write_json, default_root, ensure_private_directory,
+)
 
 LOG_VERSION = 1
 LOG_ENV = "GOATED_USAGE_LOG"
+# The value of `GOATED_USAGE_LOG` (or `--usage-log`) that keeps no log.
+OFF = "off"
 LOG_NAME = "usage-log.jsonl"
 SALT_NAME = "usage-log-salt"
 CURSOR_DIR = "usage-log"
 KEY_DIGITS = 10
+# The fields each entry type needs besides the common ones, as the schema says.
+_COMMON = {"t": (int, float), "adapter": str, "session": str, "type": str}
+_NEEDS = {"prompt": ("named",), "override": ("phrases",), "load": ("skill", "cause"),
+          "hold": ("gate", "kind", "named"), "outcome": ("gate", "outcome"),
+          "skip": ("skill", "reason"), "route": ("form",), "ref": ("skill", "file"),
+          "skill_read": ("skills",), "file_read": ("file",), "change": (), "turn_end": (),
+          "compaction": ()}
 
 # Why a skill loaded, in the order the mod judges it (`hooks/classify.ts`):
 # a person's typed command, a subagent's own choice, the person's prompt
@@ -63,17 +77,27 @@ _CLOSEOUT_ITEM = re.compile(r"^- ([A-Z][A-Za-z ]*): (.*)$")
 _BRIEF_ADDED = re.compile(r"A session started from a brief loads `([a-z0-9]+(?:-[a-z0-9]+)*)`")
 _MARKER_WORDS = frozenset({"goated-hold", "goated-route", "goated-skip"})
 
-# A skip reason as the mod keeps it (`storedReason` in `hooks/holds.ts`).
+# A skip reason as the mod keeps it (`storedReason` in `hooks/holds.ts`): each
+# word, its wrapping quotes, backticks, brackets and trailing punctuation set
+# aside, that is a path is masked. A path starts with a drive (`C:/`), a
+# slash, or `~/`, holds a backslash or `://`, or holds a slash and either a
+# second one or a file extension at its end (`src/x.ts`, `a/b/c`); `and/or`
+# and `~5` are words.
 REASON_LIMIT = 160
-_PATH_WORD = re.compile(r"(?<!\S)(?:[A-Za-z]:[\\/]|[\\/]|~[\\/]|\S*\\)\S*")
+_WRAP_START = "`\"'([{<"
+_WRAP_END = "`\"')]}>.,;:!?"
+_PATH_START = re.compile(r"^(?:[A-Za-z]:[\\/]|[\\/]|~[\\/])")
+_EXTENSION = re.compile(r"\.[A-Za-z0-9]+$")
 
 # A path into a skill folder, as the mod finds one (`skillPaths` in `hooks/classify.ts`).
 _SKILL_PATH = re.compile(r"(?<![\w.-])skills[\\/]([^\s\"'`|;&<>()]+)", re.ASCII)
 _SUPPORT_DIRS = frozenset({"references", "reference", "scripts", "templates", "assets",
                            "examples", "docs"})
 
-# How long to wait for another event's hold on the cursor, and when such a hold is stale.
-_LOCK_WAIT_SECONDS = 1.0
+# How long to wait for another event's lock on a cursor or on the log, and
+# when such a lock is stale, left by a process that stopped.
+_CURSOR_WAIT_SECONDS = 1.0
+_LOG_WAIT_SECONDS = 5.0
 _LOCK_STALE_SECONDS = 10.0
 # How many recent reply texts a cursor remembers, to count a turn end's last text once.
 _TEXTS_KEPT = 8
@@ -81,6 +105,15 @@ _TEXTS_KEPT = 8
 
 class LogUnreadable(ValueError):
     """The log cannot be read, or holds an entry of a version this reader does not know."""
+
+
+class LogReading(NamedTuple):
+    """A log as read: its `entries`, oldest first, and how many lines were
+    `skipped` as no entry (not JSON, not an object, or missing a field its
+    type needs), such as a line a crashed writer cut short."""
+
+    entries: list[dict]
+    skipped: int
 
 
 class UsageLog:
@@ -98,60 +131,80 @@ class UsageLog:
 
 def default_path() -> Path:
     """The log's place when the caller names none: a per-user data folder,
-    never a project's. Windows uses `%LOCALAPPDATA%\\goated`; elsewhere
-    `$XDG_STATE_HOME/goated`, else `~/.local/state/goated`."""
+    never a project's. Windows uses `%LOCALAPPDATA%\\goated`, else the
+    per-user temp folder's `goated`; elsewhere `$XDG_STATE_HOME/goated`,
+    else `~/.local/state/goated`."""
 
     local = os.environ.get("LOCALAPPDATA") if os.name == "nt" else None
     return (Path(local) if local else default_root()) / "goated" / LOG_NAME
 
 
-def path_from_environment(named: str | None = None) -> Path:
-    """The log's path: `named`, else `GOATED_USAGE_LOG`, else `default_path()`."""
+def path_from_environment(named: str | None = None, default: bool = True) -> Path | None:
+    """The log's path: `named`, else `GOATED_USAGE_LOG`, else `default_path()`
+    when `default`, else None. `off` in any case, named or set, keeps none
+    (None)."""
 
     named = named or os.environ.get(LOG_ENV)
-    return Path(named) if named else default_path()
+    if named and named.strip().lower() == OFF:
+        return None
+    if named:
+        return Path(named)
+    return default_path() if default else None
 
 
-def read_entries(path: Path) -> list[dict]:
-    """Every entry of the log at `path`, oldest first; [] when there is no
-    log. Raises `LogUnreadable` for a line that is not an entry, or for an
-    entry of an unknown version, which is refused rather than guessed at. A
-    last line cut short, as by a writer that stopped mid-line, is passed over."""
+def read_log(path: Path) -> LogReading:
+    """The log at `path`, oldest first; no entries when there is no log.
+
+    An entry of a version other than `LOG_VERSION` is refused, not guessed
+    at: it raises `LogUnreadable`, which names its line. A line that is no
+    entry of this version (not JSON, not an object, or missing a field its
+    type needs) is passed over and counted, so one bad line never hides the
+    rest. A log that cannot be read raises `LogUnreadable` too."""
 
     try:
-        lines = Path(path).read_text(encoding="utf-8").splitlines()
+        lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
     except FileNotFoundError:
-        return []
-    except (OSError, UnicodeDecodeError) as exc:
+        return LogReading([], 0)
+    except OSError as exc:
         raise LogUnreadable(f"could not read the usage log at {path} "
-                            f"({getattr(exc, 'strerror', None) or exc})") from exc
+                            f"({exc.strerror or exc})") from exc
     entries = []
+    skipped = 0
     for number, line in enumerate(lines, 1):
         if not line.strip():
             continue
         try:
             entry = json.loads(line)
-        except ValueError:
-            if number == len(lines):
-                continue
-            raise LogUnreadable(f"line {number} of the usage log at {path} is not JSON") from None
-        if not isinstance(entry, dict):
-            raise LogUnreadable(f"line {number} of the usage log at {path} is not an entry")
-        if entry.get("log") != LOG_VERSION:
+        except (ValueError, RecursionError):
+            entry = None
+        version = entry.get("log") if isinstance(entry, dict) else None
+        if isinstance(version, int) and not isinstance(version, bool) and version != LOG_VERSION:
             raise LogUnreadable(
-                f"line {number} of the usage log at {path} is of log version "
-                f"{entry.get('log')!r}, which this reader does not know (it knows version "
-                f"{LOG_VERSION})")
-        entries.append(entry)
-    return entries
+                f"line {number} of the usage log at {path} is of log version {version}, "
+                f"which this reader does not know (it knows version {LOG_VERSION})")
+        if version == LOG_VERSION and _complete(entry):
+            entries.append(entry)
+        else:
+            skipped += 1
+    return LogReading(entries, skipped)
+
+
+def _complete(entry: dict) -> bool:
+    """Whether `entry` has every field its type needs, the common ones typed."""
+
+    needs = _NEEDS.get(entry.get("type"))
+    return (needs is not None
+            and all(isinstance(entry.get(k), kind) for k, kind in _COMMON.items())
+            and all(k in entry for k in needs))
 
 
 class Recorder:
     """The entries one judged event adds to the log, for `session_id` and,
     in a subagent, `agent_id`. `project_folder` is the folder whose key the
-    entries carry, or None for none; `skills()` gives the skill names a
-    prompt may name, called only when needed. Say what the event read and
-    showed, in that order, then `flush`."""
+    entries carry, or None for none; `skills()` gives the installed skill
+    names, the ones a prompt may name and whose folders' files count as a
+    skill's, called only when needed. Say what the event read and showed, in
+    that order, then `flush`."""
 
     def __init__(self, log: UsageLog, state_dir: Path, session_id: str,
                  agent_id: str | None, project_folder: str | None,
@@ -196,7 +249,14 @@ class Recorder:
     def turn_end(self) -> None:
         """The turn ended as an answer: its end was let through."""
 
-        self._steps.append(lambda w: w.add("turn_end"))
+        self._steps.append(lambda w: (w.add("turn_end"), w.cursor.update(ended=True)))
+
+    def turn_ended(self) -> bool:
+        """Whether the last turn this session's log read ended as an answer,
+        so every fact of it is logged, and the next prompt need not read it
+        again. False when the cursor cannot be read."""
+
+        return _load_cursor(self.cursor_path)["ended"]
 
     def compaction(self) -> None:
         """The context was compacted: what loaded before no longer counts."""
@@ -206,14 +266,16 @@ class Recorder:
     def flush(self) -> str | None:
         """Write what was said: take the cursor's lock, read the cursor, work
         out the entries, append them, save the cursor, and let the lock go.
-        Returns a warning when the log could not be written, else None; never
-        raises, so the log never blocks a call."""
+        Returns a warning when the log could not be written, the first time
+        in the session only, else None; never raises, so the log never blocks
+        a call."""
 
         if not self._steps:
             return None
-        lock = None
+        cursor_lock = None
         try:
-            lock = _lock(self.cursor_path)
+            ensure_private_directory(self.cursor_path.parent, "usage log's cursor folder")
+            cursor_lock = _lock(self.cursor_path.with_suffix(".lock"), _CURSOR_WAIT_SECONDS)
             writing = _Writing(self, _load_cursor(self.cursor_path))
             for step in self._steps:
                 step(writing)
@@ -221,15 +283,24 @@ class Recorder:
                 _append(self.log.path, writing.entries)
             _write_json(self.cursor_path, writing.cursor)
         except Exception as exc:  # noqa: BLE001 - the log is best effort and never blocks a call
-            return f"could not write the usage log ({getattr(exc, 'strerror', None) or exc})"
+            return self._warn_once(
+                f"could not write the usage log ({getattr(exc, 'strerror', None) or exc})")
         finally:
             self._steps = []
-            if lock is not None:
-                try:
-                    lock.unlink()
-                except OSError:
-                    pass
+            _unlock(cursor_lock)
         return None
+
+    def _warn_once(self, text: str) -> str | None:
+        """`text` the first time the session's log fails, None after; `text`
+        whenever even the mark that it was said cannot be made."""
+
+        try:
+            with open(self.cursor_path.with_suffix(".warned"), "x", encoding="utf-8"):
+                return text
+        except FileExistsError:
+            return None
+        except OSError:
+            return text
 
 
 class _Writing:
@@ -240,6 +311,7 @@ class _Writing:
         self.cursor = cursor
         self.entries: list[dict] = []
         self._key: str | None | bool = False
+        self._salt: str | None | bool = False
         # Whether this flush began reading a turn the cursor had not seen.
         self._adopted = False
 
@@ -255,12 +327,20 @@ class _Writing:
 
     def _project_key(self) -> str | None:
         if self._key is False:
-            folder = self.recorder.project_folder
-            try:
-                self._key = project_key(folder, _salt(self.recorder.log.path)) if folder else None
-            except OSError:
-                self._key = None
+            folder, salt = self.recorder.project_folder, self._log_salt()
+            self._key = project_key(folder, salt) if folder and salt else None
         return self._key
+
+    def _log_salt(self) -> str | None:
+        """The log's salt, or None when it cannot be read or made: then no
+        project key or file digest is written, rather than an unsalted one."""
+
+        if self._salt is False:
+            try:
+                self._salt = _salt(self.recorder.log.path)
+            except (OSError, ValueError, StateUnsafe):
+                self._salt = None
+        return self._salt
 
     # What the event showed ----------------------------------------------
 
@@ -378,14 +458,20 @@ class _Writing:
             target, read_tool = call.command, False
         else:
             return
+        # Only an installed skill's folder is a skill's: a project's own
+        # `skills/` folder, and the files in it, are never named.
+        installed = self.recorder.skills()
         if self.recorder.agent_id is None:
             # Only the main agent's reads answer holds by files read.
-            if read_tool and call.ok:
-                self.add("file_read", file=_digest(_comparable(target)))
-            reached = skills_in_path(target)
+            salt = self._log_salt() if read_tool and call.ok else None
+            if salt:
+                self.add("file_read", file=_digest(f"{salt}\n{_comparable(target)}"))
+            reached = [skill for skill in skills_in_path(target) if skill in installed]
             if reached:
                 self.add("skill_read", skills=reached)
         for skill, file in skill_files(target):
+            if skill not in installed:
+                continue
             entry: dict = {"skill": skill, "file": file}
             if read_tool:
                 entry["read_tool"] = True
@@ -415,11 +501,13 @@ def _fresh_cursor() -> dict:
     """A cursor that has read nothing: the turn read last and how far
     (`entries`), its calls not yet finished, the calls whose lines counted,
     its recent reply texts and a turn end's last one, the skills its prompt
-    named, those its holds asked for, whether the router loaded in it, and
-    the skills a prompt not yet read as a turn named."""
+    named, those its holds asked for, whether the router loaded in it,
+    whether its end was logged, and the skills a prompt not yet read as a
+    turn named."""
 
     return {"turn": None, "entries": 0, "waiting": [], "lined": [], "texts_seen": [],
-            "final": None, "named": [], "asked": [], "router": False, "next_named": None}
+            "final": None, "named": [], "asked": [], "router": False, "ended": False,
+            "next_named": None}
 
 
 def _load_cursor(path: Path) -> dict:
@@ -505,8 +593,22 @@ def stored_reason(reason: str) -> str:
     """A skip reason as the log keeps it: each path-like word masked as
     `<path>`, then cut to `REASON_LIMIT` characters, its last an ellipsis."""
 
-    masked = _PATH_WORD.sub("<path>", reason)
+    masked = re.sub(r"\S+", lambda word: _masked_word(word[0]), reason)
     return masked if len(masked) <= REASON_LIMIT else masked[:REASON_LIMIT - 1] + "…"
+
+
+def _masked_word(word: str) -> str:
+    """`word` with the path inside its wrapping masked as `<path>`; the word
+    itself when it holds no path."""
+
+    inner = word.lstrip(_WRAP_START)
+    start = word[:len(word) - len(inner)]
+    core = inner.rstrip(_WRAP_END)
+    end = inner[len(core):]
+    is_path = bool(core) and (
+        _PATH_START.match(core) is not None or "\\" in core or "://" in core
+        or ("/" in core and (core.count("/") >= 2 or _EXTENSION.search(core) is not None)))
+    return f"{start}<path>{end}" if is_path else word
 
 
 def _skill_paths(text: str) -> list[tuple[str, list[str]]]:
@@ -620,39 +722,69 @@ def _salt(log_path: Path) -> str:
         return path.read_text(encoding="utf-8").strip()
     except FileNotFoundError:
         pass
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    ensure_private_directory(path.parent, "usage log folder")
     salt = os.urandom(16).hex()
     try:
-        with open(path, "x", encoding="utf-8") as handle:
-            handle.write(salt)
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     except FileExistsError:
         return path.read_text(encoding="utf-8").strip()
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(salt)
     return salt
 
 
 # Files ----------------------------------------------------------------------
 
 
+class LogBusy(OSError):
+    """Another writer held the log's lock past the wait, and it is not stale."""
+
+
+def project_key_of_log(log_path: Path, folder: str) -> str | None:
+    """The key the log at `log_path` gives the project `folder`, or None when
+    the log has no salt yet (so no entry has that key)."""
+
+    try:
+        salt = (Path(log_path).parent / SALT_NAME).read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return project_key(folder, salt)
+
+
 def _append(path: Path, entries: list[dict]) -> None:
-    """Append `entries` as lines in one write, so concurrent writers' lines never mix."""
+    """Append `entries` as lines, under the log's lock, in one write to a
+    descriptor opened for appending: Windows emulates appending with a seek
+    before each write, so without the lock writers in other processes could
+    write over each other's lines. The folder is the user's alone, as skip
+    reasons are kept as written but for their paths. Raises `OSError`
+    (`LogBusy` when the lock could not be had)."""
 
     path = Path(path)
-    # The folder is the user's alone where the system has modes: skip reasons
-    # are kept as written, but for paths.
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    text = "".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries)
-    with open(path, "a", encoding="utf-8") as handle:
-        handle.write(text)
+    ensure_private_directory(path.parent, "usage log folder")
+    data = "".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries)
+    lock = _lock(path.with_name(path.name + ".lock"), _LOG_WAIT_SECONDS)
+    if lock is None:
+        raise LogBusy("another writer held the usage log too long")
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0),
+                     0o600)
+        try:
+            view = memoryview(data.encode("utf-8"))
+            while view:
+                view = view[os.write(fd, view):]
+        finally:
+            os.close(fd)
+    finally:
+        _unlock(lock)
 
 
-def _lock(cursor_path: Path) -> Path | None:
-    """Take the cursor's lock, waiting briefly for another event of the same
-    session and agent; None when it cannot, and the cursor is then used
-    unlocked, at worst logging a fact twice."""
+def _lock(lock: Path, wait: float) -> Path | None:
+    """Take the lock file `lock`, waiting up to `wait` seconds for its holder
+    and breaking a lock older than `_LOCK_STALE_SECONDS`, left by a process
+    that stopped; None when it cannot be had. The caller lets it go with
+    `_unlock`."""
 
-    lock = cursor_path.with_suffix(".lock")
-    lock.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    deadline = time.monotonic() + _LOCK_WAIT_SECONDS
+    deadline = time.monotonic() + wait
     while True:
         try:
             os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
@@ -666,4 +798,17 @@ def _lock(cursor_path: Path) -> Path | None:
                 pass
             if time.monotonic() > deadline:
                 return None
-            time.sleep(0.02)
+            time.sleep(0.01)
+        except PermissionError:
+            # Windows refuses to create a file another process is deleting.
+            if time.monotonic() > deadline:
+                return None
+            time.sleep(0.01)
+
+
+def _unlock(lock: Path | None) -> None:
+    if lock is not None:
+        try:
+            lock.unlink()
+        except OSError:
+            pass

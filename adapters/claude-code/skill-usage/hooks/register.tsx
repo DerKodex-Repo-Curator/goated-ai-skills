@@ -50,7 +50,7 @@ const available = atom({ plugin: 'skill-usage', key: 'available' } as const, nul
 const declared = atom({ plugin: 'skill-usage', key: 'declared' } as const, null, { shape: 'declared-1' })
 // `all-time-2`: Ticket 076 added totals by project and the earlier versions' holds.
 const allTime = atom({ plugin: 'skill-usage', key: 'allTime' } as const, null, { shape: 'all-time-2' })
-const logged = atom({ plugin: 'skill-usage', key: 'logged' } as const, null, { shape: 'all-time-2' })
+const logged = atom({ plugin: 'skill-usage', key: 'logged' } as const, null, { shape: 'logged-1' })
 const project = atom({ plugin: 'skill-usage', key: 'project' } as const, null)
 const allProject = atom({ plugin: 'skill-usage', key: 'allProject' } as const, null)
 const tab = atom({ plugin: 'skill-usage', key: 'tab' } as const, 'session')
@@ -271,7 +271,9 @@ async function loadAllTime($: Dollar, id: string) {
     for (const key of result.folded) await $.store.delete(key)
   }
   // The sessions other adapters logged count beside the stored ones; they are never stored or folded.
-  const total = addTotals(result.total, await read($, logged))
+  const reading = await read($, logged)
+  const summed = addTotals(result.total, reading?.total ?? null)
+  const total = summed && reading?.skipped ? { ...summed, logSkipped: reading.skipped } : summed
   // Every write redraws the pane: rewrite only what changed, as most turns change no other session.
   if (JSON.stringify(await read($, allTime)) !== JSON.stringify(total)) await update($, allTime, () => total)
 }
@@ -285,15 +287,19 @@ async function loadAllTime($: Dollar, id: string) {
 async function readUsageLogOf($: Dollar, configured: string) {
   // The engine lists the variables a mod reads, so each is named where it is read.
   const variable = (value: Promise<string | undefined>) => value.catch(() => undefined)
+  // Windows always sets OS to Windows_NT; the core picks its default folder by platform too.
+  const isWindows = (await variable($.env.get('OS'))) === 'Windows_NT'
   const place = usageLogPlace({
     configured,
+    isWindows,
     localAppData: (await variable($.env.get('LOCALAPPDATA'))) || undefined,
+    temp: (await variable($.env.get('TEMP'))) || (await variable($.env.get('TMP'))) || undefined,
     xdgStateHome: (await variable($.env.get('XDG_STATE_HOME'))) || undefined,
-    home: (await variable($.env.get('HOME'))) || (await variable($.env.get('USERPROFILE'))) || undefined,
+    home: (isWindows ? await variable($.env.get('USERPROFILE')) : undefined) || (await variable($.env.get('HOME'))) || (await variable($.env.get('USERPROFILE'))) || undefined,
   })
   const text = place ? await $.fs.read(place).catch(() => '') : ''
   const reading = readUsageLog(text)
-  await update($, logged, () => ('refused' in reading ? null : loggedTotal(reading.sessions)))
+  await update($, logged, () => ('refused' in reading ? null : { total: loggedTotal(reading.sessions), skipped: reading.skipped }))
   // Noted, not thrown, so the rest of the session start still runs.
   if ('refused' in reading) await noteError($, new Error(`the GOATED usage log was not read: ${reading.refused}`))
 }

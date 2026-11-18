@@ -111,18 +111,20 @@ class Config:
     @classmethod
     def from_environment(cls) -> "Config":
         """The installed defaults; the usage log is at `GOATED_USAGE_LOG`, else
-        the core's per-user default (`usage_log.default_path`)."""
+        the core's per-user default (`usage_log.default_path`), and none when
+        `GOATED_USAGE_LOG` is `off`."""
 
         override = os.environ.get(STATE_DIR_ENV)
         namespaces = os.environ.get(NAMESPACES_ENV, "")
         registry = os.environ.get(REGISTRY_ENV)
+        log = path_from_environment()
         return cls(
             state_dir=Path(override) if override else default_root() / STATE_DIR_NAME,
             skill_namespaces=tuple(n.strip() for n in namespaces.split(",") if n.strip()),
             project_dir=os.environ.get(PROJECT_DIR_ENV) or None,
             registry_path=Path(registry) if registry else DEFAULT_REGISTRY,
             registry_named=bool(registry),
-            usage_log=UsageLog(path_from_environment(), ADAPTER_NAME),
+            usage_log=UsageLog(log, ADAPTER_NAME) if log else None,
         )
 
     def settings(self) -> judge.Settings:

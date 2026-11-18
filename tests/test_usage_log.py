@@ -61,7 +61,7 @@ def core_log(root: Path, scenario: dict, log_path: Path) -> list[dict]:
     settings = core_request.Settings(root / "core-state", registry_path=REGISTRY, usage_log=log)
     run = run_scenario(root, scenario, lambda request: core_request.decide(request, settings))
     assert not run.failures, run.failures
-    return usage_log.read_entries(log_path)
+    return usage_log.read_log(log_path).entries
 
 
 def report_command(*args: str) -> subprocess.CompletedProcess:
@@ -134,9 +134,9 @@ class CoreLogTests(unittest.TestCase):
         decisions = [decision for _, decision in run.exchanges]
         self.assertEqual([d["decision"] for d in decisions], ["allow", "hold"])
         self.assertEqual([h["gate"] for h in decisions[1]["holds"]], ["router-first", "route-line"])
-        for decision in decisions:
-            self.assertEqual([n["kind"] for n in decision["notices"]], ["warning"])
-            self.assertIn("could not write the usage log", decision["notices"][0]["text"])
+        # Said once per session, not at every event.
+        self.assertEqual([[n["kind"] for n in d["notices"]] for d in decisions], [["warning"], []])
+        self.assertIn("could not write the usage log", decisions[0]["notices"][0]["text"])
 
     def test_no_path_prompt_text_or_file_content_reaches_the_log(self) -> None:
         secret = "D:/work/private-client/plan.md"
@@ -161,23 +161,85 @@ class CoreLogTests(unittest.TestCase):
         self.assertEqual(ref, {**ref, "skill": "tdd", "file": "references/test-design.md",
                                "read_tool": True, "partial": True})
 
+    def test_a_project_folder_named_skills_is_no_skill_and_file_digests_are_salted(self) -> None:
+        own = "src/skills/payroll-export/q3-layoffs.txt"
+        scenario = {"name": "own skills folder", "steps": [
+            {"prompt": {"type": "prompt", "author": "person", "text": "Look."}},
+            {"call": {"kind": "file_read", "path": own, "whole": True}},
+            {"call": {"kind": "shell_command", "shell": "posix", "command": f"cat {own}"}},
+            {"turn_end": True},
+        ]}
+        entries = core_log(self.root, scenario, self.log_path)
+        self.assertEqual([e["type"] for e in entries], ["prompt", "file_read", "turn_end"])
+        self.assertNotIn("payroll", self.log_path.read_text(encoding="utf-8"))
+        # The same path in a log with another salt has another digest, so a
+        # guessed path cannot be checked without the log's salt.
+        (self.root / "again").mkdir()
+        again = core_log(self.root / "again", scenario, self.root / "other" / "usage-log.jsonl")
+        self.assertRegex(entries[1]["file"], r"^[0-9a-f]{16}$")
+        self.assertNotEqual(entries[1]["file"], again[1]["file"])
+
+    def test_skip_reasons_mask_every_path_form_and_keep_words(self) -> None:
+        cases = {
+            "see `src/export.py` first": "see `<path>` first",
+            'the file "docs/a/b.md" is old': 'the file "<path>" is old',
+            "nothing (a/b/c) needed": "nothing (<path>) needed",
+            "read https://example.com/x today": "read <path> today",
+            "edit src/x.ts, then stop": "edit <path>, then stop",
+            "and/or ~5 words stay": "and/or ~5 words stay",
+            "C:\\work\\x and ~/notes": "<path> and <path>",
+        }
+        for reason, kept in cases.items():
+            with self.subTest(reason=reason):
+                self.assertEqual(usage_log.stored_reason(reason), kept)
+
     def test_a_log_of_an_unknown_version_is_refused_with_a_clear_message(self) -> None:
         core_log(self.root, ROUTED_EDIT, self.log_path)
-        self.assertTrue(usage_log.read_entries(self.log_path))  # Near miss: version 1 reads.
+        self.assertTrue(usage_log.read_log(self.log_path).entries)  # Near miss: version 1 reads.
         with self.log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps({"log": 2, "type": "prompt"}) + "\n")
         with self.assertRaisesRegex(usage_log.LogUnreadable,
                                     r"line 8 .* log version 2, which this reader does not know"):
-            usage_log.read_entries(self.log_path)
+            usage_log.read_log(self.log_path).entries
         done = report_command("--log", str(self.log_path))
         self.assertEqual(done.returncode, 1)
         self.assertIn("log version 2", done.stderr)
         self.assertEqual(done.stdout, "")
 
+    def test_lines_that_are_no_entry_are_skipped_and_counted_not_fatal(self) -> None:
+        core_log(self.root, ROUTED_EDIT, self.log_path)
+        good = len(usage_log.read_log(self.log_path).entries)
+        common = {"log": 1, "t": 1.0, "adapter": "x", "session": "s", "project": None}
+        with self.log_path.open("a", encoding="utf-8") as handle:
+            handle.write('{"log": 1, "t": 1.0, "adap\n')  # Cut short by a writer.
+            handle.write("[1, 2]\n")
+            handle.write(json.dumps({**common, "type": "load", "cause": "agent"}) + "\n")
+            handle.write(json.dumps({**common, "type": "hold", "gate": "g", "kind": "strict",
+                                     "named": [], "items": [{"skill": "tdd"}]}) + "\n")
+            handle.write(json.dumps({**common, "type": "turn_end"}) + "\n")
+        reading = usage_log.read_log(self.log_path)
+        self.assertEqual((len(reading.entries), reading.skipped), (good + 2, 3))
+        done = report_command("--log", str(self.log_path))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        # The hold whose item has no label is counted as skipped too, not a crash.
+        self.assertIn("4 lines were skipped as no entry.", done.stdout)
+
+    def test_the_report_lists_projects_and_keeps_one_by_its_folder(self) -> None:
+        core_log(self.root, ROUTED_EDIT, self.log_path)
+        project = usage_log.read_log(self.log_path).entries[0]["project"]
+        done = report_command("--log", str(self.log_path))
+        self.assertIn(f"| {project} | 1 |", done.stdout)
+        folder = self.root / "home" / "work" / "project"
+        mine = report_command("--log", str(self.log_path), "--project-folder", str(folder))
+        self.assertIn("1 sessions", mine.stdout)
+        # Near miss: another folder keeps nothing.
+        other = report_command("--log", str(self.log_path), "--project-folder", str(self.root))
+        self.assertIn("0 sessions, from none.", other.stdout)
+
     def test_the_report_summarises_both_adapters_and_filters_them_apart(self) -> None:
         core_log(self.root, ROUTED_EDIT, self.log_path)
         self.claude_code_log(self.root, self.log_path)  # The same log, a second adapter.
-        project = usage_log.read_entries(self.log_path)[0]["project"]
+        project = usage_log.read_log(self.log_path).entries[0]["project"]
 
         both = report_command("--log", str(self.log_path))
         self.assertEqual(both.returncode, 0, both.stderr)
@@ -210,9 +272,25 @@ class CoreLogTests(unittest.TestCase):
             input=json.dumps(request), capture_output=True, text=True, check=True,
             env={**os.environ, core_request.ADAPTER_ENV: "worked-example"})
         self.assertEqual(json.loads(done.stdout)["decision"], "allow")
-        entries = usage_log.read_entries(self.log_path)
+        entries = usage_log.read_log(self.log_path).entries
         self.assertEqual([(e["type"], e["adapter"]) for e in entries],
                          [("prompt", "worked-example")])
+
+    def test_off_keeps_no_log_and_only_the_claude_code_adapter_has_a_default(self) -> None:
+        from goated_adapter import Config
+
+        with mock.patch.dict(os.environ, {usage_log.LOG_ENV: "OFF"}):
+            self.assertIsNone(usage_log.path_from_environment())
+            self.assertIsNone(Config.from_environment().usage_log)
+            self.assertIsNone(core_request.settings_from_environment().usage_log)
+        with mock.patch.dict(os.environ, {}):
+            os.environ.pop(usage_log.LOG_ENV, None)
+            self.assertEqual(Config.from_environment().usage_log.path, usage_log.default_path())
+            # Near miss: the command and `decide` keep no log unless one is named.
+            self.assertIsNone(core_request.settings_from_environment().usage_log)
+            named = core_request.settings_from_environment(log_path=str(self.log_path))
+            self.assertEqual(named.usage_log.path, self.log_path)
+            self.assertIsNone(core_request.settings_from_environment(log_path="off").usage_log)
 
     def test_the_default_log_is_a_per_user_folder_not_a_project(self) -> None:
         # The process environment is the edge the location is read from.
@@ -257,7 +335,65 @@ class CoreLogTests(unittest.TestCase):
         s.load(ROUTER)
         s.say("goated-route: direct")
         s.call("Edit", edit)
-        return usage_log.read_entries(log_path)
+        return usage_log.read_log(log_path).entries
+
+
+# Each writer process appends `count` one-entry batches, as hooks of
+# parallel sessions do, through the recorder's public flush.
+WRITER = """
+import sys
+sys.path.insert(0, sys.argv[1])
+from pathlib import Path
+from goated_core import usage_log
+log = usage_log.UsageLog(Path(sys.argv[2]), "writer")
+for n in range(int(sys.argv[4])):
+    r = usage_log.Recorder(log, Path(sys.argv[3]), f"session-{sys.argv[5]}", None, None,
+                           frozenset)
+    r.turn_end()
+    warning = r.flush()
+    assert warning is None, warning
+"""
+
+
+class LogFileTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.log_path = self.root / "logs" / "usage-log.jsonl"
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def flush_one(self) -> str | None:
+        r = usage_log.Recorder(usage_log.UsageLog(self.log_path, "t"), self.root / "state", "s",
+                               None, str(self.root), frozenset)
+        r.turn_end()
+        return r.flush()
+
+    @unittest.skipIf(os.name == "nt", "POSIX folder modes")
+    def test_the_log_folder_is_private_and_a_shared_one_is_refused(self) -> None:
+        self.assertIsNone(self.flush_one())
+        self.assertEqual(self.log_path.parent.stat().st_mode & 0o077, 0)
+        self.assertEqual((self.log_path.parent / usage_log.SALT_NAME).stat().st_mode & 0o077, 0)
+        # Near miss: a folder others may write to is not trusted with the log.
+        self.log_path.parent.chmod(0o777)
+        self.assertIn("not private", self.flush_one() or "")
+
+    def test_writers_in_many_processes_lose_and_mix_no_line(self) -> None:
+        processes, count = 8, 150
+        writers = [subprocess.Popen([sys.executable, "-c", WRITER, str(CORE_DIR),
+                                     str(self.log_path), str(self.root / "state"), str(count),
+                                     str(n)], stderr=subprocess.PIPE)
+                   for n in range(processes)]
+        for writer in writers:
+            _, error = writer.communicate(timeout=120)
+            self.assertEqual(writer.returncode, 0, error.decode("utf-8", "replace"))
+        lines = self.log_path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), processes * count)
+        reading = usage_log.read_log(self.log_path)
+        self.assertEqual((len(reading.entries), reading.skipped), (processes * count, 0))
+        self.assertEqual({e["session"] for e in reading.entries},
+                         {f"session-{n}" for n in range(processes)})
 
 
 if __name__ == "__main__":
