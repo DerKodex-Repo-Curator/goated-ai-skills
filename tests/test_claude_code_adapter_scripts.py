@@ -16,7 +16,7 @@ import unittest
 from pathlib import Path
 
 from claude_code_adapter_support import ROUTER, Session, decision, parse, reason
-from goated_adapter import shell
+from goated_core import shell
 
 HEREDOC_WRITE = "python - <<'EOF'\ntext = 'x = 1'\nopen(\"src/app.py\", \"w\").write(text)\nEOF"
 SKIP_LINE = "goated-skip: software-design-principles: one mechanical rename across forty files"
@@ -176,7 +176,7 @@ class ScriptedEditFrictionTests(ScriptTestCase):
     """The friction count reads a `scripted-edit` hold as asking for a file edit tool."""
 
     def friction(self, s: Session) -> int:
-        from goated_adapter.state import StateStore
+        from goated_core.state import StateStore
 
         return StateStore(s.config.state_dir).load(s.session_id)[0].friction
 

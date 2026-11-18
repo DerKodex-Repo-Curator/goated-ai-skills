@@ -75,21 +75,21 @@ API loop, cannot call them.
 
 ## Acceptance Criteria
 
-- [ ] The core's package imports nothing from the Claude Code adapter and
+- [x] The core's package imports nothing from the Claude Code adapter and
       names no Claude Code tool; a check enforces it.
-- [ ] The command and the Python call return the same decision for every
+- [x] The command and the Python call return the same decision for every
       conformance scenario.
-- [ ] An unreadable request and an unknown version are each answered with
+- [x] An unreadable request and an unknown version are each answered with
       allow and a reason.
-- [ ] The Claude Code adapter's existing tests pass with no change to
+- [x] The Claude Code adapter's existing tests pass with no change to
       expected outcomes or hold texts, and an existing install keeps
       working with no change to the user's settings.
-- [ ] Two sessions with different ids keep separate state.
-- [ ] `AGENTS.md` and `adapters/README.md` describe `adapters/core/`.
-- [ ] The contract holds the detection tables and cites no adapter README;
+- [x] Two sessions with different ids keep separate state.
+- [x] `AGENTS.md` and `adapters/README.md` describe `adapters/core/`.
+- [x] The contract holds the detection tables and cites no adapter README;
       the Claude Code README's gate and closeout tables keep only Claude
       Code detail.
-- [ ] The contract check reads the gates, kinds and closeout labels from
+- [x] The contract check reads the gates, kinds and closeout labels from
       `adapters/core/`.
 
 ## Expected Proof
@@ -108,3 +108,25 @@ API loop, cannot call them.
 - The log and report command (Ticket 082).
 - The guide and worked example (Ticket 083).
 - Packaging or publishing the core outside this repo.
+
+## Decisions On What Ticket 080 Left
+
+- *Hold-text slots: the core renders neutral text.* The rules still write
+  `wording` slots, and `goated_core.judge`, the call an adapter that builds
+  the model's objects itself uses, returns them unfilled, so the Claude
+  Code adapter fills them in its own words as before. `request.decide` and
+  the command fill every slot with `wording.neutral` before answering, so
+  no JSON decision carries one, and the slot grammar stays a detail of the
+  Python call (`goated_core/wording.py`) rather than a published contract.
+  Publishing it would have made every adapter in another language fill
+  slots it has no reason to know; no Claude Code text changes.
+- *State bound to Claude Code: the key is the caller's.* The override record
+  is keyed by `prompt`, an opaque key the caller gives for the prompt that
+  opened the turn; `judge.overrides_for` matches it. Claude Code passes its
+  `prompt_id`, the request call the turn's key. State that an adapter from
+  before this ticket saved in Claude Code's words (the `prompt_id` key, a
+  shell saved as `Bash` or `PowerShell`) is upgraded as it loads by
+  `translation.upgrade_state`, which the adapter passes to the core's state
+  store, so a session that spans the upgrade behaves as before.
+  `state.py`'s allowance is gone from the purity check, which now covers
+  every core module.

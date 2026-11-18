@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import re
 
-from . import events, shell, wording
-from .events import Call, Edit
+from goated_core import events, shell, wording
+from goated_core.events import Call, Edit
 
 # File edit tools, each with the input field that names its file.
 FILE_WRITE_TOOLS = {"Edit": "file_path", "Write": "file_path", "MultiEdit": "file_path",
@@ -123,6 +123,25 @@ def _action(tool_name: str) -> str:
     them. The rules key file writes, reads, and commands themselves."""
 
     return ("spawn:" if tool_name in SPAWN_BRIEF_FIELDS else "tool:") + tool_name
+
+
+def upgrade_state(data: object) -> object:
+    """Saved session state in the core's words, for state an earlier adapter
+    saved in Claude Code's: the override record keyed by `prompt_id`, where
+    the core keys it by `prompt`, and the last shell saved as its tool name
+    ("Bash", "PowerShell") rather than its shell kind. Anything else is
+    returned as it came, for the core to check."""
+
+    if not isinstance(data, dict):
+        return data
+    overrides = data.get("overrides")
+    if isinstance(overrides, dict) and "prompt_id" in overrides and "prompt" not in overrides:
+        data["overrides"] = {("prompt" if key == "prompt_id" else key): value
+                             for key, value in overrides.items()}
+    shell_kind = data.get("shell")
+    if isinstance(shell_kind, str):
+        data["shell"] = COMMAND_TOOLS.get(shell_kind, shell_kind)
+    return data
 
 
 def skill_name(value: object) -> str:

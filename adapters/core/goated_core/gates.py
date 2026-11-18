@@ -70,7 +70,7 @@ class Hold:
 
     def text(self, claim: Callable[[str], bool]) -> str:
         """The text this hold shows: its short form once the turn has shown
-        the same ask in full, else the full text. `claim` is as `message`
+        the same ask in full, else the full text. `claim` is as `shown_holds`
         takes it; the purpose is the gate and what is unmet (`ask_purpose`),
         so a gate's new ask, such as a change read after a load, comes in full."""
 
@@ -106,8 +106,8 @@ def short_form(unmet: str, clear: str) -> ShortForm:
 ADVICE = "advice"
 
 # Paragraphs several holds or closeout items share (Ticket 095). How a hold
-# asks for a change read; no command is backticked, since the skill-usage mod
-# reads a backticked name as a skill to load.
+# asks for a change read; no command is backticked, since a reader of hold
+# texts takes a backticked name as a skill to load (contract, Hold Text).
 CHANGE_READ = (
     f"print its diff with a git diff or git show command, or {READ} a file you changed; "
     "a listing of names or counts, such as --stat or --name-only, does not count"
@@ -126,21 +126,47 @@ _SHARED_TEXTS = (
 )
 
 
-def _once(text: str, full: str, again: str) -> str:
-    """`text` with every copy of `full` after the first replaced by `again`."""
+def _once(texts: list[str], full: str, again: str) -> list[str]:
+    """`texts`, read in order as one text, with every copy of `full` after
+    the first replaced by `again`. No copy spans two texts: no shared
+    paragraph holds a hold line or the blank line between holds."""
 
-    first = text.find(full)
-    if first < 0:
-        return text
-    end = first + len(full)
-    return text[:end] + text[end:].replace(full, again)
+    kept, seen = [], False
+    for text in texts:
+        if not seen and (first := text.find(full)) >= 0:
+            seen, end = True, first + len(full)
+            text = text[:end] + text[end:].replace(full, again)
+        elif seen:
+            text = text.replace(full, again)
+        kept.append(text)
+    return kept
 
 
-def message(holds: list[Hold], claim: Callable[[str], bool], call: bool = False) -> str:
-    """The one message that carries `holds`, every hold one call or turn end
-    meets, in the order the gates fire (Ticket 095): each hold's own
-    `goated-hold:` line and text, with a blank line between holds. Its
-    harness wording is still in `wording` slots.
+class Shown(NamedTuple):
+    """One hold as a decision shows it: its gate, its kind, and the text that
+    follows its `goated-hold:` line, harness wording still in `wording` slots."""
+
+    gate: str
+    kind: str
+    text: str
+
+    def line(self) -> str:
+        """The hold line, as the contract's Hold Messages section defines it."""
+
+        return f"goated-hold: {self.gate} | {self.kind}"
+
+
+def message(shown: list[Shown]) -> str:
+    """The one message that carries `shown`, as `shown_holds` gives them:
+    each hold's line and text, with a blank line between holds."""
+
+    return "\n\n".join(f"{hold.line()}\n{hold.text}" for hold in shown)
+
+
+def shown_holds(holds: list[Hold], claim: Callable[[str], bool], call: bool = False) -> list[Shown]:
+    """How `holds`, every hold one call or turn end meets, in the order the
+    gates fire, are shown in one message (Ticket 095): each with its own text,
+    whose harness wording is still in `wording` slots.
 
     `claim(purpose)` claims the turn's marker for `purpose` and returns True
     only for its first claim in the turn, so calls held in parallel, which
@@ -150,11 +176,12 @@ def message(holds: list[Hold], claim: Callable[[str], bool], call: bool = False)
     turn is full, its later ones short. The
     unseen-line advice (purpose `ADVICE`) is given in full on one hold per
     turn; every other hold that carries it gets one sentence that keeps its
-    typed override. Every other shared paragraph is given once per message.
+    typed override. Every other shared paragraph is given once per message:
+    in the first hold that holds it, its later copies shortened.
 
     `call`: the holds are a call's. When a hold a line can clear holds it,
-    the message ends with the carrier slot, where the harness names a call
-    that can carry the line if this call has no field for one.
+    the last hold's text ends with the carrier slot, where the harness names
+    a call that can carry the line if this call has no field for one.
     """
 
     advice_given = line_clears = False
@@ -168,13 +195,12 @@ def message(holds: list[Hold], claim: Callable[[str], bool], call: bool = False)
                 short = short_advice(found[2], found[3])
                 text = text[:found.start()] + short + text[found.end():]
             advice_given = True
-        texts.append(f"goated-hold: {hold.gate} | {hold.kind}\n{text}")
-    joined = "\n\n".join(texts)
+        texts.append(text)
     for full, again in _SHARED_TEXTS:
-        joined = _once(joined, full, again)
-    if line_clears and call:
-        joined += f"\n{wording.CARRIER}"
-    return joined
+        texts = _once(texts, full, again)
+    if line_clears and call and texts:
+        texts[-1] += f"\n{wording.CARRIER}"
+    return [Shown(hold.gate, hold.kind, text) for hold, text in zip(holds, texts)]
 
 
 def _full_advice(text: str):
@@ -392,7 +418,8 @@ def check_routing(
             f"finishing {READ} calls of three distinct files, each read whole {NO_RANGE}, "
             "such as the sources its brief names."
         )
-        # The mod reads this sentence's opening for the skill the brief added.
+        # A reader of hold texts takes this sentence's opening for the skill the
+        # brief added.
         missing.append(f"A session started from a brief loads `{ORIENTATION_SKILL}` or "
                        f"finishes {READ} calls of three distinct files, each whole")
     parts.append(

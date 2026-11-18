@@ -13,7 +13,8 @@ tests, and arithmetic understood well enough that `echo "a > b"`,
 word is found past wrappers such as `sudo -u x`, `env`, `timeout 60`, `nice`,
 `xargs`, and `cmd /c`. It is still a lexical reading, not a shell: a command
 run through `bash -c`, `eval`, `Invoke-Expression`, backticks, a heredoc fed to
-a shell, or a git alias is not seen. The adapter README lists these limits.
+a shell, or a git alias is not seen. The enforcement contract's Shell Reading
+states these limits.
 """
 
 from __future__ import annotations
@@ -557,7 +558,7 @@ GIT_READ_SUBCOMMANDS = frozenset({"status", "diff", "log", "show", "rev-parse", 
 # `gpg.program`) ask for programs the repository's config names. Refusing
 # them does not stop those programs: a plain `git diff`,
 # `git show`, or `git log -p` runs `diff.external` and textconv drivers too
-# (README "Known Limits"). These subcommands take no abbreviated long option
+# (contract, Change Reads). These subcommands take no abbreviated long option
 # (`git diff --out=x` is refused by git), so the names are matched as written.
 GIT_READ_REFUSED_ARGS = ("--output", "--ext-diff", "--textconv", "--show-signature")
 # `git branch` lists branches only with these options, matched whole: git

@@ -1,0 +1,473 @@
+"""The core's Python call: one event of a session in, one decision out.
+
+Each function judges one kind of event of the event model (ADR 0004): a
+pending call, a turn's end, a finished call, a submitted prompt, and a
+session start. The caller says where the event happens (`Situation`) and
+how to read the session's turns (a `TurnReader`); the core loads the
+session's saved facts by its id, judges, saves, and answers with a
+`Decision`. Hold texts keep their harness wording in `wording` slots, which
+the caller fills: `request.decide` fills them with neutral words, and the
+Claude Code adapter with its own.
+
+A function raises what its caller's reader raises, and `StateUnsafe` when
+the state folder cannot be trusted; the caller lets the event through then,
+as the fail-open rule requires. Saving is best effort: a decision stands,
+with a warning, when its state cannot be saved.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from pathlib import Path
+from typing import NamedTuple
+
+from . import actions, events, friction, gates, reference_reads
+from .events import Call, Result, Turn
+from .overrides import GOATED_SKILLS, parse_overrides
+from .state import SessionState, StateStore, StateUnsafe
+
+# The turn marker's purpose for the early closeout note (Ticket 096), apart
+# from the unseen-line advice's and each hold's.
+CLOSEOUT_NOTE = "closeout-note"
+
+# Notice kinds, as the event model's `notice` names them.
+FAIL_OPEN = "fail_open"
+WARNING = "warning"
+OVERRIDE_RECORDED = "override_recorded"
+CLOSEOUT_NOTE_KIND = "closeout_note"
+SESSION_NOTICE = "session_notice"
+
+# Session start sources, as the event model's `session_start` names them.
+NEW = "new"
+RESUMED = "resumed"
+AFTER_COMPACTION = "after_compaction"
+CLEARED = "cleared"
+
+RETROSPECTIVE_NOTICE = (
+    "{count} GOATED holds this session were declined or left unanswered. The "
+    "`retrospective` skill can turn that friction into improvements to the "
+    "project's checks, standards, or instructions, such as after a wave of "
+    "delegated tickets is merged. This is a notice; nothing is held."
+)
+
+# How the caller reads the session's turns: given the key of the last turn
+# the core has seen (None for none), the turns back to and including it,
+# oldest first, ending with the current turn, and the caller's key for the
+# prompt that opened the current turn (None when it has none). It raises
+# when the current turn cannot be read.
+TurnReader = Callable[[str | None], tuple[list[Turn], object]]
+
+
+class Settings:
+    """What the core reads besides the events: where it keeps session state
+    (`state_dir`), the skill namespaces whose `ns:skill` loads count as GOATED
+    skills, the installed registry the `reference-reads` gate reads (None
+    reads none; `registry_named`: the user named that path, so a missing
+    file there is worth a warning), and `upgrade_state`, which a caller whose
+    earlier versions saved state in its own words passes (see `StateStore`).
+    """
+
+    __slots__ = ("state_dir", "skill_namespaces", "registry_path", "registry_named",
+                 "upgrade_state")
+
+    def __init__(self, state_dir: Path, skill_namespaces: tuple[str, ...] = (),
+                 registry_path: Path | None = None, registry_named: bool = False,
+                 upgrade_state: Callable[[object], object] | None = None) -> None:
+        self.state_dir = Path(state_dir)
+        self.skill_namespaces = tuple(skill_namespaces)
+        self.registry_path = Path(registry_path) if registry_path is not None else None
+        self.registry_named = registry_named
+        self.upgrade_state = upgrade_state
+
+    def store(self) -> StateStore:
+        return StateStore(self.state_dir, self.upgrade_state)
+
+
+class Situation:
+    """Where one event happens, as the caller knows it.
+
+    `session_id` keys the session's saved facts. `agent_id` names the
+    subagent acting, or is None for the main agent. `project` says which
+    files are the project's (`actions.find_project`). `agent_folders` are
+    the harness's own configuration folders, where no write is scratch.
+    `installed_skills()` gives the skill names the harness can find, or None
+    when it cannot tell; it is called only when needed. `subagents(turn)`
+    gives the turns of each agent `turn`'s spawns started, by agent id, and
+    the ids whose turns could not be read; by default, none.
+    """
+
+    __slots__ = ("session_id", "agent_id", "project", "agent_folders", "installed_skills",
+                 "subagents")
+
+    def __init__(self, session_id: str, *, agent_id: str | None = None,
+                 project: actions.Project | None = None, agent_folders: list[str] = (),
+                 installed_skills: Callable[[], frozenset[str] | None] = lambda: None,
+                 subagents: Callable[[Turn], tuple[dict, list[str]]] = lambda turn: ({}, [])
+                 ) -> None:
+        self.session_id = session_id
+        self.agent_id = agent_id
+        self.project = project
+        self.agent_folders = list(agent_folders)
+        self.installed_skills = installed_skills
+        self.subagents = subagents
+
+
+class Notice(NamedTuple):
+    """Something to tell the agent or the user that holds nothing: its kind
+    (`FAIL_OPEN`, `WARNING`, `OVERRIDE_RECORDED`, `CLOSEOUT_NOTE_KIND`,
+    `SESSION_NOTICE`) and its text."""
+
+    kind: str
+    text: str
+
+
+class Decision:
+    """The core's answer to one event: the holds it meets, in the order the
+    gates fire (`gates.Shown`; none means allow), and its notices, in the
+    order they arose. `shell` is the shell kind of the session's last shell
+    command, or None before its first, for a harness that names a shell
+    call that can carry a line."""
+
+    __slots__ = ("holds", "notices", "shell")
+
+    def __init__(self, holds: list[gates.Shown] = (), notices: list[Notice] = (),
+                 shell: str | None = None) -> None:
+        self.holds = list(holds)
+        self.notices = list(notices)
+        self.shell = shell
+
+    @property
+    def held(self) -> bool:
+        return bool(self.holds)
+
+    def message(self) -> str:
+        """Every hold in one message, hold lines and texts, as a harness with
+        one reason field shows it; "" for none."""
+
+        return gates.message(self.holds)
+
+    def texts(self, *kinds: str) -> list[str]:
+        """The texts of the notices of `kinds`, in order."""
+
+        return [notice.text for notice in self.notices if notice.kind in kinds]
+
+
+def _warnings(*texts: str | None) -> list[Notice]:
+    return [Notice(WARNING, text) for text in texts if text]
+
+
+def overrides_for(state: SessionState, turn: Turn, prompt_key: object) -> dict:
+    """The overrides `record_prompt` kept, only for the typed prompt that
+    opened `turn`, whose key the caller gives as `prompt_key` (None when it
+    has none): a kept key that differs from it applies none."""
+
+    stored = state.overrides or {}
+    if not turn.typed:
+        return {}
+    if stored.get("prompt") and prompt_key and stored["prompt"] != prompt_key:
+        return {}
+    return stored
+
+
+def judge_call(settings: Settings, situation: Situation, call: Call,
+               read: TurnReader) -> Decision:
+    """Judge `call`, about to run: every hold it meets, in one decision."""
+
+    if situation.agent_id is not None:
+        return _judge_subagent_call(settings, situation, call, read)
+    store = settings.store()
+    state, state_warning = store.load(situation.session_id)
+    turns, prompt_key = read(state.last_turn)
+    _fold(state, turns, settings)
+    current = turns[-1]
+    overrides = overrides_for(state, current, prompt_key)
+    unread: list[str] = []
+
+    def spawned() -> dict:
+        # Unreadable subagent turns count as no changes, with a warning, as at the turn's end.
+        found, missed = situation.subagents(current)
+        unread.extend(missed)
+        return found
+
+    earlier = _since_compaction(state)
+    registry_warnings: list[str] = []
+    routing = gates.check_routing(
+        state, call, current, overrides,
+        orientation_installed=lambda: gates.ORIENTATION_SKILL in (
+            situation.installed_skills() or ()),
+        writes_scratch=lambda: actions.writes_only_scratch(
+            call, situation.project, situation.agent_folders),
+    )
+    # Every gate judges the call, so one decision carries every hold (Ticket 095).
+    holds = routing + actions.check_action(
+        call, current, overrides, settings.skill_namespaces, situation.project, spawned,
+        earlier,
+        closeout=actions.Closeout(state.spawn_templates_of(current.key),
+                                  _route_intensity(state), state.briefed),
+        references=lambda: _registry_references(settings, registry_warnings),
+    )
+    if not holds and call.id:
+        # Which templates a spawn's brief followed, for the closeout.
+        templates = actions.brief_templates(
+            call, current, overrides, settings.skill_namespaces, earlier)
+        if templates:
+            state.record_spawn_templates(current.key, call.id, templates)
+    friction.observe(state, current, friction.action_of(call), holds)
+    shown = gates.shown_holds(holds, lambda purpose: _claim_turn(
+        store, situation.session_id, current.key, purpose), call=True)
+    notices = _warnings(state_warning, _save(store, situation.session_id, state),
+                        _unread_warning(unread), *registry_warnings)
+    return Decision(shown, notices, state.shell)
+
+
+def _judge_subagent_call(settings: Settings, situation: Situation, call: Call,
+                         read: TurnReader) -> Decision:
+    """Apply only the action gates, to the subagent's own current turn (spec R9).
+
+    Routing gates do not apply: the parent's brief carries the route. Nobody
+    types a subagent's prompts, so no override applies. A commit meets the
+    closeout of the subagent's own turn (Ticket 098); it was started from its
+    parent's brief, so, as a briefed session, it meets no Review item, and it
+    records no spawn templates, so the `review-intake` gate holds nothing.
+    No session state is read or saved but the turn markers, which are the
+    subagent's own.
+    """
+
+    turns, _ = read(None)
+    holds = actions.check_action(
+        call, turns[-1], {}, settings.skill_namespaces, situation.project,
+        closeout=actions.Closeout(briefed=True),
+    )
+    store = settings.store()
+    shown = gates.shown_holds(holds, lambda purpose: _claim_turn(
+        store, situation.session_id, turns[-1].key, purpose, situation.agent_id), call=True)
+    return Decision(shown, [], gates.last_shell(turns))
+
+
+def judge_turn_end(settings: Settings, situation: Situation, read: TurnReader,
+                   final_text: str = "") -> Decision:
+    """Judge the end of the current turn: the closeout of a turn that changed
+    code. `final_text` is the turn's last reply text when the turns read may
+    not hold it yet. A subagent's turn end is never held: its commit meets
+    the closeout instead (Ticket 098)."""
+
+    if situation.agent_id is not None:
+        return Decision()
+    store = settings.store()
+    state, state_warning = store.load(situation.session_id)
+    turns, prompt_key = read(state.last_turn)
+    _fold(state, turns, settings)
+    current = turns[-1]
+    subagents, unread = situation.subagents(current)
+    hold = actions.check_closeout(
+        current, overrides_for(state, current, prompt_key), settings.skill_namespaces,
+        final_text, subagents, situation.project,
+        earlier=_since_compaction(state),
+        spawn_templates=state.spawn_templates_of(current.key),
+        intensity=_route_intensity(state),
+        briefed=state.briefed,
+    )
+    holds = [hold] if hold else []
+    friction.observe(state, current, friction.STOP, holds)
+    if hold is None:
+        # The turn ends here, and so do its typed overrides: a subagent's
+        # report arriving later continues the turn without them. Another
+        # hook may still hold this end, so the turn then goes on without its
+        # overrides, which only holds more.
+        state.overrides = {}
+    notices = _warnings(state_warning, _save(store, situation.session_id, state),
+                        _unread_warning(unread))
+    shown = gates.shown_holds(holds, lambda purpose: _claim_turn(
+        store, situation.session_id, current.key, purpose))
+    return Decision(shown, notices, state.shell)
+
+
+def note_finished_call(settings: Settings, situation: Situation, call: Call,
+                       read: TurnReader) -> Decision:
+    """After the main agent's first finished code change of a turn by a file
+    write, one note naming the closeout items the turn will meet (Ticket 096).
+    It never holds anything.
+
+    `call` is the finished call, with its result. A subagent has no
+    closeout, so gets no note; nor does a turn the closeout already held,
+    which has seen its items. The note's claim on the turn marker has its
+    own purpose, and a claim that fails or cannot be made adds no note. The
+    saved state is only read: the events that judge calls own it.
+    """
+
+    if call.kind != events.FILE_WRITE or situation.agent_id is not None or not call.ok:
+        return Decision()
+    store = settings.store()
+    state, _ = store.load(situation.session_id)
+    # The call's pending judgement saved its turn as the last seen, so a turn
+    # that already has its note is known here without reading the turns.
+    if state.last_turn and store.turn_claimed(situation.session_id, state.last_turn,
+                                              CLOSEOUT_NOTE):
+        return Decision()
+    turns, prompt_key = read(state.last_turn)
+    gates.fold_turns(state, turns, settings.skill_namespaces)
+    current = turns[-1]
+    if (state.held_gates.get("turn") == current.key
+            and actions.CLOSEOUT_GATE in state.held_gates["gates"]):
+        return Decision()
+    text = actions.closeout_note(
+        current, call, overrides_for(state, current, prompt_key), settings.skill_namespaces,
+        situation.project, _since_compaction(state), _route_intensity(state))
+    if not text:
+        return Decision()
+    try:
+        claimed = store.claim_turn(situation.session_id, current.key, CLOSEOUT_NOTE)
+    except (OSError, StateUnsafe):
+        claimed = False  # The note is advice: without a marker it could repeat, so none.
+    return Decision([], [Notice(CLOSEOUT_NOTE_KIND, text)] if claimed else [], state.shell)
+
+
+def record_prompt(settings: Settings, situation: Situation, typed_text: str | None,
+                  prompt_key: object = None,
+                  unseen: Callable[[str | None], list[Turn] | None] = lambda since: None
+                  ) -> Decision:
+    """Record a prompt that opens a turn: the overrides a person typed apply
+    to that turn only (`overrides_for`).
+
+    `typed_text` is the person's own text, harness blocks and pasted text
+    removed, or None for a prompt a person did not type, which records no
+    override. `prompt_key` is the caller's key for the prompt, matched when
+    the turn is judged. `unseen(since_key)` reads the turns since the last
+    one the core saw, best effort (None when it cannot): holds the last turn
+    left open are unanswered unless what followed them, which no event may
+    have shown, or this prompt's overrides settle them. A prompt that
+    continues a turn is not recorded at all. A subagent's prompts carry no
+    override.
+    """
+
+    if situation.agent_id is not None:
+        return Decision()
+    store = settings.store()
+    state, state_warning = store.load(situation.session_id)
+    if typed_text is not None:
+        known = situation.installed_skills() or GOATED_SKILLS
+        found = parse_overrides(typed_text, known)
+        if state.open_holds:
+            turns = unseen(state.last_turn)
+            if turns:
+                _settle(state, turns, settings)
+        friction.close_turn(state, found)
+    else:
+        found = parse_overrides("")
+    state.overrides = {"prompt": prompt_key, **found}
+    notices = []
+    if found["phrases"]:
+        typed = ", ".join(f'"{phrase}"' for phrase in found["phrases"])
+        notices.append(Notice(OVERRIDE_RECORDED, f"recorded your override for this prompt: {typed}"))
+    if typed_text is not None and friction.claim_retrospective_notice(state):
+        notices.append(Notice(SESSION_NOTICE, RETROSPECTIVE_NOTICE.format(count=state.friction)))
+    notices += _warnings(state_warning, _save(store, situation.session_id, state))
+    return Decision([], notices, state.shell)
+
+
+def start_session(settings: Settings, situation: Situation, source: str,
+                  first_notices: Callable[[], list[str]] = lambda: []) -> Decision:
+    """Start or restart the session's context, from `source` (`NEW`,
+    `RESUMED`, `AFTER_COMPACTION`, `CLEARED`).
+
+    After a compaction or a clear every skill must load again, and the
+    design references and spawn-brief templates be read again, because their
+    text was summarized away; the route itself carries over (spec R5). Turns
+    from before the boundary are never folded back in. A new session has no
+    task yet, so `continue` may start one. `first_notices()` gives the
+    harness's own session notices, asked for once per session; they are
+    returned as session notices. A subagent's start changes nothing.
+    """
+
+    if situation.agent_id is not None:
+        return Decision()
+    store = settings.store()
+    state, state_warning = store.load(situation.session_id)
+    if source == NEW and state.task is None:
+        state.task_unknown = False
+    if source in (AFTER_COMPACTION, CLEARED):
+        state.forget_context()
+        friction.forget_open(state)
+        state.last_turn = None
+        store.clear_turn_markers(situation.session_id)
+    notices = []
+    if not state.policy_notice_shown:
+        state.policy_notice_shown = True
+        notices = [Notice(SESSION_NOTICE, text) for text in first_notices()]
+    notices += _warnings(state_warning, _save(store, situation.session_id, state))
+    return Decision([], notices, state.shell)
+
+
+# Helpers ------------------------------------------------------------------
+
+
+def _fold(state: SessionState, turns: list[Turn], settings: Settings) -> None:
+    """Bring `state` up to date with `turns`, and settle the friction
+    count's open holds against them."""
+
+    gates.fold_turns(state, turns, settings.skill_namespaces)
+    _settle(state, turns, settings)
+
+
+def _settle(state: SessionState, turns: list[Turn], settings: Settings) -> None:
+    friction.settle(state, turns,
+                    lambda raw: gates.goated_skill_name(raw, settings.skill_namespaces))
+
+
+def _registry_references(settings: Settings, warnings: list[str]) -> tuple:
+    """The installed registry's declared references, or () when it cannot be
+    used, failing open: a registry that does not parse, or a missing one the
+    user named, adds a warning to `warnings`; a missing default is silent."""
+
+    try:
+        return reference_reads.load(settings.registry_path)
+    except reference_reads.RegistryUnreadable as exc:
+        if not exc.missing or settings.registry_named:
+            warnings.append(f"could not use the GOATED registry at {settings.registry_path} "
+                            f"({exc}), so the reference-reads gate asked for nothing")
+        return ()
+
+
+def _route_intensity(state: SessionState) -> str | None:
+    """The current task's route intensity (`full`), or None without a `requires:` route."""
+
+    return state.task.route.get("intensity") if state.task else None
+
+
+def _since_compaction(state: SessionState) -> actions.SinceCompaction:
+    """What the main agent's saved state says counts until the next compaction."""
+
+    return actions.SinceCompaction(
+        frozenset(state.loads), frozenset(state.reference_reads), frozenset(state.template_reads),
+        spans_turns=True, skill_references_read=frozenset(state.skill_reference_reads))
+
+
+def _claim_turn(store: StateStore, session_id: str, turn_key: str, purpose: str,
+                agent_id: str | None = None) -> bool:
+    """`StateStore.claim_turn`, or True when the marker cannot be claimed or
+    read: the hold then gives its full text, and nothing fails."""
+
+    try:
+        return store.claim_turn(session_id, turn_key, purpose, agent_id)
+    except (OSError, StateUnsafe):
+        return True
+
+
+def _unread_warning(unread: list[str]) -> str | None:
+    """The warning for subagents whose turns could not be read, whose
+    changes the action and closeout gates therefore left out; None for none."""
+
+    if not unread:
+        return None
+    return ("could not read the transcript of subagent " + ", ".join(unread)
+            + ", so its changes were not checked")
+
+
+def _save(store: StateStore, session_id: str, state: SessionState) -> str | None:
+    """Save best effort: a hold already decided stands even if saving fails."""
+
+    try:
+        store.save(session_id, state)
+    except OSError as exc:
+        return f"could not save its session state ({exc.strerror or type(exc).__name__})"
+    return None

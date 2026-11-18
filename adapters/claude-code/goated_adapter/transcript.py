@@ -20,11 +20,13 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
-from . import events, translation
-from .markers import parse_reply
-from .events import (
+from goated_core import events
+from goated_core.events import (
     AgentFinished, Call, CallFinished, Compaction, Prompt, ReplyText, Result, SkillInvoked,
 )
+from goated_core.markers import parse_reply
+
+from . import translation
 
 BLOCK_SIZE = 256 * 1024
 MAX_BYTES = 64 * 1024 * 1024

@@ -16,7 +16,7 @@ import unittest
 from pathlib import Path
 
 from claude_code_adapter_support import ROUTER, Session, decision
-from goated_adapter.state import StateStore
+from goated_core.state import StateStore
 from test_claude_code_adapter_briefs import ORIENTATION, BriefTestCase, hold_line, reason
 
 EDIT = {"file_path": "src/app.py", "old_string": "a", "new_string": "b"}

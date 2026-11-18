@@ -304,7 +304,7 @@ class ReviewIntakeTests(OwnReportTestCase):
 
 class PromptHookTests(OwnReportTestCase):
     def stored_overrides(self, s: Session) -> dict:
-        from goated_adapter.state import StateStore
+        from goated_core.state import StateStore
 
         state, _ = StateStore(s.config.state_dir).load(s.session_id)
         return state.overrides

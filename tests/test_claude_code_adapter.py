@@ -1084,7 +1084,7 @@ class AgentMessageOverrideTests(AdapterTestCase):
         return Session(folder)
 
     def stored_overrides(self, s: Session) -> dict:
-        from goated_adapter.state import StateStore
+        from goated_core.state import StateStore
 
         state, _ = StateStore(s.config.state_dir).load(s.session_id)
         return state.overrides
@@ -1263,7 +1263,7 @@ class FailOpenTests(AdapterTestCase):
         self.assert_fails_open(parse(run_hook(json.dumps(payload), self.session.config)))
 
     def test_a_failed_save_keeps_the_hold_and_warns(self) -> None:
-        from goated_adapter import state as state_module
+        from goated_core import state as state_module
 
         s = self.session
         s.prompt("Fix it.")
@@ -1282,7 +1282,7 @@ class FailOpenTests(AdapterTestCase):
         self.assertIn("could not save", output.get("systemMessage", ""))
 
     def test_saving_retries_a_briefly_locked_state_file(self) -> None:
-        from goated_adapter import state as state_module
+        from goated_core import state as state_module
 
         store = state_module.StateStore(self.root / "retry-state")
         saved = state_module.SessionState()
@@ -1618,7 +1618,7 @@ class MarkerAgreementTests(unittest.TestCase):
     """The adapter carries its own marker parser; it must match the fixtures."""
 
     def test_adapter_parser_agrees_with_the_shared_marker_fixtures(self) -> None:
-        from goated_adapter import markers
+        from goated_core import markers
 
         data = yaml.safe_load(MARKER_FIXTURES.read_text(encoding="utf-8"))
         for section, parser in (

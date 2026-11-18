@@ -27,7 +27,8 @@ from claude_code_adapter_support import (
     parse,
     reason,
 )
-from goated_adapter import Config, reference_reads
+from goated_adapter import Config
+from goated_core import reference_reads
 
 REGISTRY = REPO_ROOT / "stack" / "goated-stack.yaml"
 SKILLS = "/opt/goated/skills"

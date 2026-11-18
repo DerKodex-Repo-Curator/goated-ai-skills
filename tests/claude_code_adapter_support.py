@@ -22,7 +22,7 @@ if str(ADAPTER_DIR) not in sys.path:
     sys.path.insert(0, str(ADAPTER_DIR))
 
 from goated_adapter import Config, run_hook  # noqa: E402
-from goated_adapter import overrides as _overrides  # noqa: E402
+from goated_core import overrides as _overrides  # noqa: E402
 from goated_adapter.transcript import typed_prompt  # noqa: E402
 
 

@@ -21,8 +21,9 @@ from claude_code_adapter_support import (
     parse,
     reason,
 )
-from goated_adapter import Config, translation, wording
-from goated_adapter.state import StateStore
+from goated_adapter import Config, translation
+from goated_core import wording
+from goated_core.state import StateStore
 
 DESIGN = "software-design-principles"
 REVIEWER_TEMPLATE = "/opt/goated/skills/subagent-driven-development/references/reviewer-prompt.md"
