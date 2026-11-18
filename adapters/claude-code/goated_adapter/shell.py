@@ -217,6 +217,12 @@ class ShellCommand:
     inline names (`python -c`, `node -e`, a heredoc on `python -`; see
     `_inline_script`), and `script_unknown_writes` says such code writes a
     file it names only at run time; both are also in the facts above.
+    `text_targets` maps each write target the command puts new text into (a
+    redirect, `tee`, `Set-Content`, `Add-Content`, or `Out-File`; Ticket 098)
+    to how many lines of that text the command shows, as a heredoc's body or
+    the arguments of `echo`, `printf`, or `-Value`, or None when it does not
+    show it, as for a program's output. A copy, move, restore, or in-place
+    edit carries no new text, so its targets are not here.
     A package install is one that installs or adds a dependency or tool it
     names (`uv add httpx`), not a bare restore such as `npm install`.
     `installs_globally` says it runs a global, machine, or per-user install
@@ -245,7 +251,7 @@ class ShellCommand:
         "commit_message", "opens_pr", "pr_base", "pr_head", "is_check",
         "non_check_writes", "unchecked_targets", "unchecked_unknown_writes", "prints_changes",
         "installs_globally", "install_folders", "read_only", "only_reads_and_writes_files",
-        "script_targets", "script_unknown_writes",
+        "script_targets", "script_unknown_writes", "text_targets",
     )
 
     def __init__(self) -> None:
@@ -268,6 +274,7 @@ class ShellCommand:
         self.read_only = False
         self.script_targets: list[str] = []
         self.script_unknown_writes = False
+        self.text_targets: dict[str, int | None] = {}
         self.only_reads_and_writes_files = False
 
 
@@ -394,6 +401,9 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
     when a text producer gives it (see `_piped_text`)."""
 
     targets = [t for t in segment.redirects if t.lower() not in NULL_TARGETS]
+    # The lines of new text each target gets, None when the command does not show it.
+    output = _shown_lines(_piped_text(segment))
+    texts = {t: output if t in segment.out_redirects else None for t in targets}
     unknown = False
     prints = False
     name, original, args = _resolve(segment.words)
@@ -402,12 +412,20 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
         followed = segment.chained and segment.after in AND_THEN
         next_directory = _change_directory(name, args, directory) if followed else None
     elif name in TARGETS_ARE_ARGS:
-        targets += _ps_paths(args) if name.count("-") else _positional(args)
+        named = _ps_paths(args) if name.count("-") else _positional(args)
+        targets += named
+        if name in TEXT_COPIERS:
+            texts.update(dict.fromkeys(named, _shown_lines(piped or _standard_input(segment))))
     elif name in TARGET_IS_LAST_ARG:
         positional = _ps_paths(args) if name.count("-") else _positional(args)
         targets += positional[-1:]
     elif name in TARGET_IS_PATH_PARAM:
-        targets += _ps_paths(args)[:1]
+        path = _ps_paths(args)[:1]
+        targets += path
+        if name in TEXT_WRITERS:
+            value = _ps_value(args)
+            texts.update(dict.fromkeys(path, _shown_lines(
+                (value, True) if value is not None else piped)))
     elif name in ("sed", "perl", "ruby") and _edits_in_place(args):
         targets += _in_place_files(name, args)
     elif name in DOWNLOADERS:
@@ -464,6 +482,8 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
         result.write_targets.append(_from_directory(directory, target))
         if from_script:
             result.script_targets.append(result.write_targets[-1])
+        elif target in texts:
+            _add_text(result.text_targets, result.write_targets[-1], texts[target])
     if targets or scripted or unknown:
         result.writes = True
         if not is_check:
@@ -1596,6 +1616,51 @@ def _piped_text(segment: "_Segment") -> tuple[str, bool] | None:
     if len(segment.words) == 1 and any(c in segment.words[0] for c in " \n("):
         return segment.words[0], True
     return None
+
+
+# Writers that put new text into the files they name (`text_targets`):
+# `tee` copies its input, the cmdlets write their -Value or their input.
+TEXT_COPIERS = frozenset({"tee", "tee-object"})
+TEXT_WRITERS = frozenset({"set-content", "sc", "add-content", "ac", "out-file"})
+
+
+def _shown_lines(text: tuple[str, bool] | None) -> int | None:
+    """How many lines of written text the command shows, from `text` as
+    `_piped_text` gives it, or None when it shows none. A final newline
+    opens no line; `printf`'s `\\n` escapes are not expanded."""
+
+    if text is None:
+        return None
+    return len(text[0].rstrip("\n").split("\n"))
+
+
+def _ps_value(args: list[str]) -> str | None:
+    """The text a PowerShell content cmdlet's `-Value` or `-InputObject`
+    gives, else its second positional argument (`Set-Content f.txt 'x'`), or
+    None when its arguments give none, so the text comes from its input."""
+
+    positional = []
+    i = 0
+    while i < len(args):
+        param, _, attached = args[i].lower().partition(":")
+        if param.startswith("-") and len(param) > 1:
+            if param in ("-value", "-inputobject"):
+                return args[i][len(param) + 1:] if attached else _word_at(args, i + 1)
+            i += 2 if param in PS_VALUE_PARAMS and not attached else 1
+            continue
+        positional.append(args[i])
+        i += 1
+    return positional[1] if len(positional) > 1 else None
+
+
+def _add_text(found: dict[str, int | None], target: str, lines: int | None) -> None:
+    """Record that `target` gets `lines` more lines of text; text it gets
+    that the command does not show makes its count unknown (None)."""
+
+    if target in found:
+        before = found[target]
+        lines = None if before is None or lines is None else before + lines
+    found[target] = lines
 
 
 def _powershell_code(args: list[str]) -> str | None:

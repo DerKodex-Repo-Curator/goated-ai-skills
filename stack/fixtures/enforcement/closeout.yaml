@@ -91,6 +91,40 @@ scenarios:
           decision: hold
           holds: [{gate: closeout, kind: justified-skip, items: [Proof, Docs]}]
 
+  - name: a subagent's commit meets the closeout of its own turn
+    covers:
+      - {gate: closeout, case: holds}
+      - {gate: closeout, case: clears, way: proof}
+    setup: {agent: subagent}
+    steps:
+      - prompt: {type: prompt, author: session, text: Fix the export limit and commit it.}
+      - call: *limit
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *diff
+        result: {ok: true, output: "-limit = 1\n+limit = 2"}
+      - call: &subagent_commit {kind: shell_command, shell: posix, command: "git commit -am \"Raise the export limit\""}
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Proof, Docs]}]
+      - call: *passing
+        result: {ok: true, output: "4 passed in 0.10s"}
+      - call: {kind: skill_load, skill: doc-sync}
+      - call: *diff
+        result: {ok: true, output: "-limit = 1\n+limit = 2"}
+      - call: *subagent_commit
+
+  - name: a subagent's commit of docs alone meets no closeout
+    covers:
+      - {gate: closeout, case: near-miss}
+    setup: {agent: subagent}
+    steps:
+      - prompt: {type: prompt, author: session, text: Note the export limit and commit it.}
+      - call: {kind: file_write, path: docs/export.md, edits: [{removed: "Limit one.", added: "Limit two."}]}
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *diff
+        result: {ok: true, output: "-Limit one.\n+Limit two."}
+      - call: {kind: shell_command, shell: posix, command: "git commit -am \"Note the export limit\""}
+
   - name: a failing last check asks for a handoff
     covers:
       - {gate: closeout, case: holds}

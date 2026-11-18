@@ -60,17 +60,52 @@ scenarios:
           path: tests/test_export.py
           edits: [{removed: "pass", added: "total_0 = 0\ntotal_1 = 1\ntotal_2 = 2\ntotal_3 = 3\ntotal_4 = 4\ntotal_5 = 5"}]
 
-  - name: "gap (b): a shell write of six code lines meets no design hold"
+  - name: a shell write of six code lines waits for design principles
     covers:
-      - {gate: design, case: gap}
+      - {gate: design, case: holds}
+      - {gate: design, case: clears, way: proof}
     steps:
       - prompt: {type: prompt, author: person, text: Add the export totals.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
-      - call:
+      - call: &shell_totals
           kind: shell_command
           shell: posix
           command: "cat > src/export.py <<'EOF'\ntotal_0 = 0\ntotal_1 = 1\ntotal_2 = 2\ntotal_3 = 3\ntotal_4 = 4\ntotal_5 = 5\nEOF"
+        expect:
+          decision: hold
+          holds: [{gate: design, kind: justified-skip}]
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *shell_totals
+
+  - name: a shell copy of code adds no text designed in the command
+    covers:
+      - {gate: design, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Restore the export module.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: shell_command, shell: posix, command: cp backup/export.py src/export.py}
+      - call: {kind: shell_command, shell: posix, command: git apply export.diff}
+
+  - name: a shell write to a configuration file waits for the reference it selects
+    covers:
+      - {gate: design-reads, case: holds}
+      - {gate: design-reads, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export settings.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: &shell_settings
+          kind: shell_command
+          shell: posix
+          command: "generate-settings > config/export.json"
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+      - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/decoupling.md", whole: true}
+      - call: *shell_settings
 
   - name: a configuration change waits for the reference it selects
     covers:

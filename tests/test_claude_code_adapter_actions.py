@@ -4362,7 +4362,9 @@ class CloseoutAtCommitTests(AdapterTestCase):
         self.assertIn("could not read the transcript of subagent gone1", output.get("systemMessage", ""))
         self.assertNotIn("subagent", s.call("Bash", {"command": "git status"}).get("systemMessage", ""))
 
-    def test_a_subagents_commit_meets_no_closeout(self) -> None:
+    def subagent_changed(self) -> Session:
+        """A subagent that changed code and may commit it, with no proof or docs."""
+
         s = self.routed()
         s.brief_with_handoff()
         agent = s.subagent("k1")
@@ -4370,6 +4372,23 @@ class CloseoutAtCommitTests(AdapterTestCase):
         agent.call("Edit", {"file_path": "src/app.py", "old_string": "a", "new_string": "b"},
                    agent_id="k1", agent_type="general-purpose")
         agent.load("commit-message")
+        agent.run("git diff")
+        return agent
+
+    def test_a_subagents_commit_meets_the_closeout_of_its_own_turn(self) -> None:
+        """Ticket 098: judged from the subagent's own turn, with no override."""
+
+        agent = self.subagent_changed()
+        held = agent.call("Bash", commit("Add export"), agent_id="k1", agent_type="general-purpose")
+        self.assertEqual(hold_line(held), CLOSEOUT_HOLD)
+        self.assertIn("- Proof:", reason(held))
+        self.assertIn("- Docs:", reason(held))
+        self.assertNotIn("- Review:", reason(held))
+
+    def test_a_subagent_that_proved_and_documented_its_change_commits_freely(self) -> None:
+        agent = self.subagent_changed()
+        agent.run("pytest -q")
+        agent.load("doc-sync")
         agent.run("git diff")
 
         held = agent.call("Bash", commit("Add export"), agent_id="k1", agent_type="general-purpose")

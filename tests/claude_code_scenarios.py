@@ -40,6 +40,8 @@ OTHER_TOOL = "WebFetch"
 START_SESSION = "mcp__ccd_session__start_session"
 # A built-in agent type with no write, edit, or shell tool.
 READ_ONLY_AGENT = "claude-code-guide"
+# The subagent a scenario with `setup.agent: subagent` runs in.
+SUBAGENT_ID = "scenario1"
 
 
 class Result(NamedTuple):
@@ -74,10 +76,21 @@ class _Run:
             (folder / "SKILL.md").write_text(f"---\nname: {skill}\n---\n", encoding="utf-8")
         if "branch_changed_lines" in setup:
             git_branch_with_change(self.s.project, setup["branch_changed_lines"])
+        # In a subagent, Claude Code runs no prompt hook, and each call's hook
+        # input names the agent; its entries go to its own transcript.
+        self.in_subagent = setup.get("agent") == "subagent"
+        self.agent = {"role": "subagent", "id": SUBAGENT_ID} if self.in_subagent \
+            else {"role": "main"}
+        if self.in_subagent:
+            self.s = self.s.subagent(SUBAGENT_ID)
 
     def run(self) -> Result:
         for number, step in enumerate(self.scenario["steps"], 1):
             self.number = number
+            if self.in_subagent and not {"prompt", "reply", "call"} & step.keys():
+                # A subagent's stop runs no closeout, and it starts no session.
+                raise ValueError(f"step {number}: in a subagent the bridge runs only "
+                                 "prompts, replies, and calls")
             if "prompt" in step:
                 self._prompt(step)
             elif "reply" in step:
@@ -108,7 +121,12 @@ class _Run:
         for n, pasted in enumerate(prompt.get("pasted", []), 1):
             text += f'\n<pasted_content id="p{n}">\n{pasted}\n</pasted_content id="p{n}">'
         author, continues = prompt["author"], step.get("continues", False)
-        if author == "person" and not continues:
+        if self.in_subagent:
+            if author != "session" or continues or prompt.get("starts_session"):
+                raise ValueError(f"step {self.number}: in a subagent the bridge records only "
+                                 "its parent's prompts that open a turn")
+            output = self.s.prompt(text, hook=False)
+        elif author == "person" and not continues:
             output = self.s.prompt(text)
         elif author == "session" and prompt.get("starts_session"):
             output = self.s.prompt(f"{BRIEF_OPENING}\n\n{text}", origin=None,
@@ -131,7 +149,9 @@ class _Run:
     def _call(self, step: dict) -> None:
         call = step["call"]
         tool, tool_input = self._tool(call)
-        tool_id, output = self.s._judge(tool, tool_input)
+        fields = {"agent_id": SUBAGENT_ID, "agent_type": "general-purpose"} \
+            if self.in_subagent else {}
+        tool_id, output = self.s._judge(tool, tool_input, **fields)
         self._judged(step.get("expect", {"decision": "allow"}),
                      {"type": "pending_call", "call": call}, _decision(output, "tool"))
         held = reason(output)
@@ -241,7 +261,7 @@ class _Run:
 
         self.requests.append({
             "event_model": 1,
-            "session": {"id": self.s.session_id, "agent": {"role": "main"}},
+            "session": {"id": self.s.session_id, "agent": self.agent},
             "project": {"folders": [self.s.project.as_posix()],
                         "working_folder": self.s.cwd.as_posix(),
                         "home": self.s.config.home.as_posix()},

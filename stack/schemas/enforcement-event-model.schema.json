@@ -436,7 +436,7 @@
       "properties": {
         "name": {"type": "string", "minLength": 1},
         "covers": {
-          "description": "What the scenario proves, for the coverage check: a gate holding, a way it clears (a clear way the contract's Gates table names, shown by the same call held without it), a near miss it must not hold, or a gap the contract's Known Gaps section names, pinned as today's behaviour.",
+          "description": "What the scenario proves, for the coverage check: a gate holding, a way it clears (a clear way the contract's Gates table names, shown by the same call held without it), or a near miss it must not hold.",
           "type": "array",
           "minItems": 1,
           "items": {
@@ -445,7 +445,7 @@
             "required": ["gate", "case"],
             "properties": {
               "gate": {"$ref": "#/$defs/hold/properties/gate"},
-              "case": {"enum": ["holds", "clears", "near-miss", "gap"]},
+              "case": {"enum": ["holds", "clears", "near-miss"]},
               "way": {"type": "string", "pattern": "^[a-z]+(?:-[a-z]+)*$"}
             }
           }
@@ -456,6 +456,10 @@
           "additionalProperties": false,
           "properties": {
             "installed_skills": {"type": "array", "items": {"$ref": "#/$defs/skill_name"}},
+            "agent": {
+              "description": "Who acts in the steps: the main agent (the default), or a subagent, whose turns are its own and whose prompts its parent sent (author session).",
+              "enum": ["main", "subagent"]
+            },
             "branch_changed_lines": {
               "description": "The project is a checkout whose branch changes this many lines of non-test code against its base.",
               "type": "integer",
