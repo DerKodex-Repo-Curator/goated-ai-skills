@@ -55,6 +55,8 @@ Their tickets were archived under `tickets/archive/` on 2026-11-18: waves
 | 14 (merged) | [107](archive/107-core-a-reviewer-starts-work.md) | 4 | core | AFK | 081 |
 | 15 (merged) | [106](archive/106-core-definition-starts-read-their-keyword.md) | 4 | core | AFK | 081, 101 |
 | 15 | [085](085-opencode-adapter.md) | 2 | new adapter | HITL (build decision after research) | 084 |
+| 16 (ready now) | [108](108-core-pull-request-options-between-noun-and-verb.md) | 4 | core | AFK | 103 (merged) |
+| 17 | [109](109-core-one-pull-request-per-simple-command.md) | 4 | core | AFK | 108 (same lines) |
 
 ## Decisions Recorded Here
 

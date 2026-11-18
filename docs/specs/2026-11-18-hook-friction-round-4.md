@@ -16,7 +16,8 @@ R7 to R12 are an addendum of 2026-11-18
 ([Addendum](#addendum-rule-gaps-left-by-ticket-081)): rule gaps Ticket 081
 found and documented in the contract instead of fixing. The maintainer
 decided E, F and G on 2026-11-18, each option 1, the recommended one; all
-of R7 to R12 are ticket ready.
+of R7 to R12 are ticket ready. R13 and R14 follow Ticket 103's review
+([Follow-Ups](#follow-ups-from-ticket-103s-review)).
 
 ## Mode
 
@@ -366,6 +367,34 @@ nothing. A pull's conflict ends with `git merge --abort` or
       with a reviewer brief meets no Review item and opens no
       `review-intake` hold.
 - [ ] AC7 and AC8 apply to each.
+
+### Follow-Ups From Ticket 103's Review
+
+Found when Ticket 103 was reviewed (2026-11-18); both were already there
+before 103, and both change how a shell pull request is read.
+
+- **R13, options between the noun and the verb.** `gh pr -R x create`
+  (any option `gh` or `glab` takes between `pr`/`mr` and
+  `create`/`new`) opens a pull request, as `gh pr create -R x` does.
+  - Today: `shell.py` skips `-R`/`--repo` only before the noun, so the
+    command opens nothing and meets no pull request hold.
+- **R14, one pull request per simple command.** Each `gh pr create` or
+  `glab mr create` in a chained command is read with its own options: a
+  later one never takes an earlier one's `--repo`, `--base` or `--head`.
+  Each pull request the command opens is measured on its own, and the
+  `pr-review` gate holds when any of them measures 400 or more lines.
+  - Today: one `ShellCommand` keeps a single `pr_base`, `pr_head` and
+    `pr_repository`, filled by whichever command named them, and measures
+    once.
+
+- [ ] **AC15.** R13: `gh pr -R <own repo> create` and
+      `glab mr --repo <own repo> create` are measured; `gh pr -R other/x
+      create` is not. A scenario covers both.
+- [ ] **AC16.** R14: in `gh pr create -R other/x && gh pr create`, the
+      second pull request is measured in the checkout; in
+      `gh pr create -B small && gh pr create -B main`, each is measured
+      against its own base. A scenario covers a chain where only the
+      second pull request is large enough to hold.
 
 ### Addendum Decisions
 
