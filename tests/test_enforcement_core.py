@@ -90,6 +90,28 @@ class FailOpenTests(CoreTestCase):
                 decision = self.decide(_request(event_model=version))
                 self.assert_allowed_with_reason(decision, "event model version")
 
+    def test_a_request_with_no_version_names_the_missing_key(self) -> None:
+        decision = self.decide({"version": "9.9"})
+        self.assert_allowed_with_reason(decision, "has no event_model")
+
+    def test_the_command_answers_json_python_cannot_parse_with_a_reason(self) -> None:
+        # An integer longer than Python's digit limit, and nesting deeper
+        # than its recursion limit, both stop the parser itself.
+        for text in ('{"event_model": 2, "n": ' + "1" * 5000 + "}",
+                     "[" * 100_000 + "]" * 100_000):
+            with self.subTest(text=text[:20]):
+                self.assert_allowed_with_reason(_command(text, self.state_dir),
+                                                "could not read the request")
+
+    def test_a_request_nested_too_deep_to_read_is_allowed_with_a_reason(self) -> None:
+        entries: list = []
+        for n in range(3000):
+            entries = [{"type": "call", "call": {"kind": "spawn", "brief": "", "starts_now": True},
+                        "result": {"ok": True, "agent": {"id": f"a{n}", "entries": entries}}}]
+        request = _request()
+        request["turns"][0]["entries"] = entries
+        self.assert_allowed_with_reason(self.decide(request), "could not read the request")
+
     def test_the_command_answers_an_unknown_version_the_same_way(self) -> None:
         decision = _command(json.dumps(_request(event_model=3)), self.state_dir)
         self.assert_allowed_with_reason(decision, "event model version 3")
@@ -110,6 +132,21 @@ class SessionStateTests(CoreTestCase):
         again = self.decide(_request("session-a"))["holds"][0]["text"]
         other = self.decide(_request("session-b"))["holds"][0]["text"]
         self.assertNotEqual(again, first)
+        self.assertEqual(other, first)
+
+    def test_ids_that_differ_only_in_unsafe_characters_keep_separate_state(self) -> None:
+        # The near miss: `a.b` and `a_b`, and ids differing only in case or
+        # past their 128th character, are different sessions.
+        long = "s" * 128
+        for one, other in (("a.b", "a_b"), ("Sess", "sess"), (long + "1", long + "2")):
+            with self.subTest(one=one, other=other):
+                first = self.decide(_request(one))["holds"][0]["text"]
+                self.assertEqual(self.decide(_request(other))["holds"][0]["text"], first)
+
+    def test_turn_keys_that_differ_only_in_unsafe_characters_are_different_turns(self) -> None:
+        turn = _request()["turns"][0]
+        first = self.decide(_request(turns=[{**turn, "key": "t.1"}]))["holds"][0]["text"]
+        other = self.decide(_request(turns=[{**turn, "key": "t_1"}]))["holds"][0]["text"]
         self.assertEqual(other, first)
 
     def test_state_is_kept_under_the_folder_the_caller_names(self) -> None:

@@ -77,13 +77,16 @@ def decide(request: object, settings: Settings | None = None) -> dict:
     with a `fail_open` notice."""
 
     settings = settings or settings_from_environment()
-    if isinstance(request, dict) and request.get("event_model") != EVENT_MODEL:
-        version = request.get("event_model")
+    if isinstance(request, dict) and "event_model" not in request:
+        return fail_open("it could not read the request (it has no event_model, the event "
+                         f"model version; this core knows version {EVENT_MODEL})")
+    if isinstance(request, dict) and request["event_model"] != EVENT_MODEL:
+        version = request["event_model"]
         return fail_open(f"the request is of event model version {version!r}, which it does "
                          f"not know (it knows version {EVENT_MODEL})")
     try:
         reading = _Reading(request)
-    except (Unreadable, KeyError, TypeError, ValueError, AttributeError) as exc:
+    except Exception as exc:  # noqa: BLE001 - a request of any shape, even nested too deep, fails open
         return fail_open(f"it could not read the request ({_reason(exc)})")
     try:
         decision = reading.judge(settings)
@@ -128,6 +131,8 @@ class _Reading:
         project = _object(request["project"], "project")
         self.folders = [_text(f, "project.folders") for f in _list(project["folders"], "folders")]
         self.working_folder = _text(project["working_folder"], "project.working_folder")
+        # The folder a leading `~` names, the agent's home rather than this process's.
+        self.home = _text(project["home"], "project.home")
         self.agent_folders = [_text(f, "project.agent_folders")
                               for f in _list(project.get("agent_folders", []), "agent_folders")]
         skills = project.get("installed_skills")
@@ -151,7 +156,8 @@ class _Reading:
     def judge(self, settings: Settings) -> judge.Decision:
         situation = judge.Situation(
             self.session_id, agent_id=self.agent_id,
-            project=actions.find_project(self.working_folder, *self.folders),
+            project=actions.find_project(self.working_folder, *self.folders,
+                                         homes=(self.home,)),
             agent_folders=self.agent_folders,
             installed_skills=lambda: self.installed,
             subagents=self._subagents,

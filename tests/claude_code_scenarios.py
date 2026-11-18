@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import re
 from pathlib import Path
 from typing import NamedTuple
+from unittest import mock
 
 from claude_code_adapter_support import (
     REPO_ROOT, Session, git_branch_with_change, parse, reason,
@@ -88,6 +90,13 @@ class _Run:
         self.agents: list[str] = []
 
     def run(self) -> Result:
+        # Claude Code's hooks run as its user, so the home a leading `~`
+        # names is the session's own: the synthetic home.
+        home = str(self.s.config.home)
+        with mock.patch.dict(os.environ, {"HOME": home, "USERPROFILE": home}):
+            return self._run_steps()
+
+    def _run_steps(self) -> Result:
         steps = self.scenario["steps"]
         for number, step in enumerate(steps, 1):
             self.number = number

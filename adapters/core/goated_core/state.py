@@ -22,7 +22,11 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-UNSAFE_NAME_CHARS = re.compile(r"[^A-Za-z0-9_-]")
+UNSAFE_NAME_CHARS = re.compile(r"[^a-z0-9_-]")
+# A name `_safe_name` keeps as it is.
+SAFE_NAME_RE = re.compile(r"[a-z0-9_-]{1,128}")
+# Joins a changed name's readable prefix to its digest (`_safe_name`).
+HASH_SEPARATOR = "="
 REPLACE_ATTEMPTS = 5
 REPLACE_RETRY_SECONDS = 0.02
 # Beside the state files: one empty file per session, and one per subagent of
@@ -89,7 +93,7 @@ class SessionState:
         # The spawn-brief templates (`contracts.BriefTemplate.reference`) read
         # since the last compaction.
         self.template_reads: list[str] = []
-        # Digests of the first distinct files the Read tool read since the last
+        # Digests of the first distinct files read whole since the last
         # compaction, up to `gates.ORIENTATION_READS`: enough of them orient a
         # session routed by its brief. A digest keeps file names out of state.
         self.files_read: list[str] = []
@@ -461,7 +465,22 @@ class StateStore:
 
 
 def _safe_name(raw: str) -> str:
-    return UNSAFE_NAME_CHARS.sub("_", raw)[:128] or "unknown"
+    """A file name part for `raw` (a session id, agent id, turn key, or
+    purpose) that no other `raw` shares, on any file system.
+
+    A name already made of lowercase letters, digits, `_` and `-`, at most
+    128 of them, is kept as it is, so state saved under it before stays
+    found. Any other is a readable prefix, `HASH_SEPARATOR`, and a digest of
+    the whole name: the separator is in no kept name, so the two forms never
+    meet, and the digest tells apart names that differ only in case, in an
+    unsafe character, or past the prefix. No part holds a `.`, the marker
+    separators, or a glob character.
+    """
+
+    if SAFE_NAME_RE.fullmatch(raw):
+        return raw
+    prefix = UNSAFE_NAME_CHARS.sub("_", raw.lower())[:64]
+    return f"{prefix}{HASH_SEPARATOR}{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:16]}"
 
 
 def _write_json(path: Path, data) -> None:

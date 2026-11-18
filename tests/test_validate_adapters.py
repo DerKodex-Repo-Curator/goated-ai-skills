@@ -77,6 +77,21 @@ class AdapterBoundaryTests(unittest.TestCase):
         self.assertIn("gates.py", messages[0])
         self.assertIn("example_adapter", messages[0])
 
+    def test_the_core_importing_an_adapter_by_name_at_run_time_is_an_error(self) -> None:
+        for source in ("import importlib\nimportlib.import_module('example_adapter.rules')\n",
+                       "__import__('example_adapter')\n"):
+            with self.subTest(source=source):
+                self._core(source)
+                messages = self.messages()
+                self.assertEqual(len(messages), 1)
+                self.assertIn("example_adapter", messages[0])
+                shutil.rmtree(self.repo / "adapters" / "core")
+
+    def test_a_run_time_import_of_the_standard_library_passes(self) -> None:
+        # The near miss.
+        self._core("import importlib\nimportlib.import_module('json')\n")
+        self.assertEqual(self.messages(), [])
+
     def test_without_the_core_its_import_is_an_error(self) -> None:
         (self.repo / "adapters" / "example" / "example_adapter" / "rules.py").write_text(
             "from goated_core import gates\n", encoding="utf-8")

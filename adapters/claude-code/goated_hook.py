@@ -19,10 +19,11 @@ except ImportError as exc:  # The shared core, or this package, is missing.
 def main() -> int:
     raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
     if run_hook is None:
+        advice = (" Keep the adapters/core/ folder beside adapters/claude-code/, as the "
+                  "install steps place it." if MISSING.startswith("goated_core") else "")
         sys.stdout.write(json.dumps({"systemMessage": (
             f"GOATED Claude Code adapter: it could not import {MISSING}, so this action was "
-            "allowed without checks. Keep the adapters/core/ folder beside "
-            "adapters/claude-code/, as the install steps place it.")}))
+            f"allowed without checks.{advice}")}))
         return 0
     output = run_hook(raw, Config.from_environment())
     if output:

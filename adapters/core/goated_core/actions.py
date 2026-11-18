@@ -206,7 +206,7 @@ DESIGN_MIN_LINES = 5
 # A pull request, or a branch's work at the closeout, changing at least this
 # many lines against its base, added plus deleted, in code files outside test
 # paths (spec R11), is large enough to review before it lands: the threshold
-# `standards-and-spec-review` states (adapter README, Large pull requests).
+# `standards-and-spec-review` states (contract, Branch Size).
 REVIEW_MIN_LINES = 400
 # The route intensity whose work always needs `verification-before-completion` (spec R3).
 FULL_ROUTE = "full"
@@ -798,8 +798,9 @@ def _change_read_hold(gate: str, skill: str, proof: _Proof, changes: "_Changes",
         return None
     how = CHANGE_READ if changes.paths else DIFF_ONLY_READ
     after = ", after your last change" if changes.last_change >= 0 else ""
-    # Not backticked: the skill-usage mod would read a backticked skip line as an ask
-    # that only a skip line answers, and count a read that clears this hold as ignored.
+    # Not backticked: a reader of hold texts (contract, Hold Text) would take a
+    # backticked skip line as an ask only a skip line answers, and count a read
+    # that clears this hold as ignored.
     tail = (f"Or write a skip line, goated-skip: {skill}: <reason>, on its own line. "
             + unseen_line_advice("skip line", f"skip {skill}") if review
             else "This hold is strict: a goated-skip line does not clear it.")
@@ -1281,8 +1282,8 @@ def _reference_edit(path: str | None, write: Call | None, proof: _Proof,
 
 def _reference_list(references: dict[str, str]) -> str:
     """The references as the holds name them, in the given order. Each path is
-    backticked like the closeout's red-flags path; the skill-usage mod reads
-    only a bare backticked name as a skill."""
+    backticked like the closeout's red-flags path; a reader of hold texts
+    takes only a bare backticked name as a skill (contract, Hold Text)."""
 
     return ", ".join(f"`{design_reads.SKILL_REFERENCES}{name}` ({why})" for name, why in references.items())
 
@@ -1782,8 +1783,9 @@ def _review_item(changes: "_Changes", proof: _Proof, spawn_templates: dict[str, 
     size = branch_size()
     if size is None or size < REVIEW_MIN_LINES:
         return []
-    # The template is named by its path: the skill-usage mod reads a bare backticked
-    # name as a skill the item asks for, and this item's skill is the review skill.
+    # The template is named by its path: a reader of hold texts takes a bare
+    # backticked name as a skill the item asks for, and this item's skill is the
+    # review skill.
     reviewer = (
         "Or, after your last code change, start a reviewer subagent briefed from "
         f"`{contracts.REVIEWER_TEMPLATE.reference}`, the reviewer prompt; a brief from any "
@@ -1948,7 +1950,8 @@ def _setup_changes(calls, project: Project | None) -> str:
             if (SETUP_FILE_RE.search(_norm(target)) and name not in files
                     and _in_project(target, project, target not in unplaced)):
                 files.append(name)
-    # Names are quoted, not backticked: the skill-usage mod reads a backticked name as a skill.
+    # Names are quoted, not backticked: a reader of hold texts takes a backticked
+    # name as a skill.
     done = (["installed a package"] if installed else []) + (
         ["wrote " + ", ".join(f'"{name}"' for name in files)] if files else []
     )
@@ -2072,14 +2075,18 @@ def _changed_paths(call, project: Project | None) -> list[str]:
 
 class Project(NamedTuple):
     """Where the project is: `roots`, the folders whose files count as the
-    project's, in comparable form, and `cwd`, the session's folder as the
-    hook input names it, which relative paths start from."""
+    project's, in comparable form, `cwd`, the session's folder as the
+    harness names it, which relative paths start from, and `homes`, the
+    folders a leading `~` names, or None to read it from this process's
+    environment (see `_readings`)."""
 
     roots: tuple[str, ...]
     cwd: str
+    homes: tuple[str, ...] | None = None
 
 
-def find_project(cwd: str | None, *project_dirs: str | None) -> Project | None:
+def find_project(cwd: str | None, *project_dirs: str | None,
+                 homes: tuple[str, ...] | None = None) -> Project | None:
     """Return the project for the session's working folder `cwd`, or None,
     when every file counts as inside: `cwd` is missing, or a folder below
     cannot be read for certain.
@@ -2089,19 +2096,20 @@ def find_project(cwd: str | None, *project_dirs: str | None) -> Project | None:
     harness names them; None for one it does not), `cwd`, each in every
     reading it could have (see `_readings`), and the nearest folder at or
     above each that holds a `.git` entry. So a session that changed folder
-    below its checkout still has the whole checkout.
+    below its checkout still has the whole checkout. `homes` are the
+    folders a leading `~` names, as `Project.homes` says.
     """
 
     if not cwd:
         return None
     roots: list[str] = []
     for folder in filter(None, (*project_dirs, cwd)):
-        readings = _readings(folder, drives=())
+        readings = _readings(folder, drives=(), homes=homes)
         if readings is None:
             return None
         roots += readings
     roots += [top for top in map(_git_top, roots) if top]
-    return Project(tuple(dict.fromkeys(roots)), cwd)
+    return Project(tuple(dict.fromkeys(roots)), cwd, homes)
 
 
 def _git_top(folder: str) -> str | None:
@@ -2164,7 +2172,8 @@ def writes_only_scratch(call: Call, project: Project | None, agent_folders: list
     for folder in agent_folders:
         # A folder under `~` is read as a shell would; any other is taken as
         # written, since the harness named it and no shell expands it.
-        readings = _readings(folder, ()) if folder.startswith("~") else [_comparable(folder)]
+        readings = (_readings(folder, (), project.homes) if folder.startswith("~")
+                    else [_comparable(folder)])
         if readings is None:
             return False
         agents += readings
@@ -2244,7 +2253,8 @@ def _project_readings(path: str, project: Project) -> list[str] | None:
     rooted = path.startswith(("/", "\\", "~")) or (os.name == "nt" and DRIVE_RE.match(path))
     if not rooted:
         path = project.cwd.rstrip("/\\") + "/" + path
-    return _readings(path, {os.path.splitdrive(root)[0] for root in project.roots})
+    return _readings(path, {os.path.splitdrive(root)[0] for root in project.roots},
+                     project.homes)
 
 
 def _under_any(paths, roots) -> bool:
@@ -2266,7 +2276,7 @@ GIT_BASH_DRIVE_RE = re.compile(r"^/([A-Za-z])(?=/|$)")
 EXPANDED_CHARS = frozenset("$`%*?")
 
 
-def _readings(path: str, drives) -> list[str] | None:
+def _readings(path: str, drives, homes: tuple[str, ...] | None = None) -> list[str] | None:
     """Every file absolute `path` may name, in comparable form, or None when
     it cannot be read for certain.
 
@@ -2274,7 +2284,8 @@ def _readings(path: str, drives) -> list[str] | None:
     `~+`, or another user's `~name`, and the Windows forms this does not
     normalize: device paths (`\\\\?\\`, `//?/`, `\\\\.\\`), network paths, a
     drive-relative `C:x`, and a name ending in a dot or space. A leading `~`
-    is the user's home, read as both the profile folder and `HOME`.
+    is each of `homes`, the homes the harness names; with None, the user's
+    home as this process sees it, read as both the profile folder and `HOME`.
 
     On Windows, a path rooted with no drive is None unless Git Bash reads it
     for certain (see `_git_bash_mounts`). Such a path may also be a folder on
@@ -2286,12 +2297,13 @@ def _readings(path: str, drives) -> list[str] | None:
     if path.startswith("~"):
         if path != "~" and path[1] not in "/\\":
             return None
-        # `HOME`, which Git Bash sets, may differ from the profile folder Python reads.
-        home = os.environ.get("HOME") or ""
-        if home.startswith("~"):
+        if homes is None:
+            # `HOME`, which Git Bash sets, may differ from the profile folder Python reads.
+            home = os.environ.get("HOME") or ""
+            homes = (os.path.expanduser("~"), home or os.path.expanduser("~"))
+        if not homes or any(home.startswith("~") for home in homes):
             return None
-        homes = {os.path.expanduser("~"), home or os.path.expanduser("~")}
-        each = [_readings(home + path[1:], drives) for home in sorted(homes)]
+        each = [_readings(home + path[1:], drives) for home in sorted(set(homes))]
         return None if None in each else [r for readings in each for r in readings]
     slashed = path.replace("\\", "/")
     if slashed.startswith("//"):

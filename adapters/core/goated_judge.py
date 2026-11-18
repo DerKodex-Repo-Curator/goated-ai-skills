@@ -32,15 +32,23 @@ def main(argv: list[str]) -> int:
             sys.stderr.write(USAGE + "\n")
             return 2
         options[flag] = words.pop(0)
-    raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
     try:
-        request = json.loads(raw)
-    except ValueError as exc:
-        decision = fail_open(f"it could not read the request (not JSON: {exc.msg})")
-    else:
-        decision = decide(request, settings_from_environment(
-            options.get("--state-dir"), options.get("--registry")))
-    sys.stdout.write(json.dumps(decision))
+        raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
+        try:
+            request = json.loads(raw)
+        except (ValueError, RecursionError) as exc:
+            # Not JSON, or JSON the parser itself refuses: an integer past
+            # Python's digit limit, or nesting past its recursion limit.
+            reason = getattr(exc, "msg", None) or str(exc) or type(exc).__name__
+            decision = fail_open(f"it could not read the request (not JSON it can parse: "
+                                 f"{reason})")
+        else:
+            decision = decide(request, settings_from_environment(
+                options.get("--state-dir"), options.get("--registry")))
+        text = json.dumps(decision)
+    except Exception as exc:  # noqa: BLE001 - the command must answer every input, failing open
+        text = json.dumps(fail_open(f"it hit an internal error ({type(exc).__name__})"))
+    sys.stdout.write(text)
     return 0
 
 

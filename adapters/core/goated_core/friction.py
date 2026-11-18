@@ -16,7 +16,7 @@ Declined and unanswered holds count; answered and stood-down ones do not. Each
 gate counts once per turn, however often it holds again in that turn; its open
 hold follows the latest action the gate held.
 
-A hold's asks come from its text, as the skill-usage mod reads them: each bare
+A hold's asks come from its text, as the contract's Hold Text reads them: each bare
 backticked name is a skill to load, each backticked `.md` path a reference to
 read, and each `goated-skip: <skill>:` a skill whose skip line declines it.
 Subagents keep no state, so only the main agent's holds count.

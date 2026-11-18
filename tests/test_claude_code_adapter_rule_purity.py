@@ -30,6 +30,12 @@ CORE_DIR = REPO_ROOT / "adapters" / "core"
 CORE_PACKAGE = "goated_core"
 # The Claude Code modules that know Claude Code, whose names make the denylist.
 TRANSLATING_MODULES = ("translation.py", "transcript.py", "hooks.py")
+# Names a core module may hold, each with why. The setup-file pattern counts
+# a project's editor and agent settings files, `.vscode/settings.json` and
+# `.claude/settings.json` among them, as setup: they are files of the
+# project, setup whichever harness runs the session, not words of the
+# harness judging it.
+ALLOWED = {("actions.py", "claude"): "SETUP_FILE_RE names project settings folders"}
 
 # A distinctive name: snake_case, camelCase, a compound like `PreToolUse`, or
 # an MCP tool name. A plain word such as `command` or `head` is also the
@@ -58,7 +64,12 @@ TOOL_WORDS = frozenset({
     "Edit", "Write", "Read", "Bash", "Agent", "Skill", "Stop", "Glob", "Grep",
 })
 TOOL_PROSE_RE = re.compile(r"\bthe ([A-Z][A-Za-z]+) tool\b")
-CLAUDE_FOLDER_RE = re.compile(r"(?:^|[/\\~])\.claude\b")
+# The harness's own name, in any case and any word around it: `.claude/`,
+# `CLAUDE.md`, a regex alternation `(?:claude|codex)`.
+CLAUDE_RE = re.compile(r"(?<![a-z])claude(?![a-z])", re.IGNORECASE)
+# Splits a string holding alternatives, such as a regular expression, into
+# them, so a tool word inside `^(?:Bash|Edit)$` is found.
+ALTERNATIVES_RE = re.compile(r"[|()^$?:\[\]{}*+]+")
 
 
 def _strings(tree: ast.AST) -> list[ast.Constant]:
@@ -71,7 +82,27 @@ def _strings(tree: ast.AST) -> list[ast.Constant]:
         and isinstance(node.body[0].value, ast.Constant)
     }
     return [node for node in ast.walk(tree) if isinstance(node, ast.Constant)
-            and isinstance(node.value, str) and id(node) not in docstrings]
+            and isinstance(node.value, (str, bytes)) and id(node) not in docstrings]
+
+
+def _text(node: ast.Constant) -> str:
+    value = node.value
+    return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value
+
+
+def _name_of(node: ast.AST) -> str | None:
+    """The name `node` binds or reads: a variable, argument, attribute,
+    keyword argument, or a function, method, or class it defines."""
+
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, (ast.arg, ast.keyword)):
+        return node.arg
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return node.name
+    return None
 
 
 def harness_names() -> frozenset[str]:
@@ -81,7 +112,7 @@ def harness_names() -> frozenset[str]:
     names = set(MORE_NAMES)
     for module in TRANSLATING_MODULES:
         tree = ast.parse((PACKAGE / module).read_text(encoding="utf-8"))
-        names |= {node.value for node in _strings(tree) if DISTINCTIVE_RE.match(node.value)}
+        names |= {_text(node) for node in _strings(tree) if DISTINCTIVE_RE.match(_text(node))}
     return frozenset(names - SHARED)
 
 
@@ -95,17 +126,20 @@ def findings(source: str, names: frozenset[str], allowed: frozenset[str] = froze
     found = []
     for node in ast.walk(tree):
         if id(node) in strings:
-            text = node.value
-            hits = set(anywhere.findall(text)) | ({text} & TOOL_WORDS)
+            text = _text(node)
+            hits = set(anywhere.findall(text))
+            # Prose is read whole, so a sentence that starts "Read " is a
+            # word; a string with alternatives is read part by part.
+            parts = ALTERNATIVES_RE.split(text) if "|" in text else [text]
+            hits |= set(parts) & TOOL_WORDS
             hits |= set(TOOL_PROSE_RE.findall(text))
             if "mcp__" in text:
                 hits.add("mcp__")
-            if CLAUDE_FOLDER_RE.search(text):
-                hits.add(".claude")
+            if CLAUDE_RE.search(text):
+                hits.add("claude")
             found += [f"{node.lineno}: {name}" for name in sorted(hits - allowed)]
         else:
-            name = (node.id if isinstance(node, ast.Name) else node.arg if isinstance(node, ast.arg)
-                    else node.attr if isinstance(node, ast.Attribute) else None)
+            name = _name_of(node)
             if name in names and name not in allowed:
                 found.append(f"{node.lineno}: {name}")
     return found
@@ -117,9 +151,15 @@ def core_modules() -> list[Path]:
     return sorted(CORE_DIR.rglob("*.py"))
 
 
+# Ways to import by name at run time, or to change where imports come from,
+# which a static import check cannot follow; the core needs none of them.
+DYNAMIC_IMPORTS = frozenset({"importlib", "__import__", "sys.path"})
+
+
 def foreign_imports(source: str) -> list[str]:
     """Each import in `source` of anything but the standard library and the
-    core package, as `line: module`."""
+    core package, as `line: module`, and each use of `importlib`,
+    `__import__`, or `sys.path`, as `line: <that name>`."""
 
     found = []
     for node in ast.walk(ast.parse(source)):
@@ -127,10 +167,16 @@ def foreign_imports(source: str) -> list[str]:
             modules = [alias.name for alias in node.names]
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             modules = [node.module]
+        elif isinstance(node, ast.Name) and node.id == "__import__":
+            modules = ["__import__"]
+        elif (isinstance(node, ast.Attribute) and node.attr == "path"
+              and isinstance(node.value, ast.Name) and node.value.id == "sys"):
+            modules = ["sys.path"]
         else:
             continue
         found += [f"{node.lineno}: {module}" for module in modules
-                  if module.split(".")[0] not in sys.stdlib_module_names | {CORE_PACKAGE}]
+                  if module in DYNAMIC_IMPORTS or module.split(".")[0] in DYNAMIC_IMPORTS
+                  or module.split(".")[0] not in sys.stdlib_module_names | {CORE_PACKAGE}]
     return found
 
 
@@ -144,12 +190,31 @@ class RulePurityTests(unittest.TestCase):
             self.assertIn(expected, modules)
         for path in core_modules():
             with self.subTest(module=path.name):
-                self.assertEqual(findings(path.read_text(encoding="utf-8"), names), [])
+                allowed = frozenset(name for module, name in ALLOWED if module == path.name)
+                self.assertEqual(findings(path.read_text(encoding="utf-8"), names, allowed), [])
+
+    def test_each_allowance_is_still_needed(self) -> None:
+        names = harness_names()
+        for module, name in ALLOWED:
+            with self.subTest(module=module, name=name):
+                source = (CORE_DIR / "goated_core" / module).read_text(encoding="utf-8")
+                self.assertIn(name, [found.split(": ")[1] for found in findings(source, names)])
 
     def test_the_core_imports_only_the_standard_library_and_itself(self) -> None:
+        # The command beside the package puts its own folder on `sys.path`,
+        # so it can find the package; it is the one use the core needs.
         for path in core_modules():
             with self.subTest(module=path.name):
-                self.assertEqual(foreign_imports(path.read_text(encoding="utf-8")), [])
+                expected = ["sys.path"] if path.name == "goated_judge.py" else []
+                self.assertEqual([found.split(": ")[1] for found in
+                                  foreign_imports(path.read_text(encoding="utf-8"))], expected)
+
+    def test_the_import_check_finds_dynamic_imports(self) -> None:
+        source = ("import importlib\nimportlib.import_module('goated_adapter.hooks')\n"
+                  "__import__('goated_adapter')\nimport sys\nsys.path.insert(0, 'x')\n"
+                  "from importlib import import_module\n")
+        self.assertEqual(sorted(foreign_imports(source)),
+                         ["1: importlib", "3: __import__", "5: sys.path", "6: importlib"])
 
     def test_the_import_check_finds_an_adapter_import(self) -> None:
         source = ("import json\nfrom goated_core import gates\nfrom . import events\n"
@@ -180,11 +245,28 @@ class RulePurityTests(unittest.TestCase):
         )
         self.assertEqual(
             sorted(found.split(": ")[1] for found in findings(source, harness_names())),
-            sorted([".claude", "Edit", "PreToolUse", "Write", "file_path", "file_path",
+            sorted(["claude", "Edit", "PreToolUse", "Write", "file_path", "file_path",
                     "hookSpecificOutput", "mcp__", "mcp__ccd_session__start_session",
                     "old_string", "pasted_content",
                     "systemMessage", "tool_input", "tool_use_id", "toolUseResult"]),
         )
+
+    def test_the_check_finds_names_in_every_form_a_review_tried(self) -> None:
+        # Each line hides a Claude Code name the first version of this check missed.
+        cases = {
+            'A = r"^(?:Bash|Edit|Write)$"': ["Bash", "Edit", "Write"],
+            "f(x, tool_use_id=1)": ["tool_use_id"],
+            "def file_path(): pass": ["file_path"],
+            "class C:\n    def old_string(self): pass": ["old_string"],
+            'R = r"\\.(?:claude|codex)/"': ["claude"],
+            'N = "CLAUDE.md"': ["claude"],
+            "B = b'tool_use_id'": ["tool_use_id"],
+        }
+        for source, names in cases.items():
+            with self.subTest(source=source):
+                self.assertEqual(sorted(found.split(": ")[1]
+                                        for found in findings(source, harness_names())),
+                                 sorted(names))
 
     def test_near_miss_docstrings_plain_words_and_allowed_names_pass(self) -> None:
         source = (
@@ -192,7 +274,9 @@ class RulePurityTests(unittest.TestCase):
             'TEXT = "Write the message, then read the change and its edits."\n'
             'WORDS = "the command, its head and base, a tool to run"\n'
             'KEY = "prompt_id"\n'
-            'FOLDER = "docs/claude.md"\n'
+            'FOLDER = "docs/claudette.md"\n'
+            'ALTERNATION = r"^(?:Writer|Editing)$"\n'
+            'def handle(self, kind=None): pass\n'
         )
         self.assertEqual(findings(source, harness_names(), frozenset({"prompt_id"})), [])
 

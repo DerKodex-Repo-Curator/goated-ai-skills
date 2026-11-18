@@ -4,8 +4,8 @@ It reads a prompt a person typed, as the event model holds it: the adapter
 has removed the blocks its harness inserts and moved pasted text out, so
 neither is read. The gates apply the result only to a turn whose opener a
 person wrote, so an agent's or another session's text never produces an
-override (spec R8). The phrase set is documented in the adapter README; change
-both together.
+override (spec R8). The enforcement contract's Overrides section states the
+phrase set; change both together.
 """
 
 from __future__ import annotations

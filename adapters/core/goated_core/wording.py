@@ -29,15 +29,16 @@ def _slot(name: str, *arguments: str) -> str:
     return OPEN + "|".join((name, *arguments)) + CLOSE
 
 
-# How the agent loads a skill, as the object of "with": "the Skill tool".
+# How the agent loads a skill, as the object of "with", such as "the
+# harness's skill loader".
 SKILL_TOOL = _slot("skill-tool")
-# How the agent reads a file, as the object of "with": "the Read tool".
+# How the agent reads a file, as the object of "with", such as "a file read".
 READ_TOOL = _slot("read-tool")
-# A file read call, as a noun or a verb: "Read".
+# A file read call, as a noun or a verb, such as "read".
 READ = _slot("read")
-# What makes a file read whole: "with no limit, offset, or pages".
+# What makes a file read whole, such as "with no range".
 NO_RANGE = _slot("no-range")
-# The file edit tools, after "a file edit tool": "(Edit, MultiEdit, or Write)".
+# The file edit calls, after "a file edit tool", such as "(a file write call)".
 FILE_EDIT_TOOLS = _slot("file-edit-tools")
 # Ends a call's hold that a line can clear, on a line of its own: the harness
 # names a call that can carry the line when the held call has no field for

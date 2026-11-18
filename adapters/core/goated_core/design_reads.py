@@ -1,7 +1,7 @@
 """Which `software-design-principles` references a project file edit requires.
 
 This module owns the design-reads rules of the design-reads spec (R5),
-documented in the adapter README ("Design references"): which edits they
+stated in the enforcement contract ("Design Reference Signals"): which edits they
 apply to, what an edit adds, and each reference with what in an edit selects
 it, close to the skill's own "Read now" conditions. `red-flags.md` is not
 here; the closeout requires it on every change. `differences.md` has no

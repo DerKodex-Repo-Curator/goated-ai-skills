@@ -144,6 +144,8 @@ def _non_stdlib_imports(path: Path, repo: Path, shared: set[str]) -> list[Findin
             names = [alias.name for alias in node.names]
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             names = [node.module]
+        elif (name := _imported_by_name(node)) is not None:
+            names = [name]
         else:
             continue
         for name in names:
@@ -157,6 +159,19 @@ def _non_stdlib_imports(path: Path, repo: Path, shared: set[str]) -> list[Findin
                     )
                 )
     return findings
+
+
+def _imported_by_name(node: ast.AST) -> str | None:
+    """The module a run-time import call names with a literal, such as
+    `importlib.import_module("x")` or `__import__("x")`, else None."""
+
+    if not (isinstance(node, ast.Call) and node.args and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)):
+        return None
+    func = node.func
+    calls = ((isinstance(func, ast.Name) and func.id in ("__import__", "import_module"))
+             or (isinstance(func, ast.Attribute) and func.attr == "import_module"))
+    return node.args[0].value if calls else None
 
 
 def _local_module_names(path: Path) -> set[str]:

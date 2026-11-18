@@ -106,8 +106,8 @@ def short_form(unmet: str, clear: str) -> ShortForm:
 ADVICE = "advice"
 
 # Paragraphs several holds or closeout items share (Ticket 095). How a hold
-# asks for a change read; no command is backticked, since the skill-usage mod
-# reads a backticked name as a skill to load.
+# asks for a change read; no command is backticked, since a reader of hold
+# texts takes a backticked name as a skill to load (contract, Hold Text).
 CHANGE_READ = (
     f"print its diff with a git diff or git show command, or {READ} a file you changed; "
     "a listing of names or counts, such as --stat or --name-only, does not count"
@@ -418,7 +418,8 @@ def check_routing(
             f"finishing {READ} calls of three distinct files, each read whole {NO_RANGE}, "
             "such as the sources its brief names."
         )
-        # The mod reads this sentence's opening for the skill the brief added.
+        # A reader of hold texts takes this sentence's opening for the skill the
+        # brief added.
         missing.append(f"A session started from a brief loads `{ORIENTATION_SKILL}` or "
                        f"finishes {READ} calls of three distinct files, each whole")
     parts.append(
