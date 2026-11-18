@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from . import actions, events, friction, gates, reference_reads
+from . import usage_log as usage_log_module
 from .events import Call, Result, Turn
 from .overrides import GOATED_SKILLS, parse_overrides
 from .state import SessionState, StateStore, StateUnsafe
@@ -63,21 +64,25 @@ class Settings:
     (`state_dir`), the skill namespaces whose `ns:skill` loads count as GOATED
     skills, the installed registry the `reference-reads` gate reads (None
     reads none; `registry_named`: the user named that path, so a missing
-    file there is worth a warning), and `upgrade_state`, which a caller whose
-    earlier versions saved state in its own words passes (see `StateStore`).
+    file there is worth a warning), `upgrade_state`, which a caller whose
+    earlier versions saved state in its own words passes (see `StateStore`),
+    and `usage_log`, the usage log each event is appended to
+    (`usage_log.UsageLog`; None keeps none).
     """
 
     __slots__ = ("state_dir", "skill_namespaces", "registry_path", "registry_named",
-                 "upgrade_state")
+                 "upgrade_state", "usage_log")
 
     def __init__(self, state_dir: Path, skill_namespaces: tuple[str, ...] = (),
                  registry_path: Path | None = None, registry_named: bool = False,
-                 upgrade_state: Callable[[object], object] | None = None) -> None:
+                 upgrade_state: Callable[[object], object] | None = None,
+                 usage_log: usage_log_module.UsageLog | None = None) -> None:
         self.state_dir = Path(state_dir)
         self.skill_namespaces = tuple(skill_namespaces)
         self.registry_path = Path(registry_path) if registry_path is not None else None
         self.registry_named = registry_named
         self.upgrade_state = upgrade_state
+        self.usage_log = usage_log
 
     def store(self) -> StateStore:
         return StateStore(self.state_dir, self.upgrade_state)
@@ -94,22 +99,25 @@ class Situation:
     when it cannot tell; it is called only when needed. `subagents(turn)`
     gives the turns of each agent `turn`'s spawns started, by agent id, and
     the ids whose turns could not be read; by default, none.
+    `project_folder` is the project's folder as the harness names it, whose
+    key the usage log records (never the path itself), or None.
     """
 
     __slots__ = ("session_id", "agent_id", "project", "agent_folders", "installed_skills",
-                 "subagents")
+                 "subagents", "project_folder")
 
     def __init__(self, session_id: str, *, agent_id: str | None = None,
                  project: actions.Project | None = None, agent_folders: list[str] = (),
                  installed_skills: Callable[[], frozenset[str] | None] = lambda: None,
-                 subagents: Callable[[Turn], tuple[dict, list[str]]] = lambda turn: ({}, [])
-                 ) -> None:
+                 subagents: Callable[[Turn], tuple[dict, list[str]]] = lambda turn: ({}, []),
+                 project_folder: str | None = None) -> None:
         self.session_id = session_id
         self.agent_id = agent_id
         self.project = project
         self.agent_folders = list(agent_folders)
         self.installed_skills = installed_skills
         self.subagents = subagents
+        self.project_folder = project_folder
 
 
 class Notice(NamedTuple):
@@ -178,7 +186,7 @@ def judge_call(settings: Settings, situation: Situation, call: Call,
     store = settings.store()
     state, state_warning = store.load(situation.session_id)
     turns, prompt_key = read(state.last_turn)
-    _fold(state, turns, settings)
+    settled = _fold(state, turns, settings)
     current = turns[-1]
     overrides = overrides_for(state, current, prompt_key)
     unread: list[str] = []
@@ -212,11 +220,13 @@ def judge_call(settings: Settings, situation: Situation, call: Call,
             call, current, overrides, settings.skill_namespaces, earlier)
         if templates:
             state.record_spawn_templates(current.key, call.id, templates)
-    friction.observe(state, current, friction.action_of(call), holds)
+    settled += friction.observe(state, current, friction.action_of(call), holds)
     shown = gates.shown_holds(holds, lambda purpose: _claim_turn(
         store, situation.session_id, current.key, purpose), call=True)
+    log = _logged(settings, situation, lambda r: (r.turns(turns, pending=call),
+                                                  r.outcomes(settled), r.holds(shown)))
     notices = _warnings(state_warning, _save(store, situation.session_id, state),
-                        _unread_warning(unread), *registry_warnings)
+                        _unread_warning(unread), *registry_warnings, log)
     return Decision(shown, notices, state.shell)
 
 
@@ -241,7 +251,8 @@ def _judge_subagent_call(settings: Settings, situation: Situation, call: Call,
     store = settings.store()
     shown = gates.shown_holds(holds, lambda purpose: _claim_turn(
         store, situation.session_id, turns[-1].key, purpose, situation.agent_id), call=True)
-    return Decision(shown, [], gates.last_shell(turns))
+    log = _logged(settings, situation, lambda r: (r.turns(turns, pending=call), r.holds(shown)))
+    return Decision(shown, _warnings(log), gates.last_shell(turns))
 
 
 def judge_turn_end(settings: Settings, situation: Situation, read: TurnReader,
@@ -256,7 +267,7 @@ def judge_turn_end(settings: Settings, situation: Situation, read: TurnReader,
     store = settings.store()
     state, state_warning = store.load(situation.session_id)
     turns, prompt_key = read(state.last_turn)
-    _fold(state, turns, settings)
+    settled = _fold(state, turns, settings)
     current = turns[-1]
     subagents, unread = situation.subagents(current)
     hold = actions.check_closeout(
@@ -268,17 +279,25 @@ def judge_turn_end(settings: Settings, situation: Situation, read: TurnReader,
         briefed=state.briefed,
     )
     holds = [hold] if hold else []
-    friction.observe(state, current, friction.STOP, holds)
+    settled += friction.observe(state, current, friction.STOP, holds)
     if hold is None:
         # The turn ends here, and so do its typed overrides: a subagent's
         # report arriving later continues the turn without them. Another
         # hook may still hold this end, so the turn then goes on without its
         # overrides, which only holds more.
         state.overrides = {}
-    notices = _warnings(state_warning, _save(store, situation.session_id, state),
-                        _unread_warning(unread))
     shown = gates.shown_holds(holds, lambda purpose: _claim_turn(
         store, situation.session_id, current.key, purpose))
+
+    def log_turn_end(recorder: usage_log_module.Recorder) -> None:
+        recorder.turns(turns, final_text)
+        recorder.outcomes(settled)
+        recorder.holds(shown, stop=True)
+        if not shown:
+            recorder.turn_end()
+
+    notices = _warnings(state_warning, _save(store, situation.session_id, state),
+                        _unread_warning(unread), _logged(settings, situation, log_turn_end))
     return Decision(shown, notices, state.shell)
 
 
@@ -344,16 +363,29 @@ def record_prompt(settings: Settings, situation: Situation, typed_text: str | No
         return Decision()
     store = settings.store()
     state, state_warning = store.load(situation.session_id)
+    logging = settings.usage_log is not None
+    turns = None
+    settled: list[tuple[str, str]] = []
     if typed_text is not None:
         known = situation.installed_skills() or GOATED_SKILLS
         found = parse_overrides(typed_text, known)
-        if state.open_holds:
+        # The log reads the last turn's tail too, unless it logged that turn's end.
+        if state.open_holds or (logging and not _recorder(settings, situation).turn_ended()):
             turns = unseen(state.last_turn)
-            if turns:
-                _settle(state, turns, settings)
-        friction.close_turn(state, found)
+            if turns and state.open_holds:
+                settled = _settle(state, turns, settings)
+        settled += friction.close_turn(state, found)
     else:
         found = parse_overrides("")
+
+    def log_prompt(recorder: usage_log_module.Recorder) -> None:
+        # What the last turn did after its last event, then this prompt.
+        if turns:
+            recorder.turns(turns)
+        recorder.outcomes(settled)
+        if typed_text is not None:
+            recorder.prompt(typed_text, found["phrases"])
+
     state.overrides = {"prompt": prompt_key, **found}
     notices = []
     if found["phrases"]:
@@ -361,7 +393,8 @@ def record_prompt(settings: Settings, situation: Situation, typed_text: str | No
         notices.append(Notice(OVERRIDE_RECORDED, f"recorded your override for this prompt: {typed}"))
     if typed_text is not None and friction.claim_retrospective_notice(state):
         notices.append(Notice(SESSION_NOTICE, RETROSPECTIVE_NOTICE.format(count=state.friction)))
-    notices += _warnings(state_warning, _save(store, situation.session_id, state))
+    notices += _warnings(state_warning, _save(store, situation.session_id, state),
+                         _logged(settings, situation, log_prompt))
     return Decision([], notices, state.shell)
 
 
@@ -394,24 +427,50 @@ def start_session(settings: Settings, situation: Situation, source: str,
     if not state.policy_notice_shown:
         state.policy_notice_shown = True
         notices = [Notice(SESSION_NOTICE, text) for text in first_notices()]
-    notices += _warnings(state_warning, _save(store, situation.session_id, state))
+    log = (_logged(settings, situation, lambda r: r.compaction())
+           if source == AFTER_COMPACTION else None)
+    notices += _warnings(state_warning, _save(store, situation.session_id, state), log)
     return Decision([], notices, state.shell)
 
 
 # Helpers ------------------------------------------------------------------
 
 
-def _fold(state: SessionState, turns: list[Turn], settings: Settings) -> None:
+def _fold(state: SessionState, turns: list[Turn], settings: Settings) -> list[tuple[str, str]]:
     """Bring `state` up to date with `turns`, and settle the friction
-    count's open holds against them."""
+    count's open holds against them; returns those settled, as (gate, outcome)."""
 
     gates.fold_turns(state, turns, settings.skill_namespaces)
-    _settle(state, turns, settings)
+    return _settle(state, turns, settings)
 
 
-def _settle(state: SessionState, turns: list[Turn], settings: Settings) -> None:
-    friction.settle(state, turns,
-                    lambda raw: gates.goated_skill_name(raw, settings.skill_namespaces))
+def _settle(state: SessionState, turns: list[Turn],
+            settings: Settings) -> list[tuple[str, str]]:
+    return friction.settle(state, turns,
+                           lambda raw: gates.goated_skill_name(raw, settings.skill_namespaces))
+
+
+def _logged(settings: Settings, situation: Situation,
+            say: Callable[[usage_log_module.Recorder], object]) -> str | None:
+    """Append to the usage log what `say` tells a recorder, when the settings
+    keep a log; the warning when it could not be written, else None."""
+
+    if settings.usage_log is None:
+        return None
+    recorder = _recorder(settings, situation)
+    try:
+        say(recorder)
+    except Exception as exc:  # noqa: BLE001 - the log never blocks a call
+        return f"could not write the usage log ({type(exc).__name__})"
+    return recorder.flush()
+
+
+def _recorder(settings: Settings, situation: Situation) -> usage_log_module.Recorder:
+    """The usage log's recorder for this event; `settings.usage_log` is set."""
+
+    return usage_log_module.Recorder(
+        settings.usage_log, settings.state_dir, situation.session_id, situation.agent_id,
+        situation.project_folder, lambda: situation.installed_skills() or GOATED_SKILLS)
 
 
 def _registry_references(settings: Settings, warnings: list[str]) -> tuple:

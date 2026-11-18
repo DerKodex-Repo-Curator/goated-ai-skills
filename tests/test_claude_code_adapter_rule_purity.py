@@ -47,7 +47,7 @@ DISTINCTIVE_RE = re.compile(
 SHARED = frozenset({
     "agent_id", "line_text", "starts_session", "session_id", "prompt_ids", "project_dir",
     "state_dir", "skill_namespaces", "lag_wait_seconds", "registry_path", "registry_named",
-    "own_initiative", "task_notification",
+    "usage_log", "own_initiative", "task_notification",
 })
 # Claude Code names the translation does not read yet.
 MORE_NAMES = frozenset({
@@ -201,11 +201,12 @@ class RulePurityTests(unittest.TestCase):
                 self.assertIn(name, [found.split(": ")[1] for found in findings(source, names)])
 
     def test_the_core_imports_only_the_standard_library_and_itself(self) -> None:
-        # The command beside the package puts its own folder on `sys.path`,
-        # so it can find the package; it is the one use the core needs.
+        # The commands beside the package put their own folder on `sys.path`,
+        # so they can find the package; it is the one use the core needs.
+        commands = ("goated_judge.py", "goated_usage_report.py")
         for path in core_modules():
             with self.subTest(module=path.name):
-                expected = ["sys.path"] if path.name == "goated_judge.py" else []
+                expected = ["sys.path"] if path.name in commands else []
                 self.assertEqual([found.split(": ")[1] for found in
                                   foreign_imports(path.read_text(encoding="utf-8"))], expected)
 

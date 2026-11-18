@@ -23,7 +23,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from . import actions, events, gates, judge, wording
+from . import actions, events, gates, judge, usage_log, wording
 from .events import (
     AgentFinished, Call, CallFinished, Compaction, Edit, Prompt, ReplyText, Result,
     SkillInvoked, Turn,
@@ -35,6 +35,9 @@ EVENT_MODEL = 2
 STATE_DIR_ENV = "GOATED_CORE_STATE_DIR"
 NAMESPACES_ENV = "GOATED_CORE_SKILL_NAMESPACES"
 REGISTRY_ENV = "GOATED_CORE_REGISTRY"
+# The name the usage log records for the adapter calling the core.
+ADAPTER_ENV = "GOATED_CORE_ADAPTER"
+DEFAULT_ADAPTER = "core"
 STATE_DIR_NAME = "goated-core"
 # The registry when the core sits in its distribution: `<goated-root>/adapters/core/`.
 DEFAULT_REGISTRY = Path(__file__).resolve().parents[3] / "stack" / "goated-stack.yaml"
@@ -53,21 +56,29 @@ class Unreadable(ValueError):
 
 
 def settings_from_environment(state_dir: str | None = None,
-                              registry: str | None = None) -> Settings:
+                              registry: str | None = None,
+                              log_path: str | None = None) -> Settings:
     """The core's settings from its environment variables, each argument
     given winning: the state folder (`GOATED_CORE_STATE_DIR`, by default a
     per-user folder), GOATED skill namespaces (`GOATED_CORE_SKILL_NAMESPACES`,
-    comma-separated), and the registry (`GOATED_CORE_REGISTRY`, by default the
-    distribution's)."""
+    comma-separated), the registry (`GOATED_CORE_REGISTRY`, by default the
+    distribution's), and the usage log (`log_path`, else `GOATED_USAGE_LOG`;
+    none when neither names one, or either says `off`), written as the
+    adapter `GOATED_CORE_ADAPTER` names itself, `core` when it names none.
+    The command keeps no log unless asked, so a harness, a test or a worked
+    example never writes into the user's own log by default."""
 
     state_dir = state_dir or os.environ.get(STATE_DIR_ENV)
     named = registry or os.environ.get(REGISTRY_ENV)
     namespaces = os.environ.get(NAMESPACES_ENV, "")
+    log = usage_log.path_from_environment(log_path, default=False)
     return Settings(
         Path(state_dir) if state_dir else default_root() / STATE_DIR_NAME,
         tuple(n.strip() for n in namespaces.split(",") if n.strip()),
         Path(named) if named else DEFAULT_REGISTRY,
         registry_named=bool(named),
+        usage_log=(usage_log.UsageLog(log, os.environ.get(ADAPTER_ENV) or DEFAULT_ADAPTER)
+                   if log else None),
     )
 
 
@@ -161,6 +172,7 @@ class _Reading:
             agent_folders=self.agent_folders,
             installed_skills=lambda: self.installed,
             subagents=self._subagents,
+            project_folder=self.folders[0] if self.folders else self.working_folder,
         )
         kind = self.event.get("type")
         if kind == "pending_call":

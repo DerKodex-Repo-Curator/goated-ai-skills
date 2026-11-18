@@ -16,6 +16,8 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import usage_log_guard  # noqa: F401 - keeps the run's usage log out of the user's own
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ADAPTER_DIR = REPO_ROOT / "adapters" / "claude-code"
 if str(ADAPTER_DIR) not in sys.path:

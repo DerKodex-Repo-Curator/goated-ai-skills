@@ -806,6 +806,16 @@ since the last compaction, and, for the closeout's Review item, the
 templates recorded for its spawns. Files are not pruned automatically;
 deleting the folder between sessions is safe.
 
+The adapter also writes the core's [usage log](../README.md#the-usage-log),
+as `claude-code`, to `GOATED_USAGE_LOG` or the core's per-user default
+(`%LOCALAPPDATA%\goated\usage-log.jsonl` on Windows,
+`~/.local/state/goated/usage-log.jsonl` elsewhere), never to the project.
+`GOATED_USAGE_LOG=off` keeps none. It keys each session by Claude Code's
+session id and its project by a salted digest of `CLAUDE_PROJECT_DIR`, or of
+the hook's `cwd` when that is unset. A `usage-log/` folder beside the state
+files keeps how far the log has read each session's turns. A log that
+cannot be written changes no hold and adds one warning per session.
+
 ## Latency
 
 Measured on 2026-11-16 on Windows 11 with Python 3.13 and an Intel Core
@@ -863,6 +873,25 @@ transcript whose current turn holds 300 calls:
 The core's own command, `adapters/core/goated_judge.py`, judging an edit in
 a 38 KB request with a 300-call turn, took a median of 174 ms over 30 runs,
 against 41 ms for the interpreter alone.
+
+Writing the [usage log](../README.md#the-usage-log) (Ticket 082) adds 2 to 4
+ms a hook in process. Measured on 2026-11-18 on the same machine with the
+uv-managed Python 3.14, in process through `run_hook`, a 300-call current
+turn, 150 runs each after a first that logs the turn, log off then on, in
+two rounds:
+
+| Case | Log off | Log on |
+| --- | --- | --- |
+| `PreToolUse` of an `Edit` | 12.7, 12.6 ms | 15.3, 15.3 ms |
+| `PreToolUse` of a `Bash` command | 10.1, 9.9 ms | 12.5, 12.1 ms |
+| `Stop` | 10.0, 9.8 ms | 13.5, 13.0 ms |
+| `UserPromptSubmit` | 2.0, 1.9 ms | 5.9, 5.4 ms |
+
+The cost is the cursor's and the log's locks, two small file writes, and
+reading the cursor. A prompt after a turn the log saw end costs that alone;
+after a turn that ended any other way, such as one you interrupted, the
+prompt hook also reads the last turn again for the facts no event logged,
+about 5 ms more on this turn. The spawned, exec-form cost was not measured.
 
 The `pr-review` gate's size check (see [Large pull requests](#large-pull-requests))
 runs only on a pull-request call that no load or skip line has cleared of

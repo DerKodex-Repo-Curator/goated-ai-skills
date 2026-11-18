@@ -592,6 +592,7 @@ export function allTimeTab(v: View, everything: AllTime, rows: number, filter?: 
       )}
       {words(v, [{ text: `${plural(all.sessions, 'session')} · ` }, ...standing(loadCount, outcomes)], 'plain', true)}
       {ruled > 0 && line(v, `GOATED router rule: router loaded first in ${first} of ${plural(ruled, 'session')}`, rateTone(first, ruled))}
+      {everything.logSkipped ? line(v, logSkippedText(everything.logSkipped), 'dim') : null}
       {measuresText(all) && line(v, measuresText(all) ?? '', 'plain')}
       {filter && everything.byProject && projectChooser(v, everything, filter)}
       {usageTables(v, all, rows, '')}
@@ -705,8 +706,11 @@ function outcomeWords(c: Counts<Outcome>): string {
  * `/skill-usage report`: the All time and Unused tabs as markdown, in the pane's own words. `declared`: the installed
  * registry's references, null when none could be read, which leaves their section out.
  */
+/** The line that says how many lines of the GOATED core's usage log were passed over, in the pane and the report. */
+const logSkippedText = (n: number) => `GOATED usage log: ${plural(n, 'line')} skipped as no entry, so not counted.`
+
 export function reportText(all: AllTime, avail: Available | null, declared: DeclaredReferences | null = null): string {
-  const out = [`# Skill usage: ${plural(all.sessions, 'session')}`, '', '## Hooks', '']
+  const out = [`# Skill usage: ${plural(all.sessions, 'session')}`, ...(all.logSkipped ? ['', logSkippedText(all.logSkipped)] : []), '', '## Hooks', '']
   for (const [hook, c] of Object.entries(all.nudges).sort(([, x], [, y]) => total(y) - total(x))) out.push(`- ${hookName(hook)}: ${outcomeWords(c)}`)
   out.push('', '## Closeout items', '')
   const items = Object.entries(all.closeoutItems ?? {}).sort(byMostThenName)

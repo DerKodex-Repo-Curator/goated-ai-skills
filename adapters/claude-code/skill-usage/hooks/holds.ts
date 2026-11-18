@@ -79,10 +79,25 @@ function standsDown(phrase: string, n: { hook: string; anyOf: readonly string[] 
 
 /** The longest skip reason kept: a longer one is cut to this many characters, its last an ellipsis. */
 export const REASON_LIMIT = 160
-// A path-like word: one starting with a drive (`C:/`, `C:\`), a slash, `~/` or `~\`, or holding a backslash anywhere
-// (`\\server\share`, `src\x.ts`). A slash inside a word, as in `and/or`, and a bare `~`, as in `~5`, are not paths.
-const PATH_WORD = /(?<!\S)(?:[A-Za-z]:[\\/]|[\\/]|~[\\/]|\S*\\)\S*/g
-const maskPaths = (text: string) => text.replace(PATH_WORD, '<path>')
+// A path, in a word whose wrapping quotes, backticks, brackets and trailing punctuation are set aside: one starting
+// with a drive (`C:/`, `C:\`), a slash, `~/` or `~\`, holding a backslash (`src\x.ts`) or `://` (a URL), or holding a
+// slash and either a second one or a file extension at its end (`src/x.ts`, `a/b/c`). `and/or` and `~5` are words. The
+// GOATED core masks skip reasons the same way for its usage log (`goated_core/usage_log.py`), and the tests check both
+// against the same cases.
+const WRAP_START = new Set('`"\'([{<')
+const WRAP_END = new Set('`"\')]}>.,;:!?')
+const PATH_START = /^(?:[A-Za-z]:[\\/]|[\\/]|~[\\/])/
+const EXTENSION = /\.[A-Za-z0-9]+$/
+function maskedWord(word: string): string {
+  let start = 0
+  while (start < word.length && WRAP_START.has(word[start] ?? '')) start += 1
+  let end = word.length
+  while (end > start && WRAP_END.has(word[end - 1] ?? '')) end -= 1
+  const core = word.slice(start, end)
+  const isPath = core !== '' && (PATH_START.test(core) || core.includes('\\') || core.includes('://') || (core.includes('/') && (core.split('/').length > 2 || EXTENSION.test(core))))
+  return isPath ? `${word.slice(0, start)}<path>${word.slice(end)}` : word
+}
+const maskPaths = (text: string) => text.replace(/\S+/g, maskedWord)
 
 /** A skip reason as it is kept: each path-like word masked as `<path>`, then whole up to `REASON_LIMIT` characters, else cut. */
 export function storedReason(reason: string): string {

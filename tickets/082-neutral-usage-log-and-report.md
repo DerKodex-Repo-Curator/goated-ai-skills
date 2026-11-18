@@ -45,15 +45,32 @@ from that use.
 
 ## Acceptance Criteria
 
-- [ ] A hold and its clearing in a Claude Code session, and the same pair
+- [x] A hold and its clearing in a Claude Code session, and the same pair
       driven through the core directly, produce the same log entries
       apart from the adapter's name.
-- [ ] The report summarises a log holding both, and filters them apart.
-- [ ] The mod shows the same counts from the log as from its current
+- [x] The report summarises a log holding both, and filters them apart.
+- [x] The mod shows the same counts from the log as from its current
       reading for one recorded session.
-- [ ] A log of an unknown version is refused with a clear message.
-- [ ] A log that cannot be written never blocks a call.
-- [ ] No path, prompt text or file content is written to the log.
+- [x] A log of an unknown version is refused with a clear message.
+- [x] A log that cannot be written never blocks a call.
+- [x] No path, prompt text or file content is written to the log.
+
+Proof (2026-11-18): `tests/test_usage_log.py` (core, Claude Code parity,
+report, refusal, unwritable log, privacy, format against
+`stack/schemas/usage-log.schema.json`); the mod's
+`tests/usage-log.test.tsx` and the log tests in
+`tests/reference-counts.test.tsx`, over the session
+`tests/usage_log_session.py` records. The maintainer's comparison of the
+pane and the report for one real session is still to do.
+
+Lead review fixes (2026-11-18): appends under a log-wide lock in one write
+(8 processes × 600 lose no line); readers skip and count lines that are no
+entry and refuse only an unknown version; only the Claude Code adapter logs
+by default, `GOATED_USAGE_LOG=off` keeps none, and `tests/usage_log_guard.py`
+keeps every test run off the user's own log (`tests/test_usage_log_guard.py`);
+more path forms masked, in step with the mod; file digests salted; only
+installed skills' files logged; one warning per session; a private log
+folder; the report lists projects and takes `--project-folder`.
 
 ## Expected Proof
 

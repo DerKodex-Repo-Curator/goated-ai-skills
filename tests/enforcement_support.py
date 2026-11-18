@@ -11,6 +11,8 @@ from pathlib import Path
 import yaml
 from jsonschema import Draft202012Validator
 
+import usage_log_guard  # noqa: F401 - keeps the run's usage log out of the user's own
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = REPO_ROOT / "stack" / "enforcement-contract.md"
 SCHEMA = REPO_ROOT / "stack" / "schemas" / "enforcement-event-model.schema.json"

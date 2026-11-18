@@ -58,6 +58,7 @@ def command_judge(state_dir: Path) -> Judge:
     def judge(request: dict) -> dict:
         done = subprocess.run(
             [sys.executable, str(COMMAND), "--state-dir", str(state_dir),
+             "--usage-log", str(state_dir / "usage-log.jsonl"),
              "--registry", str(REGISTRY)],
             input=json.dumps(request).encode("utf-8"), capture_output=True, check=True)
         return json.loads(done.stdout.decode("utf-8"))

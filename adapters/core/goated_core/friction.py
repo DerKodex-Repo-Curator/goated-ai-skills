@@ -34,6 +34,8 @@ from .gates import ROUTER_SKILL, STRICT
 RETROSPECTIVE_THRESHOLD = 3
 # The action of a `Stop`, as `observe` takes it.
 STOP = "stop"
+# What became of a hold, as `observe`, `settle` and `close_turn` return it.
+ANSWERED, DECLINED, STOOD_DOWN, UNANSWERED = "answered", "declined", "stood_down", "unanswered"
 
 _SKILL_RE = re.compile(r"`([a-z0-9]+(?:-[a-z0-9]+)*)`")
 _REFERENCE_RE = re.compile(r"`([^`\s]+\.md)`")
@@ -65,21 +67,24 @@ def action_of(call: Call) -> str:
     return call.action or "call:" + call.kind
 
 
-def observe(state, turn: Turn, action: str, holds: list) -> None:
+def observe(state, turn: Turn, action: str, holds: list) -> list[tuple[str, str]]:
     """Take one judged action of `turn` (already folded): `holds` are what
     held it, each as if shown alone (Ticket 095), or [] when it went through.
     Each open hold whose gate let the action through is answered; then each
     of `holds` opens for settling, unless its gate already held in the turn,
-    whose open hold then follows this action."""
+    whose open hold then follows this action. Returns the holds answered, as
+    (gate, `ANSWERED`)."""
 
     held_gates = {hold.gate for hold in holds}
-    state.open_holds = [
+    answered = [
         h for h in state.open_holds
-        if not ((_repeats(h, action) and h["gate"] not in held_gates)
-                or (not holds and _rewrites(h, action)))
+        if (_repeats(h, action) and h["gate"] not in held_gates)
+        or (not holds and _rewrites(h, action))
     ]
+    state.open_holds = [h for h in state.open_holds if h not in answered]
     for hold in holds:
         _open(state, turn, action, hold)
+    return [(h["gate"], ANSWERED) for h in answered]
 
 
 def _open(state, turn: Turn, action: str, hold) -> None:
@@ -106,27 +111,36 @@ def _open(state, turn: Turn, action: str, hold) -> None:
     })
 
 
-def settle(state, turns: list[Turn], skill_name) -> None:
+def settle(state, turns: list[Turn], skill_name) -> list[tuple[str, str]]:
     """Settle the open holds against `turns`, the turns just read, oldest first:
     drop each one whose every ask is met, and count and drop each one declined.
-    `skill_name` maps a raw loaded name to a GOATED skill, or None."""
+    `skill_name` maps a raw loaded name to a GOATED skill, or None. Returns
+    the holds settled, as (gate, outcome)."""
 
     still_open = []
+    settled = []
     for hold in state.open_holds:
         outcome = _outcome(hold, turns, skill_name)
-        if outcome == "declined":
+        if outcome == DECLINED:
             state.friction += 1
         if outcome is None:
             still_open.append(hold)
+        else:
+            settled.append((hold["gate"], outcome))
     state.open_holds = still_open
+    return settled
 
 
-def close_turn(state, overrides: dict) -> None:
+def close_turn(state, overrides: dict) -> list[tuple[str, str]]:
     """At a typed prompt, count each hold still open as unanswered, unless the
-    prompt's `overrides` (see `overrides.parse_overrides`) stand it down."""
+    prompt's `overrides` (see `overrides.parse_overrides`) stand it down.
+    Returns the holds closed, as (gate, outcome)."""
 
-    state.friction += sum(1 for hold in state.open_holds if not _stood_down(hold, overrides))
+    closed = [(hold["gate"], STOOD_DOWN if _stood_down(hold, overrides) else UNANSWERED)
+              for hold in state.open_holds]
+    state.friction += sum(1 for _, outcome in closed if outcome == UNANSWERED)
     state.open_holds = []
+    return closed
 
 
 def forget_open(state) -> None:
@@ -205,8 +219,8 @@ def _outcome(hold: dict, turns: list[Turn], skill_name) -> str | None:
     if asks and set(hold["skills"]) <= loaded and all(
         any(path.endswith(ref) for path in read) for ref in hold["references"]
     ):
-        return "answered"
-    return "declined" if declined else None
+        return ANSWERED
+    return DECLINED if declined else None
 
 
 def _after(hold: dict, turns: list[Turn]):
