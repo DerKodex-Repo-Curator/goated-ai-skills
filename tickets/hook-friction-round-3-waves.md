@@ -19,8 +19,8 @@ This table replaces waves 5 to 10 of
 to 4 there are merged.
 
 Waves 5 to 9 are merged. Their tickets (078, 079 and 086 to 097) were
-archived under `tickets/archive/` on 2026-11-18. Waves 10 and 11 (098
-and 080) are merged.
+archived under `tickets/archive/` on 2026-11-18. Waves 10 to 12 (098,
+080 and 081) are merged.
 
 | Wave | Ticket | Round | Area | Type | Blocked by |
 | --- | --- | --- | --- | --- | --- |
@@ -40,12 +40,12 @@ and 080) are merged.
 | 9 | [079](archive/079-enforcement-contract-and-event-model.md) | 2 | core | HITL (maintainer accepts the ADR and event model) | its round 2 blockers (merged), and 086 to 096 |
 | 10 | [098](098-adapter-contract-gaps.md) | 2 | adapter | AFK | 079 |
 | 11 | [080](080-adapter-rules-read-the-event-model.md) | 2 | adapter | AFK | 079, 098 |
-| 12 (ready now) | [081](081-shared-enforcement-core.md) | 2 | core | AFK | 080 |
-| 13 | [082](082-neutral-usage-log-and-report.md) | 2 | core | AFK | 078, 081 |
-| 13 | [083](083-adapter-guide-and-worked-example.md) | 2 | docs | AFK | 081 |
-| 13 | [099](099-core-fixture-data-is-test-data.md) | 4 | core | AFK | 081 |
-| 13 | [100](100-core-narrower-reference-triggers.md) | 4 | core and registry | AFK | 081 |
-| 13 | [102](102-core-session-messages-continue-the-task.md) | 4 | core | AFK | 081 |
+| 12 | [081](081-shared-enforcement-core.md) | 2 | core | AFK | 080 |
+| 13 (ready now) | [082](082-neutral-usage-log-and-report.md) | 2 | core | AFK | 078, 081 |
+| 13 (ready now) | [083](083-adapter-guide-and-worked-example.md) | 2 | docs | AFK | 081 |
+| 13 (ready now) | [099](099-core-fixture-data-is-test-data.md) | 4 | core | AFK | 081 |
+| 13 (ready now) | [100](100-core-narrower-reference-triggers.md) | 4 | core and registry | AFK | 081 |
+| 13 (ready now) | [102](102-core-session-messages-continue-the-task.md) | 4 | core | AFK | 081 |
 | 14 | [084](084-pi-agent-adapter.md) | 2 | new adapter | HITL (build decision after research) | 082, 083 |
 | 14 | [101](101-core-read-skips-last-the-task.md) | 4 | core | AFK | 081, 099, 100 |
 | 15 | [085](085-opencode-adapter.md) | 2 | new adapter | HITL (build decision after research) | 084 |
