@@ -3,7 +3,9 @@
 ## Status
 
 Decision Needed, 2026-11-18. R1 to R4 follow the lead's curation of the
-round 5 feedback, items 1 to 4. Each has open options, H to K, with a
+round 5 feedback, items 1 to 4. R5 to R8 cover the second source's items
+7 to 11, added to this spec by the lead on 2026-11-18; item 12 is a
+decision with no ticket. Each item has open options, H to Q, with a
 recommendation ([Decisions](#decisions)); the tickets are written to the
 recommended options and change if the maintainer picks another. Builds on
 [the round 4 spec](2026-11-18-hook-friction-round-4.md): every change is
@@ -54,6 +56,44 @@ Each item was checked against main at `bf18b3b`.
   was markdown. Steering the agent to a file edit tool was right; the words
   are not.
 
+A second source, a product ticket in another project, found a modest gain
+in quality at an estimated 15 to 20% extra time and tokens. What helped:
+the "name one input that would break this" question, the concurrency
+reference, the diff read before each commit, `code-security-review`, and
+`test-design.md`. Its friction:
+
+- **Holds fire after the content is written** (item 7, the largest cost).
+  The `design`, `design-reads` and `reference-reads` gates judge a write
+  by its text, so they hold it once it is composed, and the whole edit is
+  sent again: a 300-line file twice, plus four other files. A held call is
+  not run, and no harness keeps its content.
+- **Mocking-reference false positives** (item 8). Checked against main:
+  the `mock-or-patch` pattern (`reference_reads.PATTERNS`) still matches
+  the word `fake` in code, so a line of invented TOML in a test, such as
+  `[providers.fake]` or `name = fake`, selects the mocking reference;
+  `provider = "fake"` no longer does (Ticket 100). `monkeypatch` is a word
+  match, so `monkeypatch.setenv(...)` and a bare `monkeypatch` parameter
+  select it too.
+- **Proof after a docstring-only change** (item 9). The `Proof` item is
+  needed for "a change not already proved", and any code change counts,
+  comment-only ones included. A docs file is not code, so a docs-only
+  change already keeps its proof. The Design item skips comment-only edits
+  under twenty lines; Proof has no such rule.
+- **Closeout while waiting** (item 10). The closeout held three times
+  while the agent waited on a user's walk-through or a full check. Ticket
+  102 named the case of waiting on another session in the Proof text; a
+  check run in the background never meets Proof ("not in the
+  background"), even while it is still running.
+- **Router-first on a continued prompt** (item 11). Checked against the
+  contract: `router-first` is met by a router load, or "until a person's
+  prompt opens a turn" by a brief with a route line. So in a briefed
+  session that never loaded the router, the first typed prompt holds every
+  write and command until the router loads, though the agent then writes
+  only `goated-route: continue`.
+- **The `true` carrier call** (item 12). A line asked for by a call that
+  has no field for it still needs a shell `true` call. Round 4 kept it;
+  both sources raised it again.
+
 ## Goals
 
 - A session that oriented by printing whole files with the shell is not
@@ -63,13 +103,19 @@ Each item was checked against main at `bf18b3b`.
   line count.
 - One message of several holds says once how to clear them.
 - The `scripted-edit` hold never says a file is code when it cannot tell.
+- A large edit is not composed twice because a read gate held it.
+- The mocking reference is asked for a mock or patch of code, not for
+  `fake` in data or a patched environment variable.
+- A comment-only edit, and a check still running, do not cost a new Proof.
+- A briefed session's typed prompt that continues the task needs only its
+  route line.
 
 ## Non-Goals
 
 - Kept, from the feedback (item 5): the red-flags read and its question,
   the early closeout notice, doc-sync at Stop, and the commit change read.
 - Pointing a reference hold at a section (item 6): [deferred](#deferred).
-- The second source's items 7 to 12 ([Not In This Round](#not-in-this-round)).
+- The carrier call (item 12), unless decision Q says otherwise.
 - Which references a read must cover, how long a read or skip lasts, and
   hold first lines (`goated-hold: <gate> | <kind>`).
 - Any harness-specific rule: an adapter only translates.
@@ -128,6 +174,67 @@ Each item was checked against main at `bf18b3b`.
   code would be, not as a code file. Its short form says the same.
   - Touches: `actions._scripted_edit_hold`; the contract's `scripted-edit`
     paragraph only if it states the text.
+- **R5, large writes land and read after** (item 7; decision L). The
+  read gates, `design`, `design-reads` and `reference-reads`, hold a write
+  only when it adds fewer than thirty lines, counted as each gate counts
+  them today. A larger write, or one whose lines cannot be counted, is
+  applied, and passes with a notice naming what it needs: the skill load
+  and each reference its signals select. A new closeout item, `Reads`,
+  is then needed: it is met when the load counts, each named reference is
+  read whole or a lasting skip covers it, and a change read of the file
+  follows. It holds a commit and the turn's end, as the other items do.
+  Its skip line names the skill whose references it asks for, and a skip
+  of it lasts as R4 of round 4 states for the gate it stands for. Writes
+  under thirty lines are held as today.
+  - Touches: the three holds' callers in `actions.py` (`_design_hold`,
+    `_reference_reads_hold`, where a file write is judged) and
+    `_closeout_items`; session state for what a landed write still needs;
+    the contract's `design`, `design-reads` and `reference-reads` rows and
+    the Closeout Items table; the event model only if a closeout label
+    list is enumerated there.
+- **R6, mocks of code** (item 8; decision M). In the `mock-or-patch`
+  pattern:
+  - `monkeypatch` selects only as `monkeypatch.setattr(` or
+    `monkeypatch.delattr(`; `setenv`, `delenv`, `setitem`, `delitem`,
+    `chdir`, `syspath_prepend` and the bare name select nothing;
+  - a line the edit shows inside a multi-line string (a Python
+    triple-quoted string that is not a docstring, a JavaScript template
+    literal) is inside a string, so `fake` in invented TOML there selects
+    nothing.
+
+  Where the edit does not show where a multi-line string opens, the line
+  is read as today. The registry's pattern description stays true.
+  - Touches: `reference_reads.PATTERNS` and `_without_strings` (or the
+    reading of added lines it is given); the registry's
+    `reference_patterns` entry in `stack/goated-stack.yaml`; the
+    contract's `reference-reads` row and Registry Reference Signals.
+- **R7, Proof kept while nothing material changed** (items 9 and 10;
+  decisions N and O).
+  - **N:** a
+    [comment-only edit](../../stack/enforcement-contract.md#comment-only-edits) (as `comment_only` reads it, of any
+    size) after the last check is already proved: it does not make Proof
+    needed. A file whose comment syntax the core does not know is never
+    comment-only, as today.
+  - **O:** at the turn's end, not at a commit, a check started in the
+    background after the last code change whose result the turn has not
+    seen meets Proof, with a notice naming the check. When its result
+    arrives in a later turn, that turn's closeout judges it as a check
+    (Proof, and Unfinished if it failed). The Proof text also names
+    waiting on the user: the skip line naming
+    `verification-before-completion`, with what is awaited as the reason,
+    clears it, as for waiting on another session.
+  - Touches: the Proof and Unfinished items in `_closeout_items` and the
+    code that finds the last check; the contract's Closeout Items (Proof
+    row and the paragraph after the table).
+- **R8, a continued prompt in a briefed session** (item 11; decision P).
+  In a session whose brief's route line set its task, a turn opened by a
+  person's prompt whose route line is `goated-route: continue` meets
+  `router-first` without a router load. A route line that starts a new
+  task, or a turn with no route line yet, still needs the router; plain
+  reads pass as today.
+  - Touches: `gates.check_routing` (the `router-first` check and its
+    `brief-route` clear); the contract's `router-first` row and "Prompts,
+    Turns, And Tasks".
 
 Every change to a rule updates `stack/enforcement-contract.md` and a
 conformance scenario under `stack/fixtures/enforcement/` in the same
@@ -157,6 +264,26 @@ change, as `AGENTS.md` requires.
 - [ ] **AC5.** The contract states every changed rule, and
       `tests/test_enforcement_contract.py` and the scenario runner pass.
 - [ ] **AC6.** The repo checks in `AGENTS.md` pass.
+- [ ] **AC7.** R5: with `software-design-principles` loaded, a 40-line
+      edit whose signals select an unread reference is applied with a
+      notice, and the turn's end and a commit then meet a `Reads` item
+      until the reference is read whole and a change read follows; a
+      29-line edit is held as today. A scenario covers both and the item's
+      skip line.
+- [ ] **AC8.** R6: in a test file with `tdd` loaded, `monkeypatch.setenv(`
+      and a bare `monkeypatch` parameter select no mocking reference;
+      `monkeypatch.setattr(` does. A `[providers.fake]` line inside a
+      triple-quoted string the edit shows selects nothing; the same line
+      as code still does.
+- [ ] **AC9.** R7 N: after a passing check, a docstring-only edit of any
+      size meets no Proof item; an edit changing one code line does.
+- [ ] **AC10.** R7 O: a background check started after the last change,
+      with no result in the turn, meets Proof at the turn's end with a
+      notice, and does not at a commit; the Proof text names waiting on
+      the user.
+- [ ] **AC11.** R8: in a briefed session that never loaded the router, a
+      person's prompt followed by `goated-route: continue` meets no
+      `router-first` hold; one followed by a new route line does.
 
 ## Proof Surface
 
@@ -169,7 +296,8 @@ hook, and its translation tests show R3's section.
 - Work lands in `adapters/core/`, so each rule changes once.
 - Tickets 108 and 109 are changing `shell.py`'s pull request reading now.
   Only R1 touches `shell.py`, in its file printers, a different part;
-  resolve the shared file at merge time.
+  resolve the shared file at merge time. No requirement changes the pull
+  request reading.
 - Skill texts change only where a rule they state changes.
 
 ## Decisions
@@ -243,6 +371,98 @@ K1 and K2 are separate choices.
   3. **No change.** Trade-off: the reported hold stays; choosing cases is
      test design, so the read is arguably right.
 
+### L. Holds after the content is written (R5)
+
+The read gates judge a write by its text, so they can only hold it once
+it is composed. The options differ in when the agent learns what it needs.
+
+1. **Recommended: large writes land, and the reads move to the
+   closeout**, as R5 states. Re-sent content costs in proportion to its
+   size, so a short edit keeps the hold (cheap to send again) and a long
+   one keeps its content. Trade-off: for a large write the reads review
+   the design instead of shaping it; the change read after them is where
+   the agent revises. A new closeout label (`Reads`) and session state for
+   what landed writes still need.
+2. **Announce the references before the write.** After a read of a file,
+   a notice names the references an edit of it would need by its path
+   alone (a configuration file, a test file, the third code file, a new
+   file). Trade-off: the signals read from the added text (a new public
+   definition, error handling, concurrency, a comment) cannot be known
+   before it is written, so the costly holds remain; and a notice on every
+   read adds tokens of its own.
+3. **Every read-gate write lands; all reads move to the closeout.**
+   Trade-off: simplest, but the design reads never come before code, which
+   is what the skill asks for; the closeout grows for every edit.
+4. **No change.** Trade-off: the top cost stays.
+
+Options 1 and 2 can combine; 1 alone removes the reported cost.
+
+### M. The mocking pattern (R6)
+
+1. **Recommended: `monkeypatch` only as a patch of code, and multi-line
+   strings are strings**, as R6 states. Trade-off: `monkeypatch.setitem`
+   on a module's dict patches code and goes unasked; reading where a
+   multi-line string opens needs the edit's context.
+2. **Drop `fake` and `monkeypatch` from the pattern.** Trade-off: a
+   hand-written fake is a seam choice the reference covers; it would go
+   unasked.
+3. **No change.** Trade-off: a read once per context window costs little,
+   which is why the pattern matches word starts.
+
+### N. Proof after a comment-only edit (R7)
+
+1. **Recommended: a comment-only edit of any size keeps the proof**, as
+   R7 states. Comments do not run. Trade-off: a docstring a tool reads
+   (doctests, a docstring-driven CLI or schema) can break a check; the
+   agent must judge that case itself.
+2. **Only under twenty lines**, as the Design item. Trade-off: the
+   reported case (a docstring fix) may still pass the cap; the size does
+   not track the doctest risk.
+3. **No change.** Trade-off: the rerun stays.
+
+### O. Closeout while waiting (R7)
+
+1. **Recommended: a background check still running meets Proof at the
+   turn's end; waiting on the user is named in the Proof text**, as R7
+   states. Trade-off: the closeout trusts that the background job is a
+   check that will report; its result is judged a turn later.
+2. **Text only, for both**, as decision D2.1 did for another session.
+   Trade-off: a skip line lasts one turn, so a wait over several turns
+   writes it each time.
+3. **A waiting status line defers the closeout** (round 4's D2 option 2).
+   Trade-off: a new line grammar, and a way to end a turn without proof
+   that gives no reason.
+
+### P. Router-first on a continued prompt (R8)
+
+1. **Recommended: a `continue` route line meets `router-first` in a
+   briefed session's task**, as R8 states. The router would only say
+   `continue`. Trade-off: the agent judges the prompt continues the task
+   without the router's classification.
+2. **The brief's exemption lasts until the next compaction**, whatever
+   the prompts. Trade-off: a typed prompt that starts new work runs
+   without the router.
+3. **No change.** Trade-off: one router load per briefed session that a
+   person types into.
+
+### Q. The `true` carrier call (item 12; no ticket)
+
+Claude Code records a message only after the hook's check, and may store
+a message that makes a tool call as a summary without the line, so a line
+in reply text cannot be trusted and a call's field must carry it.
+
+1. **Recommended: keep it; no ticket.** R3's one clearing section
+   shortens the advice around it, and R5 removes the holds most often
+   cleared this way. Trade-off: one extra call per held call without a
+   field for its line.
+2. **Read the held call's own message once recorded.** A retry after
+   writing the line in reply text passes when the stored text keeps it,
+   and the carrier is advised only when it does not. Trade-off: an
+   adapter rule over a harness detail the contract calls unreliable; when
+   it fails the agent pays a second retry.
+3. **The typed override only.** Trade-off: the person must type it; an
+   agent cannot clear its own reasoned skip.
+
 ## Deferred
 
 - **Item 6, pointing a reference hold at a section** (such as
@@ -251,30 +471,14 @@ K1 and K2 are separate choices.
   covering the section, found through the index's section ids), a lasting
   record per section, and new hold text. It needs its own spec.
 
-## Not In This Round
-
-The curated note's second source (a product ticket in another project)
-added items 7 to 12, and its combined ranking puts item 7, holds firing
-after the content is written, first. This round's brief scoped items 1 to
-4, so they are recorded here, not ticketed:
-
-- item 7, announce the references an edit will need before it is written,
-  or turn design reads into a closeout item (a design choice);
-- item 8, mocking-reference false positives (`fake` in data,
-  `monkeypatch.setenv`), to check against Ticket 100's narrowing;
-- item 9, comment-only and docs-only changes after the last proof keeping
-  that proof;
-- item 10, closeout while waiting on the user or a background job;
-- item 11, `router-first` on a continuing prompt;
-- item 12, the `true` carrier call, kept in round 4, asked again.
-
-Decision L, open: whether these go into a round 6 spec (recommended, with
-item 7 first) or join this round.
+Item 13 (orientation by partial reads) repeats item 1 and is covered by
+decision H.
 
 ## Open Questions
 
-- H, I, J, K1 and K2 above.
-- L: where items 7 to 12 go.
+- H to Q above. The combined ranking orders the work: L (item 7), H
+  (item 1), N and O (items 9 and 10), M (item 8), P (item 11), I and J
+  (items 3 and 4), K (item 2), Q (item 12).
 
 ## Sources
 
@@ -286,6 +490,10 @@ item 7 first) or join this round.
 - `adapters/core/goated_core/` at `bf18b3b`: `gates.py` (`_files_read`,
   `shown_holds`, `ORIENTATION_READS`), `actions.py` (`_small_edit`,
   `_scripted_edit_hold`), `design_reads.py` (`_signals`, `comment_only`),
-  `wording.py` (the advice slots), `shell.py` (`FILE_PRINTERS`).
+  `wording.py` (the advice slots), `shell.py` (`FILE_PRINTERS`),
+  `reference_reads.py` (`PATTERNS`, checked by running
+  `Pattern.token` on the reported lines).
+- The contract's Closeout Items and the `router-first` row, for items 9
+  to 11.
 - `stack/goated-stack.yaml`: `tdd`'s `test-design.md` signal.
 - `tickets/hook-friction-round-3-waves.md`: the round 3 "kept" rows.

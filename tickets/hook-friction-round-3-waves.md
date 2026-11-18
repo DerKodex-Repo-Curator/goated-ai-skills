@@ -3,7 +3,7 @@
 Tickets 086 to 097 grouped by which can run at the same time, together
 with the tickets of round 2 that had not started when round 3 was planned
 (078 to 085), the tickets of round 4 (099 to 107) and those of round 5
-(110 to 113). The order files remain the source of truth for blockers:
+(110 to 117). The order files remain the source of truth for blockers:
 [low-signal holds](adapter-low-signal-holds-order.md) and
 [hold delivery and coverage](adapter-hold-delivery-and-coverage-order.md)
 for round 3,
@@ -60,7 +60,11 @@ waves 16 and 17. Their tickets were archived under `tickets/archive/` on
 | 16 (decision needed) | [110](110-core-whole-shell-prints-orient.md) | 5 | core | HITL (decision H) | None |
 | 16 (decision needed) | [111](111-core-one-clearing-section-per-message.md) | 5 | core and adapter | HITL (decision I) | None |
 | 16 (decision needed) | [112](112-core-scripted-edit-names-unknown-kinds.md) | 5 | core | HITL (decision J) | None |
-| 16 (decision needed) | [113](113-core-design-reads-sized-by-substance.md) | 5 | core | HITL (decisions K1, K2) | None |
+| 16 (decision needed) | [114](114-core-large-writes-land-and-read-after.md) | 5 | core | HITL (decision L) | None |
+| 16 (decision needed) | [115](115-core-mocking-pattern-for-code-patches.md) | 5 | core and registry | HITL (decision M) | None |
+| 16 (decision needed) | [117](117-core-continue-meets-router-first-in-a-briefed-task.md) | 5 | core | HITL (decision P) | None |
+| 17 (decision needed) | [113](113-core-design-reads-sized-by-substance.md) | 5 | core | HITL (decisions K1, K2) | 114 (same rows) |
+| 17 (decision needed) | [116](116-core-proof-kept-while-nothing-material-changed.md) | 5 | core | HITL (decisions N, O) | 114 (same closeout items) |
 
 ## Decisions Recorded Here
 
@@ -149,15 +153,20 @@ Round 5 comes from Ticket 108's agent, curated by the lead
 ([round 5 spec](../docs/specs/2026-11-18-hook-friction-round-5.md),
 [order](hook-friction-round-5-order.md)).
 
-- **Tickets 110 to 113 wait for the maintainer's decisions** H, I, J and
-  K, and nothing else; each is written to the recommended option. They can
-  run in one wave.
+Its second source, a product ticket in another project, added items 7
+to 13 the same day; the lead brought 7 to 12 into the spec.
+
+- **Tickets 110 to 117 wait for the maintainer's decisions** H to P;
+  each is written to the recommended option.
+- **113 and 116 wait for 114**, which changes the read-gate rows and the
+  closeout items they also change; 114 ranks first. That puts them in
+  wave 17.
 - **Only 110 touches `shell.py`**, in its file printers, not the pull
   request reading that 108 and 109 change; resolve the shared file at
   merge time.
-- **Item 6 (a hold pointing at a section) is deferred**, and the second
-  source's items 7 to 12 are recorded in the spec, not ticketed (decision
-  L).
+- **Item 6 (a hold pointing at a section) is deferred**, and item 12 (the
+  `true` carrier call) is decision Q with no ticket; item 13 repeats
+  item 1.
 
 ## Where Each Feedback Item Went
 
@@ -194,7 +203,12 @@ Round 5 comes from Ticket 108's agent, curated by the lead
 | Round 5: clearing advice repeated per hold in one message | 111 (decision I) |
 | Round 5: `scripted-edit` calls a markdown file code | 112 (decision J) |
 | Round 5: a reference hold pointing at a section | Deferred (needs its own spec) |
-| Round 5, second source: items 7 to 12 | Recorded in the spec, not ticketed (decision L) |
+| Round 5: holds fire after a large edit is composed, so it is re-sent | 114 (decision L) |
+| Round 5: mocking reference for `fake` in TOML and `monkeypatch.setenv` | 115 (decision M) |
+| Round 5: Proof rerun after a docstring-only change | 116 (decision N) |
+| Round 5: closeout while waiting on the user or a background check | 116 (decision O) |
+| Round 5: `router-first` after a typed prompt in a briefed session | 117 (decision P) |
+| Round 5: the `true` carrier call, asked again | No ticket unless decision Q changes it |
 
 ## Notes
 

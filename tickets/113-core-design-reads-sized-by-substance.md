@@ -83,11 +83,15 @@ is not read for signals, so this ticket does not touch `shell.py` at all.
 ## Blocked By
 
 - Decisions K1 and K2 in the parent spec.
+- `tickets/114-core-large-writes-land-and-read-after.md` (ordering: both
+  change the `design-reads` and `reference-reads` contract rows; 114 is
+  ranked first).
 
 ## Overlaps
 
-- None with 110 to 112 in code. `design_reads.py` was last changed by
-  Tickets 099 to 101 and 106, all merged.
+- `reference_reads.py` with Ticket 115 (`PATTERNS`, another part).
+- `design_reads.py` was last changed by Tickets 099 to 101 and 106, all
+  merged.
 
 ## Scope Exclusions
 
