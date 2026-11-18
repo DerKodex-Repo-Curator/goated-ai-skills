@@ -751,9 +751,9 @@ not briefed.
 
 ### Reviewer Agents
 
-A reviewer agent is a finished spawn that is not `separate` (whether it
-`starts_now` is not checked), that no gate held, whose brief follows `subagent-driven-development`'s
-reviewer prompt (`references/reviewer-prompt.md`, read, with its
+A reviewer agent is a finished spawn that starts work now (`starts_now`)
+and is not `separate`, that no gate held, whose brief follows
+`subagent-driven-development`'s reviewer prompt (`references/reviewer-prompt.md`, read, with its
 `Review Mode`, `Review Inputs`, and `Required Report Format` headings). The
 core records which templates each spawn's brief followed, by the call's id,
 in its state. It has reported once its result arrived; started in the
@@ -761,7 +761,8 @@ background (the result's `agent.background`), once an `agent_finished` entry
 names it. A reviewer that finished after the turn's last code change meets
 the Review item, and one that reported in the turn opens the `review-intake`
 gate. A separate session started with a reviewer brief is not one: its
-result says only that the review started. A brief that follows `handoff`'s
+result says only that the review started. Nor is a spawn that only
+proposes the work, whatever its brief: it ran nothing. A brief that follows `handoff`'s
 spawn brief or the implementer prompt is not a review, and the Review item's
 text says to use the reviewer prompt. Whether the review was any good is not
 judged. The `review-intake` gate holds a test file like other code; a docs

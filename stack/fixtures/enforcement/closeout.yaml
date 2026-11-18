@@ -244,6 +244,39 @@ scenarios:
           decision: hold
           holds: [{gate: closeout, kind: justified-skip, items: [Docs, Review, Verification, Security]}]
 
+  - name: a reviewer that only proposes the work meets no Review item, and a started one does
+    covers:
+      - {gate: closeout, case: holds}
+      - {gate: closeout, case: clears, way: proof}
+    setup: {branch_changed_lines: 450}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit and have the branch reviewed.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *limit
+      - call: *passing
+        result: {ok: true, output: "4 passed in 0.10s"}
+      - call: {kind: skill_load, skill: doc-sync}
+      - call: *diff
+        result: {ok: true, output: "-limit = 1\n+limit = 2"}
+      - call: {kind: skill_load, skill: verification-before-completion}
+      - call: {kind: skill_load, skill: subagent-driven-development}
+      - call: {kind: file_read, path: "{outside}/skills/subagent-driven-development/references/reviewer-prompt.md", whole: true}
+      - call: &branch_review
+          kind: spawn
+          starts_now: false
+          brief: "## Review Mode\n\nSpec review.\n\n## Review Inputs\n\n- The branch.\n\n## Required Report Format\n\n- Findings.\n\ngoated-skills: standards-and-spec-review\n"
+        result: {ok: true, output: "Proposed."}
+      - turn_end: true
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Review]}]
+      - call:
+          <<: *branch_review
+          starts_now: true
+        result: {ok: true, output: "No findings."}
+      - turn_end: true
+
   - name: installing a package asks for the setup record
     covers:
       - {gate: closeout, case: holds}
