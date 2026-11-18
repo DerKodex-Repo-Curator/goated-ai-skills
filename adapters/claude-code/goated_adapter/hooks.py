@@ -3,7 +3,8 @@
 `run_hook` dispatches on `hook_event_name` and owns the adapter's failure rule
 (ADR 0003, "fail open, visibly"): when it cannot read what it needs, it lets
 the action through and returns a `systemMessage` warning the user sees. It
-never blocks because of its own failure.
+never blocks because of its own failure. A hook that runs after the action
+(`PostToolUse`) has no action to let through, so its failure adds nothing.
 """
 
 from __future__ import annotations
@@ -161,8 +162,10 @@ def run_hook(raw_input: str, config: Config) -> str:
     try:
         return handler(payload, config)
     except (_FailOpen, StateUnsafe) as exc:
-        return _fail_open(str(exc))
+        return "" if event in _AFTER_THE_ACTION else _fail_open(str(exc))
     except Exception as exc:  # noqa: BLE001 - any adapter bug must fail open, visibly
+        if event in _AFTER_THE_ACTION:
+            return ""
         return _fail_open(f"it hit an internal error ({type(exc).__name__})")
 
 
@@ -418,6 +421,10 @@ def _post_tool_use(payload: dict, config: Config) -> str:
     session_id, transcript_path = _session_fields(payload)
     store = StateStore(config.state_dir)
     state, _ = store.load(session_id)
+    # The call's PreToolUse saved its turn as the last seen, so a turn that
+    # already has its note is known here without reading the transcript.
+    if state.last_turn and store.turn_claimed(session_id, state.last_turn, CLOSEOUT_NOTE):
+        return ""
     try:
         turns = read_recent_turns(
             transcript_path,
@@ -701,6 +708,11 @@ def _fail_open(why: str) -> str:
         {"systemMessage": f"{NAME}: {why}, so this action was allowed without checks."}
     )
 
+
+# Events that run after the action: their failure has no action to let
+# through, and the call's `PreToolUse` has already warned of the same cause,
+# so it adds nothing (Ticket 096).
+_AFTER_THE_ACTION = frozenset({"PostToolUse"})
 
 _HANDLERS = {
     "PreToolUse": _pre_tool_use,

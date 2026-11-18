@@ -1390,17 +1390,24 @@ Verification. An item already met or skipped is left out.
   git to measure the branch, and the work of spawned subagents.
 - One note per turn, claimed on the turn marker under its own purpose
   (see [State](#state)), so it never meets the unseen-line advice's claim or
-  a hold's. A turn the closeout already held, at a commit, gets none.
+  a hold's. A turn the closeout already held, at a commit or a `Stop`,
+  gets none: that hold named its items. A turn that already has its note
+  is known from the marker alone, without reading the transcript.
 - A docs file, a file outside the project, a call that failed or was held,
   a subagent's edit, and a code change by a shell command bring none; the
   hook's matcher starts it only for the file edit tools, so no other call
   starts a hook process.
 - The note holds no call and no `Stop`. The closeout is unchanged and still
-  decides. When the note's marker cannot be made or read, it is left out.
-  Any other failure follows [Failing Open](#failing-open).
+  decides. When the note's marker cannot be made or read, or the hook
+  fails in any other way, such as a transcript that does not yet show the
+  call's prompt, the note is left out with no warning: the edit has
+  already run, so unlike [Failing Open](#failing-open) there is no action
+  to explain, and the call's `PreToolUse` has already warned of the same
+  cause.
 
-The skill-usage mod reads only `goated-hold:` lines in hook context, so it
-counts no note.
+The skill-usage mod reads two things in hook context: `goated-hold:` lines,
+and the adapter's sentence recording a typed override. The note is neither,
+so the mod counts no note.
 
 ## Failing Open
 
@@ -1459,13 +1466,14 @@ Beside the state files, a `turn-markers/` folder holds empty files for the
 session, and for each subagent of it, named for the current turn and a
 purpose: the [unseen-line advice](#hold-messages), an ask (a gate and
 what it found unmet, or one closeout item) whose full text a hold of that
-turn gave, or the [early closeout note](#early-closeout-note). Claims for different purposes in one turn never
-meet. A claim in a new turn drops its owner's markers of other turns, and a
-`SessionStart` after compaction or `/clear` deletes the session's and its
-subagents'. The state also keeps the shell tool the session last called,
-which names the carrier a hold offers for a line. An `onboarding-notices/` folder holds one file per project,
-named by a digest of the project's path, listing the skills its onboarding
-notice last named.
+turn gave, or the [early closeout note](#early-closeout-note). Claims for
+different purposes in one turn never meet. A claim in a new turn drops its
+owner's markers of other turns, and a `SessionStart` after compaction or
+`/clear` deletes the session's and its subagents'. The state also keeps the
+shell tool the session last called, which names the carrier a hold offers for
+a line. An `onboarding-notices/` folder holds one file per project, named by
+a digest of the project's path, listing the skills its onboarding notice last
+named.
 The action and closeout gates keep no state of their own: they read the
 current turn, the loads, design and skill references, and templates read
 since the last compaction, and, for the closeout's Review item, the
@@ -1557,7 +1565,9 @@ of the call's prompt, which is normally already there.
   no note, meets its items at `Stop`, and may still report twice; the
   closeout judges its changes as before. The note also leaves out the Review
   item, a large branch's Verification, and items a spawned subagent's work
-  brings, so the closeout may still ask for one of those.
+  brings, so the closeout may still ask for one of those. The note comes
+  once per turn: a turn a subagent's report reopens (see
+  [Subagents](#subagents)) gets no second note.
 - The hook sees nothing of the assistant message that makes the call it
   judges. In an interactive session Claude Code records that message only
   after the hook returns, so a route line or skip line written in the same

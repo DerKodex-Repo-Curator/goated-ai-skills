@@ -359,12 +359,7 @@ class StateStore:
 
         folder = self.directory / TURN_MARKERS_DIR
         self._ensure_private_directory(folder)
-        owner = _safe_name(session_id)
-        if agent_id is not None:
-            owner += AGENT_SEPARATOR + _safe_name(agent_id)
-        prefix = f"{owner}."
-        turn = f"{prefix}{_safe_name(turn_key)}."
-        marker = folder / f"{turn}{_safe_name(purpose)}"
+        prefix, turn, marker = self._marker(session_id, turn_key, purpose, agent_id)
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
         try:
             os.close(os.open(marker, flags, 0o600))
@@ -372,6 +367,24 @@ class StateStore:
             return False
         self._drop_markers(folder, prefix, keep=turn)
         return True
+
+    def turn_claimed(self, session_id: str, turn_key: str, purpose: str) -> bool:
+        """Whether the session's marker for `purpose` in `turn_key` was already
+        claimed (`claim_turn`). It claims nothing, and a marker it cannot see
+        counts as not claimed."""
+
+        return self._marker(session_id, turn_key, purpose)[2].is_file()
+
+    def _marker(self, session_id: str, turn_key: str, purpose: str,
+                agent_id: str | None = None) -> tuple[str, str, Path]:
+        """The owner's marker name prefix, the turn's, and the marker's path."""
+
+        owner = _safe_name(session_id)
+        if agent_id is not None:
+            owner += AGENT_SEPARATOR + _safe_name(agent_id)
+        prefix = f"{owner}."
+        turn = f"{prefix}{_safe_name(turn_key)}."
+        return prefix, turn, self.directory / TURN_MARKERS_DIR / f"{turn}{_safe_name(purpose)}"
 
     def clear_turn_markers(self, session_id: str) -> None:
         """Drop the turn markers of the session and its subagents, best effort,

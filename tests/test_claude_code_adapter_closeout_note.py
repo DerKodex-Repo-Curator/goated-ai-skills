@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -113,7 +114,7 @@ class NoteCase(unittest.TestCase):
 
 
 class FirstCodeChangeTests(NoteCase):
-    """AC1, AC2: the first code change names the items the turn will meet."""
+    """Ticket 096, AC1 and AC2: the first code change names the items the turn will meet."""
 
     def test_the_first_code_edit_names_proof_and_docs(self) -> None:
         s = self.session()
@@ -121,8 +122,8 @@ class FirstCodeChangeTests(NoteCase):
         self.assertEqual(decision(before), "pass")
         self.assertEqual(labels(after), ["Proof", "Docs"])
         text = note(after)
-        self.assertIn("will ask for Proof and Docs. Each can be met now, before your final report",
-                      text)
+        self.assertIn("will ask for Proof and Docs. Meet each after your last code change", text)
+        self.assertIn("before your final report", text)
         self.assertNotIn("goated-hold:", text)
         self.assertNotIn("permissionDecision", after["hookSpecificOutput"])
         self.assertNotIn("decision", after)
@@ -165,7 +166,7 @@ class FirstCodeChangeTests(NoteCase):
 
 
 class OncePerTurnTests(NoteCase):
-    """AC3: one note per turn."""
+    """Ticket 096, AC3: one note per turn."""
 
     def test_a_second_code_change_brings_none_and_the_next_turn_brings_one(self) -> None:
         s = self.session()
@@ -202,7 +203,7 @@ class OncePerTurnTests(NoteCase):
 
 
 class NoNoteTests(NoteCase):
-    """AC4, AC10: what brings no note, each beside a change that brings one."""
+    """Ticket 096, AC4 and AC10: what brings no note, each beside a change that brings one."""
 
     def test_a_docs_edit_brings_none_and_a_later_code_edit_still_brings_one(self) -> None:
         s = self.session()
@@ -259,7 +260,7 @@ class NoNoteTests(NoteCase):
 
 
 class PayloadTests(NoteCase):
-    """AC5: the note is judged from the hook's payload."""
+    """Ticket 096, AC5: the note is judged from the hook's payload."""
 
     def test_the_note_is_right_before_the_transcript_holds_the_call(self) -> None:
         s = self.session()
@@ -276,7 +277,7 @@ class PayloadTests(NoteCase):
 
 
 class MarkerTests(NoteCase):
-    """AC6, AC7: the note's claim meets no other claim."""
+    """Ticket 096, AC6 and AC7: the note's claim meets no other claim."""
 
     def test_advice_short_repeat_and_note_share_one_turn(self) -> None:
         s = self.session()
@@ -309,7 +310,7 @@ class MarkerTests(NoteCase):
 
 
 class CloseoutTests(NoteCase):
-    """AC8, AC9, AC11: the note changes nothing the closeout decides."""
+    """Ticket 096, AC8, AC9 and AC11: the note changes nothing the closeout decides."""
 
     def test_items_met_before_stop_end_the_turn_with_no_hold(self) -> None:
         s = self.session()
@@ -327,14 +328,44 @@ class CloseoutTests(NoteCase):
         s.run("pytest -q")
         self.assertIn("- Docs:", stop_reason(s))
 
-    def test_a_failure_in_the_new_hook_fails_open_visibly(self) -> None:
+    def test_a_failure_in_the_new_hook_adds_nothing(self) -> None:
+        # The call already ran, so there is no action to explain as let through.
         s = self.session()
-        output = parse(s.hook("PostToolUse", tool_name="Edit", tool_input=small_edit(),
-                              tool_use_id="toolu_x", tool_response={"success": True},
-                              transcript_path=str(self.root / "missing.jsonl")))
-        self.assertNotIn("decision", output)
-        self.assertNotIn("hookSpecificOutput", output)
-        self.assertIn("GOATED Claude Code adapter:", output.get("systemMessage", ""))
+        missing = str(self.root / "missing.jsonl")
+        unreadable = s.hook("PostToolUse", tool_name="Edit", tool_input=small_edit(),
+                            tool_use_id="toolu_x", tool_response={"success": True},
+                            transcript_path=missing)
+        self.assertEqual(unreadable, "")
+        self.assertEqual(s.hook("PostToolUse", tool_name="Edit", tool_input=small_edit(),
+                                tool_response={"success": True}, session_id=""), "")
+        # Near miss: the PreToolUse of the same failure still warns.
+        warned = parse(s.hook("PreToolUse", tool_name="Edit", tool_input=small_edit(),
+                              tool_use_id="toolu_x", transcript_path=missing))
+        self.assertIn("allowed without checks", warned.get("systemMessage", ""))
+
+    def test_a_lagging_transcript_after_the_note_adds_nothing_and_does_not_wait(self) -> None:
+        s = self.session()
+        _, first = change(s, "Edit", small_edit())
+        self.assertTrue(note(first))
+        s.config.lag_wait_seconds = 2.0
+        started = time.monotonic()
+        later = s.hook("PostToolUse", tool_name="Edit", tool_input=small_edit("src/other.py"),
+                       tool_use_id="toolu_9", tool_response={"success": True},
+                       prompt_id="prompt-not-yet-recorded")
+        self.assertEqual(later, "")
+        # The turn's note marker is checked before the transcript is read.
+        self.assertLess(time.monotonic() - started, 1.0)
+
+    def test_a_lagging_transcript_before_the_note_waits_then_adds_nothing(self) -> None:
+        # Near miss: no note yet, so the hook must read the transcript, and waits for it.
+        s = self.session()
+        s.config.lag_wait_seconds = 0.3
+        started = time.monotonic()
+        output = s.hook("PostToolUse", tool_name="Edit", tool_input=small_edit(),
+                        tool_use_id="toolu_9", tool_response={"success": True},
+                        prompt_id="prompt-not-yet-recorded")
+        self.assertEqual(output, "")
+        self.assertGreaterEqual(time.monotonic() - started, 0.3)
 
     def test_without_the_hook_the_closeout_is_as_before(self) -> None:
         with_note, without = self.session("with"), self.session("without")

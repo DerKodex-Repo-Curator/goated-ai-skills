@@ -1625,7 +1625,8 @@ def closeout_note(turn: Turn, call: Call, overrides: dict, namespaces: tuple[str
     *rest, last = [i.label for i in items]
     return ("this turn changed code, so its closeout will ask for "
             + (f"{', '.join(rest)} and {last}" if rest else last)
-            + ". Each can be met now, before your final report, so you report once:\n"
+            + ". Meet each after your last code change, since a later change asks again, "
+            "and before your final report, so you report once:\n"
             + "\n".join(i.short for i in items))
 
 
