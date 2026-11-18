@@ -136,6 +136,41 @@ class MockingAndSeams(ReferenceReadsTestCase):
             with self.subTest(added=added):
                 self.assertPasses(s.call("Edit", edit(TEST_FILE, added)))
 
+    def test_patch_is_held_only_as_a_call_or_decorator(self) -> None:
+        """Round 4, R2: `patch` selects as `patch(`, `@patch`, `mock.patch` or
+        `patch.<name>(`; the bare word is a diff or a fix as often as a mock."""
+
+        for added in ('@patch("x")', '@patch.object(export, "client")',
+                      'with mock.patch("export.client"):', 'patch.object(export, "client")',
+                      'client = patch("export.client")', "m = MagicMock()"):
+            with self.subTest(added=added):
+                s = self.first_turn("tdd")
+                self.assertHeldFor(s.call("Edit", edit(TEST_FILE, added)),
+                                   "tdd/references/mocking-and-seams.md")
+        s = self.first_turn("tdd")
+        for added in ("patch = load_diff()", "assert apply(patch) == 3",
+                      "assert patch.applies", "assert apply_patch(diff)"):
+            with self.subTest(added=added):
+                self.assertPasses(s.call("Edit", edit(TEST_FILE, added)))
+
+    def test_a_mock_word_inside_a_quoted_string_is_not_held_for_it(self) -> None:
+        s = self.first_turn("tdd")
+        for added in ('assert kind == "patch"', "assert name == 'MagicMock'",
+                      'assert run(["mock", "stub"]) == "fake: \\"spy\\""',
+                      "label = `a mock`"):
+            with self.subTest(added=added):
+                self.assertPasses(s.call("Edit", edit(TEST_FILE, added)))
+
+    def test_a_line_whose_strings_cannot_be_read_still_selects(self) -> None:
+        """Where a line's strings cannot be read for certain, its words select, as before."""
+
+        for added in ('doc = """uses MagicMock"""', "name = 'MagicMock",
+                      'label = f"{MagicMock()}"', "label = `${mock()}`"):
+            with self.subTest(added=added):
+                s = self.first_turn("tdd")
+                self.assertHeldFor(s.call("Edit", edit(TEST_FILE, added)),
+                                   "tdd/references/mocking-and-seams.md")
+
     def test_a_mock_outside_a_test_file_is_not_held_for_it(self) -> None:
         s = self.first_turn("tdd")
         self.assertPasses(s.call("Edit", edit(CODE_FILE, "client = MagicMock()")))

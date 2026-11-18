@@ -215,7 +215,6 @@ class RedFlagsRereadTests(DesignTestCase):
     def test_comment_only_changes_do_not_count_toward_the_five_lines(self) -> None:
         s = self.scanned()
         self.fix(s, 2)
-        s.read(REFERENCES + "readability.md")  # An added comment selects it.
         comments = "\n".join(f"# note {n}" for n in range(8))
         self.assertEqual(decision(s.call("Edit", edit("src/export.py", comments, old="# old"))), "pass")
         s.run("pytest -q")
@@ -258,6 +257,58 @@ class RedFlagsRereadTests(DesignTestCase):
         items = design_items(stop(s))
         self.assertEqual(len(items), 1, items)
         self.assertIn("red-flags.md", items[0])
+
+
+def comment_edit(count: int) -> dict:
+    """A comment-only edit of a Python file adding `count` lines."""
+
+    return edit("src/export.py", "\n".join(f"# note {n}" for n in range(count - 1)) + "\npass")
+
+
+class ShortCommentEditTests(DesignTestCase):
+    """Round 4, R3: a comment-only edit adding fewer than 20 lines is no
+    substantial change, selects no reference by its comment, and is no code
+    change the Design item counts; one of 20 lines is judged as before."""
+
+    def finish(self, s: Session) -> list[str]:
+        s.run("pytest -q")
+        s.say(DOC_SKIP)
+        return design_items(stop(s))
+
+    def test_a_19_line_comment_edit_meets_no_design_hold(self) -> None:
+        s = self.routed()
+        self.assertEqual(decision(s.call("Edit", comment_edit(19))), "pass")
+
+        # The near miss: 20 lines are a substantial change, held for the load.
+        s = self.routed()
+        self.assertEqual(hold_line(s.call("Edit", comment_edit(20))),
+                         "goated-hold: design | justified-skip")
+
+    def test_a_19_line_comment_edit_selects_no_reference_and_no_design_item(self) -> None:
+        s = self.routed()
+        s.load(DESIGN)
+        self.assertEqual(decision(s.call("Edit", comment_edit(19))), "pass")
+        self.assertEqual(self.finish(s), [])
+
+        # The near miss: 20 lines ask for `readability.md`, and the Design item.
+        s = self.routed()
+        s.load(DESIGN)
+        held = s.call("Edit", comment_edit(20))
+        self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
+        self.assertIn("references/readability.md", reason(held))
+        s.read(REFERENCES + "readability.md")
+        self.assertEqual(decision(s.call("Edit", comment_edit(20))), "pass")
+        self.assertEqual(len(self.finish(s)), 1)
+
+    def test_a_19_line_comment_edit_in_a_later_turn_meets_no_design_item(self) -> None:
+        s = self.routed()
+        s.load(DESIGN)
+        s.say("goated-skip: doc-sync: nothing changed yet")
+        stop(s)
+        s.prompt("Explain the totals in comments.")
+        s.say("goated-route: continue")
+        self.assertEqual(decision(s.call("Edit", comment_edit(19))), "pass")
+        self.assertEqual(self.finish(s), [])
 
 
 if __name__ == "__main__":

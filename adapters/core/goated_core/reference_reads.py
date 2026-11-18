@@ -49,22 +49,36 @@ MAX_REGISTRY_BYTES = 1024 * 1024
 
 class Pattern(NamedTuple):
     """A named pattern of the registry's `reference_patterns`, as the code an
-    edit adds can match it: `label` says what a match is, in a hold's words."""
+    edit adds can match it: `label` says what a match is, in a hold's words.
+    With `outside_strings`, a match inside a quoted string on the line does
+    not count, unless the line's strings cannot be read for certain
+    (`_without_strings`)."""
 
     label: str
     regex: re.Pattern
+    outside_strings: bool = False
+
+    def token(self, code: str) -> str | None:
+        """The whole word of the first match in one line of added `code`, or None."""
+
+        text = _without_strings(code) if self.outside_strings else None
+        text = code if text is None else text
+        match = self.regex.search(text)
+        return _word_at(text, match) if match else None
 
 
-# The mock pattern matches at a word start, so `dispatch` holds no patch; the
-# wait pattern also inside a word (`asyncio.sleep`, `MAX_RETRIES`), though
-# `retrieve` holds no retry. A word that only starts like one (`patches`,
-# `spyglass`), or one in a string, still selects, since a read once per
+# The mock pattern matches at a word start, so `dispatch` holds no patch, and
+# `patch` only as a call or decorator (`patch(`, `@patch`, `mock.patch`,
+# `patch.object(`), since the bare word names a diff as often as a mock. The
+# wait pattern also matches inside a word (`asyncio.sleep`, `MAX_RETRIES`),
+# though `retrieve` holds no retry, and inside a string. A word that only
+# starts like one (`mocks`, `spyglass`) still selects, since a read once per
 # context window costs little.
 PATTERNS = {
     "mock-or-patch": Pattern("a mock or patch", re.compile(
-        r"\b(?:[Mm]ock|[Pp]atch|[Ss]tub|[Ss]py|[Ff]ake|monkeypatch|sinon)"
-        r"|[a-z0-9_]Mock\b|\b(?:jest|vi)\.fn\b"
-    )),
+        r"\b(?:[Mm]ock|[Ss]tub|[Ss]py|[Ff]ake|monkeypatch|sinon)"
+        r"|@patch\b|\bpatch(?:\.\w+)?\s*\(|[a-z0-9_]Mock\b|\b(?:jest|vi)\.fn\b"
+    ), outside_strings=True),
     "sleep-retry-or-timeout": Pattern("a sleep, retry, poll, or timeout", re.compile(
         r"(?i:\w*(?:sleep|timeout)|\w*retr(?:y|ies|ied|ying))"
         # `poll` and `wait for` end a word, or a part of one before an
@@ -227,8 +241,7 @@ def _edit_fires(signal: dict, edit: Edit) -> str | None:
     if kind == "edit-adds-pattern":
         pattern = PATTERNS.get(signal.get("pattern"))
         token = pattern and next(
-            (_word_at(code, m) for code in edit.added_code if (m := pattern.regex.search(code))),
-            None)
+            (token for code in edit.added_code if (token := pattern.token(code))), None)
         if token is None:
             return None
         return f'adds {pattern.label} ("{token}"){in_file}, the registry\'s {signal["pattern"]} pattern'
@@ -251,6 +264,44 @@ def _word_at(code: str, match: re.Match) -> str:
     while end < len(code) and (code[end].isalnum() or code[end] == "_"):
         end += 1
     return code[start:end]
+
+
+QUOTES = "\"'`"
+# A string prefix that makes the string hold code in braces: Python's `f`,
+# C#'s `$`. Elsewhere `${`, `#{` and Swift's `\(` open code inside a string.
+INTERPOLATING_PREFIX_RE = re.compile(r"(?:\$|(?<![\w])[rRbB]?[fF][rRbB]?)$")
+INTERPOLATION_MARKS = ("${", "#{", "\\(")
+
+
+def _without_strings(code: str) -> str | None:
+    """One line of `code` with what each quoted string holds removed, its
+    quotes kept: `run("mock")` reads `run("")`. None when the line's strings
+    cannot be read for certain: a quote left open, three quotes in a row (a
+    string that may span lines), or a string that may hold code
+    (`INTERPOLATING_PREFIX_RE`, `INTERPOLATION_MARKS`). A backslash escapes
+    the character after it inside a string."""
+
+    if any(quote * 3 in code for quote in QUOTES):
+        return None
+    kept, i = [], 0
+    while i < len(code):
+        quote = code[i]
+        if quote not in QUOTES:
+            kept.append(code[i])
+            i += 1
+            continue
+        end = i + 1
+        while end < len(code) and code[end] != quote:
+            end += 2 if code[end] == "\\" else 1
+        if end >= len(code):
+            return None
+        held = code[i + 1:end]
+        if any(mark in held for mark in INTERPOLATION_MARKS) or (
+                "{" in held and INTERPOLATING_PREFIX_RE.search(code[:i])):
+            return None
+        kept.append(quote * 2)
+        i = end + 1
+    return "".join(kept)
 
 
 def _declared(data) -> list[Reference]:

@@ -340,6 +340,113 @@ scenarios:
           path: tests/test_export.py
           edits: [{removed: "assert 2 == 3", added: "assert 2 == 2"}]
 
+  - name: a patch call or decorator in a test waits for the mocking reference
+    covers:
+      - {gate: reference-reads, case: holds}
+      - {gate: reference-reads, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Isolate the export test from the client.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: standard | requires: tdd"
+      - call: {kind: skill_load, skill: tdd}
+      - call: &patch_decorator
+          kind: file_write
+          path: tests/test_export.py
+          edits: [{removed: "pass", added: "@patch(\"export.client\")"}]
+        expect:
+          decision: hold
+          holds: [{gate: reference-reads, kind: justified-skip}]
+      - call:
+          kind: file_write
+          path: tests/test_export.py
+          edits: [{removed: "pass", added: "patch.object(export, \"client\")"}]
+        expect:
+          decision: hold
+          holds: [{gate: reference-reads, kind: justified-skip}]
+      - call:
+          kind: file_write
+          path: tests/test_export.py
+          edits: [{removed: "pass", added: "doc = \"\"\"uses MagicMock\"\"\""}]
+        expect:
+          decision: hold
+          holds: [{gate: reference-reads, kind: justified-skip}]
+      - call: {kind: file_read, path: "{outside}/skills/tdd/references/mocking-and-seams.md", whole: true}
+      - call: *patch_decorator
+
+  - name: a bare patch, or a mock named inside a string, selects no mocking reference
+    covers:
+      - {gate: reference-reads, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Check the export patch kinds.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: standard | requires: tdd"
+      - call: {kind: skill_load, skill: tdd}
+      - call:
+          kind: file_write
+          path: tests/test_export.py
+          edits: [{removed: "pass", added: "assert kind == \"patch\""}]
+      - call:
+          kind: file_write
+          path: tests/test_export.py
+          edits: [{removed: "pass", added: "assert name == 'MagicMock'"}]
+      - call:
+          kind: file_write
+          path: tests/test_export.py
+          edits: [{removed: "pass", added: "patch = load_diff()"}]
+
+  - name: a comment-only edit adding nineteen lines is no substantial change
+    covers:
+      - {gate: design, case: near-miss}
+      - {gate: design-reads, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Explain the export totals.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: &nineteen_comment_lines
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "pass", added: "# n0\n# n1\n# n2\n# n3\n# n4\n# n5\n# n6\n# n7\n# n8\n# n9\n# n10\n# n11\n# n12\n# n13\n# n14\n# n15\n# n16\n# n17\npass"}]
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *nineteen_comment_lines
+
+  - name: a comment-only edit adding twenty lines is judged as a substantial change
+    covers:
+      - {gate: design, case: holds}
+      - {gate: design, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Explain the export totals.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: &twenty_comment_lines
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "pass", added: "# n0\n# n1\n# n2\n# n3\n# n4\n# n5\n# n6\n# n7\n# n8\n# n9\n# n10\n# n11\n# n12\n# n13\n# n14\n# n15\n# n16\n# n17\n# n18\npass"}]
+        expect:
+          decision: hold
+          holds: [{gate: design, kind: justified-skip}]
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *twenty_comment_lines
+        expect:
+          decision: hold
+          holds: [{gate: design, kind: justified-skip}]
+      - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/readability.md", whole: true}
+      - call: *twenty_comment_lines
+
+  - name: a later comment-only edit of twenty lines waits for the readability reference
+    covers:
+      - {gate: design-reads, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export totals and explain them.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *totals
+      - call: *nineteen_comment_lines
+      - call: *twenty_comment_lines
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+
   - name: a code change after a reviewer reports waits for review intake
     covers:
       - {gate: review-intake, case: holds}
