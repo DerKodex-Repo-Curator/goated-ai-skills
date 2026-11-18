@@ -258,8 +258,8 @@ reference, the diff read before each commit, `code-security-review`, and
   - Touches: the Proof and Unfinished items in `_closeout_items` and
     `actions._checks`; the contract's Closeout Items (Proof row and the
     paragraph after the table) and Shell Reading's "not in the
-    background"; for O2 also the event model, the Claude Code adapter's
-    transcript reading and session state (see decision O).
+    background". Not the event model: the shell call's `background` field
+    already exists.
 - **R8, a continued prompt in a briefed session** (item 11; decision P).
   In a session whose brief's route line set its task, a turn opened by a
   person's prompt whose route line is `goated-route: continue` meets
@@ -417,7 +417,7 @@ K1 and K2 are separate choices.
 
   Review (2026-11-18) judged K2.1 weak, since the second source credited
   `test-design.md`, and asked whether K2.2 or K2.3 should be recommended.
-  The maintainer's K2.1 stands until the maintainer says otherwise.
+  The maintainer confirmed K2.1 the same day.
 
 ### L. Holds after the content is written (R5)
 
@@ -559,8 +559,8 @@ decision H.
 
 ## Open Questions
 
-- None. Review asked whether K2.1 should stand; it stands unless the
-  maintainer changes it.
+- None. Review asked whether K2.1 should stand; the maintainer confirmed
+  it (2026-11-18).
 
 The combined ranking orders the work: L (item 7), H (item 1), N and O
 (items 9 and 10), M (item 8), P (item 11), I and J (items 3 and 4), K

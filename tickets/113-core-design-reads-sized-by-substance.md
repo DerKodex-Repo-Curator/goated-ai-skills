@@ -8,7 +8,7 @@
 
 AFK. Decisions K1 and K2, option 1 each (the maintainer, 2026-11-18).
 Review asked whether K2.1 should stand, since the second source credited
-`test-design.md`; it stands unless the maintainer changes it.
+`test-design.md`; the maintainer confirmed it the same day.
 
 ## What To Build
 
