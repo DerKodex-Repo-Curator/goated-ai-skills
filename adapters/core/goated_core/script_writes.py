@@ -44,10 +44,13 @@ class _Call(NamedTuple):
     """One write call. `pattern` matches its name, just before its arguments.
     `targets` are the positions of the arguments it writes, or `ALL` for
     every positional one; `names` are the keyword names of positions 0, 1, ….
-    `receiver` says the file is also the object the method is called on:
-    "any" for a method only a path has (`p.write_text()`), whose receiver is
-    an unnamed file unless it is a `Path("…")`; "path" for a method other
-    objects share (`.rename`, `.open`), which counts only on a `Path("…")`.
+    `receiver` says what the method must be called on. In Python the file is
+    also that object: "any" for a method only a path has (`p.write_text()`),
+    whose receiver is an unnamed file unless it is a `Path("…")`; "path" for
+    a method other objects share (`.rename`, `.open`), which counts only on a
+    `Path("…")`. In JavaScript, "fs" for a method other objects share
+    (`.rm`, `.open`), which counts only on a file-system receiver or one the
+    reading cannot name (see `_fs_receiver`); the receiver is no file.
     `mode_in_path` says that, given only the arguments up to its mode, the
     call takes its mode as the leading signs of that last one, as Perl's
     two-argument `open(FH, ">PATH")` does."""
@@ -99,12 +102,13 @@ WRITE_CALLS: dict[str, tuple[_Call, ...]] = {
     "js": (
         _call(r"(?<![\w$])(?:writeFile|writeFileSync|appendFile|appendFileSync|createWriteStream"
               r"|unlinkSync|rmSync|rmdirSync|truncateSync)" + _JS_NAME_END),
-        _call(r"\.(?:unlink|rm|rmdir|truncate)" + _JS_NAME_END),
-        _call(r"(?<![\w$])renameSync" + _JS_NAME_END + r"|\.rename" + _JS_NAME_END, (0, 1)),
-        _call(r"(?<![\w$])(?:copyFileSync|cpSync)" + _JS_NAME_END
-              + r"|\.(?:copyFile|cp)" + _JS_NAME_END, (1,)),
-        _call(r"(?<![\w$])openSync" + _JS_NAME_END + r"|\.open" + _JS_NAME_END,
-              mode=_Mode(1, "", _JS_FLAGS)),
+        _call(r"\.(?:unlink|rm|rmdir|truncate)" + _JS_NAME_END, receiver="fs"),
+        _call(r"(?<![\w$])renameSync" + _JS_NAME_END, (0, 1)),
+        _call(r"\.rename" + _JS_NAME_END, (0, 1), receiver="fs"),
+        _call(r"(?<![\w$])(?:copyFileSync|cpSync)" + _JS_NAME_END, (1,)),
+        _call(r"\.(?:copyFile|cp)" + _JS_NAME_END, (1,), receiver="fs"),
+        _call(r"(?<![\w$])openSync" + _JS_NAME_END, mode=_Mode(1, "", _JS_FLAGS)),
+        _call(r"\.open" + _JS_NAME_END, mode=_Mode(1, "", _JS_FLAGS), receiver="fs"),
         _call(r"\bDeno\.(?:writeTextFile|writeFile|remove|create|truncate)(?:Sync)?" + _JS_NAME_END),
         _call(r"\bDeno\.rename(?:Sync)?" + _JS_NAME_END, (0, 1)),
         _call(r"\bDeno\.copyFile(?:Sync)?" + _JS_NAME_END, (1,)),
@@ -164,9 +168,12 @@ def writes(language: str, code: str, expanded: bool = False) -> tuple[list[str],
     code = _resolve_aliases(language, code)
     shell_may_rebind = expanded and _SHELL_EXPANDS_RE.search(code)
     bindings = {} if shell_may_rebind or _DYNAMIC_NAMES_RE.search(code) else _bindings(language, code)
+    file_systems = _fs_names(code) if language == "js" else frozenset()
     found: list[tuple[int, list[str], bool]] = []
     for call in WRITE_CALLS.get(language, ()):
         for match in call.pattern.finditer(code):
+            if call.receiver == "fs" and not _fs_receiver(code, match.start(), file_systems):
+                continue  # `window.open(…)`, `db.rm(…)`.
             parsed = _arguments(code, match.end(), language)
             if parsed is None:
                 continue
@@ -185,10 +192,10 @@ _SHELL_EXPANDS_RE = re.compile(r"[$`]")
 _PY_MODULES = r"(?:os|shutil|io|codecs|pathlib|gzip|bz2|lzma)"
 _PY_IMPORT_AS_RE = re.compile(rf"\bimport\s+({_PY_MODULES})\s+as\s+(\w+)")
 _PY_FROM_IMPORT_RE = re.compile(rf"\bfrom\s+({_PY_MODULES})\s+import\s+\(?([\w \t,]+)\)?")
-_FS = r"""['"](?:node:)?fs(?:/promises)?['"]"""
+_FS = r"""['"`](?:node:)?fs(?:/promises)?['"`]"""
 # `const {a: b} = require('fs')` (group 1) and `import {a as b} from 'fs'` (group 2).
 _JS_DESTRUCTURE_RE = re.compile(
-    rf"\{{([^{{}}]*)\}}\s*=\s*(?:await\s+)?(?:require|import)\(\s*{_FS}\s*\)"
+    rf"\{{([^{{}}]*)\}}\s*=\s*(?:await\s+)?(?:require|import)\s*\(\s*{_FS}\s*\)"
     rf"|\bimport\s*\{{([^{{}}]*)\}}\s*from\s*{_FS}"
 )
 
@@ -231,6 +238,69 @@ def _imported(entries: str, separator: str) -> list[tuple[str, str]]:
     return pairs
 
 
+# The receivers that are a file system in any script.
+_JS_FILE_SYSTEMS = frozenset({"fs", "fsPromises", "Deno"})
+# A name bound to the `fs` module (group 1): `const f = require('fs')`, a
+# `.promises` after it included, `f = require('fs')` with no declaration,
+# `const p = require('path'), f = require('fs')`, or `await import('node:fs')`;
+# the name opens the code, a line or a statement, or follows a declaration or
+# a `,`. Or (group 2) `import f from 'fs'`, `import * as f from 'fs/promises'`,
+# `import f, {…} from 'fs'`.
+_JS_FS_BINDING_RE = re.compile(
+    rf"(?:(?<![\w$.])(?:const|let|var)\s+|(?:^|(?<=[;,]))\s*)([A-Za-z_$][\w$]*)\s*=\s*"
+    rf"(?:await\s+)?(?:require|import)\s*\(\s*{_FS}\s*\)"
+    rf"|\bimport\s+(?:\*\s*as\s+)?([A-Za-z_$][\w$]*)\s*(?:,\s*\{{[^{{}}]*\}}\s*)?from\s*{_FS}",
+    re.MULTILINE,
+)
+
+
+def _fs_names(code: str) -> frozenset[str]:
+    """The names that are a file system in JavaScript `code`: `fs`,
+    `fsPromises`, `Deno`, and each name the code binds to a `require` or
+    `import` of `fs`, a destructured one included (`const {promises: p}`)."""
+
+    names = set(_JS_FILE_SYSTEMS)
+    for match in _JS_FS_BINDING_RE.finditer(code):
+        names.add(match.group(1) or match.group(2))
+    for match in _JS_DESTRUCTURE_RE.finditer(code):
+        required = match.group(1) is not None
+        entries = match.group(1) if required else match.group(2)
+        names.update(alias for _, alias in _imported(entries, ":" if required else " as "))
+    return frozenset(names)
+
+
+def _fs_receiver(code: str, start: int, file_systems: frozenset[str]) -> bool:
+    """Whether the JavaScript method whose `.` is at `start` may be called on
+    a file system: its receiver is one of `file_systems`, perhaps with
+    `.promises` after it (`fs.promises.rm(`, `fs?.rm(`), or a receiver the
+    reading cannot name, one that ends in a call or an index
+    (`require('fs').rm(`, `a[b].rm(`). Any other receiver (`window.open(`,
+    `db.rm(`, `this.cp(`) is some other object; a file-system object passed
+    in under another name goes unseen."""
+
+    def before_dot(dot: int) -> int:
+        i = _nonspace(code, dot - 1, -1)
+        return _nonspace(code, i - 1, -1) if i >= 0 and code[i] == "?" else i  # `fs?.rm(`
+
+    parts: list[str] = []
+    i = before_dot(start)
+    while True:
+        if i >= 0 and code[i] in ")]":
+            return True
+        j = i
+        while j >= 0 and (code[j].isalnum() or code[j] in "_$"):
+            j -= 1
+        if j == i:
+            return False  # No name: a string literal, an operator, the code's start.
+        parts.append(code[j + 1:i + 1])
+        dot = _nonspace(code, j, -1)
+        if dot < 0 or code[dot] != ".":
+            break
+        i = before_dot(dot)
+    root, *rest = reversed(parts)
+    return root in file_systems and rest in ([], ["promises"])
+
+
 def _call_writes(call: _Call, language: str, code: str, start: int,
                  bindings: dict[str, tuple[int, str]], positional: list[str],
                  keywords: dict[str, str]) -> tuple[list[str], bool]:
@@ -245,7 +315,8 @@ def _call_writes(call: _Call, language: str, code: str, start: int,
         return keywords.get(name) if name else None
 
     receiver: str | None = None
-    if call.receiver:
+    names_file = call.receiver in ("any", "path")  # Python's: the receiver is a file too.
+    if names_file:
         receiver = _path_receiver(code, start, language)
         if receiver is None and call.receiver == "path":
             return [], False  # `.replace` on a string, `.open` on something else.
@@ -259,7 +330,7 @@ def _call_writes(call: _Call, language: str, code: str, start: int,
             return [], False
 
     texts = positional if call.targets == ALL else [argument(i) for i in call.targets]
-    if call.receiver:
+    if names_file:
         texts = [receiver or "", *texts]  # "" for a receiver that is no `Path("…")`.
     files, unnamed = [], False
     for text in texts:

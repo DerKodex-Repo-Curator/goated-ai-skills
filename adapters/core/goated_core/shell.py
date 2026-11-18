@@ -25,7 +25,14 @@ from typing import NamedTuple
 from . import script_writes
 from .events import POSIX, POWERSHELL
 
-NULL_TARGETS = frozenset({"/dev/null", "$null", "nul", "/dev/stderr", "/dev/stdout"})
+# Redirect targets that write no file, lowercased, by shell. `nul` is the null
+# device in PowerShell, but in a posix shell it is a file named `nul`, and
+# there the null device is `/dev/null`.
+NULL_TARGETS = {
+    POSIX: frozenset({"/dev/null", "$null", "/dev/stderr", "/dev/stdout"}),
+    POWERSHELL: frozenset({"/dev/null", "$null", "nul", "/dev/stderr", "/dev/stdout"}),
+}
+WINDOWS_NULL_DEVICE = "nul"
 DOTNET_WRITE_RE = re.compile(
     r"\[(?:system\.)?io\.(?:file|directory)\]::(?:write|append|copy|move|delete|create|replace)",
     re.IGNORECASE,
@@ -253,6 +260,9 @@ class ShellCommand:
     (`FILE_WRITERS`, such as `cp` or `rm`), or a plain read whose output is
     redirected into a file, and every write's files are named. It says
     nothing about where those files are.
+    `redirects_into_nul` says it is a posix command that redirects into
+    `nul` (any case), which there writes a file named `nul` rather than
+    discarding the output (Ticket 104); that file is in the facts above.
     """
 
     __slots__ = (
@@ -260,7 +270,7 @@ class ShellCommand:
         "commit_message", "opens_pr", "pr_base", "pr_head", "pr_repository", "is_check",
         "non_check_writes", "unchecked_targets", "unchecked_unknown_writes", "prints_changes",
         "installs_globally", "install_folders", "read_only", "only_reads_and_writes_files",
-        "script_targets", "script_unknown_writes", "text_writes",
+        "script_targets", "script_unknown_writes", "text_writes", "redirects_into_nul",
     )
 
     def __init__(self) -> None:
@@ -286,6 +296,7 @@ class ShellCommand:
         self.script_unknown_writes = False
         self.text_writes: list[tuple[str, int | None]] = []
         self.only_reads_and_writes_files = False
+        self.redirects_into_nul = False
 
 
 def analyze(command: str, shell: str = POSIX) -> ShellCommand:
@@ -303,7 +314,7 @@ def analyze(command: str, shell: str = POSIX) -> ShellCommand:
         start = len(result.write_targets)
         before = segments[index - 1] if index else None
         piped = _piped_text(before) if before is not None and before.after == "|" else None
-        directory, unknown, is_check = _add_segment(result, segment, directory, piped)
+        directory, unknown, is_check = _add_segment(result, segment, directory, shell, piped)
         if is_check and not segment.nested and segment.after in CHECK_ENDS:
             awaiting, awaiting_unknown = [], False
         awaiting += result.write_targets[start:]
@@ -403,14 +414,19 @@ def _runs_dotnet_write(segments: list["_Segment"], index: int) -> bool:
 
 
 def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | None,
-                 piped: tuple[str, bool] | None = None) -> tuple[str | None, bool, bool]:
+                 shell: str, piped: tuple[str, bool] | None = None
+                 ) -> tuple[str | None, bool, bool]:
     """Add one segment's facts to `result`, its write targets taken from
-    `directory` (see `_change_directory`); return the directory later
-    segments run in, whether it writes files it does not name, and whether
-    it is a check. `piped` is the text the segment before pipes into it,
-    when a text producer gives it (see `_piped_text`)."""
+    `directory` (see `_change_directory`) and its redirects read as `shell`
+    reads them; return the directory later segments run in, whether it
+    writes files it does not name, and whether it is a check. `piped` is the
+    text the segment before pipes into it, when a text producer gives it
+    (see `_piped_text`)."""
 
-    targets = [t for t in segment.redirects if t.lower() not in NULL_TARGETS]
+    null_targets = NULL_TARGETS[shell]
+    targets = [t for t in segment.redirects if t.lower() not in null_targets]
+    if shell == POSIX and any(t.lower() == WINDOWS_NULL_DEVICE for t in targets):
+        result.redirects_into_nul = True
     unknown = False
     prints = False
     name, original, args = _resolve(segment.words)
@@ -480,7 +496,7 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
         if script_unknown:
             unknown = result.script_unknown_writes = True
     # Output redirected into a file never reached the agent; a stderr redirect leaves it.
-    if prints and not [t for t in segment.out_redirects if t.lower() not in NULL_TARGETS]:
+    if prints and not [t for t in segment.out_redirects if t.lower() not in null_targets]:
         result.prints_changes = True
     is_check = _is_check(name, original, args)
     if is_check:

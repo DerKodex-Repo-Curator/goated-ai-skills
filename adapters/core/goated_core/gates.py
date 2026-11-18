@@ -32,6 +32,7 @@ guards the project's work, not a scratch copy.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import os
 from typing import Callable, NamedTuple
@@ -77,6 +78,15 @@ class Hold:
         if self.short and not claim(ask_purpose(self.gate, self.short.unmet)):
             return self.short.text
         return self.instruction
+
+    def with_note(self, note: str) -> "Hold":
+        """A new hold, the same as this one but with `note` ending its full
+        and short texts; the short form's ask (`unmet`) is unchanged."""
+
+        noted = copy.copy(self)  # Its gate and kind are this hold's, read where it was built.
+        noted.instruction = f"{self.instruction} {note}"
+        noted.short = self.short and self.short._replace(text=f"{self.short.text} {note}")
+        return noted
 
 
 def ask_purpose(gate: str, ask: str) -> str:
@@ -344,7 +354,34 @@ def writes_like_an_edit(call: Call) -> bool:
     return False
 
 
+# What a hold adds for a posix command that redirects into nul (Ticket 104).
+POSIX_NUL_NOTE = (
+    "In a posix shell nul is no null device: this command writes a file named nul. "
+    "To discard output there, redirect it into /dev/null."
+)
+
+
 def check_routing(
+    state: SessionState,
+    call: Call,
+    turn: Turn,
+    overrides: dict,
+    orientation_installed: Callable[[], bool],
+    writes_scratch: Callable[[], bool],
+) -> list[Hold]:
+    """The routing holds that apply to this main-agent call, in order, as
+    `_routing_holds` judges them. When the call is a posix command that
+    redirects into nul (`shell.ShellCommand.redirects_into_nul`), the last
+    hold's full and short texts end with `POSIX_NUL_NOTE`."""
+
+    holds = _routing_holds(state, call, turn, overrides, orientation_installed, writes_scratch)
+    if (holds and call.kind == events.SHELL_COMMAND
+            and shell.analyze(call.command, call.shell).redirects_into_nul):
+        holds[-1] = holds[-1].with_note(POSIX_NUL_NOTE)
+    return holds
+
+
+def _routing_holds(
     state: SessionState,
     call: Call,
     turn: Turn,

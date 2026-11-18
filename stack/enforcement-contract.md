@@ -768,10 +768,13 @@ writes, and meets the `route-line` and `pipeline` gates like a file write,
 when one of its commands:
 
 - redirects output into a file (`>`, `>>`, `&>`, `>&file`, `2>`), except
-  into another stream (`2>&1`) or a target in `NULL_TARGETS`, compared in
-  any case and in either shell: `/dev/null`, `/dev/stdout`, `/dev/stderr`,
-  `$null`, and `NUL`. So `> nul` in a `posix` command writes nothing here,
-  although [Plain Reads](#plain-reads) treats `nul` in bash as a real file;
+  into another stream (`2>&1`) or a target in the shell's `NULL_TARGETS`,
+  compared in any case. Null devices are per shell: in either shell
+  `/dev/null`, `/dev/stdout`, `/dev/stderr`, and `$null`, and in a
+  `powershell` command also `NUL`. In a `posix` command a redirect into
+  `nul` writes a file named `nul`, as bash does, as
+  [Plain Reads](#plain-reads) also treats it, and a routing hold such a
+  command meets ends by naming `/dev/null` as the posix null device;
 - runs `tee`, `Tee-Object`, `cp`, `mv`, `rm`, `rmdir`, `touch`, `truncate`,
   `ln`, `unlink`, `shred`, or `patch`, or the cmd forms `copy`, `move`,
   `ren`, `rename`, `del`, `erase`, or `rd`;
@@ -952,7 +955,7 @@ The calls, by language (`WRITE_CALLS` in `script_writes.py`):
 | Language | Write calls |
 | --- | --- |
 | Python | `open`, `io.open`, `codecs.open`, `gzip.open`, `bz2.open`, `lzma.open` with a mode holding `w`, `a`, `x`, or `+` (a mode that is not a literal counts); `os.open` with a writing flag; `os.remove`, `unlink`, `rmdir`, `removedirs`, `truncate`, `rename`, `renames`, `replace`; `shutil.copy`, `copy2`, `copyfile`, `copytree` (the destination), `move`, `rmtree`; a path's `.write_text`, `.write_bytes`, `.unlink`, `.touch`, `.rmdir` (an unnamed file unless called on `Path("…")`), and `Path("…").rename`, `.replace`, and `.open` with a writing mode |
-| JavaScript (`node`, `deno`, `bun`) | `fs` and `fs/promises`: `writeFile`, `appendFile`, `createWriteStream`, `unlink`, `rm`, `rmdir`, `truncate`, `rename`, `copyFile` and `cp` (the destination), `open` with a writing flag, and their `Sync` forms; `Deno.writeTextFile`, `writeFile`, `remove`, `create`, `truncate`, `rename`, `copyFile`, and their `Sync` forms; `Bun.write` |
+| JavaScript (`node`, `deno`, `bun`) | `fs` and `fs/promises`: `writeFile`, `appendFile`, `createWriteStream`, `unlink`, `rm`, `rmdir`, `truncate`, `rename`, `copyFile` and `cp` (the destination), `open` with a writing flag, and their `Sync` forms, the methods without `Sync` only on a file-system receiver; `Deno.writeTextFile`, `writeFile`, `remove`, `create`, `truncate`, `rename`, `copyFile`, and their `Sync` forms; `Bun.write` |
 | Perl | `open` with a `>`, `>>`, or `+` mode, in its three-argument form or in the path of its two-argument form; `unlink`, `rmdir`, `rename`, `rmtree`, `remove_tree`; `File::Copy`'s `copy`/`cp` (the destination) and `move`/`mv` |
 | Ruby | `File.write`, `IO.write`, `binwrite`; `File.open` and `File.new` with a `w`, `a`, or `+` mode; `File.delete`, `unlink`, `rename`; `FileUtils.rm` and its forms, `remove…`, `rmdir`, `touch`, `mv`/`move`, and `cp`/`copy`/`install` (the destination) |
 
@@ -961,12 +964,21 @@ script still counts, toward holding. In Python, a name other code also
 uses counts only where its module, receiver, or mode says it writes:
 `.rename`, `.replace`, and `.open` only on a `Path("…")`, and `open` only
 with a writing mode, so `text.replace("a", "b")` does not. In JavaScript,
-`.unlink`, `.rm`, `.rmdir`, `.truncate`, `.rename`, `.copyFile`, and `.cp`
-count on any receiver, and `.open` on any receiver is judged by its second
-argument alone: a literal starting with `w` or `a` or holding `+`, or any
-argument that is not a literal, writes. So `window.open(url, "_blank")`
-does not, while `window.open(url, 'width=200')` is an unnamed write, its
-first argument not being a literal.
+`.open`, `.unlink`, `.rm`, `.rmdir`, `.truncate`, `.rename`, `.copyFile`,
+and `.cp` count only on a file-system receiver: `fs`, `fs.promises`,
+`fsPromises`, `Deno`, or a name the script binds to a `require` or `import`
+of `fs`, `node:fs`, `fs/promises`, or `node:fs/promises`, with or without
+a declaration and in a comma chain (`const f = require('node:fs')`,
+`f = require('fs')`, `const p = require('path'), f = require('fs')`,
+`import * as f from 'fs'`), a destructured name
+included (`const {promises: p} = require('fs')`), each perhaps followed by
+`.promises`. A receiver the core cannot name, one ending in a call or an
+index (`require('fs').rm(…)`, `a[b].rm(…)`), counts too. Any other
+receiver is some other object, so `window.open(url, 'width=200')`,
+`db.rm(id)`, and `this.cp(a, b)` write nothing; a file-system object
+passed into a script function under another name goes unseen. `.open`
+writes when its second argument is a literal starting with `w` or `a` or
+holding `+`, or is not a literal.
 
 The `scripted-edit` gate judges a code file such a script writes inside the
 project, test files included, and a file it names only at run time, which
