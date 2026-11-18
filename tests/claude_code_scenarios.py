@@ -20,17 +20,14 @@ from typing import NamedTuple
 from claude_code_adapter_support import (
     REPO_ROOT, Session, git_branch_with_change, parse, reason,
 )
+from enforcement_support import expectation_mismatch, item_labels
 from goated_core import wording
 
 REGISTRY = REPO_ROOT / "stack" / "goated-stack.yaml"
 
 HOLD_LINE = re.compile(r"^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-skip)$", re.M)
-# A closeout item's line, as the contract's Hold Messages section defines it.
-ITEM_LABEL = re.compile(r"^- ([A-Z][a-z]+): ", re.M)
 ADAPTER_NAME = "GOATED Claude Code adapter"
 FAIL_OPEN = "so this action was allowed without checks."
-# Notices that mean the adapter could not judge: never expected unless named.
-FAILURE_NOTICES = frozenset({"fail_open", "warning"})
 OVERRIDE_RECORDED = "recorded your override"
 BRIEF_OPENING = "Background (from the session that started this one):"
 SESSION_SOURCES = {"new": "startup", "resumed": "resume", "after_compaction": "compact",
@@ -392,26 +389,10 @@ class _Run:
             "turns": copy.deepcopy(self.turns),
             "event": event,
         })
-        if expect is None:
-            # Unchecked, but an adapter that could not judge never passes.
-            expect = {"decision": got["decision"], "holds": [
-                {"gate": gate, "kind": kind} for gate, kind in got["holds"]]}
-        holds = expect.get("holds", [])
-        wanted = {"decision": expect["decision"],
-                  "holds": [(h["gate"], h["kind"]) for h in holds]}
-        found = {"decision": got["decision"], "holds": got["holds"]}
-        labels = next((h["items"] for h in holds if "items" in h), None)
-        if labels is not None:
-            wanted["items"], found["items"] = sorted(labels), got["items"]
-        if "notices" in expect:
-            wanted["notices"] = sorted(expect["notices"])
-            found["notices"] = sorted(got["notices"])
-        else:
-            wanted["failures"] = []
-            found["failures"] = sorted(FAILURE_NOTICES.intersection(got["notices"]))
-        if wanted != found:
+        mismatch = expectation_mismatch(expect, got)
+        if mismatch is not None:
             self.failures.append(
-                f"step {self.number} ({event['type']}): expected {wanted}, got {got}")
+                f"step {self.number} ({event['type']}): expected {mismatch[0]}, got {got}")
 
 
 def _decision(output: dict, shape: str) -> dict:
@@ -445,7 +426,7 @@ def _decision(output: dict, shape: str) -> dict:
         holds.append((match[1], match[2]))
         if match[1] == "closeout":
             section = text[match.end():found[n + 1].start() if n + 1 < len(found) else None]
-            items = sorted(set(ITEM_LABEL.findall(section)))
+            items = item_labels(section)
     return {"decision": "hold" if text else "allow", "holds": holds, "items": items,
             "notices": notices}
 

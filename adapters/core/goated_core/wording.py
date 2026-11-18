@@ -3,9 +3,12 @@
 A hold sometimes names how the agent does something in its harness: the
 tool that loads a skill or reads a file, where a route or skip line can go
 so the harness keeps it, and which call carries a line for a call with none.
-The rules hold no harness wording (ADR 0004): they write a slot here, and the
-adapter fills each slot from its own table before the text is shown
-(`translation.render` for Claude Code).
+The rules hold no harness wording (ADR 0004): they write a slot here. An
+adapter that calls the core in Python (`judge`) may fill each slot from its
+own table before the text is shown (`translation.render` for Claude Code);
+the core's request call (`request.decide`), and so its command, fills them
+with the neutral words of `neutral`, so no decision it returns carries a
+slot.
 
 A slot is its name, then any arguments each after `|`, between `OPEN` and
 `CLOSE`: two private-use characters no keyboard types, so text a hold
@@ -66,3 +69,46 @@ def short_advice(line: str, way_out: str) -> str:
     once a turn has had it."""
 
     return _slot(SHORT_ADVICE, line, way_out)
+
+
+# Neutral words -----------------------------------------------------------------
+
+# Each phrase slot in words any harness can show.
+NEUTRAL_PHRASES = {
+    SKILL_TOOL: "the harness's skill loader",
+    READ_TOOL: "a file read",
+    READ: "read",
+    NO_RANGE: "with no range",
+    FILE_EDIT_TOOLS: "(a file write call)",
+}
+
+
+def neutral(text: str) -> str:
+    """`text` with every slot filled in neutral words.
+
+    Every call of the event model may carry a line in its `line_text`, so
+    the carrier slot says nothing and goes with the line break before it.
+    The line advice says where a line counts, without a harness's reasons
+    for why reply text may not be seen. Raises ValueError for a slot with no
+    neutral words, a rule's mistake.
+    """
+
+    text = text.replace("\n" + CARRIER, "")
+
+    def fill(slot: re.Match) -> str:
+        if slot[0] == CARRIER:
+            return ""
+        if slot[0] in NEUTRAL_PHRASES:
+            return NEUTRAL_PHRASES[slot[0]]
+        advice = ADVICE_RE.fullmatch(slot[0])
+        if advice is None:
+            raise ValueError(f"no neutral wording for the slot {slot[1]!r}")
+        name, line, way_out = advice.groups()
+        if name == SHORT_ADVICE:
+            return (f"Put the {line} on its own line, as this turn's first such hold "
+                    f"explained, or tell the user they can type `{way_out}` in their prompt.")
+        return (f"Put the {line} on its own line in reply text or in a call's line text; it "
+                f"counts from there on. Then make the call again. If that is held again, "
+                f"tell the user they can type `{way_out}` in their prompt.")
+
+    return SLOT_RE.sub(fill, text)
