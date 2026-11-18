@@ -1075,6 +1075,19 @@ class DesignReferenceReadTests(AdapterTestCase):
         self.assertEqual(hold_line(s.call("Edit", edit("config/app.json", lines_of('"rate_{n}": {n},', 5)))),
                          "goated-hold: design-reads | justified-skip")
 
+    def test_configuration_under_a_fixtures_folder_is_test_data(self) -> None:
+        s = self.designing()
+        for path in ("stack/fixtures/x.yaml", "a/fixtures/b.json", "a/__fixtures__/b.json"):
+            self.assertEqual(decision(s.call("Edit", edit(path, lines_of("rate_{n}: {n}", 5)))), "pass", path)
+        held = s.call("Edit", edit("config/app.yaml", lines_of("rate_{n}: {n}", 5)))
+        self.assertIn("references/decoupling.md` (edits a configuration file", reason(held))
+
+    def test_a_code_file_under_a_fixtures_folder_is_still_code(self) -> None:
+        s = self.designing()
+        held = s.call("Edit", edit("fixtures/build.py", "def build():\n    return 1"))
+        self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
+        self.assertIn("references/process.md`", reason(held))
+
     def test_a_write_over_an_existing_file_counts_only_what_it_adds(self) -> None:
         s = self.designing()
         old = (
