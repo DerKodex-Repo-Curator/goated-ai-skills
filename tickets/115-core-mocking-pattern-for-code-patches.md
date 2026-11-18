@@ -13,17 +13,20 @@ AFK. Decision M, option 1 (the maintainer, 2026-11-18).
 The `mock-or-patch` pattern asks for `tdd`'s mocking reference for a mock
 or patch of code, not for test data or a patched environment:
 
-- `monkeypatch` selects only as `monkeypatch.setattr(` or
-  `monkeypatch.delattr(`. `setenv`, `delenv`, `setitem`, `delitem`,
-  `chdir`, `syspath_prepend` and the bare name (a fixture parameter)
-  select nothing.
+- `monkeypatch` selects only as `monkeypatch.setattr(`,
+  `monkeypatch.delattr(` or `monkeypatch.context(`. The last stays
+  because its patches go through another name
+  (`with monkeypatch.context() as m: m.setattr(...)`), and `m.setattr(`
+  alone matches nothing (checked on main). `setenv`, `delenv`, `setitem`,
+  `delitem`, `chdir`, `syspath_prepend` and the bare name (a fixture
+  parameter) select nothing.
 - A line the edit shows inside a multi-line string, a Python
   triple-quoted string that is not a docstring or a JavaScript template
   literal, is inside a string, so `fake` in invented TOML there
-  (`[providers.fake]`, `name = fake`) selects nothing. Where the edit
+  (`[providers.fake]`, `fake = true`) selects nothing. Where the edit
   does not show where the string opens, the line is read as today.
 
-Checked on main at `bf18b3b`: `[providers.fake]`, `name = fake`,
+Checked on main at `bf18b3b`: `[providers.fake]`, `fake = true`,
 `monkeypatch.setenv(...)` and `def test_x(monkeypatch):` each select it;
 `provider = "fake"` does not (Ticket 100).
 
@@ -49,7 +52,8 @@ conformance scenario change with it, as `AGENTS.md` requires.
 
 - [ ] In a test file with `tdd` loaded, `monkeypatch.setenv("X", "1")`
       and `def test_x(monkeypatch):` select no mocking reference;
-      `monkeypatch.setattr(mod, "f", g)` does.
+      `monkeypatch.setattr(mod, "f", g)` and
+      `with monkeypatch.context() as m:` do.
 - [ ] `[providers.fake]` inside a triple-quoted string the edit shows
       selects nothing; the same line as code, and `fake = Fake()`, still
       do.

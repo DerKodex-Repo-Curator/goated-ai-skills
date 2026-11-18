@@ -6,10 +6,9 @@
 
 ## Type
 
-HITL until decision K1 is recorded in the parent spec; AFK after.
-Decision K2, option 1 (the maintainer, 2026-11-18). The K1 half is
-written to its recommended option, K1.1; if the maintainer picks K1.2,
-widen that half to every design rule, and with K1.3 drop it.
+AFK. Decisions K1 and K2, option 1 each (the maintainer, 2026-11-18).
+Review asked whether K2.1 should stand, since the second source credited
+`test-design.md`; it stands unless the maintainer changes it.
 
 ## What To Build
 
@@ -82,7 +81,6 @@ is not read for signals, so this ticket does not touch `shell.py` at all.
 
 ## Blocked By
 
-- Decision K1 in the parent spec.
 - `tickets/114-core-large-writes-land-and-read-after.md` (ordering: both
   change the `design-reads` and `reference-reads` contract rows; 114 is
   ranked first).

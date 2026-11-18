@@ -57,14 +57,14 @@ waves 16 and 17. Their tickets were archived under `tickets/archive/` on
 | 14 (merged) | [107](archive/107-core-a-reviewer-starts-work.md) | 4 | core | AFK | 081 |
 | 15 (merged) | [106](archive/106-core-definition-starts-read-their-keyword.md) | 4 | core | AFK | 081, 101 |
 | 15 | [085](085-opencode-adapter.md) | 2 | new adapter | HITL (build decision after research) | 084 |
-| 16 (ready) | [110](110-core-whole-shell-prints-orient.md) | 5 | core | AFK | None |
-| 16 (ready) | [111](111-core-one-clearing-section-per-message.md) | 5 | core and adapter | AFK | None |
-| 16 (ready) | [112](112-core-scripted-edit-names-unknown-kinds.md) | 5 | core | AFK | None |
-| 16 (ready) | [114](114-core-large-writes-land-and-read-after.md) | 5 | core | AFK | None |
-| 16 (ready) | [115](115-core-mocking-pattern-for-code-patches.md) | 5 | core and registry | AFK | None |
-| 16 (ready) | [117](117-core-continue-meets-router-first-in-a-briefed-task.md) | 5 | core | AFK | None |
-| 17 (decision needed) | [113](113-core-design-reads-sized-by-substance.md) | 5 | core | HITL (decision K1) | 114 (same rows) |
-| 17 | [116](116-core-proof-kept-while-nothing-material-changed.md) | 5 | core | AFK | 114 (same closeout items) |
+| 18 (ready) | [111](111-core-one-clearing-section-per-message.md) | 5 | core and adapter | AFK | None |
+| 18 (ready) | [112](112-core-scripted-edit-names-unknown-kinds.md) | 5 | core | AFK | None |
+| 18 (ready) | [115](115-core-mocking-pattern-for-code-patches.md) | 5 | core and registry | AFK | None |
+| 18 (ready) | [117](117-core-continue-meets-router-first-in-a-briefed-task.md) | 5 | core | AFK | None |
+| 18 | [110](110-core-whole-shell-prints-orient.md) | 5 | core | AFK | 108, 109 (adjacent `shell.py` lines) |
+| 18 (decision needed) | [114](114-core-large-writes-land-and-read-after.md) | 5 | core, event model and skills | HITL (confirm narrowed L1) | None |
+| 19 | [113](113-core-design-reads-sized-by-substance.md) | 5 | core | AFK | 114 (same rows) |
+| 19 (decision needed) | [116](116-core-proof-kept-while-nothing-material-changed.md) | 5 | core | HITL (decision O, restated) | 114 (same closeout items) |
 
 ## Decisions Recorded Here
 
@@ -157,15 +157,21 @@ Its second source, a product ticket in another project, added items 7
 to 13 the same day; the lead brought 7 to 12 into the spec.
 
 - **The maintainer's decisions (2026-11-18),** each the recommended
-  option, for all but K1, which is open: H1 (110), I1 (111), J1 (112),
-  K2.1 (113), L1 (114), M1 (115), N1 and O1 (116), P1 (117), and Q1, the
-  `true` carrier call kept with no ticket.
+  option: H1 (110), I1 (111), J1 (112), K1.1 and K2.1 (113), L1 (114),
+  M1 (115), N1 and O1 (116), P1 (117), and Q1, the `true` carrier call
+  kept with no ticket.
+- **Review reopened two (2026-11-18).** O1 assumed a background check
+  never met Proof; its launch already does, so O is restated and open
+  (116). L1 was narrowed to keep the `design` gate and hold writes whose
+  lines cannot be counted; the maintainer is to confirm it (114).
+- **Waves 18 and 19 follow 108 (wave 16) and 109 (wave 17)**, whose rows
+  live on branch `tickets/shell-pr-follow-ups`. That branch merges first;
+  keep its rows above round 5's.
 - **113 and 116 wait for 114**, which changes the read-gate rows and the
-  closeout items they also change; 114 ranks first. That puts them in
-  wave 17.
+  closeout items they also change; 114 ranks first.
 - **Only 110 touches `shell.py`**, in its file printers, not the pull
-  request reading that 108 and 109 change; resolve the shared file at
-  merge time.
+  request reading that 108 and 109 change; its lines sit next to 108's,
+  so it lands after 108 and 109.
 - **Item 6 (a hold pointing at a section) is deferred**, and item 12 (the
   `true` carrier call) is decision Q with no ticket; item 13 repeats
   item 1.
@@ -201,14 +207,14 @@ to 13 the same day; the lead brought 7 to 12 into the spec.
 | Round 4: Proof asked while a session waits on another | 102 (decision D2.1) |
 | Round 4: the `true` carrier call for a line | No ticket (kept) |
 | Round 5: orientation held after `cat` reads | 110 (decision H1) |
-| Round 5: `readability.md` for a short code edit with a comment; `coding.md` for new test cases | 113 (decisions K1, open; K2.1) |
+| Round 5: `readability.md` for a short code edit with a comment; `coding.md` for new test cases | 113 (decisions K1.1, K2.1) |
 | Round 5: clearing advice repeated per hold in one message | 111 (decision I1) |
 | Round 5: `scripted-edit` calls a markdown file code | 112 (decision J1) |
 | Round 5: a reference hold pointing at a section | Deferred (needs its own spec) |
-| Round 5: holds fire after a large edit is composed, so it is re-sent | 114 (decision L1) |
+| Round 5: holds fire after a large edit is composed, so it is re-sent | 114 (decision L1, narrowed at review; to confirm) |
 | Round 5: mocking reference for `fake` in TOML and `monkeypatch.setenv` | 115 (decision M1) |
 | Round 5: Proof rerun after a docstring-only change | 116 (decision N1) |
-| Round 5: closeout while waiting on the user or a background check | 116 (decision O1) |
+| Round 5: closeout while waiting on the user or a background check; a background launch meets Proof (found at review) | 116 (decision O, restated, open) |
 | Round 5: `router-first` after a typed prompt in a briefed session | 117 (decision P1) |
 | Round 5: the `true` carrier call, asked again | No ticket (kept, decision Q1) |
 

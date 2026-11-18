@@ -48,10 +48,14 @@ the code, as `AGENTS.md` requires.
 
 ## Acceptance Criteria
 
-- [ ] A call meeting three holds that lines can clear (for example
-      `design-reads`, `reference-reads` and `scripted-edit`) shows each
+- [ ] A call meeting three holds that lines can clear shows each
       hold's skip line once, in its hold, and one clearing section after
-      the last hold that names each override once.
+      the last hold that names each override once. Example: with
+      `software-design-principles` and `tdd` loaded and `diagnose` not,
+      after the same check failed twice, a 25-line edit of
+      `tests/test_app.py` adding `m = MagicMock()` meets `design-reads`
+      (`coding.md` unread), `reference-reads` (`tdd`'s
+      `mocking-and-seams.md` unread) and `repeated-failure`.
 - [ ] The section carries the full placement advice on the turn's first
       such message and one sentence on later ones.
 - [ ] A call meeting one such hold shows today's text.

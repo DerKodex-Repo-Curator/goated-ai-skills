@@ -6,62 +6,90 @@
 
 ## Type
 
-AFK. Decision L, option 1 (the maintainer, 2026-11-18).
+HITL until the maintainer confirms decision L1 as narrowed at review
+(2026-11-18); AFK after. The maintainer chose L1 the same day; review
+narrowed it to keep the `design` gate and to hold writes whose lines
+cannot be counted. If the maintainer restores the wider L1, rewrite the
+outcome before starting.
 
 ## What To Build
 
-A large write is never composed twice because a read gate held it. The
-read gates, `design`, `design-reads` and `reference-reads`, hold a file or
-shell write only when it adds fewer than thirty lines, counted as each
-gate counts them today. A write adding thirty or more, or one whose lines
-cannot be counted, is applied and passes with a notice naming what it
-needs: the skill load and each reference its signals select.
+A large write is never composed twice because a read gate held it.
+`design-reads` and `reference-reads` hold a file or shell write only when
+it adds fewer than thirty lines, counted as each gate counts them today.
+A write whose lines cannot be counted (a shell write showing no text,
+such as a heredoc holding `$(...)` or a program's output) counts as under
+thirty and is held, so Tickets 093 and 097's coverage of shell writes
+stays. A write adding thirty or more is applied and passes with a new
+`reads_owed` notice naming each reference its signals select.
 
 What a landed write still needs becomes a new closeout item, `Reads`. It
-is met when the skill counts as loaded, each named reference is read
-whole or a lasting skip covers it, and a change read of the file follows
-the reads. It holds a commit and the turn's end as the other items do.
-Its skip line names the skill whose references it asks for; a skip of it
-lasts as a skip of the gate it stands for does (round 4's R4). A write
-under thirty lines is held as today.
+is met when each named reference is read whole or a lasting skip covers
+it, and a change read of the file follows the reads. It holds a commit and
+the turn's end as the other items do. Its skip line names the skill whose
+references it asks for; a skip of it lasts as a skip of the gate it stands
+for does (round 4's R4). A write under thirty lines is held as today.
+
+The `design` gate does not change: `software-design-principles` still
+loads before the first substantial edit, and the reads `design` asks for
+with the load stay a hold.
+
+**Notice kind.** `reads_owed` is new, not a reuse: `closeout_note` is once
+per turn after the first write, and `skip_carried` names a skip. So the
+event model's notice enum gains it and its version moves to 4, and the
+contract's Notices section lists it. Ticket 116 under its O2 option would
+add to the same version; if both land, they share one bump.
+
+**Skill texts.** `software-design-principles`'s step 4 ("Read now") and
+`skills/README.md`'s description of registry reference signals say that,
+for a large edit already written, the reads may follow it before the
+closeout, and the edit is revised after them. Run the context comparison.
 
 The rules live in the shared core at `adapters/core/goated_core/`: where
-`actions.py` judges a write against `_design_hold` and
-`_reference_reads_hold`, `_closeout_items`, and session state for what
-landed writes still need. The contract changes with the code, as
-`AGENTS.md` requires: the `design`, `design-reads` and `reference-reads`
-rows, the Closeout Items table (a new stable label), Hold Messages if
-they list labels; the event model only if it enumerates closeout labels;
-and conformance scenarios under `stack/fixtures/enforcement/` (a test
-fails when a closeout item lacks scenarios).
+`actions.py` judges a write against `design-reads` and `reference-reads`,
+`_closeout_items`, and session state for what landed writes still need.
+The contract changes with the code, as `AGENTS.md` requires: the
+`design-reads` and `reference-reads` rows, the Closeout Items table (a new
+stable label), Notices, and Hold Messages if they list labels; the event
+model schema; and conformance scenarios under `stack/fixtures/enforcement/`
+(a test fails when a closeout item lacks scenarios). Adapters that list
+notice kinds follow the version bump.
 
 **`shell.py`'s pull request reading:** not touched.
 
 ## Recommended First Reads
 
 - The parent spec, R5 and decision L.
-- `stack/enforcement-contract.md`: the three gate rows, Holds, Closeout
-  Items, and how lasting skips work.
+- `stack/enforcement-contract.md`: the `design`, `design-reads` and
+  `reference-reads` rows, Holds, Closeout Items, Notices, and how lasting
+  skips work.
+- `stack/schemas/enforcement-event-model.schema.json`, the notice enum and
+  version.
 - The core's `actions.py` (`_design_hold`, `_reference_reads_hold`,
-  `_design_need`, `_closeout_items`) and `state.py` (`lasting_skips`).
+  `_closeout_items`) and `state.py` (`lasting_skips`).
 - `tests/test_enforcement_contract.py`, for what a new closeout item needs.
-- `tickets/archive/101-core-read-skips-last-the-task.md`, lasting skips.
+- `tickets/archive/101-core-read-skips-last-the-task.md`, which added the
+  last notice kind and its version bump.
 
 ## Acceptance Criteria
 
 - [ ] With `software-design-principles` loaded, a 40-line edit whose
-      signals select an unread reference is applied, with a notice naming
-      the reference.
+      signals select an unread reference is applied, with a `reads_owed`
+      notice naming the reference.
 - [ ] The turn's end and a commit then meet the `Reads` item until the
       reference is read whole and a change read of the file follows; a
       skip line naming the skill clears it.
-- [ ] The same holds for a large write meeting `design` (skill not
-      loaded) and `reference-reads` (a registry signal).
-- [ ] A 29-line edit is held as today.
-- [ ] The contract states the rule and the new item, and conformance
-      scenarios cover the hold, the landed write, each way the item
-      clears, and the near miss.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [ ] The same holds for a large write meeting `reference-reads` (a
+      registry signal).
+- [ ] A 29-line edit, and a shell write whose text the command does not
+      show, are held as today.
+- [ ] A large first edit with the skill not loaded still meets `design`.
+- [ ] The event model is at version 4 with `reads_owed`, and the contract
+      states the rule, the item and the notice; conformance scenarios
+      cover the hold, the landed write, each way the item clears, and the
+      near misses.
+- [ ] The repo checks in `AGENTS.md` pass, including the context
+      comparison.
 
 ## Expected Proof
 
@@ -72,7 +100,7 @@ fails when a closeout item lacks scenarios).
 
 ## Blocked By
 
-- None.
+- The maintainer's confirmation of the narrowed L1.
 
 ## Overlaps
 
@@ -83,5 +111,5 @@ fails when a closeout item lacks scenarios).
 ## Scope Exclusions
 
 - Announcing references before a write (option L2).
-- Strict gates (`pipeline`, `commit`, `security`), which still hold.
+- The `design` gate, and strict gates (`pipeline`, `commit`, `security`).
 - `scripted-edit`, whose script is short and steered to a file edit tool.

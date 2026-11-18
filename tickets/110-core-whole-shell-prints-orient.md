@@ -16,7 +16,11 @@ printer prints a file whole counts as a whole read of that file toward the
 `pipeline` gate's three distinct files. A print is whole when the printer
 is `cat`, or PowerShell's `Get-Content`, `gc` or `type` without
 `-TotalCount`, `-Head`, `-First`, `-Tail` or `-Last`, and its output is
-not piped into another command. `cat a b c` prints three files.
+not piped into another command. `cat a b c` prints three files. The
+contract names this a new term, **whole print**, used in the `pipeline`
+row only; "Whole read" keeps its meaning. A printed path is resolved from
+the command's folder to the form a file read records, so one file printed
+once and read once under another spelling counts as one.
 
 `head`, `tail`, `sed`, `grep` and every other command never count. Every
 other rule that asks for a whole read (design and registry references,
@@ -28,17 +32,20 @@ printer reading in `shell.py` (`FILE_PRINTERS`, which the conflict rule
 already uses to name the files a printer shows), and where orientation
 counts files (`gates._files_read`, `ORIENTATION_READS`, the orientation
 hold text). The contract and a conformance scenario change with the code,
-as `AGENTS.md` requires: the contract's Terms (Whole read), the `pipeline`
-row and Shell Reading; a scenario under `stack/fixtures/enforcement/`.
+as `AGENTS.md` requires: the contract's Terms (a new Whole print), the
+`pipeline` row and Shell Reading; a scenario under
+`stack/fixtures/enforcement/`.
 
-**`shell.py`'s pull request reading:** not touched. This ticket edits the
-file printers in the same file, which Tickets 108 and 109 also edit in
-another part; resolve the shared file at merge time.
+**`shell.py`'s pull request reading:** not touched. But the printer
+branch of `_add_segment` sits in the lines next to Ticket 108's
+`FORGE_DIFFS` change, so land this ticket after 108 and 109 (branch
+`tickets/shell-pr-follow-ups`).
 
 ## Recommended First Reads
 
 - The parent spec, R1 and decision H.
-- `stack/enforcement-contract.md`: Terms (Whole read), the `pipeline` row,
+- `stack/enforcement-contract.md`: Terms (Whole read, beside which Whole
+  print goes), the `pipeline` row,
   Conflicts (how a printer names files) and Shell Reading.
 - The core's `gates.py` (`_files_read`, `_brief_orientation`, the
   orientation hold) and `shell.py` (`FILE_PRINTERS` and the function that
@@ -56,7 +63,9 @@ another part; resolve the shared file at merge time.
 - [ ] A failed command, or one still running, does not count.
 - [ ] A shell print of a design reference still does not clear
       `design-reads`.
-- [ ] Two spellings of one path count as one file, as for file reads.
+- [ ] Two spellings of one path count as one file, as for file reads,
+      and `cat src/a.py` run from the project root and a file read of the
+      same file's absolute path count once.
 - [ ] The orientation hold's text says a whole shell print counts.
 - [ ] The contract states the rule, and a conformance scenario covers the
       hold and each near-miss kind.
@@ -71,7 +80,10 @@ another part; resolve the shared file at merge time.
 
 ## Blocked By
 
-- None.
+- `tickets/108-core-pull-request-options-between-noun-and-verb.md` and
+  `tickets/109-core-one-pull-request-per-simple-command.md`, on branch
+  `tickets/shell-pr-follow-ups` (ordering: adjacent lines in
+  `shell._add_segment`).
 
 ## Overlaps
 

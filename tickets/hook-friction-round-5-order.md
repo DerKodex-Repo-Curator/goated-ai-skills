@@ -5,30 +5,30 @@ Source spec: `docs/specs/2026-11-18-hook-friction-round-5.md`
 Parallel waves, with the other rounds' open tickets:
 [hook-friction-round-3-waves.md](hook-friction-round-3-waves.md)
 
-The maintainer chose the first option of every decision but K1 on
-2026-11-18; decision Q (the carrier call) has no ticket. Listed in the
-combined ranking's order. 113 and 116 wait for 114, which changes the same
-contract rows and closeout items, and 113 also for decision K1; the rest
-can run at once.
+The maintainer chose the first option of every decision on 2026-11-18;
+decision Q (the carrier call) has no ticket. Review the same day reopened
+O (restated) and narrowed L1, which awaits the maintainer's confirmation.
+Listed in the combined ranking's order.
 
 1. `tickets/114-core-large-writes-land-and-read-after.md`
-   - Status: Ready. Decision L1.
-   - Blocked by: None.
+   - Status: Waiting for the maintainer to confirm L1 as narrowed.
+   - Blocked by: that confirmation.
    - Overlaps: `_closeout_items` and the read-gate rows with 113 and 116,
      which wait for it.
    - Enables: a large edit applied once, its reads asked at the closeout.
 2. `tickets/110-core-whole-shell-prints-orient.md`
-   - Status: Ready. Decision H1.
-   - Blocked by: None.
-   - Overlaps: `shell.py` with 108 and 109 (their pull request reading,
-     another part); `gates.py` with 111 (another function).
+   - Status: Waiting for 108 and 109. Decision H1.
+   - Blocked by: `108` and `109` on branch `tickets/shell-pr-follow-ups`
+     (ordering: adjacent lines in `shell._add_segment`).
+   - Overlaps: `gates.py` with 111 and 117 (other functions).
    - Enables: a session that oriented with `cat` not held for orientation.
 3. `tickets/116-core-proof-kept-while-nothing-material-changed.md`
-   - Status: Waiting for 114. Decisions N1 and O1.
-   - Blocked by: `114` (ordering, `_closeout_items`).
-   - Overlaps: `_closeout_items` with 114.
-   - Enables: no new Proof after a comment-only edit or while a
-     background check runs.
+   - Status: Waiting for decision O (restated) and 114. Decision N1.
+   - Blocked by: decision O; `114` (ordering, `_closeout_items`).
+   - Overlaps: `_closeout_items` with 114; under O2, the event model
+     version with 114.
+   - Enables: no new Proof after a comment-only edit, and no background
+     launch passing for a proof.
 4. `tickets/115-core-mocking-pattern-for-code-patches.md`
    - Status: Ready. Decision M1.
    - Blocked by: None.
@@ -51,8 +51,8 @@ can run at once.
    - Overlaps: hold-text tests with 111.
    - Enables: the `scripted-edit` hold no longer calling a docs file code.
 8. `tickets/113-core-design-reads-sized-by-substance.md`
-   - Status: Decision needed (K1; recommended K1.1). Decision K2.1.
-   - Blocked by: decision K1; `114` (ordering, the same contract rows).
+   - Status: Waiting for 114. Decisions K1.1 and K2.1.
+   - Blocked by: `114` (ordering, the same contract rows).
    - Overlaps: `reference_reads.py` with 115.
    - Enables: a short code edit with a comment, and new cases in an
      existing test, asking for no design read their size alone selected.
@@ -63,16 +63,21 @@ Tickets 108 and 109 are changing. No round 5 ticket touches that reading.
 Decision Q, the `true` carrier call (item 12), has no ticket: the
 maintainer chose to keep it.
 
+## Merge Order
+
+Branch `tickets/shell-pr-follow-ups` (Tickets 108 and 109, waves 16 and
+17) merges before this branch. Both add wave rows after 085's; keep 108's
+and 109's rows first, then round 5's (waves 18 and 19).
+
 ## Ready Frontier
 
-- `tickets/114-core-large-writes-land-and-read-after.md`
-- `tickets/110-core-whole-shell-prints-orient.md`
 - `tickets/115-core-mocking-pattern-for-code-patches.md`
 - `tickets/117-core-continue-meets-router-first-in-a-briefed-task.md`
 - `tickets/111-core-one-clearing-section-per-message.md`
 - `tickets/112-core-scripted-edit-names-unknown-kinds.md`
 
-116 joins once 114 merges; 113 once 114 merges and K1 is decided.
+114 joins when the maintainer confirms the narrowed L1; 110 once 108 and
+109 merge; 113 once 114 merges; 116 once O is decided and 114 merges.
 
 ## Coverage
 
@@ -83,7 +88,7 @@ maintainer chose to keep it.
 - AC7 (large writes land) → 114
 - AC8 (mocking pattern) → 115
 - AC9 (Proof after comment-only edits) → 116
-- AC10 (Proof while a check runs; waiting on the user) → 116
+- AC10 (background checks and waiting) → 116
 - AC11 (`continue` in a briefed task) → 117
 - AC5 (contract and scenarios) → every ticket
 - AC6 (repo checks) → every ticket

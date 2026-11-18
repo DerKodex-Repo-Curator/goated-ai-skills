@@ -2,14 +2,16 @@
 
 ## Status
 
-Decision Needed, for K1 only, 2026-11-18. R1 to R4 follow the lead's
-curation of the round 5 feedback, items 1 to 4. R5 to R8 cover the second source's items
-7 to 11, added to this spec by the lead on 2026-11-18; item 12 is a
-decision with no ticket. The maintainer chose the recommended option of
-every decision but K1 on 2026-11-18: H1, I1, J1, K2.1, L1, M1, N1, O1, P1
-and Q1 ([Decisions](#decisions)). K1 is open; Ticket 113 is written to its
-recommended option and changes if another is chosen. Builds on
-[the round 4 spec](2026-11-18-hook-friction-round-4.md): every change is
+Decision Needed, for O and the narrowed L1, 2026-11-18. R1 to R4
+follow the lead's curation of the round 5 feedback, items 1 to 4. R5 to
+R8 cover the second source's items 7 to 11, added to this spec by the
+lead on 2026-11-18; item 12 is a decision with no ticket. The maintainer
+chose the recommended option of every decision on 2026-11-18: H1, I1, J1,
+K1.1, K2.1, L1, M1, N1, O1, P1 and Q1 ([Decisions](#decisions)). A review
+the same day found O1 rested on a wrong reading of today's behaviour, so
+O is open again, restated; and it narrowed L1, which the maintainer is to
+confirm. Tickets 114 and 116 are written to the recommended options and
+change if another is chosen. Builds on [the round 4 spec](2026-11-18-hook-friction-round-4.md): every change is
 made once, in the shared core at `adapters/core/goated_core/`, and stated
 in [the enforcement contract](../../stack/enforcement-contract.md).
 
@@ -82,9 +84,17 @@ reference, the diff read before each commit, `code-security-review`, and
   under twenty lines; Proof has no such rule.
 - **Closeout while waiting** (item 10). The closeout held three times
   while the agent waited on a user's walk-through or a full check. Ticket
-  102 named the case of waiting on another session in the Proof text; a
-  check run in the background never meets Proof ("not in the
-  background"), even while it is still running.
+  102 named the case of waiting on another session in the Proof text.
+  Checked against main: a check started in the background already meets
+  Proof, at a commit and at the turn's end. `actions._checks` reads only
+  the command's text, never the shell call's `background` field, so the
+  launch counts as a passing check, and a later failure never makes
+  Unfinished needed. The contract's "not in the background" means only a
+  check put in the background inside one command (`pytest &`), so the
+  contract and the code disagree about a harness background run. The
+  event model has no entry for a background shell command finishing
+  (`agent_finished` is for agents); in Claude Code its result arrives as a
+  task notification that continues the turn.
 - **Router-first on a continued prompt** (item 11). Checked against the
   contract: `router-first` is met by a router load, or "until a person's
   prompt opens a turn" by a brief with a route line. So in a briefed
@@ -134,11 +144,17 @@ reference, the diff read before each commit, `code-security-review`, and
   `head`, `tail`, `sed`, `grep` and other commands print part of a file and
   never count. Every other rule that asks for a whole read (references, red
   flags, templates) keeps asking for a file read. The orientation hold's
-  text says that a whole print counts.
+  text says that a whole print counts. A printed path is resolved from the
+  command's folder to the form a file read records, so one file printed
+  and read under two spellings counts once.
+  - The contract names this a new term, **whole print**, used in the
+    `pipeline` row only; "Whole read" keeps its meaning.
   - Touches: the file printers in `shell.py` (`FILE_PRINTERS`, beside the
     conflict reading), `gates._files_read`, and the orientation text in
-    `gates`; the contract's Terms (Whole read), the `pipeline` row and
-    Shell Reading. Not `shell.py`'s pull request reading.
+    `gates`; the contract's Terms (a new Whole print), the `pipeline` row
+    and Shell Reading. Not `shell.py`'s pull request reading, though its
+    printer branch in `_add_segment` sits beside 108's `FORGE_DIFFS`
+    change, so Ticket 110 lands after 108 and 109.
 - **R2, design reads sized by substance** (item 2; decision K).
   - **K1:** an edit that adds fewer than five code lines (comments,
     docstrings and blank lines left out, as `comment_only` reads them) and
@@ -175,33 +191,46 @@ reference, the diff read before each commit, `code-security-review`, and
   code would be, not as a code file. Its short form says the same.
   - Touches: `actions._scripted_edit_hold`; the contract's `scripted-edit`
     paragraph only if it states the text.
-- **R5, large writes land and read after** (item 7; decision L). The
-  read gates, `design`, `design-reads` and `reference-reads`, hold a write
+- **R5, large writes land and read after** (item 7; decision L, as
+  narrowed at review). `design-reads` and `reference-reads` hold a write
   only when it adds fewer than thirty lines, counted as each gate counts
-  them today. A larger write, or one whose lines cannot be counted, is
-  applied, and passes with a notice naming what it needs: the skill load
-  and each reference its signals select. A new closeout item, `Reads`,
-  is then needed: it is met when the load counts, each named reference is
-  read whole or a lasting skip covers it, and a change read of the file
+  them today. A write whose lines cannot be counted (a shell write showing
+  no text, such as a heredoc holding `$(...)` or a program's output)
+  counts as under thirty and is held, so Tickets 093 and 097's coverage
+  of shell writes stays. A write of thirty or more is applied and passes
+  with a notice naming the references it needs. A new closeout item,
+  `Reads`, is then needed: it is met when each named reference is read
+  whole or a lasting skip covers it, and a change read of the file
   follows. It holds a commit and the turn's end, as the other items do.
   Its skip line names the skill whose references it asks for, and a skip
-  of it lasts as R4 of round 4 states for the gate it stands for. Writes
-  under thirty lines are held as today.
-  - Touches: the three holds' callers in `actions.py` (`_design_hold`,
-    `_reference_reads_hold`, where a file write is judged) and
-    `_closeout_items`; session state for what a landed write still needs;
-    the contract's `design`, `design-reads` and `reference-reads` rows and
-    the Closeout Items table; the event model only if a closeout label
-    list is enumerated there.
+  of it lasts as round 4's R4 states for the gate it stands for.
+  - The `design` gate is unchanged: the skill still loads before the
+    first substantial edit (its workflow step 2), and the reads `design`
+    asks for alongside the load stay a hold.
+  - `software-design-principles`'s step 4 ("Read now") and
+    `skills/README.md`'s description of registry reference signals change
+    to say that, for a large edit already written, the reads may follow
+    it, before the closeout, and the edit is revised after them. This is
+    a text change the rule needs; it runs the context comparison.
+  - The notice is a new kind, `reads_owed`, since none of today's fits:
+    `closeout_note` is once per turn after the first write, and
+    `skip_carried` names a skip. So the event model moves to version 4,
+    and the contract's Notices section lists it.
+  - Touches: where `actions.py` judges a write against `design-reads`
+    and `reference-reads`, and `_closeout_items`; session state for what
+    a landed write still needs; the event model's notice enum and
+    version; the contract's two gate rows, Closeout Items and Notices; the
+    two skill texts.
 - **R6, mocks of code** (item 8; decision M). In the `mock-or-patch`
   pattern:
-  - `monkeypatch` selects only as `monkeypatch.setattr(` or
-    `monkeypatch.delattr(`; `setenv`, `delenv`, `setitem`, `delitem`,
-    `chdir`, `syspath_prepend` and the bare name select nothing;
+  - `monkeypatch` selects only as `monkeypatch.setattr(`,
+    `monkeypatch.delattr(` or `monkeypatch.context(` (whose `m.setattr(`
+    patches code); `setenv`, `delenv`, `setitem`, `delitem`, `chdir`,
+    `syspath_prepend` and the bare name select nothing;
   - a line the edit shows inside a multi-line string (a Python
     triple-quoted string that is not a docstring, a JavaScript template
-    literal) is inside a string, so `fake` in invented TOML there selects
-    nothing.
+    literal) is inside a string, so `fake` in invented TOML there
+    (`[providers.fake]`, `fake = true`) selects nothing.
 
   Where the edit does not show where a multi-line string opens, the line
   is read as today. The registry's pattern description stays true.
@@ -215,24 +244,28 @@ reference, the diff read before each commit, `code-security-review`, and
     [comment-only edit](../../stack/enforcement-contract.md#comment-only-edits) (as `comment_only` reads it, of any
     size) after the last check is already proved: it does not make Proof
     needed. A file whose comment syntax the core does not know is never
-    comment-only, as today.
-  - **O:** at the turn's end, not at a commit, a check started in the
-    background after the last code change whose result the turn has not
-    seen meets Proof, with a notice naming the check. When its result
-    arrives in a later turn, that turn's closeout judges it as a check
-    (Proof, and Unfinished if it failed). The Proof text also names
-    waiting on the user: the skip line naming
-    `verification-before-completion`, with what is awaited as the reason,
-    clears it, as for waiting on another session.
-  - Touches: the Proof and Unfinished items in `_closeout_items` and the
-    code that finds the last check; the contract's Closeout Items (Proof
-    row and the paragraph after the table).
+    comment-only, as today. The Docs item still fires after a
+    docstring-only edit of a non-test code file, by intent: a docstring
+    is documentation, and the durable docs may repeat it.
+  - **O (open again; see [decision O](#o-background-checks-and-waiting-r7)):**
+    a check started in the background meets Proof only as the decision
+    states, and the contract and the code agree on it. Whatever O
+    decides, the Proof text names waiting on the user: the skip line
+    naming `verification-before-completion`, with what is awaited as the
+    reason, clears it, as for waiting on another session.
+  - Touches: the Proof and Unfinished items in `_closeout_items` and
+    `actions._checks`; the contract's Closeout Items (Proof row and the
+    paragraph after the table) and Shell Reading's "not in the
+    background"; for O2 also the event model, the Claude Code adapter's
+    transcript reading and session state (see decision O).
 - **R8, a continued prompt in a briefed session** (item 11; decision P).
   In a session whose brief's route line set its task, a turn opened by a
   person's prompt whose route line is `goated-route: continue` meets
   `router-first` without a router load. A route line that starts a new
   task, or a turn with no route line yet, still needs the router; plain
-  reads pass as today.
+  reads pass as today. This is its own state, not a return of
+  `brief_routed`: that flag also switches on briefed-session orientation
+  in `pipeline`, which a typed `continue` must not bring back.
   - Touches: `gates.check_routing` (the `router-first` check and its
     `brief-route` clear); the contract's `router-first` row and "Prompts,
     Turns, And Tasks".
@@ -267,24 +300,28 @@ change, as `AGENTS.md` requires.
 - [ ] **AC6.** The repo checks in `AGENTS.md` pass.
 - [ ] **AC7.** R5: with `software-design-principles` loaded, a 40-line
       edit whose signals select an unread reference is applied with a
-      notice, and the turn's end and a commit then meet a `Reads` item
-      until the reference is read whole and a change read follows; a
-      29-line edit is held as today. A scenario covers both and the item's
-      skip line.
+      `reads_owed` notice, and the turn's end and a commit then meet a
+      `Reads` item until the reference is read whole and a change read
+      follows; a 29-line edit, and a shell write whose text it does not
+      show, are held as today; the first substantial edit with the skill
+      not loaded still meets `design`. A scenario covers each and the
+      item's skip line.
 - [ ] **AC8.** R6: in a test file with `tdd` loaded, `monkeypatch.setenv(`
       and a bare `monkeypatch` parameter select no mocking reference;
-      `monkeypatch.setattr(` does. A `[providers.fake]` line inside a
+      `monkeypatch.setattr(` and `monkeypatch.context(` do. A
+      `[providers.fake]` line inside a
       triple-quoted string the edit shows selects nothing; the same line
       as code still does.
 - [ ] **AC9.** R7 N: after a passing check, a docstring-only edit of any
       size meets no Proof item; an edit changing one code line does.
-- [ ] **AC10.** R7 O: a background check started after the last change,
-      with no result in the turn, meets Proof at the turn's end with a
-      notice, and does not at a commit; the Proof text names waiting on
-      the user.
+- [ ] **AC10.** R7 O: a background check's launch meets Proof exactly as
+      decision O states, at a commit and at the turn's end, and the
+      contract says the same; the Proof text names waiting on the user.
 - [ ] **AC11.** R8: in a briefed session that never loaded the router, a
       person's prompt followed by `goated-route: continue` meets no
-      `router-first` hold; one followed by a new route line does.
+      `router-first` hold, and brings back neither briefed-session
+      orientation nor any `pipeline` hold; one followed by a new route
+      line is held.
 
 ## Proof Surface
 
@@ -295,17 +332,19 @@ hook, and its translation tests show R3's section.
 ## Constraints
 
 - Work lands in `adapters/core/`, so each rule changes once.
-- Tickets 108 and 109 are changing `shell.py`'s pull request reading now.
-  Only R1 touches `shell.py`, in its file printers, a different part;
-  resolve the shared file at merge time. No requirement changes the pull
-  request reading.
-- Skill texts change only where a rule they state changes.
+- Tickets 108 and 109, on branch `tickets/shell-pr-follow-ups`, are
+  changing `shell.py`'s pull request reading now. Only R1 touches
+  `shell.py`, in its file printers, beside 108's change; Ticket 110 lands
+  after 108 and 109. No requirement changes the pull request reading.
+- Skill texts change only where a rule they state changes. R5 is such a
+  rule: it changes `software-design-principles`'s step 4.
 
 ## Decisions
 
-The maintainer chose the first option of each decision but K1 on
-2026-11-18. K1 is open, its recommended option first. The other options
-are kept as the record of what was weighed.
+The maintainer chose the first option of each decision on 2026-11-18
+(K1 later that day). The restated O is open, its recommended option
+first; L1 as narrowed at review awaits the maintainer's confirmation. The other options are kept as the record of what was
+weighed.
 
 ### H. What orients a session (R1)
 
@@ -353,7 +392,7 @@ already counts them when they are printed whole.
 K1 and K2 are separate choices.
 
 - **K1, a comment on a short code edit.**
-  1. **Recommended: code lines size the comment signal**, as R2 states.
+  1. **Chosen: code lines size the comment signal**, as R2 states.
      It matches Ticket 100's twenty-line comment-only rule. Trade-off: a
      comment of up to nineteen lines on a four-line change goes without
      `readability.md`.
@@ -374,18 +413,34 @@ K1 and K2 are separate choices.
   3. **No change.** Trade-off: the reported hold stays; choosing cases is
      test design, so the read is arguably right.
 
+  Review (2026-11-18) judged K2.1 weak, since the second source credited
+  `test-design.md`, and asked whether K2.2 or K2.3 should be recommended.
+  The maintainer's K2.1 stands until the maintainer says otherwise.
+
 ### L. Holds after the content is written (R5)
 
 The read gates judge a write by its text, so they can only hold it once
 it is composed. The options differ in when the agent learns what it needs.
 
-1. **Chosen: large writes land, and the reads move to the
-   closeout**, as R5 states. Re-sent content costs in proportion to its
-   size, so a short edit keeps the hold (cheap to send again) and a long
-   one keeps its content. Trade-off: for a large write the reads review
-   the design instead of shaping it; the change read after them is where
-   the agent revises. A new closeout label (`Reads`) and session state for
-   what landed writes still need.
+1. **Chosen, then narrowed at review (2026-11-18; the maintainer to
+   confirm): large writes land past `design-reads` and
+   `reference-reads`, and their reads move to the closeout**, as R5
+   states. Re-sent content costs in proportion to its size, so a short
+   edit keeps the hold (cheap to send again) and a long one keeps its
+   content. Review narrowed the option the maintainer chose in two ways:
+   - `design` keeps holding, since moving the skill's load past the code
+     goes against its workflow steps 2 and 4; the load is once per task
+     and usually comes before any large edit;
+   - a write whose lines cannot be counted is held, since letting it land
+     would let a shell write showing no text skip both read gates,
+     undoing Tickets 093 and 097.
+
+   Trade-off: for a large write the reads review the design instead of
+   shaping it; the change read after them is where the agent revises, and
+   the skill's step 4 and the registry signals' description must say so.
+   A new closeout label (`Reads`), a new notice kind (`reads_owed`, event
+   model version 4), and session state for what landed writes still
+   need.
 2. **Announce the references before the write.** After a read of a file,
    a notice names the references an edit of it would need by its path
    alone (a configuration file, a test file, the third code file, a new
@@ -423,18 +478,41 @@ Options 1 and 2 can combine; 1 alone removes the reported cost.
    not track the doctest risk.
 3. **No change.** Trade-off: the rerun stays.
 
-### O. Closeout while waiting (R7)
+### O. Background checks and waiting (R7)
 
-1. **Chosen: a background check still running meets Proof at the
-   turn's end; waiting on the user is named in the Proof text**, as R7
-   states. Trade-off: the closeout trusts that the background job is a
-   check that will report; its result is judged a turn later.
-2. **Text only, for both**, as decision D2.1 did for another session.
-   Trade-off: a skip line lasts one turn, so a wait over several turns
-   writes it each time.
-3. **A waiting status line defers the closeout** (round 4's D2 option 2).
-   Trade-off: a new line grammar, and a way to end a turn without proof
-   that gives no reason.
+Open again, 2026-11-18. The maintainer chose the first option of an
+earlier version of O, which assumed a background check never met Proof.
+Review found the reverse ([Problem](#problem)): its launch meets Proof
+today, at a commit and at the turn's end, and its result is never read.
+So O is restated around two questions: (a) whether a background check
+still running meets Proof at a commit, and (b) how its later result is
+judged. In every option the waiting-on-the-user half stays as chosen:
+text only, the Proof text naming the skip line for it.
+
+1. **Recommended: a background launch is not a check.** (a) It meets
+   Proof neither at a commit nor at the turn's end; (b) its result is
+   not read. `actions._checks` skips a call whose `background` is true,
+   and the contract's "not in the background" covers a harness
+   background run as well as `pytest &`. The Proof text says that a
+   session waiting on a background check writes the skip line naming
+   `verification-before-completion` with what it waits for, or runs the
+   check in the foreground. No event model change. Trade-off: a wait over
+   several turns writes the skip line each turn, so item 10's cost stays
+   for background checks; but no launch passes for a proof.
+2. **A running check defers Proof, and its result is judged when it
+   arrives.** (a) Not at a commit, which needs a finished check; at the
+   turn's end it meets Proof with a new `check_pending` notice. (b) A new
+   entry kind for a background shell command finishing, with its exit
+   status; the Claude Code adapter reads it from the task notification
+   that continues the turn. A pass proves the change; a failure makes
+   Unfinished needed in the turn it arrives, even one with no code
+   change, through cross-turn state of pending checks. The event model
+   moves to version 4 (with L's `reads_owed`, one bump). Trade-off: the
+   most work (schema, adapter transcript reading, state), and a check
+   whose result never arrives is never judged.
+3. **Keep today's behaviour and state it.** The launch counts; the
+   contract says so. Trade-off: a failing background check never
+   surfaces, so Proof proves nothing for it.
 
 ### P. Router-first on a continued prompt (R8)
 
@@ -479,8 +557,11 @@ decision H.
 
 ## Open Questions
 
-- K1 (the maintainer): whether code lines, not all added lines, size the
-  comment signal for `readability.md`.
+- O (the maintainer): whether a background check's launch meets Proof,
+  restated after review.
+- L1 (the maintainer): confirm it as narrowed at review (`design` keeps
+  holding; a write whose lines cannot be counted is held).
+- K2 (the maintainer, optional): review asked whether K2.1 should stand.
 
 The combined ranking orders the work: L (item 7), H (item 1), N and O
 (items 9 and 10), M (item 8), P (item 11), I and J (items 3 and 4), K
