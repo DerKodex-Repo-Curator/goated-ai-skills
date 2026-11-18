@@ -12,6 +12,12 @@ every change here is made once, in the shared core that
 `adapters/core/`, and stated in
 [the enforcement contract](../../stack/enforcement-contract.md).
 
+R7 to R12 are an addendum of 2026-11-18
+([Addendum](#addendum-rule-gaps-left-by-ticket-081)): rule gaps Ticket 081
+found and documented in the contract instead of fixing. R7, R11, R12 and
+R10's commit half are ticket ready; R8, R9 and R10's shell-read half wait
+on decisions E, F and G.
+
 ## Mode
 
 Compact.
@@ -254,7 +260,137 @@ weighed.
 
 ## Open Questions
 
-None.
+Decisions E, F and G of the addendum.
+
+## Addendum: Rule Gaps Left By Ticket 081
+
+Ticket 081's review found places where the core's code was looser than, or
+different from, the contract. Where fixing one would change a rule, 081
+corrected the contract to describe the code and left the rule as it was.
+Each gap below was checked against main at `c7fc561`, in
+`adapters/core/goated_core/`. The goals, non-goals and constraints above
+still apply: hold first lines do not change, and every rule change updates
+the contract and a conformance scenario in the same change.
+
+One reported gap is not real: `git pull --abort` is not a git command
+(git 2.55 answers `unknown option 'abort'`, exit 129), so it can end
+nothing. A pull's conflict ends with `git merge --abort` or
+`git rebase --abort`, which already end it. The contract's mention of
+`git pull --abort` can go when R10 changes that paragraph.
+
+### Requirements
+
+- **R7, a shell pull request's repository.** A shell `gh pr create` or
+  `gh pr new`, or `glab mr create` or `glab mr new`, with `--repo` or `-R`
+  is measured as a `pull_request` call naming that repository is: only
+  when it matches the checkout's `origin`, and not at all otherwise. A
+  host prefix (`github.com/owner/repo`) or a full URL names the same
+  repository as `owner/repo`.
+  - Today: `shell.py` skips the option and its value; `actions.py`
+    measures `opens_pr` with `changed_lines(cwd, base, head)` and no
+    repository.
+  - Contract: Commits And Pull Requests (the `repository` bullet).
+- **R8, JavaScript writes need a file-system receiver** (decision E).
+  `.open`, `.rename`, `.rm`, `.unlink`, `.rmdir`, `.truncate`, `.cp` and
+  `.copyFile` count as writes only where the receiver is a file-system
+  module, so `window.open(url, 'width=200')` and `db.rm(id)` write nothing.
+  - Today: `script_writes.py`'s `js` table matches `.<name>(` on any
+    receiver, and judges `.open` by its second argument alone.
+  - Contract: Shell Reading, the script writes table and the paragraph
+    after it.
+- **R9, `nul` in a posix shell** (decision F). A `posix` command's
+  redirect into `nul` writes a file named `nul`, as bash does; `nul` stays
+  a null device in a `powershell` command.
+  - Today: `shell.NULL_TARGETS` holds `nul` for both shells.
+  - Contract: Shell Reading (the `NULL_TARGETS` bullet).
+- **R10, conflicts opened and ended.**
+  - A finished `commit` call ends an open conflict, as a finished shell
+    `git commit` does.
+  - Decision G: a shell command whose output shows conflict markers opens
+    the conflict, as a file read's does.
+  - Today: `actions._open_conflict` reads markers from `file_read` calls
+    only, and ends a conflict on shell commands only.
+  - Contract: Conflicts.
+- **R11, definition starts.** A public top-level definition is counted in
+  a code file only, never in a configuration file. `async` starts one only
+  before `def`, `function` or `fn`; `pub` only before a definition keyword
+  (`fn`, `struct`, `enum`, `trait`, `type`, `const`, `static`, `mod`,
+  `union`, `impl`, `async fn`, `unsafe fn`, `extern`), so `pub use x`
+  re-exports and defines nothing.
+  - Today: `design_reads.DEFINITION_START_RE` decides by the first word
+    alone, in code and configuration files.
+  - Contract: the `process.md` row of the design references table, and the
+    rows that say "the same as `process.md`".
+- **R12, a reviewer must start work.** A reviewer agent is a finished
+  spawn that starts work now (`starts_now`) and is not `separate`. A spawn
+  that only proposes work reviewed nothing.
+  - Today: `actions._reviewer_returned` tests `not call.separate` only.
+  - Contract: Reviewer Agents.
+
+### Acceptance Criteria
+
+- [ ] **AC9.** R7: `gh pr create --repo other/x` from a checkout whose
+      `origin` is not `other/x` is not measured; `-R` naming the
+      checkout's own repository is measured as today. A scenario covers
+      both.
+- [ ] **AC10.** R8: `node -e "window.open(u,'width=200')"` and
+      `node -e "db.rm(id)"` meet no `scripted-edit` hold;
+      `fs.rmSync(p)`, `fs.promises.rm(p)` and `fs.open(p,'w')` still do.
+- [ ] **AC11.** R9 as decision F settles it, with scenarios for a posix
+      `> nul` and a powershell `> nul`.
+- [ ] **AC12.** R10: after a conflicted merge, a finished `commit` call
+      ends the conflict; decision G's shell-read case has a hold and a
+      near miss.
+- [ ] **AC13.** R11: an added `pub use x;` or `async_helper = 1` line, or
+      a YAML `class: foo` key, selects no `process.md`; `pub fn run()`,
+      `async def run()` and `async function run()` still do.
+- [ ] **AC14.** R12: a proposed (`starts_now` false), not separate spawn
+      with a reviewer brief meets no Review item and opens no
+      `review-intake` hold.
+- [ ] AC7 and AC8 apply to each.
+
+### Addendum Decisions
+
+#### E. Which receivers write (R8)
+
+1. **Recommended: known file-system receivers.** The calls count on `fs`,
+   `fs.promises`, `fsPromises`, `Deno`, or a name the script binds to a
+   `require` or `import` of `fs`, `node:fs`, `fs/promises` or
+   `node:fs/promises`, a destructured name included. A receiver the core
+   cannot name (`a[b].rm(`) counts, as today. Trade-off: a file-system
+   object passed in as a parameter goes unseen.
+2. **Known non-file receivers write nothing**: `window`, `document`,
+   `location`, `db`, and a growing list. Trade-off: an open-ended list;
+   each new false hold is a new entry.
+3. **Fix `.open` only**: `.open` counts on a file-system receiver or with
+   a flag-shaped literal; the other names keep any receiver. Trade-off:
+   `.rm` and `.cp` on other objects stay held.
+
+#### F. `nul` in a posix shell (R9)
+
+1. **Recommended: null devices per shell.** A posix `> nul` writes a file
+   named `nul` and is held as a write; the hold text names `/dev/null` for
+   a posix command. Trade-off: one more held call where an agent types the
+   Windows habit, though the file it leaves is real (and on Windows hard
+   to delete).
+2. **Keep `nul` a null device in both shells.** No ticket for R9.
+   Trade-off: the stray file goes unseen, and the contract keeps saying
+   so.
+
+#### G. Markers a shell command shows (R10)
+
+1. **Recommended: per file, as a file read.** A plain-read command (`cat`,
+   `head`, `tail`, `type`, `Get-Content`) whose output has a marker at a
+   line start opens the conflict for the files it names; `git diff`
+   output opens it for each path whose combined-diff section shows a
+   marker after the diff prefix (`++<<<<<<<`, `+<<<<<<<`), which today's
+   line-start pattern does not match. Trade-off: more reading of output; a
+   command naming several files opens all of them.
+2. **Any shell output with a marker opens it for any write**, as a git
+   conflict result does. Trade-off: simpler, but a `cat` of a doc that
+   quotes a marker holds every write for the rest of the turn.
+3. **No change** for the shell-read half. Trade-off: an agent that
+   inspects with `cat` and then edits is not held.
 
 ## Sources
 
@@ -266,3 +402,7 @@ None.
   behaviour each problem item describes, at `2a0e691`.
 - `stack/schemas/enforcement-event-model.schema.json` — prompt `author`.
 - `stack/goated-stack.yaml` — the `mock-or-patch` pattern.
+- Addendum: `adapters/core/goated_core/actions.py`, `shell.py`,
+  `script_writes.py` and `design_reads.py` at `c7fc561`; the contract's
+  Conflicts, Commits And Pull Requests, Reviewer Agents and Shell Reading
+  sections and the design references table.
