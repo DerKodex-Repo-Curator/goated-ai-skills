@@ -1642,7 +1642,8 @@ class RecordedSessionTests(unittest.TestCase):
     """Run the installed command on a recorded transcript and hook inputs."""
 
     def run_command(self, hook_input: dict, state_dir: Path) -> dict:
-        env = dict(os.environ, GOATED_ADAPTER_STATE_DIR=str(state_dir))
+        env = dict(os.environ, GOATED_ADAPTER_STATE_DIR=str(state_dir),
+                   GOATED_USAGE_LOG=str(state_dir / "usage-log.jsonl"))
         completed = subprocess.run(
             [sys.executable, str(ADAPTER_DIR / "goated_hook.py")],
             input=json.dumps(hook_input).encode("utf-8"),

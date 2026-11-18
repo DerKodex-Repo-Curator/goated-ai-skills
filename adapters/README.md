@@ -66,9 +66,45 @@ through both ways in the repo's tests (`tests/test_enforcement_core.py`,
 with the runner in `tests/core_scenarios.py`), and must give the same
 decision each way.
 
+## The Usage Log
+
+The core appends what each event showed to a local usage log, so a session
+in any harness leaves the same record (Ticket 082): each hold with its gate,
+kind and what it asks for, what became of it, each skill load with its
+cause, each route and skip line, each reference read, and code changes and
+turn ends. Each entry carries the log's version, the session id, a project
+key and the adapter's name. It holds what the
+[skill-usage mod](claude-code/skill-usage/README.md) stores and nothing
+more: no prompt text, hold text, file content or project path. The format,
+JSON Lines of one entry each, is
+[`stack/schemas/usage-log.schema.json`](../stack/schemas/usage-log.schema.json).
+
+- **Where it lives.** The caller sets it: `--usage-log PATH` on the command,
+  `GOATED_USAGE_LOG` for the command and the Claude Code adapter, or
+  `UsageLog(path, adapter)` in `Settings.usage_log` for the Python call
+  (None keeps no log). By default it is a per-user file, never in a project
+  folder: `%LOCALAPPDATA%\goated\usage-log.jsonl` on Windows, else
+  `$XDG_STATE_HOME/goated/usage-log.jsonl`, else
+  `~/.local/state/goated/usage-log.jsonl`. Project keys are salted with
+  `usage-log-salt`, made once beside it. The command names its adapter
+  from `GOATED_CORE_ADAPTER`, `core` when unset; the Claude Code adapter
+  writes as `claude-code`.
+- **Never in the way.** A log that cannot be written leaves the decision
+  as it was and adds a `warning` notice. Nothing is sent anywhere.
+- **The report.** `python <goated-root>/adapters/core/goated_usage_report.py
+  [--log PATH] [--project KEY] [--adapter NAME]` prints a Markdown summary:
+  loads by skill and cause, holds by gate and outcome, closeout items,
+  route lines, and reference reads. A log with an entry of a version it
+  does not know is refused: the reason goes to standard error and the
+  command exits 1.
+- **Outcomes** are the core's own settlement (`goated_core/friction.py`):
+  answered, declined, stood down by an override, or unanswered, one per
+  gate and turn however often the gate held. The skill-usage mod settles
+  holds by its own finer rules and reads the log's other entries.
+
 ## Adapters
 
 | Folder | Framework | Status |
 | --- | --- | --- |
-| [`core/`](core/) | Any, through the event model | The shared rules every adapter calls (Ticket 081) |
+| [`core/`](core/) | Any, through the event model | The shared rules every adapter calls (Ticket 081); the usage log and its report (Ticket 082) |
 | [`claude-code/`](claude-code/README.md) | Claude Code | Routing gates (Ticket 030); action, shell-write, and closeout gates (Ticket 031); calls the shared core (Ticket 081) |

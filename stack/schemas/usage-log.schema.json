@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goated-ai-skills.dev/schemas/usage-log.schema.json",
+  "title": "GOATED Usage Log Entry",
+  "description": "One line of the usage log the enforcement core appends to (Ticket 082): JSON Lines, one entry per line, oldest first. Every adapter writes through the core, so a session in any harness leaves the same entries. An entry holds what the skill-usage mod stores and nothing more: no prompt text, hold text, file content, or project path. The log lives where its caller says (`--usage-log`, `GOATED_USAGE_LOG`), by default in a per-user folder, never a project's: `%LOCALAPPDATA%\\goated\\usage-log.jsonl` on Windows, else `$XDG_STATE_HOME/goated/usage-log.jsonl`, else `~/.local/state/goated/usage-log.jsonl`. Its project keys are salted with `usage-log-salt` beside it. A log with an entry of another version is refused by its readers, not guessed at; `adapters/core/goated_usage_report.py` summarises it.",
+  "type": "object",
+  "required": ["log", "t", "adapter", "session", "project", "type"],
+  "properties": {
+    "log": {
+      "description": "The log's version: a whole number every change of an entry's meaning bumps.",
+      "const": 1
+    },
+    "t": {"description": "When the core wrote the entry, in seconds since the Unix epoch.", "type": "number"},
+    "adapter": {
+      "description": "The adapter's short name, such as `claude-code`, or what a harness calling the command sets in `GOATED_CORE_ADAPTER` (`core` by default).",
+      "type": "string",
+      "minLength": 1
+    },
+    "session": {"description": "The session id the adapter gave the core.", "type": "string", "minLength": 1},
+    "project": {
+      "description": "The project's key: the first ten hex digits of the SHA-256 digest of the log's salt and the project folder's path, the folder being its repository's root (the main working tree's, for a worktree). The key does not reveal the path. Null when the adapter named no folder.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{10}$"
+    },
+    "agent": {"description": "The subagent acting, absent for the main agent.", "type": "string", "minLength": 1},
+    "type": {
+      "enum": ["prompt", "override", "load", "hold", "outcome", "skip", "route", "ref", "skill_read",
+               "file_read", "change", "turn_end", "compaction"]
+    }
+  },
+  "allOf": [
+    {"if": {"properties": {"type": {"const": "prompt"}}}, "then": {"$ref": "#/$defs/prompt"}},
+    {"if": {"properties": {"type": {"const": "override"}}}, "then": {"$ref": "#/$defs/override"}},
+    {"if": {"properties": {"type": {"const": "load"}}}, "then": {"$ref": "#/$defs/load"}},
+    {"if": {"properties": {"type": {"const": "hold"}}}, "then": {"$ref": "#/$defs/hold"}},
+    {"if": {"properties": {"type": {"const": "outcome"}}}, "then": {"$ref": "#/$defs/outcome"}},
+    {"if": {"properties": {"type": {"const": "skip"}}}, "then": {"$ref": "#/$defs/skip"}},
+    {"if": {"properties": {"type": {"const": "route"}}}, "then": {"$ref": "#/$defs/route"}},
+    {"if": {"properties": {"type": {"const": "ref"}}}, "then": {"$ref": "#/$defs/ref"}},
+    {"if": {"properties": {"type": {"const": "skill_read"}}}, "then": {"$ref": "#/$defs/skill_read"}},
+    {"if": {"properties": {"type": {"const": "file_read"}}}, "then": {"$ref": "#/$defs/file_read"}},
+    {"if": {"properties": {"type": {"enum": ["change", "turn_end", "compaction"]}}}, "then": {"$ref": "#/$defs/bare"}}
+  ],
+  "$defs": {
+    "common": {
+      "description": "The fields every entry carries.",
+      "properties": {
+        "log": true, "t": true, "adapter": true, "session": true, "project": true, "agent": true, "type": true
+      }
+    },
+    "skill": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "skills": {"type": "array", "items": {"$ref": "#/$defs/skill"}},
+    "prompt": {
+      "description": "A typed prompt opened a turn. `named`: the installed skills its text names, backticked, slashed, or as a whole word; the text itself is not kept.",
+      "required": ["named"],
+      "properties": {"named": {"$ref": "#/$defs/skills"}},
+      "$ref": "#/$defs/common",
+      "unevaluatedProperties": false
+    },
+    "override": {
+      "description": "The overrides the core recorded for the prompt just logged, each phrase as matched, lowercased (`skip routing`, `skip tdd`, `commit message`).",
+      "required": ["phrases"],
+      "properties": {"phrases": {"type": "array", "minItems": 1, "items": {"type": "string"}}},
+      "$ref": "#/$defs/common",
+      "unevaluatedProperties": false
+    },
+    "load": {
+      "description": "A skill loaded: a skill load call finished ok, or a person invoked it. `skill` is its bare name, a plugin namespace dropped. `cause`, judged in this order: `slash` (a person invoked it), `subagent` (a subagent chose it; `hold` when a hold asked that subagent), `named` (the turn's prompt named it), `hold` (a hold of the turn asked for it), `route` (it loaded after the router in the turn), `agent` (the agent chose it).",
+      "required": ["skill", "cause"],
+      "properties": {
+        "skill": {"type": "string", "minLength": 1},
+        "cause": {"enum": ["slash", "named", "hold", "route", "agent", "subagent"]}
+      },
+      "$ref": "#/$defs/common",
+      "unevaluatedProperties": false
+    },
+    "hold": {
+      "description": "A hold the core showed, as what it asks for, read from its text the way the skill-usage mod reads it; the text is not kept. `named`: the skills it backticks alone or offers as a skip line, in order (the router for `router-first`; none for `route-line`, which asks for a route line). `skip_only`: those it offers only as a skip line, which no load answers. `refs`: the references a `design` or `design-reads` hold (by file name) or a `reference-reads` hold (by path under the skill) asks to read. `items`: a closeout's items, each with the skill its line names. `brief_added`: the orientation skill a pipeline hold asks for because the session started from a brief. `stop`: it held a turn's end, not a call.",
+      "required": ["gate", "kind", "named"],
+      "properties": {
+        "gate": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["strict", "justified-skip"]},
+        "named": {"$ref": "#/$defs/skills"},
+        "skip_only": {"$ref": "#/$defs/skills"},
+        "refs": {"type": "array", "items": {"type": "string", "pattern": "^(?:[a-z0-9-]+/references/)?[a-z0-9-]+\\.md$"}},
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "skill"],
+            "properties": {"label": {"type": "string"}, "skill": {"$ref": "#/$defs/skill"}}
+          }
+        },
+        "brief_added": {"$ref": "#/$defs/skills"},
+        "stop": {"const": true}
+      },
+      "$ref": "#/$defs/common",
+      "unevaluatedProperties": false
+    },
+    "outcome": {
+      "description": "What became of the main agent's hold of `gate`, as the core settles it for its friction count: `answered` (its asks were met, or its gate let the action through), `declined` (a skip line named its skill; never a strict hold), `stood_down` (the next typed prompt's override covered it), `unanswered` (still open at the next typed prompt). One outcome per gate and turn, however often the gate held in it. The skill-usage mod settles holds itself and does not read these.",
+      "required": ["gate", "outcome"],
+      "properties": {
+        "gate": {"type": "string", "minLength": 1},
+        "outcome": {"enum": ["answered", "declined", "stood_down", "unanswered"]}
+      },
+      "$ref": "#/$defs/common",
+      "unevaluatedProperties": false
+    },
+    "skip": {
+      "description": "A valid `goated-skip:` line in reply text or a call's line text. `reason`: each path-like word (one starting with a drive, a slash, or `~/`, or holding a backslash) masked as `<path>`, then cut to 160 characters, its last an ellipsis.",
+      "required": ["skill", "reason"],
+      "properties": {"skill": {"$ref": "#/$defs/skill"}, "reason": {"type": "string", "maxLength": 160}},
+      "$ref": "#/$defs/common",
+      "unevaluatedProperties": false
+    },
+    "route": {
+      "description": "The winning `goated-route:` line of one reply text or one call's line text.",
+      "required": ["form"],
+      "properties": {
+        "form": {"enum": ["direct", "continue", "route"]},
+        "intensity": {"enum": ["lightweight", "standard", "full"]},
+        "requires": {"$ref": "#/$defs/skills"}
+      },
+      "if": {"properties": {"form": {"const": "route"}}},
+      "then": {"required": ["intensity", "requires"]},
+      "else": {"not": {"anyOf": [{"required": ["intensity"]}, {"required": ["requires"]}]}},
+      "$ref": "#/$defs/common",
+      "unevaluatedProperties": false
+    },
+    "ref": {
+      "description": "A file read or shell command reached a skill's supporting file: `file` is its path within the skill (`references/test-design.md`). `read_tool`: by a file read, not a command; `partial`: that read had a range, so it answers no hold.",
+      "required": ["skill", "file"],
+      "properties": {
+        "skill": {"type": "string", "minLength": 1},
+        "file": {"type": "string", "minLength": 1},
+        "read_tool": {"const": true},
+        "partial": {"const": true}
+      },
+      "$ref": "#/$defs/common",
+      "unevaluatedProperties": false
+    },
+    "skill_read": {
+      "description": "A main-agent file read or shell command reached into these skill folders (their SKILL.md or any file in them).",
+      "required": ["skills"],
+      "properties": {"skills": {"type": "array", "minItems": 1, "items": {"type": "string"}}},
+      "$ref": "#/$defs/common",
+      "unevaluatedProperties": false
+    },
+    "file_read": {
+      "description": "A main-agent file read finished ok. `file` is a digest of the path, never the path: the first 16 hex digits of the SHA-256 digest of the path in comparable form (slashes forward and lowercased for a Windows path, `.` and `..` collapsed), so distinct files can be counted.",
+      "required": ["file"],
+      "properties": {"file": {"type": "string", "pattern": "^[0-9a-f]{16}$"}},
+      "$ref": "#/$defs/common",
+      "unevaluatedProperties": false
+    },
+    "bare": {
+      "description": "`change`: a file write to a code file finished ok. `turn_end`: the core let the turn end as an answer. `compaction`: the context was compacted, so earlier loads no longer count.",
+      "$ref": "#/$defs/common",
+      "unevaluatedProperties": false
+    }
+  }
+}

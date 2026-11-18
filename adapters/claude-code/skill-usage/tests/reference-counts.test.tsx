@@ -10,6 +10,7 @@ import { declaredReferences, registryPlaces } from '../hooks/registry'
 import { reportText } from '../hooks/view'
 import { ADAPTER_TEXTS } from './adapter-texts'
 import { REGISTRY_FIXTURE } from './registry-fixture'
+import { USAGE_LOG_SESSION } from './usage-log-session'
 
 const prompt = (t = 1): UsageEvent => ({ kind: 'prompt', t, named: [], isTimed: true })
 const turnEnd = (t: number): UsageEvent => ({ kind: 'turn-end', t })
@@ -181,7 +182,8 @@ function world(on: On, readable: (path: string) => string | undefined, asked: st
   on('ui.status', () => ({ value: undefined }))
   on('fs.read', (_, e) => {
     const { path } = e as { path: string }
-    asked.push(slashed(path))
+    // `asked` lists the places tried for the registry; the usage log is read at each start too (hooks/usage-log.ts).
+    if (!slashed(path).endsWith('/usage-log.jsonl')) asked.push(slashed(path))
     const text = readable(path)
     if (text === undefined) throw new Error(`ENOENT: no such file, open '${path}'`)
     return { value: text }
@@ -272,6 +274,41 @@ test('near miss: a set path with no registry there falls back to the integrated 
   const asked: string[] = []
   const { report } = await seen($, world(on, onlyAt(INTEGRATED), asked))
   expect(asked.length).toBe(2)
+  expect(report).toContain('## Declared references')
+})
+
+// ---------- the mod reads the GOATED core's usage log at session start (Ticket 082) --------------------------------
+
+const LOG = '/home/dev/.local/state/goated/usage-log.jsonl'
+/** The recorded session's log as another adapter wrote it. */
+const PI_LOG = USAGE_LOG_SESSION.logText.replaceAll('"adapter": "claude-code"', '"adapter": "pi-agent"')
+/** The registry at the integrated install, and `log` at the core's default log place. */
+const withLog = (log: string) => (path: string) => (slashed(path).endsWith(LOG) ? log : onlyAt(INTEGRATED)(path))
+
+test("a session another adapter logged counts in All time and the report, under the log's project key", async ($, on) => {
+  mock.env(on, { HOME: '/home/dev' })
+  const { report, error } = await seen($, world(on, withLog(PI_LOG)))
+  expect(error).toBeNull()
+  // The running session and the logged one.
+  expect(report).toContain('# Skill usage: 2 sessions')
+  expect(report).toContain('- 0123456789: 1 session')
+  expect(report).toContain('- doc-sync: 1')
+})
+
+test("near miss: the mod's own adapter's sessions in the log are its own reading's, so they add nothing", async ($, on) => {
+  mock.env(on, { HOME: '/home/dev' })
+  const { report, error } = await seen($, world(on, withLog(USAGE_LOG_SESSION.logText)))
+  expect(error).toBeNull()
+  expect(report).toContain('# Skill usage: 1 session')
+  expect(report).not.toContain('doc-sync')
+})
+
+test('a log of a version the mod does not know is refused with its reason, and the rest of the start still runs', async ($, on) => {
+  mock.env(on, { HOME: '/home/dev' })
+  const later = `${PI_LOG}${JSON.stringify({ log: 2, t: 1, adapter: 'pi-agent', session: 's', project: null, type: 'prompt' })}\n`
+  const { report, error } = await seen($, world(on, withLog(later)))
+  expect(String(error)).toContain('the GOATED usage log was not read: line 26 of the usage log is of log version 2')
+  expect(report).toContain('# Skill usage: 1 session')
   expect(report).toContain('## Declared references')
 })
 

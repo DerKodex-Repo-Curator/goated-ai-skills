@@ -273,6 +273,11 @@ declare module 'claude-code' {
       /** The installed registry's references, read once per session; null when no registry could be read. */
       declared: Shaped<DeclaredReferences | null>
       allTime: Shaped<AllTime | null>
+      /**
+       * The totals of the sessions other adapters wrote to the GOATED core's usage log (hooks/usage-log.ts), read once
+       * per session and added to All time; null when the log holds none or could not be read.
+       */
+      logged: Shaped<AllTime | null>
       /** This session's project key, worked out once (hooks/project.ts); `''` when no project folder could be read. */
       project: string | null
       /** The project key All time is filtered to; null for every project. */

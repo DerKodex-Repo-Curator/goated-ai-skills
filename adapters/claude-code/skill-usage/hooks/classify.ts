@@ -873,7 +873,7 @@ function addSkipReasons(into: { skipReasons?: SkipReasons }, from: SkipReasons |
 }
 
 /** Adds the totals `from` into a copy of `into`: the same sums `addSession` makes, for many sessions at once. */
-function addTotals(into: AllTime | null, from: AllTime | null): AllTime | null {
+export function addTotals(into: AllTime | null, from: AllTime | null): AllTime | null {
   if (!from) return into
   if (!into) return copy(from)
   const out = copy(into)

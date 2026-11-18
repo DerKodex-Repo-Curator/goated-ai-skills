@@ -191,6 +191,41 @@ These rules live in `hooks/holds.ts`, the hold settlement: `hooks/classify.ts`
 reads the events and feeds them to it in order, and keeps the rest of a
 session's summary.
 
+## The GOATED Usage Log
+
+The GOATED enforcement core appends what each judged event showed to a
+local [usage log](../../README.md#the-usage-log), whichever harness's
+adapter called it: holds and what they ask, skill loads with their cause,
+route and skip lines, reference reads, code changes, prompts as the skills
+they name, overrides, and turn ends. Its entries are the facts this mod
+stores, so `hooks/usage-log.ts` turns each into the event the mod would have
+made of the same moment, and the hold settlement counts them as it counts
+what the mod hears. The core's own `outcome` entries are left aside: the
+mod settles each hold by the rules above.
+
+At each session start the mod reads the log, from the `usageLogPath` option
+(the `skill-usage.usageLogPath` row of Claude Code's settings menu, or
+`pluginConfigs` in `settings.json`) or else the core's per-user default:
+`%LOCALAPPDATA%\goated\usage-log.jsonl` when `LOCALAPPDATA` is set, else
+`$XDG_STATE_HOME/goated/usage-log.jsonl`, else
+`~/.local/state/goated/usage-log.jsonl`. The sessions other adapters logged
+there, such as one in another harness, add to All time and the report as
+finished sessions, under the project keys the log gives them, which the
+core salts with its own salt, so they differ from the mod's keys for the
+same folder. The log's `claude-code` sessions are left out: the mod heard
+those itself and stores them already. With no log, nothing changes.
+
+For one recorded Claude Code session, the mod counts the same from its log
+as from what it heard: loads by cause, holds and their outcomes, closeout
+items, skip reasons, declared references, reference reads and their
+moments, routes, routed skills, and overrides
+(`tests/usage-log.test.tsx`, over the session `tests/test_skill_usage_mod.py`
+generates by driving the adapter with the log on).
+
+A log with an entry of a version the mod does not know (it knows version 1)
+is refused: nothing of it is counted, and the pane's observer error says
+which line and why until the next save clears it.
+
 ## The Pane
 
 - **Session**: a picture of where skill loads came from, then lines on how
@@ -338,6 +373,9 @@ folds older ones into a single total under the key `older`, so All time
 still counts them. Within a session, the event list lives in session state
 and is capped at 5,000 events.
 
+The mod writes nothing to the GOATED usage log; it only reads it, and keeps
+the totals of other adapters' sessions in session state, never in the store.
+
 Summaries saved by earlier versions of the mod still read: fields added since
 are optional, so an older summary simply has none of them.
 
@@ -434,6 +472,15 @@ This has not been tested end to end. Keep a backup of both files.
   so a hold that asked a subagent counts as fired only.
 - The mod judges nothing. Whether a skip reason is specific to the action is
   for you to read in the log.
+- The GOATED usage log carries no writing turns, side sessions, subagent
+  spawns, or subagent turn ends, so a session another adapter logged shows
+  none of the first three, and a hold asked of one of its subagents that no
+  load answered counts as ended by a new prompt, not unanswered. The log is
+  read once per session start: a session another harness logs meanwhile
+  shows from the next start. A log the core could not write to holds
+  nothing of the events it missed. The log's facts stand where the core
+  judged each event, so a load written in the same reply as a held call
+  counts as an answer after the hold, which is what the mod concludes too.
 
 ## Tests
 
@@ -447,12 +494,14 @@ claude plugin test .
 claude plugin validate .
 ```
 
-The tests read three generated modules: `tests/marker-fixtures.ts`, from
+The tests read four generated modules: `tests/marker-fixtures.ts`, from
 `stack/fixtures/markers/lines.yaml`; `tests/registry-fixture.ts`, the
 registry `stack/goated-stack.yaml` with the references a full YAML parser
-reads from it; and `tests/adapter-texts.ts`, the
+reads from it; `tests/adapter-texts.ts`, the
 hold reasons and override context the adapter produces when the generator
-drives it. In the GOATED source repo, `tests/test_skill_usage_mod.py` fails
+drives it; and `tests/usage-log-session.ts`, one session driven through the
+adapter with the core's usage log on, as the rows the mod hears and as the
+log. In the GOATED source repo, `tests/test_skill_usage_mod.py` fails
 when any copy drifts, or when the mod's list of code file extensions differs
 from the adapter's. Regenerate the modules with
 `uv run python tests/test_skill_usage_mod.py --write` from the repo root.

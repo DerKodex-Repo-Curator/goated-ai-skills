@@ -8,7 +8,10 @@ system, YAML parser, or Python, so they read generated TypeScript modules:
   references each skill declares, as a full YAML parser reads them, so the mod's
   own reader is tested against both;
 - `adapter-texts.ts`, the hold reasons and the override context the Claude Code
-  adapter actually produces, from driving it with synthetic sessions.
+  adapter actually produces, from driving it with synthetic sessions;
+- `usage-log-session.ts`, one session driven through the adapter with the
+  core's usage log on, as the rows the mod hears and as the log, so the mod's
+  tests check that it counts the same from either (Ticket 082).
 
 It also checks the one adapter fact the mod copies by hand: which file
 extensions are code. This test fails when a module no longer matches its
@@ -29,6 +32,7 @@ from pathlib import Path
 import yaml
 
 from claude_code_adapter_support import BRIEF, ROUTER, Session, git_branch_with_change, parse, reason
+from usage_log_session import recorded_session
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 # A whole backticked token shaped like a skill name, as the mod reads one from a hold.
@@ -42,6 +46,7 @@ MOD_FILE_EDIT_TOOLS = re.compile(r"const FILE_EDIT_TOOLS: Record<string, string>
 GENERATED_ADAPTER_TEXTS = MOD_ROOT / "tests" / "adapter-texts.ts"
 REGISTRY = REPO_ROOT / "stack" / "goated-stack.yaml"
 GENERATED_REGISTRY = MOD_ROOT / "tests" / "registry-fixture.ts"
+GENERATED_USAGE_LOG_SESSION = MOD_ROOT / "tests" / "usage-log-session.ts"
 
 
 def _module(source: str, name: str, value: object) -> str:
@@ -303,10 +308,20 @@ def render_adapter_texts() -> str:
     )
 
 
+def render_usage_log_session() -> str:
+    return _module(
+        "one synthetic Claude Code session driven through the adapter with the core's usage "
+        "log on (tests/usage_log_session.py)",
+        "USAGE_LOG_SESSION",
+        recorded_session(),
+    )
+
+
 GENERATED = {
     GENERATED_MARKERS: render_marker_fixtures,
     GENERATED_ADAPTER_TEXTS: render_adapter_texts,
     GENERATED_REGISTRY: render_registry_fixture,
+    GENERATED_USAGE_LOG_SESSION: render_usage_log_session,
 }
 
 

@@ -46,7 +46,8 @@ def _request(session_id: str = "s1", **changes) -> dict:
 
 
 def _command(text: str, state_dir: Path) -> dict:
-    done = subprocess.run([sys.executable, str(COMMAND), "--state-dir", str(state_dir)],
+    done = subprocess.run([sys.executable, str(COMMAND), "--state-dir", str(state_dir),
+                           "--usage-log", str(state_dir / "usage-log.jsonl")],
                           input=text.encode("utf-8"), capture_output=True, check=True)
     return json.loads(done.stdout.decode("utf-8"))
 

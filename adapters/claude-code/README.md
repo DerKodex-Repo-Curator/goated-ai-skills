@@ -799,6 +799,16 @@ since the last compaction, and, for the closeout's Review item, the
 templates recorded for its spawns. Files are not pruned automatically;
 deleting the folder between sessions is safe.
 
+The adapter also writes the core's [usage log](../README.md#the-usage-log),
+as `claude-code`, to `GOATED_USAGE_LOG` or the core's per-user default
+(`%LOCALAPPDATA%\goated\usage-log.jsonl` on Windows,
+`~/.local/state/goated/usage-log.jsonl` elsewhere), never to the project.
+It keys each session by Claude Code's session id and its project by a salted
+digest of `CLAUDE_PROJECT_DIR`, or of the hook's `cwd` when that is unset.
+A `usage-log/` folder beside the state files keeps how far the log has read
+each session's turns. A log that cannot be written changes no hold and adds
+a warning.
+
 ## Latency
 
 Measured on 2026-11-16 on Windows 11 with Python 3.13 and an Intel Core
