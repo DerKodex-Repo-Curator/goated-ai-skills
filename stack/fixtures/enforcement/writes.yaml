@@ -235,6 +235,43 @@ scenarios:
           decision: hold
           holds: [{gate: design-reads, kind: justified-skip}]
 
+  - name: a public definition in a code file waits for the references it selects
+    covers:
+      - {gate: design-reads, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export entry point.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call:
+          kind: file_write
+          path: src/lib.rs
+          edits: [{removed: "", added: "pub fn run() {}"}]
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+
+  - name: a re-export, an async arrow function, and a configuration key define nothing
+    covers:
+      - {gate: design-reads, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Wire the export helpers.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call:
+          kind: file_write
+          path: src/lib.rs
+          edits: [{removed: "", added: "pub use export::run;"}]
+      - call:
+          kind: file_write
+          path: src/export.js
+          edits: [{removed: "", added: "async () => run()"}]
+      - call:
+          kind: file_write
+          path: config/export.yaml
+          edits: [{removed: "", added: "class: foo"}]
+
   - name: a skip line clears the design-reads hold
     covers:
       - {gate: design-reads, case: clears, way: skip-line}
