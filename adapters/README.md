@@ -34,7 +34,10 @@ states them. It knows no harness. It reads the
 the session facts that outlast a request (the task's route, the briefed flag,
 turn markers, friction counts, spawn brief templates, the latest typed
 overrides), keyed by the session id the adapter supplies, in a folder the
-adapter may choose. Standard library only, Python 3.11 or later.
+adapter may choose. A session id made only of lowercase letters, digits,
+`_` and `-`, at most 128 of them, names its state file as it is; any other
+is named by a readable prefix and a digest of the whole id, so two ids never
+share a file. Standard library only, Python 3.11 or later.
 
 An adapter translates its harness's events into the model and the core's
 decision back into the harness's output, in one of two ways:

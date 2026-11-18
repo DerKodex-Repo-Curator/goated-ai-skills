@@ -78,8 +78,7 @@ Do not bulk-read the repo when a targeted read will do.
   the shared rules every adapter calls (ADR 0004). Adapters enforce
   portable contracts and no skill may depend on one. The rules they enforce
   are stated in `stack/enforcement-contract.md`, over the event model in
-  `stack/schemas/enforcement-event-model.schema.json`; a rule change updates
-  the contract and a conformance scenario in the same change.
+  `stack/schemas/enforcement-event-model.schema.json`.
 - `issues/`: historical V1 PRDs and archived issue handoffs. Do not add new work there or rewrite archived records.
 
 ## GOATED Skill Routing

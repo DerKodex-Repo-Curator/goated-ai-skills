@@ -369,9 +369,11 @@ rule below says.
 - A **test file** is judged by its path inside the project, so a folder
   above the project, such as the `tests` in `D:/tests/myapp/`, makes nothing
   a test. It is one under a `tests/`, `test/`, or `__tests__/` folder at any
-  depth, or a top-level `spec/` folder; or one named `test_*`, `*_test.*`,
-  `*_spec.*`, `*.test.*`, or `*.spec.*`. So `tests/helpers/factory.py` and
-  `src/app/test_runner.py` are test files, and `src/spec/parser.py` is not.
+  depth, or a top-level `spec/` folder; or one named `test_*`, or `*_test.*`,
+  `*_spec.*`, `*.test.*`, or `*.spec.*` with exactly one extension after the
+  word. So `tests/helpers/factory.py`, `src/app/test_runner.py`, and
+  `src/a.test.ts` are test files, and `src/spec/parser.py` and
+  `src/a.test.d.ts` are not.
   A file whose place in the project is unknown, because the project is
   unknown or the path cannot be read for certain, is not a test file
   (`TEST_PATH_RE` and `is_test_path` in `design_reads.py`). The design gates,
@@ -420,7 +422,11 @@ or into the harness's own settings, is routed. For the scratch pass of the
 routing gates, a shell command passes only when every simple command in it
 is a [plain read](#plain-reads), a folder change, a command that only
 writes, copies, moves, or removes the files it names (`cp`, `mv`, `rm`,
-`touch`, `tee`, `ln`, and their PowerShell forms; not `install` or
+`rmdir`, `touch`, `truncate`, `tee`, `ln`, `unlink`, `shred`, the cmd forms
+`copy`, `move`, `ren`, `del`, `erase`, and `rd`, the PowerShell
+`Copy-Item`, `Move-Item`, `Remove-Item`, `Rename-Item`, `Tee-Object`,
+`New-Item`, `Set-Content`, `Add-Content`, `Clear-Content`, `Out-File`,
+`Export-Csv`, and `Export-Clixml`, and their aliases; not `install` or
 `rename`; `FILE_WRITERS` in `shell.py`), or a plain read with its output
 redirected into a file, so `cp a /tmp/x && cat f` passes and
 `cp a /tmp/x && ./script.sh` is held. A write with any file that is not
@@ -446,7 +452,7 @@ The first matching category is named (`SECURITY_CATEGORIES` in
 | --- | --- |
 | dependencies | `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `requirements*.txt` or `.in`, `pyproject.toml`, `poetry.lock`, `uv.lock`, `Pipfile` and its lock, `Cargo.toml` and `Cargo.lock`, `go.mod`, `go.sum`, `Gemfile` and its lock, `composer.json` and its lock, `*.csproj` |
 | secrets | `.env` and `.env.*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa`, `id_ed25519`, `id_ecdsa`, and the words `secret`, `credential`, `token`, `apikey` or `api_key`, singular or plural |
-| auth | the words `auth`, `authn`, `authz`, `authenticat…`, `authoriz…`, `oauth`, `oauth2`, `login`, `logout`, `signin`, `jwt`, `password`, `permission`, `rbac`, `acl`, `policy`, `session`, and their plurals |
+| auth | the words `auth`, `authn`, `authz`, `authenticat…`, `authoriz…`, `oauth`, `oauth2`, `login`, `logout`, `signin`, `jwt`, `password`, `permission`, `rbac`, `acl`, `policy`, `session`, and the plurals of `password`, `permission`, `acl`, `policy`, and `session` only |
 | persistence | a `migration/` or `migrations/` folder, `schema.sql`, `schema.prisma`, any `.sql` file |
 | deploy-and-ci | `Dockerfile`, `docker-compose`, `.github/workflows/`, `.gitlab-ci`, a `terraform/` folder or `.tf` file, a `k8s/` or `helm/` folder, `serverless.yml` or `.yaml` |
 
@@ -459,8 +465,10 @@ sensitive. The Security closeout item and the `reference-reads` gate's
 A **check** is a test runner, linter, type checker, or build tool
 (`pytest`, `python -m unittest`, `npm test`, `cargo test`, `go vet`, `tsc`,
 `make check`, and the like, also through `uv run`, `npx`, and the other
-command runners), or a script whose name says test, check, lint, verify,
-validate, or build (`scripts/validate_skills.py`). The tables are
+command runners), or a script whose name holds, as a whole word, `test`,
+`tests`, `check`, `checks`, `lint`, `typecheck`, `verify`, `validate`,
+`build`, or `ci` (`scripts/validate_skills.py`, `npm run typecheck`). The
+tables are
 `CHECK_TOOLS`, `CHECK_MODULES`, `SUBCOMMAND_CHECKS`, `SCRIPT_RUNNERS`,
 `TARGET_RUNNERS`, `COMMAND_RUNNERS`, and `CHECK_WORD_RE` in `shell.py`.
 Inline interpreter code (`python -c`, `python -Bc`, `node -pe`, `perl -e`)
@@ -490,9 +498,10 @@ so `sed -i … && pytest` and `pytest | tee out.txt` are held, while
   whitespace aside. A leading `cd` to a folder joined by `&&` or `;` names
   the folder: `cd pkg_a && pytest -q` and `cd pkg_b && pytest -q` are two
   checks, and `cd <the working folder> && pytest -q` is `pytest -q`. The
-  text is compared without a trailing pipe into output filters (`tail`,
-  `head`, `grep`, `findstr`, `more`, `less`, `tee`, `Select-Object`,
-  `Select-String`, `Out-Host`, `Out-String`) or a `2>&1` before it
+  text is compared without any trailing pipes into output filters (`tail`,
+  `head`, `grep`, `egrep`, `findstr`, `more`, `less`, `tee`, `Tee-Object`,
+  `Select-Object` or `select`, `Select-String` or `sls`, `Out-Host`,
+  `Out-String`, in any case) or a `2>&1` or `*>&1` before them
   (`PIPE_TAIL_RE`, `STDERR_MERGE_RE`, `LEADING_CD_RE`); so
   `pytest -q | tail -20` and `pytest -q | tail -40` are one check, and a
   narrowed rerun such as one test file of a failing suite is another. The
@@ -516,10 +525,14 @@ so `sed -i … && pytest` and `pytest | tee out.txt` are held, while
   holding: output cut before the runner names the cause
   (`pytest -q | tail -3`), ts-jest's `TS2307`, and vitest's
   `Failed to load url`.
-- **The first run after a test write.** The first run of a check after a
-  finished write to a test file in the turn, by a file write or a shell
-  command, neither adds nor resets: in TDD that run is meant to fail. A held
-  or failed write excuses nothing, and only that first run is excused.
+- **The first run after a test write.** When the first run of a check after
+  a finished write to a test file in the turn, by a file write or a shell
+  command, fails, it neither adds nor resets: in TDD that run is meant to
+  fail. Only that first run is judged this way: a pass there resets the
+  count as any pass does, and a missing-module run there (above) uses up the
+  excuse, so the run after it counts as usual. A held or failed write
+  excuses nothing, nor does a shell write whose target was written from an
+  unknown folder.
 - **Fewer failures.** A run whose runner reports fewer failed and errored
   tests than the check's run before it neither adds nor resets: pytest's
   summary line (`3 failed, 1 error in 0.2s`), unittest's
@@ -544,15 +557,23 @@ A merge conflict is open in the turn after any of these (`CONFLICT_MARKER_RE`,
 `GIT_CONFLICT_END_RE` in `actions.py`):
 
 - an edit whose removed text has a `<<<<<<<` or `>>>>>>>` marker at a line
-  start;
-- a read in the turn that showed a file with such a marker, which opens the
-  conflict for writes to that file, by a file write or a shell command such
-  as `git checkout --theirs`;
+  start, followed by a space or the line's end;
+- a finished file read in the turn that showed a file with such a marker,
+  which opens the conflict for writes to that file, by a file write or a
+  shell command such as `git checkout --theirs`. Only a file read call opens
+  it this way: a shell command that prints the markers (`cat`, `git diff`)
+  does not;
 - a git merge, rebase, cherry-pick, revert, or pull whose result in the turn
   reported a conflict, which opens it for any write.
 
-A finished abort, quit, continue, or skip of that operation, or a finished
-commit, ends the conflict and drops the reads before it. Only the turn is
+A marker line may be preceded by a line number and a tab or `→`, as a file
+read's numbered output shows it.
+
+A finished shell command that runs `--abort`, `--quit`, `--continue`, or
+`--skip` of a git merge, rebase, cherry-pick, or revert, or a finished shell
+`git commit`, ends the conflict and drops the reads before it, unless that
+same command reports a new conflict. A `commit` call does not end it, and
+neither does `git pull --abort`. Only the turn is
 read, not the repository, so a conflict opened in an earlier turn is caught
 only by markers the turn shows: an edit whose removed text spans only
 `=======` and one side, in a file not read this turn, is not held, because
@@ -571,9 +592,10 @@ The step that asks for a [change read](#change-reads) is skipped for a
 `commit` or `pull_request` call when the turn changed no project file: it
 carries the change in its own input, and outside a git checkout no diff can
 run and no changed file exists to read, so the strict hold would have no way
-out. The `pull-request` gate asks for the same change read as `pr-review`
-after it, so `pr-review` asks for it only when the person typed
-`skip pr-description`.
+out. The `pull-request` gate and `pr-review` ask for the same change read,
+so one read meets both. `pr-review` asks for it whenever
+`standards-and-spec-review` has loaded and the pull request measures 400 or
+more lines (below), whether or not `pr-description` was skipped.
 
 ### Branch Size
 
@@ -605,9 +627,12 @@ git diff --numstat -z --no-relative --no-ext-diff --no-textconv <base>...<head> 
   `--source-branch` or `-s` on `glab`, or the call's `head`, found as the
   local branch or else `origin/<head>`. Without one, it is the checked-out
   `HEAD`. Only committed work counts, which is what the pull request opens.
-- A call that names a `repository` is measured only when it matches the
-  checkout's `origin` URL (one more git call). Aimed at another repository,
-  or from a folder with no `origin`, it is not measured.
+- A `pull_request` call that names a `repository` is measured only when it
+  matches the checkout's `origin` URL (one more git call). Aimed at another
+  repository, or from a folder with no `origin`, it is not measured. Only
+  that call's `repository` counts: a shell `gh pr create` or
+  `glab mr create` that names another repository with `--repo` or `-R` is
+  measured in the working folder's checkout as if it named none.
 
 Values of the command's other options are never read as options
 (`PR_VALUE_OPTIONS` in `shell.py`), so `--description "-bump deps"` names no
@@ -625,6 +650,7 @@ local `main` and not yet pushed does not count toward the next branch. The
 `pr-review` gate keeps measuring from `origin/<base>` first.
 
 ```text
+git for-each-ref --format=%(refname) %(symref) <candidate base refs>
 git rev-parse --show-toplevel --symbolic-full-name HEAD
 git merge-base HEAD <base> [<the same branch's other ref>]
 git diff --numstat -z --no-relative --no-ext-diff --no-textconv <merge-base> --
@@ -658,8 +684,8 @@ not briefed.
 
 ### Reviewer Agents
 
-A reviewer agent is a spawn that starts now (not `separate`), that the
-`spawn` gate let through, whose brief follows `subagent-driven-development`'s
+A reviewer agent is a finished spawn that is not `separate` (whether it
+`starts_now` is not checked), that no gate held, whose brief follows `subagent-driven-development`'s
 reviewer prompt (`references/reviewer-prompt.md`, read, with its
 `Review Mode`, `Review Inputs`, and `Required Report Format` headings). The
 core records which templates each spawn's brief followed, by the call's id,
@@ -678,18 +704,23 @@ or configuration file is not held.
 
 The core splits a command into its simple commands (joined by `;`, `&&`,
 `||`, `|`, `&`, newlines, parentheses, braces, or `$(`) and reads each one's
-real command word past wrappers (`sudo -u <user>`, `env`, `timeout <n>`,
-`nice`, `nohup`, `xargs`, `cmd /c`; `WRAPPERS` in `shell.py`), a quoted or
-full path to the program (`"git"`, `& "C:\…\git.exe"`), and line
+real command word past wrappers (for example `sudo -u <user>`, `doas`,
+`env`, `timeout <n>`, `nice`, `nohup`, `exec`, `time`, `stdbuf`, and
+`xargs`; `WRAPPERS` in `shell.py`), past `cmd /c` or `cmd /k` (read in
+`_resolve`), past leading variable assignments, a quoted or full path to
+the program (`"git"`, `& "C:\…\git.exe"`), and line
 continuations (`\` in `posix`, a backtick in `powershell`). A command
 writes, and meets the `route-line` and `pipeline` gates like a file write,
 when one of its commands:
 
 - redirects output into a file (`>`, `>>`, `&>`, `>&file`, `2>`), except
-  into a null device (`/dev/null`, `$null`, `NUL`; `NULL_TARGETS`) or
-  another stream (`2>&1`);
+  into another stream (`2>&1`) or a target in `NULL_TARGETS`, compared in
+  any case and in either shell: `/dev/null`, `/dev/stdout`, `/dev/stderr`,
+  `$null`, and `NUL`. So `> nul` in a `posix` command writes nothing here,
+  although [Plain Reads](#plain-reads) treats `nul` in bash as a real file;
 - runs `tee`, `Tee-Object`, `cp`, `mv`, `rm`, `rmdir`, `touch`, `truncate`,
-  `ln`, `unlink`, `shred`, or `patch`;
+  `ln`, `unlink`, `shred`, or `patch`, or the cmd forms `copy`, `move`,
+  `ren`, `rename`, `del`, `erase`, or `rd`;
 - edits in place with `sed -i`, `perl -i`, or `ruby -i`;
 - runs `Set-Content`, `Add-Content`, `Out-File`, `Clear-Content`, `New-Item`,
   `Copy-Item`, `Move-Item`, `Remove-Item`, `Rename-Item`, `Export-Csv`, or
@@ -780,7 +811,11 @@ more lines, as the closeout counts a shell write: a program's output
 (`python gen.py > src/a.py`), and text the shell fills in, holding a `$` or
 a backtick (`echo "$CODE"`, `-Value $code`, `-Value (Get-Content x)`), even
 inside single quotes, where it would be literal. Writes to two spellings of
-one file in one command add up (`src/a.py`, `./src/a.py`, `src\a.py`). A
+one file in one command add up (`src/a.py`, `./src/a.py`, `src\a.py`).
+Unlike the other rules, these gates skip a relative target written from an
+unknown folder (`cd sub && echo x > src/a.py`), since it has no place to
+judge, and a file an inline script writes (`_shell_text_writes` in
+`actions.py`). A
 code file written this way counts among the turn's code writes when the
 gates find its first substantial change and its third code file. The gates
 do not read the text for signals, so only the path selects a reference (a
@@ -798,12 +833,14 @@ shows no file whose design a hold could ask for.
 
 When a command gives an interpreter its code inline, the core reads that
 code for calls that write, remove, or rename a file (`script_writes.py`). It
-reads `python` (`python3`, `python3.12` and other versions, `py`), `node`,
-`perl`, `ruby`, `deno`, and `bun`, each also through `uv run`, `npx`, and the
-other command runners a check is read through (`INTERPRETERS` and
-`INLINE_CODE` in `shell.py`). The code is given by an inline-code option
-(`python -c`, `node -e`/`-p`/`--eval`, `perl -e`/`-E`, `ruby -e`,
-`deno eval`, `bun -e`/`--eval`), or reaches standard input when no script is
+reads the interpreters in `script_writes.LANGUAGES`: `python`, `python3`,
+`py`, `node`, `perl`, `ruby`, `deno`, and `bun`, with any `python` followed
+by a version (`python3.12`, `VERSIONED_PYTHON_RE` in `shell.py`) read as
+`python`, each also through `uv run`, `npx`, and the other command runners
+a check is read through. The code is given by an inline-code option
+(`INLINE_CODE` in `shell.py`: `python -c`, `node -e`/`-p`/`--eval`/`--print`,
+`perl -e`/`-E`, `ruby -e`, `bun -e`/`-p`/`--eval`/`--print`; and
+`deno eval`), or reaches standard input when no script is
 named (`python -`, `python`, `deno run -`, `bun run -`) from:
 
 - a heredoc or `<<<` here-string on the interpreter (`python - <<'EOF'`,
@@ -866,10 +903,16 @@ The calls, by language (`WRITE_CALLS` in `script_writes.py`):
 | Ruby | `File.write`, `IO.write`, `binwrite`; `File.open` and `File.new` with a `w`, `a`, or `+` mode; `File.delete`, `unlink`, `rename`; `FileUtils.rm` and its forms, `remove…`, `rmdir`, `touch`, `mv`/`move`, and `cp`/`copy`/`install` (the destination) |
 
 The reading is lexical: a call spelled inside a string or comment of the
-script still counts, toward holding. A name other code also uses (`open`,
-`.rename`, `.replace`) counts only where its module, receiver, or mode says
-it writes, so `text.replace("a", "b")` and `window.open(url, "_blank")` do
-not.
+script still counts, toward holding. In Python, a name other code also
+uses counts only where its module, receiver, or mode says it writes:
+`.rename`, `.replace`, and `.open` only on a `Path("…")`, and `open` only
+with a writing mode, so `text.replace("a", "b")` does not. In JavaScript,
+`.unlink`, `.rm`, `.rmdir`, `.truncate`, `.rename`, `.copyFile`, and `.cp`
+count on any receiver, and `.open` on any receiver is judged by its second
+argument alone: a literal starting with `w` or `a` or holding `+`, or any
+argument that is not a literal, writes. So `window.open(url, "_blank")`
+does not, while `window.open(url, 'width=200')` is an unnamed write, its
+first argument not being a literal.
 
 The `scripted-edit` gate judges a code file such a script writes inside the
 project, test files included, and a file it names only at run time, which
@@ -972,8 +1015,10 @@ the `GIT_READ_*` and `GIT_BRANCH_*` tables, and `NOT_PLAINLY_SPELLED_RE` in
 The Setup item is met by a package install or a setup file write in the
 turn, a subagent's included.
 
-A **package install** is a finished `npm`, `pnpm`, or `bun` `add` or
-`install`, `yarn add`, `pip install` (also `python -m pip`), `uv add`,
+A **package install** is a finished `npm`, `pnpm`, or `bun` `add`,
+`install`, or `i`, `yarn add`, `pip` or `pip3` `install` (also
+`python -m pip`, `python3 -m pip`, or `py -m pip`, with `-m pip` as the
+first two arguments), `uv add`,
 `uv pip install`, `uv tool install`, `poetry add`, `pipx install`,
 `conda install`, `cargo add` or `install`, `go get` or `install`,
 `gem install`, or `brew`, `apt`, `apt-get`, `winget`, `choco`, or `scoop`
@@ -1002,8 +1047,9 @@ as a write target does (see [Shell Reading](#shell-reading)). So
 `cd /tmp/x && npm install --prefix <project> lodash` does, and so does one
 after a `cd` the core cannot follow (`cd "$TMPDIR" && …`, `cd sub && …`).
 
-A **setup file** is `.env` or `.env.*` (`.env.example` included), or a
-`settings*.json` under a `.claude/` or `.vscode/` folder, written by a file
+A **setup file** is `.env` or `.env.*` (`.env.example` included), or an
+editor or agent settings file: a `settings*.json` directly in a folder named
+`.claude/` or `.vscode/`, in any case, written by a file
 write or a shell command (`SETUP_FILE_RE` in `actions.py`). It counts only
 inside the project, so a scratch folder's settings do not, and neither do
 settings under the home folder, unless the project holds it.
@@ -1051,7 +1097,7 @@ does not show, is not small.
 
 | Reference | Selected when the edit |
 | --- | --- |
-| `process.md` | creates a code file (a whole-file write, or an edit marked `creates`, to a code file no earlier write in the turn made and that is not on disk), or adds a public top-level definition: an unindented line starting with `def`, `async def`, `class`, `function`, `export`, `func`, `fn`, `pub fn`, `public`, `interface`, `struct`, `enum`, `trait`, `impl`, or `defmodule`, whose name does not start with `_`; a shell `export NAME=` is not one |
+| `process.md` | creates a code file (a whole-file write, or an edit marked `creates`, to a code file no earlier write in the turn made and that is not on disk), or adds a public top-level definition: an unindented line starting with the word `def`, `async`, `class`, `function`, `export`, `func`, `fn`, `pub`, `public`, `interface`, `struct`, `enum`, `trait`, `impl`, or `defmodule` (`DEFINITION_START_RE` in `design_reads.py`), whose name, its first word that is not a keyword, does not start with `_` and was not defined in the text the edit replaced; a shell `export NAME=` is not one. The word alone decides, so `async def`, `pub fn`, and also `pub use x` count, and in a configuration file a key such as `class:` at a line start counts too |
 | `complexity-and-modules.md` | the same as `process.md` |
 | `decoupling.md` | is not small, and edits a configuration file or is to the third or later distinct non-test code file the turn edits |
 | `readability.md` | the same as `process.md`, or is not small and adds a comment or docstring: a line opening with `#`, `//`, `/*`, `*`, `"""`, `'''`, `-- `, or `<!--`, a line inside a docstring or block comment, or a trailing `#` or `//` comment after two spaces |
@@ -1197,12 +1243,14 @@ A change read is one of:
 
 - a command that prints the changes' content to the agent: `git diff`,
   `git show`, a patch log (`git log` or `git whatchanged` with `-p`, `-u`,
-  `-U<n>`, `--unified`, `--patch`, or `--patch-with-stat`),
+  `-U<n>`, `--unified`, `--patch`, `--patch-with-stat`, or
+  `--patch-with-raw`),
   `git stash show -p`, `git format-patch --stdout`, `gh pr diff`, or
   `glab mr diff`, under any wrapper or through a pipe (`git diff | head`), or
   with standard error redirected (`2>err.txt`). A listing of names or counts
   does not count: `--stat`, `--shortstat`, `--numstat`, `--dirstat`,
-  `--summary`, `--name-only`, `--name-status`, `--raw`, `--check`, `-s`, or
+  `--compact-summary`, `--summary`, `--name-only`, `--name-status`, `--raw`,
+  `--check`, `-s`, or
   `--no-patch`, unless a patch option asks for the patch too. Neither does
   `--quiet`, `--output` or `--output=<file>`, or standard output redirected
   into a file (`> change.patch`, `1>out.txt`) (`GIT_PATCH_FLAGS_RE`,
@@ -1246,7 +1294,9 @@ states plainly enough to test without judgement (`contracts.py`):
   `Review Mode`, `Review Inputs`, and `Required Report Format` for the
   reviewer prompt. A brief passes when it matches a template whose skill
   counts as loaded and whose reference was read whole since the last
-  compaction.
+  compaction. A spawn with an empty brief, or of a `read_only` agent, meets
+  no `spawn` check at all: no template load or read, headings, or skills
+  line.
 - **Skills line in a brief.** Every spawn brief, including one a person may
   start later, also needs a skills line naming the skills the new agent
   should read before it starts: `goated-skills: <skill>, <skill>`, or
