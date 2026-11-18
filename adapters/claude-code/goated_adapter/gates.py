@@ -330,7 +330,8 @@ def last_shell_tool(turns: list[Turn]) -> str | None:
 
 
 def _files_read(calls) -> list[str]:
-    """A digest of each file a finished Read call among `calls` read, in order.
+    """A digest of each file a finished Read call among `calls` read whole, in
+    order. Partial reads never count, as for every read a hold asks for.
 
     Two spellings of one path (case and separators on Windows) give one digest.
     """
@@ -338,7 +339,7 @@ def _files_read(calls) -> list[str]:
     return [
         hashlib.sha256(os.path.normcase(os.path.normpath(path)).encode("utf-8")).hexdigest()[:16]
         for call in calls
-        if call.name == "Read" and call.ok and (path := str(call.input.get("file_path") or ""))
+        if (path := call.whole_read_path())
     ]
 
 
@@ -486,12 +487,12 @@ def check_routing(
         parts.append(
             f"A session started from a brief loads `{ORIENTATION_SKILL}` before its "
             "first write or spawn when its route is standard or full, or orients by "
-            "finishing Read calls of three distinct files, such as the sources its "
-            "brief names."
+            "finishing Read calls of three distinct files, each read whole with no "
+            "limit, offset, or pages, such as the sources its brief names."
         )
         # The mod reads this sentence's opening for the skill the brief added.
         missing.append(f"A session started from a brief loads `{ORIENTATION_SKILL}` or "
-                       "finishes Read calls of three distinct files")
+                       "finishes Read calls of three distinct files, each whole")
     parts.append(
         "Load each with the Skill tool and follow it. A load counts until the next "
         "compaction, in this turn or an earlier one"

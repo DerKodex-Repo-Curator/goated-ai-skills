@@ -293,7 +293,10 @@ def _subagent_pre_tool_use(
     Routing gates do not apply: the parent's brief carries the route. Claude
     Code passes the parent's `transcript_path`; the subagent's entries live
     beside it in `<session>/subagents/agent-<agent_id>.jsonl`. Nobody types a
-    subagent's prompts, so no override applies.
+    subagent's prompts, so no override applies. A commit meets the closeout
+    of the subagent's own turn (Ticket 098); it was started from its
+    parent's brief, so, as a briefed session, it meets no Review item, and it
+    records no spawn templates, so the `review-intake` gate holds nothing.
     """
 
     agent_id = str(payload.get("agent_id"))
@@ -312,7 +315,7 @@ def _subagent_pre_tool_use(
         raise _FailOpen(f"in a subagent, {exc}") from exc
     holds = actions.check_action(
         tool_name, tool_input, turns[-1], {}, config.skill_namespaces,
-        _project(payload, config),
+        _project(payload, config), closeout=actions.Closeout(briefed=True),
     )
     session_id = str(payload.get("session_id"))
     text = gates.message(holds, lambda purpose: _claim_turn(

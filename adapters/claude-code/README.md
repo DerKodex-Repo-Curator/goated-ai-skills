@@ -131,10 +131,11 @@ project, or plugin skill): the router selects orientation on such a route
 from a brief, and the spawn-brief template says the new session orients
 before its first write by reading the sources its brief names or by loading
 that skill. Either meets it: the skill loads, or Read calls of three
-distinct files finish, anywhere, since the session started or the last
-compaction; reads count across turns as loads do, and a failed Read does
-not count. The route line never names the skill,
-so leaving it out of a corrected line does not drop it; only a corrected
+distinct files finish, anywhere, each a [whole read](#whole-reads), since
+the session started or the last compaction; reads count across turns as
+loads do, and a failed or partial Read does not count (Ticket 098). The
+route line never names the skill, so leaving it out of a corrected line
+does not drop it; only a corrected
 `goated-route: direct` line or a `lightweight` route line does. A typed prompt
 or a compaction ends the brief's route, and the requirement with it, so a
 typed `skip session-start-progressive-disclosure` is never needed. When an API
@@ -159,13 +160,13 @@ the authority for each gate. In Claude Code, with its detection detail:
 | --- | --- | --- | --- |
 | `router-first` | strict | Writes, spawns, and commands while the router has not loaded in this session, or since the last compaction; a command made only of [plain reads](#plain-reads) passes, and so does a write whose every file is a scratch file outside the project (see below) | `using-goated-ai-skills` loads; or the session's first prompt is a brief with a route line (see above), until a typed prompt opens a turn |
 | `route-line` | strict | The first write or spawn after each user prompt until the current turn has a valid `goated-route:` line; also `goated-route: continue` when [missing or reset state](#failing-open) lost the task; a write whose every file is a scratch file outside the project (see below) passes | A valid route line appears in the turn |
-| `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded, or, in a session routed by its brief, on a `standard` or `full` route, orientation is unmet while `session-start-progressive-disclosure` is installed (see above); a spawn of a [read-only subagent](#plain-reads) passes, and so does a write whose every file is a scratch file outside the project (see below) | Each listed skill loads, or a corrected route line drops it; the brief's orientation skill loads or three distinct files are read, or a corrected `goated-route: direct` or `lightweight` route line drops it |
+| `pipeline` | strict | Writes and spawns while a `requires:` skill of the current task has not loaded, or, in a session routed by its brief, on a `standard` or `full` route, orientation is unmet while `session-start-progressive-disclosure` is installed (see above); a spawn of a [read-only subagent](#plain-reads) passes, and so does a write whose every file is a scratch file outside the project (see below) | Each listed skill loads, or a corrected route line drops it; the brief's orientation skill loads or three distinct files are [read whole](#whole-reads), or a corrected `goated-route: direct` or `lightweight` route line drops it |
 | `commit` | strict | A `git commit` command (not `--dry-run`), or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit` | `commit-message` [counts as loaded](#loads), and an inline message (or the tool's `message`) passes the [content check](#content-checks); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file. Once these are met, the commit meets the [closeout](#closeout-at-commit) |
 | `pull-request` | strict | `gh pr create` or `gh pr new`, `glab mr create` or `glab mr new`, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` [counts as loaded](#loads); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file |
 | `pr-review` | justified-skip | A pull-request command or tool the `pull-request` gate holds, once that gate passes, when the pull request is [large](#large-pull-requests): 400 or more changed lines of non-test code against its base | `standards-and-spec-review` [counts as loaded](#loads); then a [change read](#change-reads) after the last change to any project file, before or after the load; an MCP tool skips that read when the turn changed no project file. The `pull-request` gate before it asks for the same read, so this read is asked for only when you typed `skip pr-description` |
 | `spawn` | strict | Starting an agent or session with a brief, except a [read-only subagent](#plain-reads) | `handoff` loads and `references/spawn-brief.md` is [read whole](#whole-reads), or `subagent-driven-development` loads and its implementer or reviewer prompt is read whole, each in this turn or an earlier one since the last compaction (see [Loads](#loads)); and the brief, on every spawn, passes the [content check](#content-checks) |
-| `design` | justified-skip | The turn's first write adding five or more lines to a non-test code file inside the project folder (or any such write while the skill does not count as loaded). A test file never triggers it and is not counted when finding the turn's first such write: in TDD the test comes first and the design happens in the code after it | `software-design-principles` [counts as loaded](#loads), and every [reference the edit's signals select](#design-references) has been [read whole](#whole-reads) since the last compaction |
-| `design-reads` | justified-skip | Any later write to a code or configuration file inside the project folder, once `software-design-principles` [counts as loaded](#loads), whose [signals](#design-references) select a reference not read since the last compaction; a test file edit selects `coding.md` only when it creates the file or adds twenty or more lines. The hold names each file and what selected it | Each required reference is [read whole](#whole-reads) with the Read tool |
+| `design` | justified-skip | The turn's first write adding five or more lines to a non-test code file inside the project folder (or any such write while the skill does not count as loaded). A test file never triggers it and is not counted when finding the turn's first such write: in TDD the test comes first and the design happens in the code after it. A shell command that puts new text into such a file is judged too (Ticket 098; see [Shell writes](#shell-writes)) | `software-design-principles` [counts as loaded](#loads), and every [reference the edit's signals select](#design-references) has been [read whole](#whole-reads) since the last compaction |
+| `design-reads` | justified-skip | Any later write to a code or configuration file inside the project folder, once `software-design-principles` [counts as loaded](#loads), whose [signals](#design-references) select a reference not read since the last compaction; a test file edit selects `coding.md` only when it creates the file or adds twenty or more lines. A shell command that puts new text into such a file is judged too, by its path alone (see [Shell writes](#shell-writes)). The hold names each file and what selected it | Each required reference is [read whole](#whole-reads) with the Read tool |
 | `reference-reads` | justified-skip | A write by a write tool or a shell command that is not a check, inside the project folder or, for a `gate-fires` signal, anywhere, that fires a signal the installed registry declares for a reference of a skill that [counts as loaded](#loads) (see [Registry references](#registry-references)); `tdd`'s `test-design.md` is required by a test edit that creates the file or adds twenty or more lines, and a shell write meets only the signals that need no added text. The hold names each file by its path under the skill, `<skill>/references/<file>`, and what selected it | Each reference it names is [read whole](#whole-reads) with the Read tool, in this turn or an earlier one since the last compaction; or a skip line naming its skill, for the turn |
 | `review-intake` | justified-skip | A write, by a write tool or a shell command, to a code file inside the project folder, once a [reviewer subagent](#reviewer-subagents) started by `Agent` or `Task` has reported in the turn: its result arrived, or, started in the background, its completion did. A held or failed spawn, any other brief, and a side session trigger nothing. A test file is held like other code; a docs or config file is not | `receiving-code-review` [counts as loaded](#loads), in this turn or an earlier one since the last compaction; or a skip line naming it, for the turn |
 | `security` | justified-skip | A write, by a write tool or a shell command, to a security-sensitive path inside the project folder: dependency manifests and lockfiles (`requirements*.txt` included), `.env` and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files. A sensitive word counts only when it stands alone in the path, so `tokenizer.py` and `author.py` are not held, while `api_token.py` and `userAuth.ts` are | `code-security-review` [counts as loaded](#loads) |
@@ -757,6 +758,37 @@ PowerShell 5.1 has no `&&`, and `;` is not a safe chain, so there a
 inside; in PowerShell 7, `Set-Location <absolute path> && …` is followed. Only
 a `cd` in the same command is followed, not one in an earlier call.
 
+#### Shell writes the design gates judge
+
+`design` and `design-reads` judge a shell command only where it puts new
+text into a project code or configuration file (Ticket 098, the
+maintainer's decision of 2026-11-18): a redirect of output into the file,
+`tee` or `Tee-Object`, `Set-Content`, `Add-Content`, or `Out-File` and their
+aliases, or `New-Item` or `ni` with a `-Value`. The text counts by the
+lines the command shows: a heredoc's body fed to `cat` or `tee`, the
+arguments of `echo`, `printf`, or `Write-Output`, shown text piped on
+through `cat`, a quoted PowerShell string piped in, or a `-Value` (or
+`Set-Content`'s and `Add-Content`'s positional value). Text it does not
+show counts as five or more lines, as the closeout counts a shell write:
+a program's output (`python gen.py > src/a.py`), and text the shell fills
+in, holding a `$` or a backtick (`echo "$CODE"`, `-Value $code`,
+`-Value (Get-Content x)`), even inside single quotes, where it would be
+literal. Writes to two spellings of one file in one command add up
+(`src/a.py`, `./src/a.py`, `src\a.py`). A code file written this way
+counts among the turn's code writes when the gates find its first
+substantial change and its third code file. The gates do not read the text for signals, so only the path
+selects a reference (a configuration file, the third code file), and a
+test file selects none.
+
+Other shell writes stay with the routing, `security`, and closeout rules
+only. The reason is what the command adds: a copy, move, restore
+(`git checkout -- <path>`), or in-place edit (`sed -i`) carries text that
+was designed elsewhere or a substitution the command shows whole, so asking
+for a design load there would hold routine file work. A file an
+[inline script](#inline-scripts) writes is the `scripted-edit` gate's, and
+a write naming no file (`git apply`, `patch`) shows no file whose design a
+hold could ask for.
+
 #### Inline scripts
 
 When a command gives an interpreter its code inline, the adapter reads that
@@ -949,8 +981,8 @@ its hold leaves that out. An unmet `commit` hold comes first, unchanged.
 
 The `Stop` closeout stays as a backstop. A commit changes no file, so an
 item met before the commit stays met at `Stop`; a turn that never commits
-meets the closeout only at `Stop`. A subagent's commit meets no closeout,
-since a subagent has none (see [Subagents](#subagents)).
+meets the closeout only at `Stop`. A subagent's commit meets the closeout
+judged from its own turn (see [Subagents](#subagents)).
 
 A turn that changes code by a file edit tool learns its items early, from
 the [early closeout note](#early-closeout-note), so it can meet them before
@@ -1295,10 +1327,16 @@ A hook call from inside a subagent carries `agent_id`. There:
   count;
 - no override applies, because nobody types a subagent's prompts;
 - the closeout gate does not run when the subagent stops; the adapter
-  registers no `SubagentStop` hook. Instead, code a subagent changed counts
-  toward the closeout of the parent turn that spawned it. The parent finds the
-  subagent through the `agentId` that Claude Code records in the spawn's
-  result.
+  registers no `SubagentStop` hook. A commit the `commit` gate passes,
+  though, meets the closeout judged from the subagent's own turn: its
+  changes, checks, loads, reads, and skip lines, as a commit's closeout
+  holds the main agent (Ticket 098). The subagent was started from its
+  parent's brief, so, as a briefed session, it meets no Review item, and it
+  has no route of its own, so a parent's `full` route never brings it the
+  Verification item; a sensitive change or a large branch still does. Code a
+  subagent changed also counts toward the closeout of the parent turn that
+  spawned it. The parent finds the subagent through the `agentId` that
+  Claude Code records in the spawn's result.
 
 If the subagent's transcript cannot be found, the call fails open with a
 warning; at closeout, its changes are left out, with a warning.
@@ -1602,8 +1640,8 @@ of the call's prompt, which is normally already there.
   the brief is gone, so `router-first` needs the router again. Harness
   nudges such as "The user hasn't heard from you in a while" are recorded as
   `attachment` entries and never open a turn.
-- A briefed session's orientation counts any three distinct files read with
-  the Read tool, whatever they are; the adapter cannot tell whether they are
+- A briefed session's orientation counts any three distinct files read whole
+  with the Read tool, whatever they are; the adapter cannot tell whether they are
   the sources the brief names. A file printed by a shell command (`cat`)
   does not count, and two spellings of one path count once only when they
   differ by case or separators on Windows.
@@ -1695,7 +1733,14 @@ of the call's prompt, which is normally already there.
     either reading counts as inside. A shell's `HOME` that differs from the
     one Claude Code passes to hooks is not seen.
 - The design gate judges size by lines added in the tool input, not by what
-  the change does, and the design gates do not see shell writes.
+  the change does. Of shell writes, the design gates see only those that put
+  new text into a file (see [Shell writes](#shell-writes)): a copy, move,
+  restore, or `sed -i` of code is not judged, nor is a write naming no file
+  (`git apply`), and `printf`'s `\n` escapes are not counted as lines. A
+  write from a folder the command leaves unknown has no place, so after a
+  bare relative `cd src && cat > export.py <<EOF` the design gates do not
+  judge it (see the `cd` rules under [Shell writes](#shell-writes));
+  `cd ./src` is followed, and its write is judged.
   The design-reads signals are word and shape matches on lines, so a `try` in
   a string selects `errors.md`, and a `NotebookEdit` cell counts all its text
   as added. A `Write`'s file on disk, read to tell what it adds, is the one

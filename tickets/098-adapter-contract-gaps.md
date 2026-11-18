@@ -88,3 +88,41 @@ code is fixed before Ticket 080 starts moving it:
 
 - Any other rule change.
 - Moving rule code (Tickets 080 and 081).
+
+## Closeout
+
+Implemented on branch `claude/ticket-098-contract-gaps-4add32`; awaiting the
+lead session's review and merge.
+
+- **(a)** `_files_read` counts only whole reads (`Call.whole_read_path`), and
+  the orientation hold says each read must be whole.
+- **(b) Maintainer's decision, 2026-11-18 (Option A).** Judging every shell
+  write to code as five or more lines would have held about 70 merged tests'
+  copies, moves, restores, `sed -i` and one-line heredocs, against the
+  criterion that other tests keep their outcomes. So `design` and
+  `design-reads` judge only shell writes that put new text into a project
+  code or configuration file: redirects, heredocs, `tee`, `Set-Content`,
+  `Out-File` and `Add-Content`. A heredoc counts its body lines; text the
+  command does not show counts as five or more. Copies, moves, restores
+  and `sed -i` stay unjudged, since they add no text designed in the
+  command; script targets stay with `scripted-edit`; and an unnamed write
+  such as `git apply` does not meet `design`, since no file's design can
+  be asked for. `shell.ShellCommand.text_targets` carries the fact.
+- **(c)** A subagent's commit meets the closeout of its own turn. It counts
+  as briefed, so it meets no Review item, and records no spawn templates, so
+  `review-intake` still holds nothing in it.
+- The contract's Known Gaps section and the scenario case `gap` are gone.
+  Scenarios gained `setup.agent: subagent`, which the bridge runs through a
+  subagent's hook input, to pin (c).
+- The test that pinned (c) as no closeout now pins the fixed rule; no other
+  test's expected outcome changed.
+- **Review fixes (lead review of `3daa05e`).** Text holding a `$` or a
+  backtick, or a `-Value` the segment does not hold whole, counts as not
+  shown; `Set-Content -Path f 'x'` reads its first positional as the value;
+  writes to two spellings of one file add up, summed once in
+  `actions._shell_text_writes`; shell text writes count among the turn's
+  code writes for the first substantial change and the third code file;
+  `New-Item -Value` writes text (the lead's decision); shown text piped
+  through `cat`, and a quoted PowerShell string piped in, count their
+  lines. A bare relative `cd` before a write stays unjudged, as a known
+  limit. The shell fact is now `text_writes`, a list of writes.

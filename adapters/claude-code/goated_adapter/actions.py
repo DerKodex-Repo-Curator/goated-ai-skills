@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import functools
 import os
+import posixpath
 from collections.abc import Callable
 from typing import NamedTuple
 import re
@@ -409,9 +410,10 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     called only when a commit or pull request needs its change read, since
     reading their transcripts takes time. `earlier` is what counts from
     earlier turns until the next compaction. With `closeout`, a commit whose
-    own hold is met is held while the turn has unmet closeout items (Ticket 059);
-    without it, as for a subagent, which has no closeout, it is not. Without
-    `closeout`, as in a subagent, the `review-intake` gate holds nothing.
+    own hold is met is held while the turn has unmet closeout items (Ticket 059),
+    a subagent's own turn included (Ticket 098); without it, it is not. The
+    `review-intake` gate reads the spawn templates `closeout` records, so
+    without it, or in a subagent, which records none, it holds nothing.
     `references` returns the registry's declared references
     (`reference_reads.load`), called only for a write; without it, as for a
     subagent, the `reference-reads` gate holds nothing.
@@ -460,6 +462,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
             # A write naming no project file (`git apply`, a scratch file, an
             # unknown folder) still meets the turn's gate signals (None).
             placed = [_norm(t) for t in inside if t not in command.unplaced_targets]
+            holds.add(lambda: _design_hold(_shell_text_writes(command, project), None, proof,
+                                           project, references))
             holds.add(lambda: _reference_reads_hold(placed or [None], None, proof, project,
                                                     references, changes))
             holds.add(lambda: _repeated_failure_hold(proof, project))
@@ -486,7 +490,8 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
             # A scratch file elsewhere is not the project's design or security.
             holds.add(lambda: _security_hold([path], proof))
             holds.add(lambda: reviewed(path))
-            holds.add(lambda: _design_hold(path, tool_input, proof, project, references))
+            holds.add(lambda: _design_hold({path: _small_edit(tool_input)}, tool_input, proof,
+                                           project, references))
             holds.add(lambda: _reference_reads_hold([path], tool_input, proof, project,
                                                     references, changes))
         else:
@@ -948,7 +953,7 @@ def _review_intake_hold(path: str, proof: _Proof, closeout: Closeout | None) -> 
     """Hold a write to a project code file once a reviewer subagent's report
     has arrived in the turn, until `receiving-code-review` counts as loaded
     (Ticket 070), as the skill's Activation states. A skip line naming the
-    skill clears it for the turn. Without `closeout`, as in a subagent, which
+    skill clears it for the turn. Without `closeout`, or in a subagent, which
     records no spawn templates, nothing is held."""
 
     if not closeout or not is_code(path) or proof.loaded_or_skipped(INTAKE_SKILL):
@@ -1118,9 +1123,12 @@ def _open_conflict(turn: Turn) -> tuple[bool, list[str]]:
     return git_open, marked_files
 
 
-def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | None,
+def _design_hold(writes: dict[str, bool], tool_input: dict | None, proof: _Proof,
+                 project: Project | None,
                  references: Callable[[], tuple] | None) -> Hold | None:
-    """Hold a project file write until its design is done (spec R5).
+    """Hold a write of project files until its design is done (spec R5).
+    `writes` maps each file the call writes to whether its write is small,
+    adding fewer than `DESIGN_MIN_LINES` lines (`_small_edit`).
 
     The `design` gate holds a turn's first substantial non-test code edit until
     `software-design-principles` loads and every reference the edit's signals
@@ -1130,42 +1138,44 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
     test edit is judged by the registry's rule for test edits, from
     `references` (`_test_edit`). A load or a read counts until the next
     compaction; a skip line or the user's skip of the skill clears both gates.
+
+    `tool_input` is a file edit tool's input, for its one file, or None for a
+    shell write of new text (Ticket 098: `_shell_text_writes`),
+    whose text the gates cannot read: it selects only what its path selects
+    (a configuration file, the third code file), and a test file it writes
+    selects nothing. One hold asks for what every file needs: `design` when
+    any of them is the turn's first substantial code change.
     """
 
-    code, test = is_code(path), is_test(path, project)
-    if not design_reads.applies(path, is_code=code, is_test=test) or proof.skipped(DESIGN_SKILL):
+    if proof.skipped(DESIGN_SKILL):
         return None
-    # A test file is never substantial: in TDD the test comes first, and the
-    # design happens in the code after it (Ticket 057).
-    substantial = code and not test and not _small_edit(tool_input)
     loaded = proof.loaded(DESIGN_SKILL)
-    if not loaded and not substantial:
-        return None
     earlier = _project_code_writes(proof.turn, project)
-    written_before = any(p == path for p, _ in earlier)
-    required = design_reads.required(
-        path, tool_input, is_code=code, is_test=test, small=_small_edit(tool_input),
-        written_before=written_before,
-        other_code_files=len({p for p, _ in earlier if p != path and not is_test(p, project)}),
-        cwd=project.cwd if project else None,
-        test_edit=_test_edit(path, tool_input, project, references, written_before=written_before)
-        if test else None,
-    )
-    unread = {name: why for name, why in required.items() if name not in proof.references_read}
-    if loaded and not unread:
+    judged, first, unread = False, False, {}
+    paths = list(writes)
+    for path, small in writes.items():
+        need = _design_need(path, tool_input, small, loaded, earlier, project, references)
+        if need is not None:
+            judged, first = True, first or need[0]
+            for name, why in need[1].items():
+                if name not in proof.references_read:
+                    unread.setdefault(name, why)
+    # Unloaded, every judged write is substantial and held; loaded, only one with unread references.
+    if not judged or (loaded and not unread):
         return None
-    first = substantial and not any(
-        not small for p, small in earlier if not is_test(p, project)
-    )
+    edit = "edit" if tool_input is not None else "command"
+    not_done = "This edit was not applied." if tool_input is not None else \
+        "This command was not run."
     if loaded and not first:
+        names = _listed([f"\"{_file_name(p)}\"" for p in paths])
         return Hold(
             "design-reads", JUSTIFIED_SKIP,
-            f"This edit of \"{path.rsplit('/', 1)[-1]}\" needs design references not yet read "
-            f"since the last compaction. Read each {WHOLE_READ}, before the edit, and "
-            f"apply it: {_reference_list(unread)}. If the edit has no design in it, "
-            f"write `goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. This edit "
-            "was not applied. " + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
-            _design_short(f"before this edit of \"{path.rsplit('/', 1)[-1]}\", read "
+            f"This {edit} of {names} needs design references not yet read "
+            f"since the last compaction. Read each {WHOLE_READ}, before the {edit}, and "
+            f"apply it: {_reference_list(unread)}. If the {edit} has no design in it, "
+            f"write `goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. {not_done} "
+            + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
+            _design_short(f"before this {edit} of {names}, read "
                           f"{_reference_list(unread)} {WHOLE_READ}"),
         )
     steps = [] if loaded else [
@@ -1176,12 +1186,46 @@ def _design_hold(path: str, tool_input: dict, proof: _Proof, project: Project | 
         steps.append(f"read each reference it requires {WHOLE_READ}: {_reference_list(unread)}")
     return Hold(
         "design", JUSTIFIED_SKIP,
-        f"This is a substantial code change. Before it, {'; '.join(steps)}. If the edit is "
+        f"This is a substantial code change. Before it, {'; '.join(steps)}. If the {edit} is "
         f"mechanical, with no design in it, write `goated-skip: {DESIGN_SKILL}: <reason>` on "
-        "its own line instead. This edit was not applied. "
+        f"its own line instead. {not_done} "
         + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
         _design_short("; ".join(steps)),
     )
+
+
+def _design_need(path: str, tool_input: dict | None, small: bool, loaded: bool,
+                 earlier: list[tuple[str, bool]], project: Project | None,
+                 references: Callable[[], tuple] | None) -> tuple[bool, dict[str, str]] | None:
+    """What a write of `path` needs from the design gates, as `_design_hold`
+    describes: whether it is the turn's first substantial code change, and
+    the references its signals select, each with why; or None when neither
+    gate judges it. `small`: it adds fewer than `DESIGN_MIN_LINES` lines.
+    `earlier` are the turn's project code writes so far."""
+
+    code, test = is_code(path), is_test(path, project)
+    if not design_reads.applies(path, is_code=code, is_test=test):
+        return None
+    shell_write = tool_input is None
+    # A test file is never substantial: in TDD the test comes first, and the
+    # design happens in the code after it (Ticket 057).
+    substantial = code and not test and not small
+    if not loaded and not substantial:
+        return None
+    written_before = any(p == path for p, _ in earlier)
+    if shell_write and test:
+        required = {}
+    else:
+        required = design_reads.required(
+            path, tool_input or {}, is_code=code, is_test=test, small=small,
+            written_before=written_before,
+            other_code_files=len({p for p, _ in earlier if p != path and not is_test(p, project)}),
+            cwd=project.cwd if project else None,
+            test_edit=_test_edit(path, tool_input, project, references,
+                                 written_before=written_before) if test else None,
+        )
+    first = substantial and not any(not s for p, s in earlier if not is_test(p, project))
+    return first, required
 
 
 def _design_short(unmet: str) -> str:
@@ -1294,8 +1338,10 @@ def _reference_list(references: dict[str, str]) -> str:
 
 
 def _project_code_writes(turn: Turn, project: Project | None) -> list[tuple[str, bool]]:
-    """Each finished edit tool call on a project code file in the turn: its path
-    and whether it is a small edit (`_small_edit`)."""
+    """Each finished write of a project code file in the turn that the design
+    gates judge: an edit tool call, or a shell command's write of new text
+    (`_shell_text_writes`). Each comes as its path and whether it is small
+    (`_small_edit`)."""
 
     writes = []
     for call in turn.calls:
@@ -1303,7 +1349,33 @@ def _project_code_writes(turn: Turn, project: Project | None) -> list[tuple[str,
             path = _norm(str(call.input.get(FILE_WRITE_TOOLS[call.name]) or ""))
             if is_code(path) and _in_project(path, project):
                 writes.append((path, _small_edit(call.input)))
+        elif call.ok and call.name in COMMAND_TOOLS:
+            command = shell.analyze(str(call.input.get("command") or ""), call.name)
+            if command.non_check_writes:
+                writes += [(path, small) for path, small
+                           in _shell_text_writes(command, project).items() if is_code(path)]
     return writes
+
+
+def _shell_text_writes(command: shell.ShellCommand, project: Project | None) -> dict[str, bool]:
+    """Each project file `command` puts new text into, as the design gates
+    judge a shell write (Ticket 098), with whether that text is small: fewer
+    than `DESIGN_MIN_LINES` lines shown in all, text it does not show counting
+    as large. Two spellings of one file (`./src/a.py`, `src\\a.py`) are one
+    file, whose writes add up. A file written from an unknown folder has no
+    place, and a script's files are the `scripted-edit` gate's, so neither
+    is here. Copies, moves, restores, and in-place edits add no text designed
+    in the command, and a write naming no file names none to judge."""
+
+    shown: dict[str, int | None] = {}
+    for target, lines in command.text_writes:
+        if (target in command.unplaced_targets or target in command.script_targets
+                or not _in_project(target, project)):
+            continue
+        path = posixpath.normpath(_norm(target))
+        before = shown.get(path, 0)
+        shown[path] = None if before is None or lines is None else before + lines
+    return {path: lines is not None and lines < DESIGN_MIN_LINES for path, lines in shown.items()}
 
 
 def _repeated_failure_hold(proof: _Proof, project: Project | None) -> Hold | None:

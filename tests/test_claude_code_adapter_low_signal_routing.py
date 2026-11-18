@@ -66,6 +66,21 @@ class OrientationByReadsTests(BriefTestCase):
 
         self.assertEqual(hold_line(s.call("Edit", EDIT)), PIPELINE)
 
+    def test_partial_reads_do_not_count(self) -> None:
+        """Only a whole read counts, as for every other read a hold asks for
+        (Ticket 098); partial reads never add up to a whole one."""
+
+        s = self.full_brief()
+        for name in ("a.md", "b.md", "c.md"):
+            s.read(str(self.session.project / name), limit=20)
+        s.read(str(self.session.project / "a.md"), offset=20, limit=20)
+
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), PIPELINE)
+        self.read_files(s, "a.md", "b.md")
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), PIPELINE)
+        self.read_files(s, "c.md")
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
     def test_a_failed_read_does_not_count(self) -> None:
         s = self.full_brief()
         self.read_files(s, "a.md", "b.md")

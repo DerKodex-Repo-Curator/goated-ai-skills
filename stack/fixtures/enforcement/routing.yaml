@@ -124,9 +124,10 @@ scenarios:
       - call: {kind: spawn, brief: Find where the export limit is set., starts_now: true, read_only: true}
         result: {ok: true, output: It is set in the export module.}
 
-  - name: "gap (a): partial reads of three files meet a briefed session's orientation"
+  - name: a briefed session orients by whole reads of three files, never partial ones
     covers:
-      - {gate: pipeline, case: gap}
+      - {gate: pipeline, case: holds}
+      - {gate: pipeline, case: clears, way: proof}
     setup: {installed_skills: [session-start-progressive-disclosure]}
     steps:
       - session_start: new
@@ -143,4 +144,25 @@ scenarios:
       - call: {kind: file_read, path: src/export.py, whole: false}
       - call: {kind: file_read, path: src/limits.py, whole: false}
       - call: {kind: file_read, path: docs/export.md, whole: false}
+      - call: *limit
+        expect:
+          decision: hold
+          holds: [{gate: pipeline, kind: strict}]
+      - call: {kind: file_read, path: src/export.py, whole: true}
+      - call: {kind: file_read, path: src/limits.py, whole: true}
+      - call: {kind: file_read, path: docs/export.md, whole: true}
+      - call: *limit
+
+  - name: a briefed direct route is not held for orientation
+    covers:
+      - {gate: pipeline, case: near-miss}
+    setup: {installed_skills: [session-start-progressive-disclosure]}
+    steps:
+      - session_start: new
+      - prompt:
+          type: prompt
+          author: session
+          starts_session: true
+          text: "## Goal\n\nFix the export limit.\n\ngoated-route: direct\n"
+      - call: {kind: file_read, path: src/export.py, whole: false}
       - call: *limit
