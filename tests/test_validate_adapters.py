@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import usage_log_guard  # noqa: F401 - keeps the run's usage log out of the user's own
 from scripts.validate_skills import validate_adapter_boundary, validate_registry_reader
 
 

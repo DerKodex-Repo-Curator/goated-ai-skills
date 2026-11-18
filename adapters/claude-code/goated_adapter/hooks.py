@@ -22,6 +22,7 @@ from pathlib import Path
 from goated_core import actions, gates, judge
 from goated_core.events import Result
 from goated_core.state import StateStore, StateUnsafe, default_root
+from goated_core.usage_log import UsageLog, path_from_environment
 
 from . import onboarding, translation
 from .policy import installed_skill_names, router_skill_installed, shared_policy_loaded
@@ -46,6 +47,8 @@ DEFAULT_REGISTRY = Path(__file__).resolve().parents[3] / "stack" / "goated-stack
 # Claude Code sets this to the project's root folder in a hook's environment.
 PROJECT_DIR_ENV = "CLAUDE_PROJECT_DIR"
 STATE_DIR_NAME = "goated-claude-code-adapter"
+# The adapter's name in the core's usage log.
+ADAPTER_NAME = "claude-code"
 AGENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 # A turn key no turn has, so the reader returns every turn back to the start
 # (or to its turn limit).
@@ -77,11 +80,13 @@ class Config:
     registry the `reference-reads` gate reads; None reads none.
     `registry_named`: the user named that path (`GOATED_ADAPTER_REGISTRY`),
     so a missing file there is worth a warning; a missing default is not.
+    `usage_log` is the core's usage log the adapter writes to, as
+    `claude-code`; None keeps none.
     `from_environment` gives the installed defaults; tests pass their own.
     """
 
     __slots__ = ("state_dir", "home", "lag_wait_seconds", "skill_namespaces", "project_dir",
-                 "registry_path", "registry_named")
+                 "registry_path", "registry_named", "usage_log")
 
     def __init__(
         self,
@@ -92,6 +97,7 @@ class Config:
         project_dir: str | None = None,
         registry_path: Path | None = None,
         registry_named: bool = False,
+        usage_log: UsageLog | None = None,
     ) -> None:
         self.state_dir = Path(state_dir)
         self.home = Path(home) if home is not None else Path.home()
@@ -100,18 +106,25 @@ class Config:
         self.project_dir = project_dir
         self.registry_path = Path(registry_path) if registry_path is not None else None
         self.registry_named = registry_named
+        self.usage_log = usage_log
 
     @classmethod
     def from_environment(cls) -> "Config":
+        """The installed defaults; the usage log is at `GOATED_USAGE_LOG`, else
+        the core's per-user default (`usage_log.default_path`), and none when
+        `GOATED_USAGE_LOG` is `off`."""
+
         override = os.environ.get(STATE_DIR_ENV)
         namespaces = os.environ.get(NAMESPACES_ENV, "")
         registry = os.environ.get(REGISTRY_ENV)
+        log = path_from_environment()
         return cls(
             state_dir=Path(override) if override else default_root() / STATE_DIR_NAME,
             skill_namespaces=tuple(n.strip() for n in namespaces.split(",") if n.strip()),
             project_dir=os.environ.get(PROJECT_DIR_ENV) or None,
             registry_path=Path(registry) if registry else DEFAULT_REGISTRY,
             registry_named=bool(registry),
+            usage_log=UsageLog(log, ADAPTER_NAME) if log else None,
         )
 
     def settings(self) -> judge.Settings:
@@ -119,7 +132,8 @@ class Config:
         adapter before the core existed are upgraded as they load."""
 
         return judge.Settings(self.state_dir, self.skill_namespaces, self.registry_path,
-                              self.registry_named, upgrade_state=translation.upgrade_state)
+                              self.registry_named, upgrade_state=translation.upgrade_state,
+                              usage_log=self.usage_log)
 
 
 class _FailOpen(Exception):
@@ -172,6 +186,7 @@ def _situation(payload: dict, config: Config, session_id: str,
         agent_folders=["~/.claude", os.path.join(str(config.home), ".claude")],
         installed_skills=lambda: installed_skill_names(cwd, config.home),
         subagents=lambda turn: _spawned_subagents(turn, transcript_path or ""),
+        project_folder=config.project_dir or str(payload.get("cwd") or "") or None,
     )
 
 

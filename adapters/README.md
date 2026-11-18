@@ -84,10 +84,67 @@ uv run python scripts/run_conformance.py path/to/your_translator.py
 The [worked example](example/README.md) is a toy tool loop with its adapter
 and translator. It passes every scenario in the repo's tests.
 
+## The Usage Log
+
+The core appends what each event showed to a local usage log, so a session
+in any harness leaves the same record (Ticket 082): each hold with its gate,
+kind and what it asks for, what became of it, each skill load with its
+cause, each route and skip line, each reference read, and code changes and
+turn ends. Each entry carries the log's version, the session id, a project
+key and the adapter's name. It holds what the
+[skill-usage mod](claude-code/skill-usage/README.md) stores and nothing
+more: no prompt text, hold text, file content or project path. The format,
+JSON Lines of one entry each, is
+[`stack/schemas/usage-log.schema.json`](../stack/schemas/usage-log.schema.json).
+
+- **Where it lives.** The caller sets it: `--usage-log PATH` on the command,
+  `GOATED_USAGE_LOG` for the command and the Claude Code adapter, or
+  `UsageLog(path, adapter)` in `Settings.usage_log` for the Python call
+  (None keeps no log). `off`, as either value, keeps none. The command and
+  `decide` keep no log unless one is named, so another harness, a test, or
+  the worked example never writes into the user's own log by default. The
+  Claude Code adapter, which a user installs on purpose, logs by default to
+  a per-user file, never in a project folder:
+  `%LOCALAPPDATA%\goated\usage-log.jsonl` on Windows (the per-user temp
+  folder's `goated` when that is unset), else
+  `$XDG_STATE_HOME/goated/usage-log.jsonl`, else
+  `~/.local/state/goated/usage-log.jsonl`. The folder is made private to the
+  user, and on POSIX one that is a link, another user's, or writable by
+  others is refused. Project keys and file digests are salted with
+  `usage-log-salt`, made once beside it. The command names its adapter
+  from `GOATED_CORE_ADAPTER`, `core` when unset; the Claude Code adapter
+  writes as `claude-code`.
+- **Many writers.** Each event's lines go in one write under a lock file on
+  the whole log, `usage-log.jsonl.lock`, so hooks of parallel sessions and
+  processes never lose or mix a line. A lock left by a stopped process is
+  broken after ten seconds.
+- **Never in the way.** A log that cannot be written leaves the decision
+  as it was and adds one `warning` notice per session. Nothing is sent
+  anywhere.
+- **Reading it.** A line that is no entry (not JSON, not an object, or
+  missing a field its type needs) is passed over and counted; only an entry
+  of a version the reader does not know refuses the log.
+- **The report.** `python <goated-root>/adapters/core/goated_usage_report.py
+  [--log PATH] [--project KEY] [--project-folder PATH] [--adapter NAME]`
+  prints a Markdown summary: the projects by key with their sessions, loads
+  by skill and cause, holds by gate and outcome, closeout items, route
+  lines, reference reads, and how many lines were skipped.
+  `--project-folder` finds a folder's key with the log's salt. A log with an
+  entry of a version it does not know is refused: the reason goes to
+  standard error and the command exits 1.
+- **Size.** The log is never trimmed: each entry is about 200 bytes, so a
+  short session adds a few kilobytes and a long one tens, and the
+  skill-usage mod reads it whole at each session start.
+  Delete it, or point `GOATED_USAGE_LOG` elsewhere, to start afresh.
+- **Outcomes** are the core's own settlement (`goated_core/friction.py`):
+  answered, declined, stood down by an override, or unanswered, one per
+  gate and turn however often the gate held. The skill-usage mod settles
+  holds by its own finer rules and reads the log's other entries.
+
 ## Adapters
 
 | Folder | Framework | Status |
 | --- | --- | --- |
-| [`core/`](core/) | Any, through the event model | The shared rules every adapter calls (Ticket 081) |
+| [`core/`](core/) | Any, through the event model | The shared rules every adapter calls (Ticket 081); the usage log and its report (Ticket 082) |
 | [`example/`](example/README.md) | A toy tool loop, to copy from | The worked example of the adapter guide (Ticket 083); not for install |
 | [`claude-code/`](claude-code/README.md) | Claude Code | Routing gates (Ticket 030); action, shell-write, and closeout gates (Ticket 031); calls the shared core (Ticket 081) |

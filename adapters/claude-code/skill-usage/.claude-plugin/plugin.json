@@ -12,6 +12,12 @@
       "title": "GOATED registry path",
       "default": "",
       "description": "The installed GOATED registry, goated-stack.yaml, when it is not in ~/.claude/goated/stack/ or beside the mod in a GOATED checkout. Empty looks in those two places."
+    },
+    "usageLogPath": {
+      "type": "string",
+      "title": "GOATED usage log path",
+      "default": "",
+      "description": "The GOATED core's usage log, when GOATED_USAGE_LOG puts it elsewhere than the core's per-user default. Sessions other adapters logged there add to All time. Empty looks in the default."
     }
   }
 }

@@ -13,13 +13,14 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface as Dollar, Register, SessionAppendInput } from 'claude-code'
 
 import type { AllTime, Available, DeclaredReferences, SessionSummary, Tab, UsageEvent } from '../types'
-import { addSession, allTimeOf, closeOpen, DATA_VERSION, historyEvents, isObservedRow, mergeSummaries, rowEvents, short, summarize } from './classify'
+import { addSession, addTotals, allTimeOf, closeOpen, DATA_VERSION, historyEvents, isObservedRow, mergeSummaries, rowEvents, short, summarize } from './classify'
 import type { HistoryMessage } from './classify'
 import type { View } from './meaning'
 import { forgetPictures, PREVIEW_MS } from './picture'
 import { errorText } from './holds'
 import { newSalt, projectKey } from './project'
 import { declaredReferences, registryPlaces } from './registry'
+import { loggedTotal, readUsageLog, usageLogPlace } from './usage-log'
 import { allTimeTab, PANE_COLUMNS, reportText, sessionTab, statusText, unusedTab } from './view'
 
 const PANE = 'skill-usage'
@@ -49,6 +50,7 @@ const available = atom({ plugin: 'skill-usage', key: 'available' } as const, nul
 const declared = atom({ plugin: 'skill-usage', key: 'declared' } as const, null, { shape: 'declared-1' })
 // `all-time-2`: Ticket 076 added totals by project and the earlier versions' holds.
 const allTime = atom({ plugin: 'skill-usage', key: 'allTime' } as const, null, { shape: 'all-time-2' })
+const logged = atom({ plugin: 'skill-usage', key: 'logged' } as const, null, { shape: 'logged-1' })
 const project = atom({ plugin: 'skill-usage', key: 'project' } as const, null)
 const allProject = atom({ plugin: 'skill-usage', key: 'allProject' } as const, null)
 const tab = atom({ plugin: 'skill-usage', key: 'tab' } as const, 'session')
@@ -62,6 +64,8 @@ export const register: Register = (on, options) => {
     const started = await next(e)
     await $.command.register({ name: 'skill-usage', description: 'Skill usage pane; `/skill-usage preview` plays every animation, `/skill-usage report` prints the all-time report' })
     try {
+      // Before the session is claimed, which sums All time with what the log holds.
+      await readUsageLogOf($, String(options.usageLogPath ?? ''))
       await claimSession($)
       await knownSkills($, true)
       await readRegistry($, String(options.registryPath ?? ''))
@@ -266,8 +270,38 @@ async function loadAllTime($: Dollar, id: string) {
     await $.store.set(OLDER_KEY, result.older)
     for (const key of result.folded) await $.store.delete(key)
   }
+  // The sessions other adapters logged count beside the stored ones; they are never stored or folded.
+  const reading = await read($, logged)
+  const summed = addTotals(result.total, reading?.total ?? null)
+  const total = summed && reading?.skipped ? { ...summed, logSkipped: reading.skipped } : summed
   // Every write redraws the pane: rewrite only what changed, as most turns change no other session.
-  if (JSON.stringify(await read($, allTime)) !== JSON.stringify(result.total)) await update($, allTime, () => result.total)
+  if (JSON.stringify(await read($, allTime)) !== JSON.stringify(total)) await update($, allTime, () => total)
+}
+
+/**
+ * Reads the GOATED core's usage log once per session start, from the `usageLogPath` option or the core's per-user
+ * default (hooks/usage-log.ts), and keeps the totals of the sessions other adapters logged, which All time and the
+ * report add. With no log, the mod reads as it always did. A log of a version the mod does not know is refused: its
+ * reason shows as the pane's observer error, and nothing of it is counted.
+ */
+async function readUsageLogOf($: Dollar, configured: string) {
+  // The engine lists the variables a mod reads, so each is named where it is read.
+  const variable = (value: Promise<string | undefined>) => value.catch(() => undefined)
+  // Windows always sets OS to Windows_NT; the core picks its default folder by platform too.
+  const isWindows = (await variable($.env.get('OS'))) === 'Windows_NT'
+  const place = usageLogPlace({
+    configured,
+    isWindows,
+    localAppData: (await variable($.env.get('LOCALAPPDATA'))) || undefined,
+    temp: (await variable($.env.get('TEMP'))) || (await variable($.env.get('TMP'))) || undefined,
+    xdgStateHome: (await variable($.env.get('XDG_STATE_HOME'))) || undefined,
+    home: (isWindows ? await variable($.env.get('USERPROFILE')) : undefined) || (await variable($.env.get('HOME'))) || (await variable($.env.get('USERPROFILE'))) || undefined,
+  })
+  const text = place ? await $.fs.read(place).catch(() => '') : ''
+  const reading = readUsageLog(text)
+  await update($, logged, () => ('refused' in reading ? null : { total: loggedTotal(reading.sessions), skipped: reading.skipped }))
+  // Noted, not thrown, so the rest of the session start still runs.
+  if ('refused' in reading) await noteError($, new Error(`the GOATED usage log was not read: ${reading.refused}`))
 }
 
 /** This session so far: the stored baseline plus what was observed since, with its project key when it has one. */

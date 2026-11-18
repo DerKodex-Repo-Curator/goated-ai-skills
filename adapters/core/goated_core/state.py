@@ -311,6 +311,19 @@ class StateUnsafe(Exception):
     """The state folder could be written by another user, so it cannot be trusted."""
 
 
+def ensure_private_directory(directory: Path, what: str = "state folder") -> None:
+    """Make `directory` if it is missing, readable by this user alone; raise
+    `StateUnsafe` on POSIX when it is a link, another user's, or writable by
+    others. `what` names it in the message."""
+
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if os.name == "nt":
+        return  # The Windows defaults, per-user folders, are private.
+    info = directory.lstat()
+    if directory.is_symlink() or info.st_uid != os.getuid() or info.st_mode & 0o022:
+        raise StateUnsafe(f"its {what} {directory} is not private to this user")
+
+
 class StateStore:
     """Loads and saves `SessionState` under one directory, keyed by session.
 
@@ -445,15 +458,7 @@ class StateStore:
                     pass  # A stale marker only names an old turn; the next claim retries.
 
     def _ensure_private_directory(self, directory: Path | None = None) -> None:
-        directory = directory or self.directory
-        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if os.name == "nt":
-            return  # The Windows default, the per-user temp folder, is private.
-        info = directory.lstat()
-        if directory.is_symlink() or info.st_uid != os.getuid() or info.st_mode & 0o022:
-            raise StateUnsafe(
-                f"its state folder {directory} is not private to this user"
-            )
+        ensure_private_directory(directory or self.directory)
 
     def _path(self, session_id: str) -> Path:
         return self.directory / f"{_safe_name(session_id)}.json"
