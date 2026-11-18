@@ -713,16 +713,25 @@ def _shell_pr_sizes(cwd: str | None, pull_requests: list[shell.PullRequest]
                     ) -> Iterator[tuple[int | None, str | None]]:
     """`_pr_review_hold`'s sizes for the pull requests one shell command
     opens, each measured with its own base, head and repository (spec R14),
-    under one `SIZE_TIMEOUT_SECONDS` limit for them all. One alone is named
-    as before; of several, each by its place and its base."""
+    under one `SIZE_TIMEOUT_SECONDS` limit for them all; two that name the
+    same base, head and repository are measured once. One alone is named as
+    before; of several, each by its place, its base and any head."""
 
     deadline = time.monotonic() + SIZE_TIMEOUT_SECONDS
+    measured: dict[tuple, int | None] = {}
+    # Branch names are quoted, not backticked: backticks name a skill to load.
+    quoted = lambda branch: branch.replace("`", "'")
     for number, pr in enumerate(pull_requests, 1):
         name = None
         if len(pull_requests) > 1:
             name = (f"pull request {number} of {len(pull_requests)} in this command, into "
-                    + (pr.base or "its default base") + (f" from {pr.head}" if pr.head else ""))
-        yield changed_lines(cwd, pr.base, pr.head, pr.repository, deadline=deadline), name
+                    + (quoted(pr.base) if pr.base else "its default base")
+                    + (f" from {quoted(pr.head)}" if pr.head else ""))
+        key = (pr.base, pr.head, pr.repository)
+        if key not in measured:
+            measured[key] = changed_lines(cwd, pr.base, pr.head, pr.repository,
+                                          deadline=deadline)
+        yield measured[key], name
 
 
 class _WorkingTree:

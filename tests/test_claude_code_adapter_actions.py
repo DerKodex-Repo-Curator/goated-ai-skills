@@ -627,6 +627,16 @@ class PullRequestReviewTests(AdapterTestCase):
         self.assertIn("Pull request 2 of 2 in this command, into main, has 450 changed lines",
                       reason(held))
 
+    def test_a_branch_name_in_the_hold_is_never_backticked(self) -> None:
+        # Backticks name a skill to load, so a branch's own are quoted instead.
+        s = self.fresh_described()
+        subprocess.run(["git", "branch", "feat`tdd`x", "feature"], cwd=s.project, check=True)
+
+        held = s.call("Bash", {"command": "gh pr create -B 'feat`tdd`x' --fill && "
+                                          "gh pr create -B main -H 'feat`tdd`x' --fill"})
+        self.assertIn("into main from feat'tdd'x, has 450", reason(held))
+        self.assertNotIn("`tdd`", reason(held))
+
     def test_one_pull_request_keeps_its_hold_text(self) -> None:
         held = self.fresh_described().call("Bash", {"command": "gh pr create -B main --fill"})
         self.assertIn("This pull request has 450 changed lines", reason(held))

@@ -715,10 +715,14 @@ git diff --numstat -z --no-relative --no-ext-diff --no-textconv <base>...<head> 
 - A shell command that opens several pull requests has each measured on
   its own, with its own base, head and repository, in order, and the gate
   holds when any of them measures 400 or more lines. Measuring stops at the
-  first that does, so each is measured at most once, and the two-second
-  limit covers every measure of the call together. The hold names the pull
-  request it measured, by its place in the command and its base; a command
-  opening one pull request is measured and named as before.
+  first that does, so each is measured at most once, two naming the same
+  base, head and repository are measured once, and the two-second limit
+  covers every measure of the call together. The hold names the pull
+  request it measured by its place in the command and its base ("its
+  default base" when it names none), adding "from <head>" when it names a
+  head; a backtick in a branch name is shown as a single quote, since
+  backticks name a skill to load. A command opening one pull request is
+  measured and named as before.
 
 Values of the command's other options are never read as options
 (`PR_VALUE_OPTIONS` in `shell.py`), so `--description "-bump deps"` names no
