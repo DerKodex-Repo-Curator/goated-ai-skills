@@ -652,8 +652,12 @@ noun and the verb, `--x=v`, an attached short form (`-Rx`, `-R=x`) and
 as its value, as `gh`'s parser does, and `--` ends the options with no
 verb. So `gh pr -R create list`, `gh pr --state create list` and
 `gh pr --draft create` open nothing. Each is recognized per simple
-command, so `echo gh pr create` opens nothing. A `commit` call and a
-`pull_request` call are judged the same way.
+command, so `echo gh pr create` opens nothing. A chained command may open
+several, and each is read with its own simple command's options alone: a
+later one never takes an earlier one's `--repo`, `--base` or `--head`, so in
+`gh pr create -R other/x && gh pr create` the second is aimed at the
+working folder's checkout. A `commit` call and a `pull_request` call are
+judged the same way.
 
 The step that asks for a [change read](#change-reads) is skipped for a
 `commit` or `pull_request` call when the turn changed no project file: it
@@ -708,6 +712,13 @@ git diff --numstat -z --no-relative --no-ext-diff --no-textconv <base>...<head> 
   measured. The `GH_REPO`-style environment variables and a default set
   with `gh repo set-default` are not read: a command without the option is
   measured in the working folder's checkout.
+- A shell command that opens several pull requests has each measured on
+  its own, with its own base, head and repository, in order, and the gate
+  holds when any of them measures 400 or more lines. Measuring stops at the
+  first that does, so each is measured at most once, and the two-second
+  limit covers every measure of the call together. The hold names the pull
+  request it measured, by its place in the command and its base; a command
+  opening one pull request is measured and named as before.
 
 Values of the command's other options are never read as options
 (`PR_VALUE_OPTIONS` in `shell.py`), so `--description "-bump deps"` names no

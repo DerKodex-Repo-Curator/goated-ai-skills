@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -595,6 +596,40 @@ class PullRequestReviewTests(AdapterTestCase):
                 s = self.fresh_described(origin_url=url, stay_on_base=True)
                 self.assertEqual(decision(s.call("Bash", {"command": command})),
                                  "deny" if held else "pass")
+
+    def test_each_pull_request_in_a_chain_is_read_with_its_own_options(self) -> None:
+        # Spec R14: a later pull request never takes an earlier one's --repo,
+        # --base or --head, and each is measured on its own.
+        github = "https://github.com/acme/export.git"
+        for command, held in (
+            ("gh pr create -R other/x --fill && gh pr create -B main -H feature --fill", True),
+            ("gh pr create -B main -H feature --fill; glab mr create -R other/x", True),
+            ("gh pr create -R other/x -B main -H feature --fill && gh pr create --fill", False),
+            ("gh pr create -B main --fill && gh pr create -B small --fill", True),
+            ("gh pr create -B small --fill && gh pr create -B main --fill", True),
+            ("gh pr create -B small --fill && gh pr create -B small --fill", False),
+            ("gh pr create -B main -H feature --fill && gh pr create -B small --fill", True),
+        ):
+            with self.subTest(command=command):
+                # `small` is a branch at feature's tip, so a pull request into it is
+                # empty; with no head, the checked-out branch is measured.
+                s = self.fresh_described(origin_url=github, stay_on_base="-H" in command)
+                subprocess.run(["git", "branch", "small", "feature"], cwd=s.project, check=True)
+                self.assertEqual(decision(s.call("Bash", {"command": command})),
+                                 "deny" if held else "pass")
+
+    def test_a_held_chain_names_the_pull_request_it_measured(self) -> None:
+        s = self.fresh_described()
+        subprocess.run(["git", "branch", "small", "feature"], cwd=s.project, check=True)
+
+        held = s.call("Bash", {"command": "gh pr create -B small --fill && gh pr create -B main --fill"})
+        self.assertEqual(hold_line(held), "goated-hold: pr-review | justified-skip")
+        self.assertIn("Pull request 2 of 2 in this command, into main, has 450 changed lines",
+                      reason(held))
+
+    def test_one_pull_request_keeps_its_hold_text(self) -> None:
+        held = self.fresh_described().call("Bash", {"command": "gh pr create -B main --fill"})
+        self.assertIn("This pull request has 450 changed lines", reason(held))
 
     def test_other_forge_commands_open_no_pull_request(self) -> None:
         # A value that spells a verb is still a value: `-R create` names a repository.
