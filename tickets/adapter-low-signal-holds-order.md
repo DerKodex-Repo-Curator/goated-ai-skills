@@ -6,30 +6,37 @@ Parallel waves across both round 3 order files, and against round 2's
 remaining tickets:
 [hook-friction-round-3-waves.md](hook-friction-round-3-waves.md)
 
-1. `tickets/086-adapter-repeated-failure-red-runs.md`
+1. `tickets/archive/086-adapter-repeated-failure-red-runs.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: None
    - Enables: TDD red runs and shrinking failures with no hold.
-2. `tickets/087-adapter-routing-orientation-by-reads-and-outside-writes.md`
+2. `tickets/archive/087-adapter-routing-orientation-by-reads-and-outside-writes.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: None
    - Enables: briefed sessions oriented by their reads, and scratch writes
      with no routing hold.
-3. `tickets/088-adapter-wider-plain-reads.md`
+3. `tickets/archive/088-adapter-wider-plain-reads.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: None
    - Enables: looking around before the router loads, and a carrier call
      that always passes.
-4. `tickets/089-adapter-design-holds-without-written-text.md`
+4. `tickets/archive/089-adapter-design-holds-without-written-text.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: None
    - Enables: design holds that ask only for a load and reads.
-5. `tickets/091-adapter-review-size-and-installs.md`
+5. `tickets/archive/091-adapter-review-size-and-installs.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: None
    - Enables: no Review item in a delegated session, branch size by code,
      and installs judged by place.
-6. `tickets/090-adapter-test-edit-reference-thresholds.md`
+6. `tickets/archive/090-adapter-test-edit-reference-thresholds.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: 089
    - Enables: test references asked only when a test is designed.
-7. `tickets/092-adapter-whole-reads-and-read-order.md`
+7. `tickets/archive/092-adapter-whole-reads-and-read-order.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: 089, 091, and
-     `tickets/078-skill-usage-reference-counts.md`
+     `tickets/archive/078-skill-usage-reference-counts.md`
    - Enables: whole reads of required files, and one diff read per item.
 
 Tickets were combined where splitting bought no parallel work, separate
@@ -58,13 +65,7 @@ here, so the contract states these rules as they then stand.
 
 ## Ready Frontier
 
-- `tickets/086-adapter-repeated-failure-red-runs.md`
-- `tickets/087-adapter-routing-orientation-by-reads-and-outside-writes.md`
-- `tickets/088-adapter-wider-plain-reads.md`
-- `tickets/089-adapter-design-holds-without-written-text.md`
-- `tickets/091-adapter-review-size-and-installs.md`
-
-Ticket 090 follows 089. Ticket 092 follows 089, 091 and round 2's 078.
+- None. Every ticket in this order is completed and archived.
 
 ## Coverage
 

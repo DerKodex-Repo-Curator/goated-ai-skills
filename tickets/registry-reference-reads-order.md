@@ -5,14 +5,17 @@ Source spec: `docs/specs/2026-11-17-registry-reference-reads.md`
 Parallel waves across all five order files:
 [hook-friction-round-2-waves.md](hook-friction-round-2-waves.md)
 
-1. `tickets/066-registry-declares-every-reference.md`
+1. `tickets/archive/066-registry-declares-every-reference.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: None
    - Enables: a complete, checked record of when each reference is read.
-2. `tickets/067-adapter-reference-reads-gate-edit-signals.md`
-   - Blocked by: 066, `tickets/065-adapter-loads-count-until-compaction.md`,
-     `tickets/063-adapter-design-reads-small-edits.md`
+2. `tickets/archive/067-adapter-reference-reads-gate-edit-signals.md`
+   - Status: Completed, merged and archived on 2026-11-18.
+   - Blocked by: 066, `tickets/archive/065-adapter-loads-count-until-compaction.md`,
+     `tickets/archive/063-adapter-design-reads-small-edits.md`
    - Enables: enforced reads for references selected by one edit.
-3. `tickets/068-adapter-reference-reads-turn-signals.md`
+3. `tickets/archive/068-adapter-reference-reads-turn-signals.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: 067
    - Enables: enforced reads for references selected by what the turn did.
 
@@ -25,9 +28,7 @@ Tickets 063 and 065 belong to `tickets/adapter-written-line-holds-order.md`.
 
 ## Ready Frontier
 
-- `tickets/066-registry-declares-every-reference.md`
-
-Ticket 067 follows 066, 065 and 063. Ticket 068 follows 067.
+- None. Every ticket in this order is completed and archived.
 
 ## Coverage
 

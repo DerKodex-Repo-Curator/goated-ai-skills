@@ -82,7 +82,7 @@ code is fixed before Ticket 080 starts moving it:
 
 ## Blocked By
 
-- `tickets/079-enforcement-contract-and-event-model.md`
+- `tickets/archive/079-enforcement-contract-and-event-model.md`
 
 ## Scope Exclusions
 

@@ -18,18 +18,16 @@ Source spec: `docs/specs/2026-11-16-design-reference-reads.md`
    - Blocked by: `tickets/archive/047-adapter-overrides-from-other-agents.md`
    - Enables: reference reads measured by moment, and design-reads
      declarations counted.
-4. `tickets/051-adapter-design-reference-reads.md`
-   - Status: Merged on 2026-11-17 (`d2d9f73`); its live check in one real
-     session is still to run before it is archived.
+4. `tickets/archive/051-adapter-design-reference-reads.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: `tickets/archive/046-adapter-pipeline-after-compaction.md`,
      `tickets/archive/048-design-reference-moment-triggers.md`,
      `tickets/archive/050-skill-usage-reference-read-timing.md`
    - Enables: required design references read before and during the edit,
      with a cooldown until compaction.
-5. `tickets/052-adapter-design-citations-at-closeout.md`
-   - Status: Merged on 2026-11-17 (`401088f`); its live check in one real
-     session is still to run before it is archived.
-   - Blocked by: `tickets/051-adapter-design-reference-reads.md`
+5. `tickets/archive/052-adapter-design-citations-at-closeout.md`
+   - Status: Completed, merged and archived on 2026-11-18.
+   - Blocked by: `tickets/archive/051-adapter-design-reference-reads.md`
    - Enables: a closeout that needs a cited id from each required reference.
      It also unblocks Ticket 059 in
      `tickets/adapter-hook-friction-order.md`.
@@ -42,9 +40,7 @@ so they run after 046 and before Ticket 035 in
 
 ## Ready Frontier
 
-- `tickets/051-adapter-design-reference-reads.md` and
-  `tickets/052-adapter-design-citations-at-closeout.md`: merged; only their
-  live checks in one real session remain.
+- None. Every ticket in this order is completed and archived.
 
 ## Coverage
 

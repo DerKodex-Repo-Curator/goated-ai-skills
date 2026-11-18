@@ -6,22 +6,27 @@ Parallel waves across both round 3 order files, and against round 2's
 remaining tickets:
 [hook-friction-round-3-waves.md](hook-friction-round-3-waves.md)
 
-1. `tickets/093-adapter-inline-script-writes.md`
+1. `tickets/archive/093-adapter-inline-script-writes.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: None
    - Enables: code changed by an inline script judged like any edit.
-2. `tickets/094-adapter-own-subagent-reports-continue-the-turn.md`
+2. `tickets/archive/094-adapter-own-subagent-reports-continue-the-turn.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: None
    - Enables: a turn that survives its own subagent's report.
-3. `tickets/097-adapter-script-write-paths-by-name-and-folder.md`
+3. `tickets/archive/097-adapter-script-write-paths-by-name-and-folder.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: 093
    - Enables: no `scripted-edit` hold on a script that names its file in
      a variable, or that runs in a folder certainly outside the project.
-4. `tickets/095-adapter-joint-holds-in-one-message.md`
+4. `tickets/archive/095-adapter-joint-holds-in-one-message.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: 093, 094, 097, and 086 to 092 in
      `tickets/adapter-low-signal-holds-order.md`
    - Enables: one retry for a call that meets several holds, and shorter
      hold texts.
-5. `tickets/096-adapter-early-closeout-note.md`
+5. `tickets/archive/096-adapter-early-closeout-note.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: 095
    - Enables: closeout items met before the final report.
 
@@ -51,10 +56,7 @@ decision, which Ticket 095 defines.
 
 ## Ready Frontier
 
-- `tickets/097-adapter-script-write-paths-by-name-and-folder.md`
-
-Tickets 093 and 094 are merged. Ticket 095 follows 086 to 094 and 097.
-Ticket 096 follows 095.
+- None. Every ticket in this order is completed and archived.
 
 ## Coverage
 

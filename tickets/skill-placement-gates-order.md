@@ -5,23 +5,29 @@ Source spec: `docs/specs/2026-11-17-skill-placement-gates.md`
 Parallel waves across all five order files:
 [hook-friction-round-2-waves.md](hook-friction-round-2-waves.md)
 
-1. `tickets/069-adapter-closeout-review-and-verification.md`
-   - Blocked by: `tickets/065-adapter-loads-count-until-compaction.md`
+1. `tickets/archive/069-adapter-closeout-review-and-verification.md`
+   - Status: Completed, merged and archived on 2026-11-18.
+   - Blocked by: `tickets/archive/065-adapter-loads-count-until-compaction.md`
    - Enables: review and verification before a large or risky commit.
-2. `tickets/070-adapter-review-intake-hold.md`
+2. `tickets/archive/070-adapter-review-intake-hold.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: 069,
-     `tickets/067-adapter-reference-reads-gate-edit-signals.md`
+     `tickets/archive/067-adapter-reference-reads-gate-edit-signals.md`
    - Enables: review findings handled through `receiving-code-review`.
-3. `tickets/071-spawn-briefs-name-skills.md`
+3. `tickets/archive/071-spawn-briefs-name-skills.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: None
    - Enables: subagents and side sessions told which skills to read.
-4. `tickets/072-orientation-and-plans-in-routes.md`
-   - Blocked by: `tickets/065-adapter-loads-count-until-compaction.md`, 071
+4. `tickets/archive/072-orientation-and-plans-in-routes.md`
+   - Status: Completed, merged and archived on 2026-11-18.
+   - Blocked by: `tickets/archive/065-adapter-loads-count-until-compaction.md`, 071
    - Enables: oriented side sessions and planned ticket work.
-5. `tickets/073-notices-for-retrospective-and-onboarding.md`
+5. `tickets/archive/073-notices-for-retrospective-and-onboarding.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: 072
    - Enables: prompts toward retrospective and onboarding skills.
-6. `tickets/074-design-principles-soft-dependency-audit.md`
+6. `tickets/archive/074-design-principles-soft-dependency-audit.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: None
    - Enables: design guidance reachable from every skill that judges
      design.
@@ -45,11 +51,7 @@ Other overlaps are the adapter README and the regenerated
 
 ## Ready Frontier
 
-- `tickets/071-spawn-briefs-name-skills.md`
-- `tickets/074-design-principles-soft-dependency-audit.md`
-
-Ticket 069 follows 065. Ticket 070 follows 069 and 067. Ticket 072 follows
-065 and 071. Ticket 073 follows 072.
+- None. Every ticket in this order is completed and archived.
 
 ## Coverage
 

@@ -7,19 +7,23 @@ Parallel waves across the round 2 order files:
 Ticket 078 and later, with round 3's two order files:
 [hook-friction-round-3-waves.md](hook-friction-round-3-waves.md)
 
-1. `tickets/075-skill-usage-hold-detail.md`
+1. `tickets/archive/075-skill-usage-hold-detail.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: None
    - Enables: closeout items, skip reasons and kinds of unanswered hold in
      the data.
-2. `tickets/076-skill-usage-routes-sessions-projects-versions.md`
+2. `tickets/archive/076-skill-usage-routes-sessions-projects-versions.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: 075
    - Enables: the router's choices, side sessions, and data split by
      project and version.
-3. `tickets/077-undocumented-override-phrases.md`
+3. `tickets/archive/077-undocumented-override-phrases.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: None
    - Enables: override data that can be trusted.
-4. `tickets/078-skill-usage-reference-counts.md`
-   - Blocked by: `tickets/068-adapter-reference-reads-turn-signals.md`, 076
+4. `tickets/archive/078-skill-usage-reference-counts.md`
+   - Status: Completed, merged and archived on 2026-11-18.
+   - Blocked by: `tickets/archive/068-adapter-reference-reads-turn-signals.md`, 076
    - Enables: numbers to tune reference signals.
 
 Tickets 075 and 076 both change the stored shape and the summary code, so
@@ -33,10 +37,7 @@ regenerating.
 
 ## Ready Frontier
 
-- `tickets/075-skill-usage-hold-detail.md`
-- `tickets/077-undocumented-override-phrases.md`
-
-Ticket 076 follows 075. Ticket 078 follows 076 and 068.
+- None. Every ticket in this order is completed and archived.
 
 ## Coverage
 

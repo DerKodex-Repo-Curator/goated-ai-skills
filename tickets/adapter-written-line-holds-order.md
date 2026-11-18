@@ -5,22 +5,27 @@ Source spec: `docs/specs/2026-11-17-adapter-written-line-holds.md`
 Parallel waves across all five order files:
 [hook-friction-round-2-waves.md](hook-friction-round-2-waves.md)
 
-1. `tickets/061-adapter-design-closeout-citations-and-question.md`
+1. `tickets/archive/061-adapter-design-closeout-citations-and-question.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: None
    - Enables: citations that clear at commit, a concrete question at the
      red flags, and a documented restore limit.
-2. `tickets/062-adapter-unseen-line-advice-once-across-parallel-holds.md`
+2. `tickets/archive/062-adapter-unseen-line-advice-once-across-parallel-holds.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: None
    - Enables: one full advice per turn, parallel holds included.
-3. `tickets/063-adapter-design-reads-small-edits.md`
+3. `tickets/archive/063-adapter-design-reads-small-edits.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: None
    - Enables: small fixes with no reference chosen by file kind.
-4. `tickets/064-adapter-session-cards-pass-routing.md`
+4. `tickets/archive/064-adapter-session-cards-pass-routing.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: None
    - Enables: proposal and offer cards with no routing round trip.
-5. `tickets/065-adapter-loads-count-until-compaction.md`
+5. `tickets/archive/065-adapter-loads-count-until-compaction.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: 061, 062, 064 and
-     `tickets/071-spawn-briefs-name-skills.md`
+     `tickets/archive/071-spawn-briefs-name-skills.md`
    - Enables: no reloads of skills or templates still in context.
 
 Tickets were combined where splitting bought no parallel work, separate
@@ -40,12 +45,7 @@ first. It shares no function with 063.
 
 ## Ready Frontier
 
-- `tickets/061-adapter-design-closeout-citations-and-question.md`
-- `tickets/062-adapter-unseen-line-advice-once-across-parallel-holds.md`
-- `tickets/063-adapter-design-reads-small-edits.md`
-- `tickets/064-adapter-session-cards-pass-routing.md`
-
-Ticket 065 follows 061, 062, 064 and 071.
+- None. Every ticket in this order is completed and archived.
 
 ## Coverage
 

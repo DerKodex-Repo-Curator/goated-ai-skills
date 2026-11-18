@@ -67,7 +67,7 @@ keeps the move itself mechanical.
 
 ## Blocked By
 
-- `tickets/079-enforcement-contract-and-event-model.md`
+- `tickets/archive/079-enforcement-contract-and-event-model.md`
 - `tickets/098-adapter-contract-gaps.md`
 
 ## Scope Exclusions

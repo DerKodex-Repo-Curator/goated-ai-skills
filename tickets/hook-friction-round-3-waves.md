@@ -14,22 +14,25 @@ This table replaces waves 5 to 10 of
 [hook-friction-round-2-waves.md](hook-friction-round-2-waves.md). Waves 1
 to 4 there are merged.
 
+Waves 5 to 9 are merged. Their tickets (078, 079 and 086 to 097) were
+archived under `tickets/archive/` on 2026-11-18.
+
 | Wave | Ticket | Round | Area | Type | Blocked by |
 | --- | --- | --- | --- | --- | --- |
-| 5 | [078](078-skill-usage-reference-counts.md) | 2 | mod | AFK | 068, 076 (merged) |
-| 5 | [086](086-adapter-repeated-failure-red-runs.md) | 3 | adapter | AFK | None |
-| 5 | [087](087-adapter-routing-orientation-by-reads-and-outside-writes.md) | 3 | adapter and skills | AFK | None |
-| 5 | [088](088-adapter-wider-plain-reads.md) | 3 | adapter | AFK | None |
-| 5 | [089](089-adapter-design-holds-without-written-text.md) | 3 | adapter, skills, registry and mod | AFK | None |
-| 5 | [091](091-adapter-review-size-and-installs.md) | 3 | adapter and skills | AFK | None |
-| 5 | [093](093-adapter-inline-script-writes.md) | 3 | adapter and skills | AFK | None |
-| 5 | [094](094-adapter-own-subagent-reports-continue-the-turn.md) | 3 | adapter | AFK | None |
-| 6 | [090](090-adapter-test-edit-reference-thresholds.md) | 3 | adapter, skills and registry | AFK | 089 |
-| 6 | [092](092-adapter-whole-reads-and-read-order.md) | 3 | adapter and mod | AFK | 078, 089, 091 |
-| 6 | [097](097-adapter-script-write-paths-by-name-and-folder.md) | 3 | adapter | AFK | 093 |
-| 7 | [095](095-adapter-joint-holds-in-one-message.md) | 3 | adapter and mod | AFK | 086 to 094, 097 |
-| 8 | [096](096-adapter-early-closeout-note.md) | 3 | adapter | AFK | 095 |
-| 9 | [079](079-enforcement-contract-and-event-model.md) | 2 | core | HITL (maintainer accepts the ADR and event model) | its round 2 blockers (merged), and 086 to 096 |
+| 5 | [078](archive/078-skill-usage-reference-counts.md) | 2 | mod | AFK | 068, 076 (merged) |
+| 5 | [086](archive/086-adapter-repeated-failure-red-runs.md) | 3 | adapter | AFK | None |
+| 5 | [087](archive/087-adapter-routing-orientation-by-reads-and-outside-writes.md) | 3 | adapter and skills | AFK | None |
+| 5 | [088](archive/088-adapter-wider-plain-reads.md) | 3 | adapter | AFK | None |
+| 5 | [089](archive/089-adapter-design-holds-without-written-text.md) | 3 | adapter, skills, registry and mod | AFK | None |
+| 5 | [091](archive/091-adapter-review-size-and-installs.md) | 3 | adapter and skills | AFK | None |
+| 5 | [093](archive/093-adapter-inline-script-writes.md) | 3 | adapter and skills | AFK | None |
+| 5 | [094](archive/094-adapter-own-subagent-reports-continue-the-turn.md) | 3 | adapter | AFK | None |
+| 6 | [090](archive/090-adapter-test-edit-reference-thresholds.md) | 3 | adapter, skills and registry | AFK | 089 |
+| 6 | [092](archive/092-adapter-whole-reads-and-read-order.md) | 3 | adapter and mod | AFK | 078, 089, 091 |
+| 6 | [097](archive/097-adapter-script-write-paths-by-name-and-folder.md) | 3 | adapter | AFK | 093 |
+| 7 | [095](archive/095-adapter-joint-holds-in-one-message.md) | 3 | adapter and mod | AFK | 086 to 094, 097 |
+| 8 | [096](archive/096-adapter-early-closeout-note.md) | 3 | adapter | AFK | 095 |
+| 9 | [079](archive/079-enforcement-contract-and-event-model.md) | 2 | core | HITL (maintainer accepts the ADR and event model) | its round 2 blockers (merged), and 086 to 096 |
 | 10 (ready now) | [098](098-adapter-contract-gaps.md) | 2 | adapter | AFK | 079 |
 | 11 | [080](080-adapter-rules-read-the-event-model.md) | 2 | adapter | AFK | 079, 098 |
 | 12 | [081](081-shared-enforcement-core.md) | 2 | core | AFK | 080 |

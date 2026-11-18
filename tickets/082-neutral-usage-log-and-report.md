@@ -65,7 +65,7 @@ from that use.
 ## Blocked By
 
 - `tickets/081-shared-enforcement-core.md`
-- `tickets/078-skill-usage-reference-counts.md` (the mod's final stored
+- `tickets/archive/078-skill-usage-reference-counts.md` (the mod's final stored
   shape and counts).
 
 ## Scope Exclusions

@@ -230,4 +230,4 @@ None.
   (claim 13a).
 - `adapters/claude-code/README.md`: User Overrides and Known Limits (claims
   10, 11, 13b).
-- `tickets/052-adapter-design-citations-at-closeout.md` (claim 14).
+- `tickets/archive/052-adapter-design-citations-at-closeout.md` (claim 14).

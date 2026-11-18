@@ -7,7 +7,8 @@ Parallel waves across the round 2 and round 3 order files:
 replaces waves 5 to 10 of
 [hook-friction-round-2-waves.md](hook-friction-round-2-waves.md)
 
-1. `tickets/079-enforcement-contract-and-event-model.md`
+1. `tickets/archive/079-enforcement-contract-and-event-model.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: 065, 068, 069, 070, 072, 073, 077, and 086 to 096
    - Enables: a harness-neutral statement of the rules, and scenarios any
      adapter can be checked against.
@@ -22,7 +23,7 @@ replaces waves 5 to 10 of
    - Blocked by: 080
    - Enables: one core, callable by import or by a JSON command.
 5. `tickets/082-neutral-usage-log-and-report.md`
-   - Blocked by: 081, `tickets/078-skill-usage-reference-counts.md`
+   - Blocked by: 081, `tickets/archive/078-skill-usage-reference-counts.md`
    - Enables: the same measurement in every harness.
 6. `tickets/083-adapter-guide-and-worked-example.md`
    - Blocked by: 081
@@ -66,8 +67,8 @@ the cost of some duplicated translation code.
 
 ## Ready Frontier
 
-Ticket 079 is merged. Ticket 098 is ready; 080 becomes ready when 098
-merges.
+Ticket 079 is completed and archived. Ticket 098 is ready; 080 becomes
+ready when 098 merges.
 
 ## Coverage
 

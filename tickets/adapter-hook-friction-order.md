@@ -12,9 +12,8 @@ Source spec: `docs/specs/2026-11-17-adapter-hook-friction.md`
    - Blocked by: None
    - Enables: shell reads before routing and cheap read-only research
      subagents.
-3. `tickets/056-adapter-route-from-side-session-brief.md`
-   - Status: Merged on 2026-11-17 (`a32c217`); its live check in one side
-     session is still to run before it is archived.
+3. `tickets/archive/056-adapter-route-from-side-session-brief.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: None
    - Enables: briefed side sessions with no router round trip.
 4. `tickets/archive/057-adapter-tdd-friction.md`
@@ -26,12 +25,14 @@ Source spec: `docs/specs/2026-11-17-adapter-hook-friction.md`
    - Status: Completed, merged and archived on 2026-11-17.
    - Blocked by: None
    - Enables: no closeout items for files outside the project.
-6. `tickets/059-adapter-closeout-reads-and-commit-timing.md`
+6. `tickets/archive/059-adapter-closeout-reads-and-commit-timing.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: `tickets/archive/054-adapter-overrides-pasted-text-and-commit-skip.md`,
-     `tickets/052-adapter-design-citations-at-closeout.md`
+     `tickets/archive/052-adapter-design-citations-at-closeout.md`
    - Enables: closeout work before the final report, with no re-reads after
      a load or a comment-only fix.
-7. `tickets/060-adapter-unseen-line-advice-once-per-turn.md`
+7. `tickets/archive/060-adapter-unseen-line-advice-once-per-turn.md`
+   - Status: Completed, merged and archived on 2026-11-18.
    - Blocked by: 054, 055, 057 and 059
    - Enables: shorter repeat holds.
 
@@ -49,13 +50,7 @@ runs last.
 
 ## Ready Frontier
 
-- `tickets/059-adapter-closeout-reads-and-commit-timing.md`: its blockers'
-  code is on main (054 archived; 052 merged, awaiting only its live check).
-- `tickets/056-adapter-route-from-side-session-brief.md` and
-  `tickets/052-adapter-design-citations-at-closeout.md`: merged; only their
-  live checks remain.
-
-Ticket 060 follows 059.
+- None. Every ticket in this order is completed and archived.
 
 ## Coverage
 
