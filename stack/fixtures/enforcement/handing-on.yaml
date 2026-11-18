@@ -1,4 +1,4 @@
-event_model: 2
+event_model: 3
 scenarios:
   - name: a commit waits for its skill and a read of the change
     covers:

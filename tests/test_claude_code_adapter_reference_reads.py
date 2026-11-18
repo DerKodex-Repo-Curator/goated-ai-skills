@@ -440,14 +440,28 @@ class ReadsCount(ReferenceReadsTestCase):
 
 
 class SkipLine(ReferenceReadsTestCase):
-    """AC: a skip line naming the skill clears the hold for the turn only."""
+    """AC: a skip line naming the skill clears the hold, and lasts the task
+    for the references it cleared on that kind of file (Ticket 101)."""
 
-    def test_a_skip_line_clears_the_skills_references_for_the_turn(self) -> None:
+    def test_a_skip_line_lasts_the_task_with_a_notice_naming_it(self) -> None:
         s = self.first_turn("tdd")
         s.say(SKIP_TDD)
         self.assertPasses(s.call("Edit", edit(TEST_FILE, "client = MagicMock()")))
         self.assertPasses(s.call("Edit", edit(TEST_FILE, *plain_lines(5))))
         self.later_turn(s)
+        carried = s.call("Edit", edit(TEST_FILE, "client = MagicMock()"))
+        self.assertPasses(carried)
+        context = carried["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("`goated-skip: tdd`", context)
+        self.assertIn("`tdd/references/mocking-and-seams.md`", context)
+
+    def test_a_new_task_ends_the_lasting_skip(self) -> None:
+        s = self.first_turn("tdd")
+        s.say(SKIP_TDD)
+        self.assertPasses(s.call("Edit", edit(TEST_FILE, "client = MagicMock()")))
+        stop(s)
+        s.prompt("Now the importer.")
+        s.say("goated-route: direct")
         self.assertHeldFor(s.call("Edit", edit(TEST_FILE, "client = MagicMock()")),
                            "tdd/references/mocking-and-seams.md")
 

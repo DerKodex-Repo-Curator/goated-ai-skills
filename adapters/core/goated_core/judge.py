@@ -37,6 +37,7 @@ WARNING = "warning"
 OVERRIDE_RECORDED = "override_recorded"
 CLOSEOUT_NOTE_KIND = "closeout_note"
 SESSION_NOTICE = "session_notice"
+SKIP_CARRIED = "skip_carried"
 
 # Session start sources, as the event model's `session_start` names them.
 NEW = "new"
@@ -123,7 +124,7 @@ class Situation:
 class Notice(NamedTuple):
     """Something to tell the agent or the user that holds nothing: its kind
     (`FAIL_OPEN`, `WARNING`, `OVERRIDE_RECORDED`, `CLOSEOUT_NOTE_KIND`,
-    `SESSION_NOTICE`) and its text."""
+    `SESSION_NOTICE`, `SKIP_CARRIED`) and its text."""
 
     kind: str
     text: str
@@ -198,6 +199,7 @@ def judge_call(settings: Settings, situation: Situation, call: Call,
         return found
 
     earlier = _since_compaction(state)
+    task_skips = actions.TaskSkips(state.lasting_skip_keys())
     registry_warnings: list[str] = []
     routing = gates.check_routing(
         state, call, current, overrides,
@@ -213,7 +215,9 @@ def judge_call(settings: Settings, situation: Situation, call: Call,
         closeout=actions.Closeout(state.spawn_templates_of(current.key),
                                   _route_intensity(state), state.briefed),
         references=lambda: _registry_references(settings, registry_warnings),
+        task_skips=task_skips,
     )
+    state.record_lasting_skips(current.key, task_skips.cleared)
     if not holds and call.id:
         # Which templates a spawn's brief followed, for the closeout.
         templates = actions.brief_templates(
@@ -225,8 +229,10 @@ def judge_call(settings: Settings, situation: Situation, call: Call,
         store, situation.session_id, current.key, purpose), call=True)
     log = _logged(settings, situation, lambda r: (r.turns(turns, pending=call),
                                                   r.outcomes(settled), r.holds(shown)))
-    notices = _warnings(state_warning, _save(store, situation.session_id, state),
-                        _unread_warning(unread), *registry_warnings, log)
+    # A held call did not go through, so no lasting skip let it through.
+    notices = [] if holds else [Notice(SKIP_CARRIED, text) for text in task_skips.notices]
+    notices += _warnings(state_warning, _save(store, situation.session_id, state),
+                         _unread_warning(unread), *registry_warnings, log)
     return Decision(shown, notices, state.shell)
 
 

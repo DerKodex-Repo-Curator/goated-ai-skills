@@ -241,7 +241,7 @@ def fold_turns(
             # The compaction's `SessionStart` clears these too, but that reset
             # may never have landed (a hook that failed open, a refused save,
             # an adapter installed mid-session), so the boundary itself does.
-            state.forget_context()
+            state.forget_context(turn.key)
         loads = [n for n in (goated_skill_name(raw, namespaces) for raw in turn.loads) if n]
         if ROUTER_SKILL in loads:
             state.router_loaded = True
@@ -257,6 +257,7 @@ def fold_turns(
         if route is not None:
             state.task = Task(route=route, started_turn=turn.key)
             state.task_unknown = False
+            state.end_lasting_skips(turn.key)  # A new task ends them (spec R4).
         elif turn.route is not None and state.task is None and not state.task_unknown:
             # Only `continue` lines, in a session with no task, such as one
             # started from another session: they start a task with no skills.

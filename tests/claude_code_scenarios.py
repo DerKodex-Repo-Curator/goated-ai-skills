@@ -396,7 +396,7 @@ class _Run:
         with `expect`; with no `expect`, the step is not checked."""
 
         self.requests.append({
-            "event_model": 2,
+            "event_model": 3,
             "session": {"id": self.s.session_id, "agent": self.agent},
             "project": {"folders": [self.s.project.as_posix()],
                         "working_folder": self.s.cwd.as_posix(),
@@ -430,6 +430,8 @@ def _decision(output: dict, shape: str) -> dict:
     if context:
         if specific.get("hookEventName") == "PostToolUse":
             notices.append("closeout_note")
+        elif specific.get("hookEventName") == "PreToolUse":
+            notices.append("skip_carried")
         elif OVERRIDE_RECORDED in context:
             notices.append("override_recorded")
         else:

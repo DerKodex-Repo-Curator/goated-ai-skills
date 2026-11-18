@@ -225,6 +225,12 @@ weighed.
    symmetrical. Trade-off: a later edit that does need the reference goes
    unasked until the task changes or the context compacts, and the skip's
    reason was written for one file, not every file of its kind.
+
+   The notice a covered hold passes with is a new kind, `skip_carried`,
+   so the event model moved to version 3 (the maintainer's choice,
+   2026-11-18, made while Ticket 101 was in progress). The other choices
+   were to reuse `warning` or `session_notice`, whose meanings do not fit.
+   Tickets 084 and 085 had not started, so they target version 3.
 3. **Every skip line lasts the task.** Trade-off: one skip of
    `software-design-principles` would stand down `design`, `design-reads`,
    `scripted-edit` and the Design item for the whole task; the closeout

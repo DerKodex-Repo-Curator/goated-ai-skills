@@ -281,17 +281,118 @@ class SinceCompaction(NamedTuple):
     skill_references_read: frozenset[str] = frozenset()
 
 
+# A file's kind, as a lasting skip covers it (spec R4), with how a notice names it.
+FILE_KINDS = {
+    "test": "test files",
+    "configuration": "configuration files",
+    "code": "code files other than tests",
+    "other": "files that are neither code nor configuration",
+}
+
+
+class LastingSkip(NamedTuple):
+    """One reference a skip line excused for the rest of the task (spec R4):
+    the gate that held for it (`design-reads` or `reference-reads`), the
+    skill the skip line named, the kind of file (`FILE_KINDS`), and the
+    reference as the gate keys its reads."""
+
+    gate: str
+    skill: str
+    kind: str
+    reference: str
+
+
+class TaskSkips:
+    """The current task's lasting skips, as one judged call sees them.
+
+    `kept` are those earlier calls made, as (gate, skill, kind, reference).
+    The `design-reads` and `reference-reads` gates add to `cleared` the
+    lasting skips this turn's skip lines make, and to `notices` one text for
+    each gate a kept skip let the call through. The caller saves `cleared`
+    and shows `notices`; a caller that keeps no state, as for a subagent,
+    passes none and drops both."""
+
+    def __init__(self, kept=()) -> None:
+        self.kept = frozenset(LastingSkip(*skip) for skip in kept)
+        self.cleared: list[LastingSkip] = []
+        self.notices: list[str] = []
+
+
+class _Need(NamedTuple):
+    """One reference a read gate asks for before a write to `path`: the file's
+    `kind` (None for a write naming no project file, for which no skip
+    outlasts its turn), the `skill` whose skip line answers it, the
+    `reference` as the gate keys its reads, and the gate's own `detail` on why."""
+
+    path: str | None
+    kind: str | None
+    skill: str
+    reference: str
+    detail: object
+
+
+def file_kind(path: str, project: Project | None) -> str:
+    """The kind of file `path` is, as a lasting skip covers it (`FILE_KINDS`)."""
+
+    if is_test(path, project):
+        return "test"
+    if is_code(path):
+        return "code"
+    return "configuration" if design_reads.is_config(path) else "other"
+
+
+def _unexcused(proof: "_Proof", gate: str, needs: list[_Need],
+               label: Callable[[str], str]) -> list[_Need]:
+    """The needs `gate` still holds for, under spec R4. A need whose skill a
+    skip line of this turn names is cleared, and that skip lasts the task for
+    its reference on files of its kind; a need such a lasting skip covers
+    passes. When every need passes and a lasting skip let one through, the
+    call carries a notice naming the skip. `label` names a reference as the
+    hold does."""
+
+    task = proof.task_skips
+    held, carried = [], []
+    for need in needs:
+        skip = LastingSkip(gate, need.skill, need.kind or "", need.reference)
+        if need.skill in proof.skips:
+            if need.kind:
+                task.cleared.append(skip)
+        elif need.kind and skip in task.kept:
+            carried.append(need)
+        else:
+            held.append(need)
+    if carried and not held:
+        task.notices.append(_carried_notice(gate, carried, label))
+    return held
+
+
+def _carried_notice(gate: str, carried: list[_Need], label: Callable[[str], str]) -> str:
+    """The notice for a write `gate` let through on lasting skips alone."""
+
+    unique = lambda values: list(dict.fromkeys(values))
+    files = _listed(unique(f'"{_file_name(need.path)}"' for need in carried))
+    references = ", ".join(unique(label(need.reference) for need in carried))
+    lines = " and ".join(unique(f"`goated-skip: {need.skill}`" for need in carried))
+    kinds = _listed(unique(FILE_KINDS[need.kind] for need in carried))
+    return (f"the {gate} gate let this write to {files} through without a read of "
+            f"{references}: an earlier {lines} line in this task cleared that for {kinds}, "
+            "and it lasts until the task ends or the context compacts")
+
+
 class _Proof:
     """What the current turn shows, with what counts from earlier turns
     (`earlier`): loads, skip lines, reads, and user skips. `turn_loads` are
     the turn's own loads; `loads` add the earlier ones. `within` is what a
     hold adds after asking for a load or read: " in this turn" when earlier
     turns do not count, else "". `extra_text` is reply text the transcript
-    may not hold yet, such as the reply a Stop is finishing."""
+    may not hold yet, such as the reply a Stop is finishing. `task_skips`
+    are the task's lasting skips (`TaskSkips`); none when not given."""
 
     def __init__(self, turn: Turn, overrides: dict, namespaces: tuple[str, ...],
-                 extra_text: str = "", earlier: SinceCompaction = SinceCompaction()) -> None:
+                 extra_text: str = "", earlier: SinceCompaction = SinceCompaction(),
+                 task_skips: TaskSkips | None = None) -> None:
         self.turn = turn
+        self.task_skips = task_skips or TaskSkips()
         self.namespaces = namespaces
         self.extra_text = extra_text
         self.turn_loads = {goated_skill_name(raw, namespaces) for raw in turn.loads} - {None}
@@ -364,7 +465,8 @@ def check_action(call: Call, turn: Turn, overrides: dict,
                  subagents: Callable[[], dict] | None = None,
                  earlier: SinceCompaction = SinceCompaction(),
                  closeout: Closeout | None = None,
-                 references: Callable[[], tuple] | None = None) -> list[Hold]:
+                 references: Callable[[], tuple] | None = None,
+                 task_skips: TaskSkips | None = None) -> list[Hold]:
     """Return every action hold this call meets, in the order the gates fire,
     one per gate; the call's own entry is not yet proof.
 
@@ -390,9 +492,12 @@ def check_action(call: Call, turn: Turn, overrides: dict,
     `subagents` is also called for a write to a security-sensitive file when a
     loaded skill declares references, since the turn's sensitive categories
     include its subagents' changes.
+    `task_skips` are the task's lasting skips, which the `design-reads` and
+    `reference-reads` gates read and add to (`TaskSkips`); without it, every
+    skip line lasts its turn.
     """
 
-    proof = _Proof(turn, overrides, namespaces, earlier=earlier)
+    proof = _Proof(turn, overrides, namespaces, earlier=earlier, task_skips=task_skips)
     reviewed = lambda path: _review_intake_hold(path, proof, closeout)
     spawned = functools.cache(subagents) if subagents else dict
     # The design and reference-reads gates may both read the registry for one write.
@@ -1093,6 +1198,10 @@ def _design_hold(writes: dict[str, bool], write: Call | None, proof: _Proof,
     test edit is judged by the registry's rule for test edits, from
     `references` (`_test_edit`). A load or a read counts until the next
     compaction; a skip line or the user's skip of the skill clears both gates.
+    Once the skill counts as loaded, both gates ask only for reads, so a skip
+    line that clears them lasts the task for those references on files of
+    the same kind (spec R4, `_unexcused`), keyed as `design-reads`. A skip
+    line that clears a `design` hold asking for the load lasts its turn.
 
     `write` is the call's file write, for its one file, or None for a
     shell write of new text (Ticket 098: `_shell_text_writes`),
@@ -1102,21 +1211,31 @@ def _design_hold(writes: dict[str, bool], write: Call | None, proof: _Proof,
     any of them is the turn's first substantial code change.
     """
 
-    if proof.skipped(DESIGN_SKILL):
+    if DESIGN_SKILL in proof.user_skips:
         return None
     loaded = proof.loaded(DESIGN_SKILL)
     earlier = _project_code_writes(proof.turn, project)
-    judged, first, unread = False, False, {}
+    judged, first, needs = False, False, []
     paths = list(writes)
     for path, small in writes.items():
         need = _design_need(path, write, small, loaded, earlier, project, references)
         if need is not None:
             judged, first = True, first or need[0]
-            for name, why in need[1].items():
-                if name not in proof.references_read:
-                    unread.setdefault(name, why)
+            kind = file_kind(path, project)
+            needs += [_Need(path, kind, DESIGN_SKILL, name, why) for name, why in need[1].items()
+                      if name not in proof.references_read]
+    if not judged:
+        return None
+    if loaded:
+        needs = _unexcused(proof, "design-reads", needs,
+                           lambda name: f"`{design_reads.SKILL_REFERENCES}{name}`")
+    elif DESIGN_SKILL in proof.skips:
+        return None
+    unread: dict[str, str] = {}
+    for need in needs:
+        unread.setdefault(need.reference, need.detail)
     # Unloaded, every judged write is substantial and held; loaded, only one with unread references.
-    if not judged or (loaded and not unread):
+    if loaded and not unread:
         return None
     edit = "edit" if write is not None else "command"
     not_done = "This edit was not applied." if write is not None else \
@@ -1128,7 +1247,9 @@ def _design_hold(writes: dict[str, bool], write: Call | None, proof: _Proof,
             f"This {edit} of {names} needs design references not yet read "
             f"since the last compaction. Read each {WHOLE_READ}, before the {edit}, and "
             f"apply it: {_reference_list(unread)}. If the {edit} has no design in it, "
-            f"write `goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. {not_done} "
+            f"write `goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead; it lasts "
+            "the task for these references on files of the same kind. "
+            f"{not_done} "
             + unseen_line_advice("skip line", f"skip {DESIGN_SKILL}"),
             _design_short(f"before this {edit} of {names}, read "
                           f"{_reference_list(unread)} {WHOLE_READ}"),
@@ -1218,29 +1339,35 @@ def _reference_reads_hold(paths: list[str | None], write: Call | None, proof: _P
     them selects, or [None] for a write naming no project file, which only
     the turn's gate signals reach.
 
-    Only references of a skill that counts as loaded and has no skip line or
-    typed skip this turn are judged (`reference_reads.selected`), on what this
+    Only references of a skill that counts as loaded and has no typed skip
+    this turn are judged (`reference_reads.selected`), on what this
     write and the turn before it show: the code the write adds, read from
     `write` (None for a shell write, which adds no code the gate can
     read), where the file is in the project, whether the repeated-failure
     gate's condition holds, and, for a sensitive file, the security
     categories of the turn's `changes` with this one's. A reference counts as
     read after a finished whole read of it since the last compaction. With no
-    `references`, or a registry that declares none, nothing is held.
+    `references`, or a registry that declares none, nothing is held. A skip
+    line naming a reference's skill clears it, and lasts the task for that
+    reference on files of the same kind (spec R4, `_unexcused`).
     """
 
-    declared = [r for r in references() if proof.loaded(r.skill) and not proof.skipped(r.skill)] \
-        if references else []
+    declared = [r for r in references() if proof.loaded(r.skill)
+                and r.skill not in proof.user_skips] if references else []
     if not declared:
         return None
     # `repeated-failure` is the one gate in `reference_reads.OBSERVED_GATES`.
     gates = frozenset({"repeated-failure"} if _repeated_check(proof.turn, project) else ())
-    found: dict = {}  # Each reference any of `paths` selects, with the first reason.
+    needs = []
     for path in paths:
+        kind = file_kind(path, project) if path else None
         for reference, why in reference_reads.selected(
                 declared, _reference_edit(path, write, proof, project, changes, gates)):
             if reference.path not in proof.skill_references_read:
-                found.setdefault(reference.path, (reference, why))
+                needs.append(_Need(path, kind, reference.skill, reference.path, (reference, why)))
+    found: dict = {}  # Each reference still held for, with the first reason.
+    for need in _unexcused(proof, "reference-reads", needs, lambda path: f"`{path}`"):
+        found.setdefault(need.reference, need.detail)
     if not found:
         return None
     unread = list(found.values())
@@ -1255,7 +1382,8 @@ def _reference_reads_hold(paths: list[str | None], write: Call | None, proof: _P
         f"This write{target} needs skill references not yet read since the last compaction; "
         f"the GOATED registry declares when each is required. Read each {WHOLE_READ}, "
         f"before the write, and apply it: {listing}. If one does not apply to this write, "
-        f"write {skip_lines} on its own line instead, naming its skill. This write was not "
+        f"write {skip_lines} on its own line instead, naming its skill; it lasts the task "
+        "for these references on files of the same kind. This write was not "
         "applied. " + unseen_line_advice("skip line", way_out),
         short_form(f"read {listing} {WHOLE_READ}",
                    f"Or write {skip_lines}. " + short_advice("skip line", way_out)),

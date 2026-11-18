@@ -7,7 +7,9 @@
 ## Type
 
 AFK. The maintainer decided C on 2026-11-18: option 2, the parent spec's
-R4.
+R4. On the same day they chose a new notice kind, `skip_carried`, for the
+covered hold's pass, which moves the event model to version 3 (see the
+spec's decision C).
 
 ## What To Build
 
