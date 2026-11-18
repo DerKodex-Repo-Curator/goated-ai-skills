@@ -40,8 +40,11 @@ Holds whose step reviews or describes the change (the closeout's design,
 docs, and security items, the commit, the pull request, and its review) also
 need a change read (spec R7): a finished call, after the skill load or reference
 read and after the last code change, that put the change's content in front
-of the agent. That is a command printing the diff, or a Read of a file the
+of the agent. That is a command printing the diff, or a read of a file the
 turn changed. It shows the agent the change; it cannot prove a review.
+
+The gates judge calls by kind (`events`): a file write, a shell command, a
+spawn, or a call that only records a commit or opens a pull request.
 """
 
 from __future__ import annotations
@@ -56,14 +59,16 @@ import subprocess
 import time
 from stat import S_ISLNK, S_ISREG
 
-from . import contracts, design_reads, reference_reads, shell
+from . import contracts, design_reads, events, reference_reads, shell
+from .events import Call, Turn
 from .gates import (
-    CHAINED_STEPS, CHANGE_READ, COMMAND_TOOLS, SKIP_LINE_RULE, STRICT, UNFINISHED_READ, Hold,
-    ask_purpose, goated_skill_name, short_advice, short_form, spawns_a_reader,
-    unseen_line_advice,
+    CHAINED_STEPS, CHANGE_READ, SKIP_LINE_RULE, STRICT, UNFINISHED_READ, Hold, ask_purpose,
+    goated_skill_name, short_form,
 )
 from .markers import parse_reply
-from .transcript import Call, Turn, skill_name
+from .wording import (
+    FILE_EDIT_TOOLS, NO_RANGE, READ, READ_TOOL, SKILL_TOOL, short_advice, unseen_line_advice,
+)
 
 JUSTIFIED_SKIP = "justified-skip"
 
@@ -171,33 +176,11 @@ RED_FLAGS_REFERENCE = "software-design-principles/references/red-flags.md"
 # The question `red-flags.md` ends with, which the closeout's red-flags item
 # repeats. No hold checks an answer.
 RED_FLAGS_QUESTION = "Name one input that would break this change, and say what happens."
-# How a hold asks for a required file: a Read with a range does not count
+# How a hold asks for a required file: a read of part of it does not count
 # (`Call.whole_read_path`).
-WHOLE_READ = "whole with the Read tool, with no limit, offset, or pages"
-# Tools that start another agent, each with the input field that carries the
-# brief. A call without a brief (an offer card, or starting a saved proposal)
-# hands over no text, so it is not held.
-SPAWN_BRIEF_FIELDS = {
-    "Agent": "prompt",
-    "Task": "prompt",  # The spawn tool's name in older Claude Code versions.
-    "mcp__ccd_session__start_session": "prompt",
-    "mcp__ccd_session__hand_off_to_session": "remaining_plan",
-}
-# The spawn tools that start a subagent, whose report comes back into this
-# turn; the others start a side session, which reports elsewhere.
-SUBAGENT_TOOLS = frozenset({"Agent", "Task"})
-# MCP tools that open a pull or merge request, such as a GitHub server's.
-PR_TOOL_RE = re.compile(r"^mcp__.+__create_(?:pull|merge)_request$")
-# MCP tools that record a commit, such as a GitHub server's file tools or a git
-# server's commit tool; each carries its message in `message`.
-COMMIT_TOOL_RE = re.compile(
-    r"^mcp__.+__(?:push_files|create_or_update_file|delete_file|git_commit|create_commit"
-    r"|commit_changes|commit)$"
-)
-FILE_WRITE_TOOLS = {"Edit": "file_path", "Write": "file_path", "MultiEdit": "file_path",
-                    "NotebookEdit": "notebook_path"}
+WHOLE_READ = f"whole with {READ_TOOL}, {NO_RANGE}"
 # How a hold asks for a change read (`gates.CHANGE_READ`), for a turn that
-# changed no file it names, where a Read cannot count.
+# changed no file it names, where a file read cannot count.
 DIFF_ONLY_READ = (
     "this turn changed no file it can name, so print the diff with a git diff or git "
     "show command; a listing of names or counts, such as --stat or --name-only, does "
@@ -343,9 +326,8 @@ class _Proof:
         if skill not in self.loads:
             return None
         for index, call in enumerate(self.turn.calls):
-            if call.name == "Skill" and call.ok and goated_skill_name(
-                skill_name(call.input.get("skill")), self.namespaces
-            ) == skill:
+            if (call.kind == events.SKILL_LOAD and call.ok
+                    and goated_skill_name(call.skill, self.namespaces) == skill):
                 return index
         return -1
 
@@ -370,16 +352,6 @@ class _Proof:
         ]
 
 
-def is_action_tool(tool_name: str) -> bool:
-    """True for a tool some action gate may hold (the hook matcher must cover these)."""
-
-    return (
-        tool_name in COMMAND_TOOLS or tool_name in SPAWN_BRIEF_FIELDS
-        or tool_name in FILE_WRITE_TOOLS or bool(PR_TOOL_RE.match(tool_name))
-        or bool(COMMIT_TOOL_RE.match(tool_name))
-    )
-
-
 class Closeout(NamedTuple):
     """What a commit's closeout hold reads besides the turn: `spawn_templates`,
     `intensity`, and `briefed`, as `check_closeout` takes them."""
@@ -389,7 +361,7 @@ class Closeout(NamedTuple):
     briefed: bool = False
 
 
-def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
+def check_action(call: Call, turn: Turn, overrides: dict,
                  namespaces: tuple[str, ...] = (), project: Project | None = None,
                  subagents: Callable[[], dict] | None = None,
                  earlier: SinceCompaction = SinceCompaction(),
@@ -436,10 +408,10 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
     )
     cwd = project.cwd if project else None  # Where git measures a pull request's size.
     holds = _Holds()
-    if tool_name in COMMAND_TOOLS:
-        command = shell.analyze(str(tool_input.get("command") or ""), tool_name)
+    if call.kind == events.SHELL_COMMAND:
+        command = shell.analyze(call.command, call.shell)
         if command.writes:
-            holds.add(lambda: _conflict_hold(command.write_targets, tool_input, proof))
+            holds.add(lambda: _conflict_hold(command.write_targets, call, proof))
         if command.commit:
             holds.add(lambda: _commit_hold(command.commit_message, proof, changes) or at_commit())
         if command.opens_pr:
@@ -467,32 +439,31 @@ def check_action(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
             holds.add(lambda: _reference_reads_hold(placed or [None], None, proof, project,
                                                     references, changes))
             holds.add(lambda: _repeated_failure_hold(proof, project))
-    elif PR_TOOL_RE.match(tool_name):
+    elif call.kind == events.PULL_REQUEST:
         holds.add(lambda: _pr_hold(proof, changes, by_tool=True))
         holds.add(lambda: _pr_review_hold(
-            lambda: _tool_changed_lines(tool_input, cwd), proof, changes, by_tool=True))
-    elif COMMIT_TOOL_RE.match(tool_name):
-        message = tool_input.get("message")
-        holds.add(lambda: _commit_hold(message if isinstance(message, str) else None, proof,
-                                       changes, by_tool=True) or at_commit(by_tool=True))
-    elif tool_name in SPAWN_BRIEF_FIELDS:
-        brief = str(tool_input.get(SPAWN_BRIEF_FIELDS[tool_name]) or "")
-        # A read-only subagent's search brief needs no handoff template.
-        if brief.strip() and not spawns_a_reader(tool_name, tool_input):
-            holds.add(lambda: _spawn_hold(brief, proof))
-    elif tool_name in FILE_WRITE_TOOLS:
-        path = _norm(str(tool_input.get(FILE_WRITE_TOOLS[tool_name]) or ""))
+            lambda: changed_lines(cwd, call.base, call.head, call.repository), proof, changes,
+            by_tool=True))
+    elif call.kind == events.COMMIT:
+        holds.add(lambda: _commit_hold(call.message, proof, changes, by_tool=True)
+                  or at_commit(by_tool=True))
+    elif call.kind == events.SPAWN:
+        # A read-only agent's search brief needs no handoff template.
+        if call.brief.strip() and not call.read_only:
+            holds.add(lambda: _spawn_hold(call.brief, proof))
+    elif call.kind == events.FILE_WRITE:
+        path = _norm(call.path)
         # A conflict is open, and a check keeps failing, wherever the file lives
         # (a worktree may sit outside the project folder), as the shell branch
         # above holds every write target for them.
-        holds.add(lambda: _conflict_hold([path], tool_input, proof))
+        holds.add(lambda: _conflict_hold([path], call, proof))
         if _in_project(path, project):
             # A scratch file elsewhere is not the project's design or security.
             holds.add(lambda: _security_hold([path], proof))
             holds.add(lambda: reviewed(path))
-            holds.add(lambda: _design_hold({path: _small_edit(tool_input)}, tool_input, proof,
+            holds.add(lambda: _design_hold({path: _small_edit(call)}, call, proof,
                                            project, references))
-            holds.add(lambda: _reference_reads_hold([path], tool_input, proof, project,
+            holds.add(lambda: _reference_reads_hold([path], call, proof, project,
                                                     references, changes))
         else:
             # Only the turn's gate signals reach it, as the repeated-failure gate does.
@@ -532,7 +503,7 @@ def _commit_hold(message: str | None, proof: _Proof, changes: Callable[[], "_Cha
     if not proof.loaded(COMMIT_SKILL):
         return Hold(
             "commit", STRICT,
-            f"Load the `{COMMIT_SKILL}` skill with the Skill tool{proof.within} and draft "
+            f"Load the `{COMMIT_SKILL}` skill with {SKILL_TOOL}{proof.within} and draft "
             f"the message with it, then run the commit again. {CHAINED_STEPS} This hold is "
             "strict: a goated-skip line does not clear it. A commit message the user typed in "
             "their prompt stands it down when the commit uses that message.",
@@ -568,7 +539,7 @@ def _pr_hold(proof: _Proof, changes: Callable[[], "_Changes"],
         )
     return Hold(
         "pull-request", STRICT,
-        f"Load the `{PR_SKILL}` skill with the Skill tool{proof.within} and draft the "
+        f"Load the `{PR_SKILL}` skill with {SKILL_TOOL}{proof.within} and draft the "
         f"title and body with it, then open the pull request again. {CHAINED_STEPS} This "
         "hold is strict: a goated-skip line does not clear it.",
         short_form(f"`{PR_SKILL}` has not loaded", "Load it, draft the title and body with "
@@ -602,7 +573,7 @@ def _pr_review_hold(size_of: Callable[[], int | None], proof: _Proof,
         "pr-review", JUSTIFIED_SKIP,
         f"This pull request has {size} changed lines of non-test code against its base, "
         f"{REVIEW_MIN_LINES} or more, so it is large enough to review before it lands. "
-        f"Load `{REVIEW_SKILL}` with the Skill tool{proof.within} and review the change with "
+        f"Load `{REVIEW_SKILL}` with {SKILL_TOOL}{proof.within} and review the change with "
         "it. If size is not "
         "what makes it worth reviewing, such as generated or vendored files, write "
         f"`goated-skip: {REVIEW_SKILL}: <reason>` on its own line instead. Then open the "
@@ -613,20 +584,6 @@ def _pr_review_hold(size_of: Callable[[], int | None], proof: _Proof,
                    f"`goated-skip: {REVIEW_SKILL}: <reason>`. "
                    + short_advice("skip line", f"skip {REVIEW_SKILL}")),
     )
-
-
-def _tool_changed_lines(tool_input: dict, cwd: str | None) -> int | None:
-    """`changed_lines` for an MCP pull-request tool's input: its `base` or
-    `target_branch`, its `head` or `source_branch`, and, for a GitHub-style
-    tool, the `owner` and `repo` it is aimed at."""
-
-    def text(*keys: str) -> str | None:
-        value = next((tool_input[k] for k in keys if tool_input.get(k)), None)
-        return value if isinstance(value, str) else None
-
-    owner, repo = text("owner"), text("repo")
-    return changed_lines(cwd, text("base", "target_branch"), text("head", "source_branch"),
-                         f"{owner}/{repo}" if owner and repo else None)
 
 
 class _WorkingTree:
@@ -858,8 +815,8 @@ def _change_read_hold(gate: str, skill: str, proof: _Proof, changes: "_Changes",
         f"Read the change before {doing}{after}: "
         f"{how}. Then {then}. {CHAINED_STEPS} {UNFINISHED_READ} {tail}",
         short_form(f"a change read{after}",
-                   ("Print the diff or Read a file you changed" if changes.paths
-                    else "Print the diff with a git diff or git show command (a Read cannot "
+                   (f"Print the diff or {READ} a file you changed" if changes.paths
+                    else f"Print the diff with a git diff or git show command (a {READ} cannot "
                          "count: this turn changed no file it can name)")
                    + f", then {then}. A --stat or --name-only listing does not count, nor "
                    f"does a read chained in this command or made in parallel. {short_tail}"
@@ -875,7 +832,7 @@ def _spawn_hold(brief: str, proof: _Proof) -> Hold | None:
         return Hold(
             "spawn", STRICT,
             f"Before starting another agent or session with a brief, load `{HANDOFF_SKILL}` "
-            f"with the Skill tool{proof.within}, read its `references/spawn-brief.md` whole, and "
+            f"with {SKILL_TOOL}{proof.within}, read its `references/spawn-brief.md` whole, and "
             "write the brief from that template (Goal, Scope, Done Means, and its skills line "
             "at least). For a "
             "scoped implementation or review task, load `subagent-driven-development` "
@@ -933,7 +890,7 @@ def _matched_templates(brief: str, proof: _Proof) -> list[contracts.BriefTemplat
     return [t for t in _templates_read(proof) if not t.missing_headings(brief)]
 
 
-def brief_templates(tool_name: str, tool_input: dict, turn: Turn, overrides: dict,
+def brief_templates(call: Call, turn: Turn, overrides: dict,
                     namespaces: tuple[str, ...] = (),
                     earlier: SinceCompaction = SinceCompaction()) -> list[str]:
     """The `reference` of each brief template a spawn's brief follows, as the
@@ -942,11 +899,10 @@ def brief_templates(tool_name: str, tool_input: dict, turn: Turn, overrides: dic
     `contracts.REVIEWER_TEMPLATE` starts a reviewer subagent. Call it for a
     call `check_action` let through."""
 
-    if tool_name not in SPAWN_BRIEF_FIELDS:
+    if call.kind != events.SPAWN:
         return []
-    brief = str(tool_input.get(SPAWN_BRIEF_FIELDS[tool_name]) or "")
     proof = _Proof(turn, overrides, namespaces, earlier=earlier)
-    return [t.reference for t in _matched_templates(brief, proof)]
+    return [t.reference for t in _matched_templates(call.brief, proof)]
 
 
 def _review_intake_hold(path: str, proof: _Proof, closeout: Closeout | None) -> Hold | None:
@@ -964,7 +920,7 @@ def _review_intake_hold(path: str, proof: _Proof, closeout: Closeout | None) -> 
     return Hold(
         "review-intake", JUSTIFIED_SKIP,
         f"A reviewer subagent reported in this turn. Before the first code edit, load "
-        f"`{INTAKE_SKILL}` with the Skill tool and classify each finding as accepted, "
+        f"`{INTAKE_SKILL}` with {SKILL_TOOL} and classify each finding as accepted, "
         "rejected, unclear, or a user decision; then fix only the accepted ones. If the "
         f"report has nothing to act on, write `goated-skip: {INTAKE_SKILL}: <reason>` on its "
         "own line instead. This edit was not applied. "
@@ -976,21 +932,22 @@ def _review_intake_hold(path: str, proof: _Proof, closeout: Closeout | None) -> 
 def _load_or_skip(skill: str, unmet: str) -> str:
     """The short form of a justified-skip hold that `skill`'s load or skip line clears."""
 
-    return short_form(unmet, f"Load `{skill}` with the Skill tool, or write "
+    return short_form(unmet, f"Load `{skill}` with {SKILL_TOOL}, or write "
                              f"`goated-skip: {skill}: <reason>`. "
                       + short_advice("skip line", f"skip {skill}"))
 
 
 def _reviewer_returned(call, proof: _Proof, spawn_templates: dict[str, list[str]]) -> bool:
-    """True for a finished subagent spawn whose brief followed the reviewer
-    prompt (`spawn_templates`, by tool_use_id) and whose report has arrived: at
+    """True for a finished spawn of an agent whose brief followed the reviewer
+    prompt (`spawn_templates`, by call id) and whose report has arrived: at
     once, or for one started in the background, once its completion arrived in
-    the turn. A held or failed spawn reported nothing. A side session's result
-    arrives at once, but only says its review started, so it never counts."""
+    the turn. A held or failed spawn reported nothing. A spawn whose result
+    names no agent, such as a side session's, only says its review started,
+    so it never counts."""
 
     return (
-        call.ok and call.name in SUBAGENT_TOOLS
-        and contracts.REVIEWER_TEMPLATE.reference in spawn_templates.get(call.tool_id, ())
+        call.ok and call.kind == events.SPAWN and call.agent_id is not None
+        and contracts.REVIEWER_TEMPLATE.reference in spawn_templates.get(call.id, ())
         and (not call.launched_async or call.agent_id in proof.turn.finished_agents)
     )
 
@@ -1012,7 +969,7 @@ def _security_hold(paths: list[str], proof: _Proof) -> Hold | None:
     return Hold(
         "security", JUSTIFIED_SKIP,
         f"{opening} Load "
-        f"`{SECURITY_SKILL}` with the Skill tool{proof.within} and review this change with "
+        f"`{SECURITY_SKILL}` with {SKILL_TOOL}{proof.within} and review this change with "
         "it. If the change crosses no trust boundary and touches no auth, secrets, "
         "persistence, execution, dependency, or deployment behaviour, write "
         f"`goated-skip: {SECURITY_SKILL}: <reason>` on its own line instead. This edit "
@@ -1054,7 +1011,7 @@ def _scripted_edit_hold(paths: list[str], unknown: bool, proof: _Proof) -> Hold 
     return Hold(
         "scripted-edit", JUSTIFIED_SKIP,
         f"An inline script in this command writes {what}. Make the change with a file "
-        "edit tool (Edit, MultiEdit, or Write), where the design and reference holds can "
+        f"edit tool {FILE_EDIT_TOOLS}, where the design and reference holds can "
         "judge it. A script suits only a mechanical rewrite across many files; for one, "
         f"write `goated-skip: {DESIGN_SKILL}: <reason>` on its own line instead. Loading "
         "the skill does not clear this hold. This command was not run. "
@@ -1066,22 +1023,19 @@ def _scripted_edit_hold(paths: list[str], unknown: bool, proof: _Proof) -> Hold 
     )
 
 
-def _conflict_hold(paths: list[str], tool_input: dict, proof: _Proof) -> Hold | None:
-    """Hold a write to `paths` while a conflict is open in the turn (spec G1):
-    the write edits conflict markers, writes a file the turn read with markers
-    in it, or follows a git merge, rebase, cherry-pick, revert, or pull whose
-    result reported a conflict that no later abort, continue, or commit ended.
-    Only the turn is read, never the repository on disk, so a conflict opened
-    in an earlier turn is seen only through its markers."""
+def _conflict_hold(paths: list[str], call: Call, proof: _Proof) -> Hold | None:
+    """Hold a write to `paths`, by `call`, while a conflict is open in the
+    turn (spec G1): the write removes conflict markers, writes a file the
+    turn read with markers in it, or follows a git merge, rebase, cherry-pick,
+    revert, or pull whose result reported a conflict that no later abort,
+    continue, or commit ended. Only the turn is read, never the repository on
+    disk, so a conflict opened in an earlier turn is seen only through its
+    markers."""
 
     if proof.loaded_or_skipped(CONFLICT_SKILL):
         return None
-    edits = tool_input.get("edits")
-    olds = [tool_input.get("old_string")] + (
-        [e.get("old_string") for e in edits if isinstance(e, dict)]
-        if isinstance(edits, list) else []
-    )
-    edits_markers = any(isinstance(old, str) and CONFLICT_MARKER_RE.search(old) for old in olds)
+    edits_markers = any(removed is not None and CONFLICT_MARKER_RE.search(removed)
+                        for removed, _ in call.edits)
     git_open, marked_files = _open_conflict(proof.turn)
     writes_marked = any(_same_file(marked, path) for marked in marked_files for path in paths)
     if not (edits_markers or git_open or writes_marked):
@@ -1089,7 +1043,7 @@ def _conflict_hold(paths: list[str], tool_input: dict, proof: _Proof) -> Hold | 
     return Hold(
         "conflict-resolution", JUSTIFIED_SKIP,
         "A merge conflict is open in this turn. Load "
-        f"`{CONFLICT_SKILL}` with the Skill tool{proof.within} and resolve it from the "
+        f"`{CONFLICT_SKILL}` with {SKILL_TOOL}{proof.within} and resolve it from the "
         "intent behind both sides. If this write does not resolve the conflict, write "
         f"`goated-skip: {CONFLICT_SKILL}: <reason>` on its own line instead. This write "
         "was not applied. " + unseen_line_advice("skip line", f"skip {CONFLICT_SKILL}"),
@@ -1099,7 +1053,8 @@ def _conflict_hold(paths: list[str], tool_input: dict, proof: _Proof) -> Hold | 
 
 def _open_conflict(turn: Turn) -> tuple[bool, list[str]]:
     """Read the turn's calls in order and return whether a git conflict is still
-    open, and the files a Read showed with markers since the last conflict ended.
+    open, and the files a file read showed with markers since the last
+    conflict ended.
 
     A git merge, rebase, cherry-pick, revert, or pull whose result reports a
     conflict opens one (a conflicting stash pop or apply prints none of git's
@@ -1109,13 +1064,13 @@ def _open_conflict(turn: Turn) -> tuple[bool, list[str]]:
 
     git_open, marked_files = False, []
     for call in turn.calls:
-        if call.name == "Read":
+        if call.kind == events.FILE_READ:
             if call.ok and CONFLICT_MARKER_RE.search(call.output):
-                marked_files.append(str(call.input.get("file_path") or ""))
+                marked_files.append(call.path)
             continue
-        if call.name not in COMMAND_TOOLS:
+        if call.kind != events.SHELL_COMMAND:
             continue
-        command = str(call.input.get("command") or "")
+        command = call.command
         if GIT_CONFLICT_COMMAND_RE.search(command) and GIT_CONFLICT_RESULT_RE.search(call.output):
             git_open = True
         elif call.ok and (GIT_CONFLICT_END_RE.search(command) or shell.analyze(command).commit):
@@ -1123,7 +1078,7 @@ def _open_conflict(turn: Turn) -> tuple[bool, list[str]]:
     return git_open, marked_files
 
 
-def _design_hold(writes: dict[str, bool], tool_input: dict | None, proof: _Proof,
+def _design_hold(writes: dict[str, bool], write: Call | None, proof: _Proof,
                  project: Project | None,
                  references: Callable[[], tuple] | None) -> Hold | None:
     """Hold a write of project files until its design is done (spec R5).
@@ -1139,7 +1094,7 @@ def _design_hold(writes: dict[str, bool], tool_input: dict | None, proof: _Proof
     `references` (`_test_edit`). A load or a read counts until the next
     compaction; a skip line or the user's skip of the skill clears both gates.
 
-    `tool_input` is a file edit tool's input, for its one file, or None for a
+    `write` is the call's file write, for its one file, or None for a
     shell write of new text (Ticket 098: `_shell_text_writes`),
     whose text the gates cannot read: it selects only what its path selects
     (a configuration file, the third code file), and a test file it writes
@@ -1154,7 +1109,7 @@ def _design_hold(writes: dict[str, bool], tool_input: dict | None, proof: _Proof
     judged, first, unread = False, False, {}
     paths = list(writes)
     for path, small in writes.items():
-        need = _design_need(path, tool_input, small, loaded, earlier, project, references)
+        need = _design_need(path, write, small, loaded, earlier, project, references)
         if need is not None:
             judged, first = True, first or need[0]
             for name, why in need[1].items():
@@ -1163,8 +1118,8 @@ def _design_hold(writes: dict[str, bool], tool_input: dict | None, proof: _Proof
     # Unloaded, every judged write is substantial and held; loaded, only one with unread references.
     if not judged or (loaded and not unread):
         return None
-    edit = "edit" if tool_input is not None else "command"
-    not_done = "This edit was not applied." if tool_input is not None else \
+    edit = "edit" if write is not None else "command"
+    not_done = "This edit was not applied." if write is not None else \
         "This command was not run."
     if loaded and not first:
         names = _listed([f"\"{_file_name(p)}\"" for p in paths])
@@ -1179,7 +1134,7 @@ def _design_hold(writes: dict[str, bool], tool_input: dict | None, proof: _Proof
                           f"{_reference_list(unread)} {WHOLE_READ}"),
         )
     steps = [] if loaded else [
-        f"load `{DESIGN_SKILL}` with the Skill tool{proof.within} and apply its 'Before "
+        f"load `{DESIGN_SKILL}` with {SKILL_TOOL}{proof.within} and apply its 'Before "
         "changing code' rules"
     ]
     if unread:
@@ -1194,7 +1149,7 @@ def _design_hold(writes: dict[str, bool], tool_input: dict | None, proof: _Proof
     )
 
 
-def _design_need(path: str, tool_input: dict | None, small: bool, loaded: bool,
+def _design_need(path: str, write: Call | None, small: bool, loaded: bool,
                  earlier: list[tuple[str, bool]], project: Project | None,
                  references: Callable[[], tuple] | None) -> tuple[bool, dict[str, str]] | None:
     """What a write of `path` needs from the design gates, as `_design_hold`
@@ -1206,7 +1161,7 @@ def _design_need(path: str, tool_input: dict | None, small: bool, loaded: bool,
     code, test = is_code(path), is_test(path, project)
     if not design_reads.applies(path, is_code=code, is_test=test):
         return None
-    shell_write = tool_input is None
+    shell_write = write is None
     # A test file is never substantial: in TDD the test comes first, and the
     # design happens in the code after it (Ticket 057).
     substantial = code and not test and not small
@@ -1217,11 +1172,11 @@ def _design_need(path: str, tool_input: dict | None, small: bool, loaded: bool,
         required = {}
     else:
         required = design_reads.required(
-            path, tool_input or {}, is_code=code, is_test=test, small=small,
+            path, write, is_code=code, is_test=test, small=small,
             written_before=written_before,
             other_code_files=len({p for p, _ in earlier if p != path and not is_test(p, project)}),
             cwd=project.cwd if project else None,
-            test_edit=_test_edit(path, tool_input, project, references,
+            test_edit=_test_edit(path, write, project, references,
                                  written_before=written_before) if test else None,
         )
     first = substantial and not any(not s for p, s in earlier if not is_test(p, project))
@@ -1235,7 +1190,7 @@ def _design_short(unmet: str) -> str:
                       + short_advice("skip line", f"skip {DESIGN_SKILL}"))
 
 
-def _test_edit(path: str, tool_input: dict, project: Project | None,
+def _test_edit(path: str, write: Call, project: Project | None,
                references: Callable[[], tuple] | None, *, written_before: bool) -> str | None:
     """Why an edit of test file `path` designs a test, so the design gates ask
     for `coding.md`, or None. The registry's rule for test edits decides
@@ -1245,15 +1200,15 @@ def _test_edit(path: str, tool_input: dict, project: Project | None,
 
     signal = reference_reads.file_kind_signal(references() if references else (), "test")
     if signal is None:
-        return None if _small_edit(tool_input) else "edits a test file"
+        return None if _small_edit(write) else "edits a test file"
     cwd = project.cwd if project else None
     return reference_reads.fires(signal, reference_reads.Edit(
-        is_code=True, is_test=True, added_code=design_reads.added_code(path, tool_input, cwd),
-        new_file=design_reads.creates_file(path, tool_input, written_before=written_before, cwd=cwd),
+        is_code=True, is_test=True, added_code=design_reads.added_code(path, write, cwd),
+        new_file=design_reads.creates_file(path, write, written_before=written_before, cwd=cwd),
     ))
 
 
-def _reference_reads_hold(paths: list[str | None], tool_input: dict | None, proof: _Proof,
+def _reference_reads_hold(paths: list[str | None], write: Call | None, proof: _Proof,
                           project: Project | None, references: Callable[[], tuple] | None,
                           changes: Callable[[], "_Changes"]) -> Hold | None:
     """Hold a write until the skill references its signals select are read
@@ -1265,11 +1220,11 @@ def _reference_reads_hold(paths: list[str | None], tool_input: dict | None, proo
     Only references of a skill that counts as loaded and has no skip line or
     typed skip this turn are judged (`reference_reads.selected`), on what this
     write and the turn before it show: the code the write adds, read from
-    `tool_input` (None for a shell write, which adds no code the gate can
+    `write` (None for a shell write, which adds no code the gate can
     read), where the file is in the project, whether the repeated-failure
     gate's condition holds, and, for a sensitive file, the security
     categories of the turn's `changes` with this one's. A reference counts as
-    read after a finished whole Read of it since the last compaction. With no
+    read after a finished whole read of it since the last compaction. With no
     `references`, or a registry that declares none, nothing is held.
     """
 
@@ -1282,7 +1237,7 @@ def _reference_reads_hold(paths: list[str | None], tool_input: dict | None, proo
     found: dict = {}  # Each reference any of `paths` selects, with the first reason.
     for path in paths:
         for reference, why in reference_reads.selected(
-                declared, _reference_edit(path, tool_input, proof, project, changes, gates)):
+                declared, _reference_edit(path, write, proof, project, changes, gates)):
             if reference.path not in proof.skill_references_read:
                 found.setdefault(reference.path, (reference, why))
     if not found:
@@ -1306,7 +1261,7 @@ def _reference_reads_hold(paths: list[str | None], tool_input: dict | None, proo
     )
 
 
-def _reference_edit(path: str | None, tool_input: dict | None, proof: _Proof,
+def _reference_edit(path: str | None, write: Call | None, proof: _Proof,
                     project: Project | None, changes: Callable[[], "_Changes"],
                     gates: frozenset) -> reference_reads.Edit:
     """What the reference signals judge of one write to `path` (None: a
@@ -1317,14 +1272,14 @@ def _reference_edit(path: str | None, tool_input: dict | None, proof: _Proof,
     category, cwd = security_category(path), project.cwd if project else None
     return reference_reads.Edit(
         is_code=is_code(path), is_test=is_test(path, project),
-        added_code=design_reads.added_code(path, tool_input, cwd)
-        if tool_input is not None else [],
+        added_code=design_reads.added_code(path, write, cwd)
+        if write is not None else [],
         project_paths=tuple(_paths_in_project(path, project)),
         gates=gates,
         categories=frozenset({category, *(c for _, c in changes().sensitive)})
         if category else frozenset(),
-        new_file=tool_input is not None and design_reads.creates_file(
-            path, tool_input, cwd=cwd,
+        new_file=write is not None and design_reads.creates_file(
+            path, write, cwd=cwd,
             written_before=any(p == path for p, _ in _project_code_writes(proof.turn, project))),
     )
 
@@ -1345,12 +1300,12 @@ def _project_code_writes(turn: Turn, project: Project | None) -> list[tuple[str,
 
     writes = []
     for call in turn.calls:
-        if call.ok and call.name in FILE_WRITE_TOOLS:
-            path = _norm(str(call.input.get(FILE_WRITE_TOOLS[call.name]) or ""))
+        if call.ok and call.kind == events.FILE_WRITE:
+            path = _norm(call.path)
             if is_code(path) and _in_project(path, project):
-                writes.append((path, _small_edit(call.input)))
-        elif call.ok and call.name in COMMAND_TOOLS:
-            command = shell.analyze(str(call.input.get("command") or ""), call.name)
+                writes.append((path, _small_edit(call)))
+        elif call.ok and call.kind == events.SHELL_COMMAND:
+            command = shell.analyze(call.command, call.shell)
             if command.non_check_writes:
                 writes += [(path, small) for path, small
                            in _shell_text_writes(command, project).items() if is_code(path)]
@@ -1392,7 +1347,7 @@ def _repeated_failure_hold(proof: _Proof, project: Project | None) -> Hold | Non
         "repeated-failure", JUSTIFIED_SKIP,
         # The command is quoted, not backticked: backticks name a skill to load.
         f"The check \"{shown.replace('`', chr(39))}\" has failed {REPEATED_FAILURES} times in "
-        f"a row in this turn. Load `{DIAGNOSE_SKILL}` with the Skill tool{proof.within} and "
+        f"a row in this turn. Load `{DIAGNOSE_SKILL}` with {SKILL_TOOL}{proof.within} and "
         "find the root cause before changing more. If the cause is already known, write "
         f"`goated-skip: {DIAGNOSE_SKILL}: <reason>` on its own line instead. This write was "
         "not applied. Rerunning the check is not held, and a pass of it resets the count. "
@@ -1432,9 +1387,9 @@ def _repeated_check(turn: Turn, project: Project | None) -> str | None:
         # A shell command's own test write comes after its run, never before.
         test_writes_before = test_writes
         test_writes += _writes_a_test(call, project)
-        if call.name not in COMMAND_TOOLS or call.held or NOT_RUN_RE.match(call.output):
+        if call.kind != events.SHELL_COMMAND or call.held or NOT_RUN_RE.match(call.output):
             continue
-        command = str(call.input.get("command") or "")
+        command = call.command
         check = _check_key(command, cwd)
         key, piped = check.key, check.piped
         shown[key] = check.shown
@@ -1493,10 +1448,10 @@ def _writes_a_test(call: Call, project: Project | None) -> bool:
 
     if not call.ok or call.held:
         return False
-    if call.name in FILE_WRITE_TOOLS:
-        targets = [str(call.input.get(FILE_WRITE_TOOLS[call.name]) or "")]
-    elif call.name in COMMAND_TOOLS:
-        command = shell.analyze(str(call.input.get("command") or ""), call.name)
+    if call.kind == events.FILE_WRITE:
+        targets = [call.path]
+    elif call.kind == events.SHELL_COMMAND:
+        command = shell.analyze(call.command, call.shell)
         targets = [t for t in command.write_targets if t not in command.unplaced_targets]
     else:
         return False
@@ -1687,7 +1642,7 @@ def closeout_note(turn: Turn, call: Call, overrides: dict, namespaces: tuple[str
 
     if not any(map(_is_code_change, _changed_paths(call, project))):
         return ""
-    if not (call.tool_id and any(c.tool_id == call.tool_id for c in turn.calls)):
+    if not (call.id and any(c.id == call.id for c in turn.calls)):
         turn.calls.append(call)
     proof = _Proof(turn, overrides, namespaces, "", earlier)
     items = _closeout_items(_Changes(turn, {}, project), proof, {}, {}, intensity,
@@ -1982,11 +1937,11 @@ def _setup_changes(calls, project: Project | None) -> str:
     for call in calls:
         if not call.ok:
             continue
-        if call.name in FILE_WRITE_TOOLS:
-            targets = [str(call.input.get(FILE_WRITE_TOOLS[call.name]) or "")]
+        if call.kind == events.FILE_WRITE:
+            targets = [call.path]
             unplaced = []
-        elif call.name in COMMAND_TOOLS:
-            command = shell.analyze(str(call.input.get("command") or ""), call.name)
+        elif call.kind == events.SHELL_COMMAND:
+            command = shell.analyze(call.command, call.shell)
             installed = installed or command.installs_globally or any(
                 folder is None or _in_project(folder or ".", project)
                 for folder in command.install_folders)
@@ -2061,10 +2016,10 @@ class _Changes:
         )
 
     def _shows_change(self, call) -> bool:
-        if call.name in COMMAND_TOOLS:
-            return shell.analyze(str(call.input.get("command") or "")).prints_changes
-        if call.name == "Read":
-            read = str(call.input.get("file_path") or "")
+        if call.kind == events.SHELL_COMMAND:
+            return shell.analyze(call.command).prints_changes
+        if call.kind == events.FILE_READ:
+            read = call.path
             return any(_same_file(read, path) for path in self.paths)
         return False
 
@@ -2081,7 +2036,7 @@ def _changes(turn: Turn, subagents: dict, project: Project | None):
     """Yield a `_Change` for each finished call that changed project files, in order."""
 
     for index, call in enumerate(turn.calls):
-        if call.ok and call.agent_id in subagents and call.name in SPAWN_BRIEF_FIELDS:
+        if call.ok and call.agent_id in subagents and call.kind == events.SPAWN:
             calls = [c for sub_turn in subagents[call.agent_id] for c in sub_turn.calls]
             changed = [_changed_paths(c, project) for c in calls]
             if any(changed):
@@ -2095,11 +2050,11 @@ def _changes(turn: Turn, subagents: dict, project: Project | None):
             continue
         paths = _changed_paths(call, project)
         if paths:
-            edited = call.name in FILE_WRITE_TOOLS
+            edited = call.kind == events.FILE_WRITE
             yield _Change(index, paths, _proves_itself(call, project),
                           edited and design_reads.comment_only(
-                              str(call.input.get(FILE_WRITE_TOOLS[call.name]) or ""), call.input),
-                          added_lines=countable_lines(call.input) if edited else None)
+                              call.path, call),
+                          added_lines=countable_lines(call) if edited else None)
 
 
 def _changed_paths(call, project: Project | None) -> list[str]:
@@ -2107,11 +2062,11 @@ def _changed_paths(call, project: Project | None) -> list[str]:
 
     if not call.ok:
         return []
-    if call.name in FILE_WRITE_TOOLS:
-        targets = [str(call.input.get(FILE_WRITE_TOOLS[call.name]) or "")]
+    if call.kind == events.FILE_WRITE:
+        targets = [call.path]
         unnamed, unplaced = False, []
-    elif call.name in COMMAND_TOOLS:
-        command = shell.analyze(str(call.input.get("command") or ""), call.name)
+    elif call.kind == events.SHELL_COMMAND:
+        command = shell.analyze(call.command, call.shell)
         targets, unnamed = command.write_targets, command.unknown_writes
         unplaced = command.unplaced_targets
     else:
@@ -2183,14 +2138,15 @@ def _in_project(path: str, project: Project | None, placed: bool = True) -> bool
     return _under_any(_resolved(readings), _resolved(project.roots))
 
 
-def writes_only_scratch(tool_name: str, tool_input: dict, project: Project | None, home: str) -> bool:
+def writes_only_scratch(call: Call, project: Project | None, agent_folders: list[str]) -> bool:
     """True for a write that touches only scratch files, so the routing gates
     let it through: every file it writes is outside the project (see
-    `_in_project`), inside no git checkout, outside the Claude folder
-    (`~/.claude`, and `home`'s), and holds no project folder; when any of
-    that cannot be checked, the file does not count as outside.
+    `_in_project`), inside no git checkout, outside the agent's own
+    configuration folders (`agent_folders`, each absolute or under `~`), and
+    holds no project folder; when any of that cannot be checked, the file
+    does not count as outside.
 
-    The write is an edit tool's file, or a shell command made only of plain
+    The write is a file write's file, or a shell command made only of plain
     reads and writes whose files it names (see
     `shell.ShellCommand.only_reads_and_writes_files`), with at least one
     write. Any other call is not such a write.
@@ -2198,26 +2154,28 @@ def writes_only_scratch(tool_name: str, tool_input: dict, project: Project | Non
 
     if project is None:
         return False
-    if tool_name in FILE_WRITE_TOOLS:
-        targets, unplaced = [str(tool_input.get(FILE_WRITE_TOOLS[tool_name]) or "")], []
-    elif tool_name in COMMAND_TOOLS:
-        command = shell.analyze(str(tool_input.get("command") or ""), tool_name)
+    if call.kind == events.FILE_WRITE:
+        targets, unplaced = [call.path], []
+    elif call.kind == events.SHELL_COMMAND:
+        command = shell.analyze(call.command, call.shell)
         if not command.only_reads_and_writes_files:
             return False
         targets, unplaced = command.write_targets, command.unplaced_targets
     else:
         return False
-    claude = _readings("~/.claude", ())
-    if claude is None:
-        return False
-    claude += [_comparable(os.path.join(home, ".claude"))]
-    claude += _resolved(claude)
+    agents: list[str] = []
+    for folder in agent_folders:
+        readings = _readings(folder, ())
+        if readings is None:
+            return False
+        agents += readings
+    agents += _resolved(agents)
     return bool(targets) and all(
-        target and _scratch(target, project, target not in unplaced, claude) for target in targets
+        target and _scratch(target, project, target not in unplaced, agents) for target in targets
     )
 
 
-def _scratch(path: str, project: Project, placed: bool, claude: list[str]) -> bool:
+def _scratch(path: str, project: Project, placed: bool, agents: list[str]) -> bool:
     """Whether `path` is certainly a scratch file: see `writes_only_scratch`."""
 
     if _in_project(path, project, placed):
@@ -2227,7 +2185,7 @@ def _scratch(path: str, project: Project, placed: bool, claude: list[str]) -> bo
         return False
     every = readings + _resolved(readings)
     roots = [*project.roots, *_resolved(project.roots)]
-    if _under_any(roots, every) or _under_any(every, claude):
+    if _under_any(roots, every) or _under_any(every, agents):
         return False
     return not any(_in_checkout(reading) is not False for reading in every)
 
@@ -2414,9 +2372,9 @@ def _proves_itself(call, project: Project | None) -> bool:
     see the failure either.
     """
 
-    if call.name not in COMMAND_TOOLS:
+    if call.kind != events.SHELL_COMMAND:
         return False
-    command = shell.analyze(str(call.input.get("command") or ""), call.name)
+    command = shell.analyze(call.command, call.shell)
     return not command.unchecked_unknown_writes and not any(
         is_code(_norm(target)) for target in command.unchecked_targets
         if target and _in_project(target, project, target not in command.unplaced_targets)
@@ -2426,7 +2384,7 @@ def _proves_itself(call, project: Project | None) -> bool:
 def _checks(calls) -> list:
     return [
         call for call in calls
-        if call.name in COMMAND_TOOLS and shell.analyze(str(call.input.get("command") or "")).is_check
+        if call.kind == events.SHELL_COMMAND and shell.analyze(call.command).is_check
     ]
 
 
@@ -2448,32 +2406,21 @@ def security_category(path: str) -> str | None:
     return None
 
 
-def added_lines(tool_input: dict) -> int:
-    texts = [tool_input.get("content"), tool_input.get("new_string"), tool_input.get("new_source")]
-    edits = tool_input.get("edits")
-    if isinstance(edits, list):
-        texts += [e.get("new_string") for e in edits if isinstance(e, dict)]
-    return sum(len(t.split("\n")) for t in texts if isinstance(t, str) and t)
+def countable_lines(write: Call) -> int | None:
+    """The lines a file write adds, every line of each edit's added text, or
+    None when they cannot be counted: it has no edits, or one adds text it
+    does not show."""
+
+    if not write.edits or any(added is None for _, added in write.edits):
+        return None
+    return sum(len(added.split("\n")) for _, added in write.edits if added)
 
 
-def countable_lines(tool_input: dict) -> int | None:
-    """The lines an edit adds, as `added_lines` counts them, or None when they
-    cannot be counted: an `edits` entry that is not an edit, or an input with
-    no text it writes."""
-
-    edits = tool_input.get("edits")
-    if isinstance(edits, list):
-        countable = all(isinstance(e, dict) and isinstance(e.get("new_string"), str) for e in edits)
-    else:
-        countable = any(isinstance(tool_input.get(key), str) for key in ("content", "new_string", "new_source"))
-    return added_lines(tool_input) if countable else None
-
-
-def _small_edit(tool_input: dict) -> bool:
-    """Whether an edit adds fewer than `DESIGN_MIN_LINES` lines; one whose
+def _small_edit(write: Call) -> bool:
+    """Whether a file write adds fewer than `DESIGN_MIN_LINES` lines; one whose
     added lines cannot be counted is not small."""
 
-    lines = countable_lines(tool_input)
+    lines = countable_lines(write)
     return lines is not None and lines < DESIGN_MIN_LINES
 
 

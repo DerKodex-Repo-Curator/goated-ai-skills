@@ -22,6 +22,15 @@ if str(ADAPTER_DIR) not in sys.path:
     sys.path.insert(0, str(ADAPTER_DIR))
 
 from goated_adapter import Config, run_hook  # noqa: E402
+from goated_adapter import overrides as _overrides  # noqa: E402
+from goated_adapter.transcript import typed_prompt  # noqa: E402
+
+
+def parse_overrides(prompt: str, *known_skills) -> dict:
+    """The overrides a typed prompt asks for, as the prompt hook finds them:
+    the adapter cleans the prompt (`typed_prompt`), then the rules read it."""
+
+    return _overrides.parse_overrides(typed_prompt(prompt).text, *known_skills)
 
 ROUTER = "using-goated-ai-skills"
 # A Windows-style install path, so the reader's path matching covers backslashes.

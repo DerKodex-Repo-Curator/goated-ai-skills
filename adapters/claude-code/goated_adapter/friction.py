@@ -26,9 +26,9 @@ from __future__ import annotations
 
 import re
 
-from . import shell
-from .gates import COMMAND_TOOLS, ROUTER_SKILL, SPAWN_TOOLS, STRICT
-from .transcript import Turn
+from . import events, shell
+from .events import Call, Turn
+from .gates import ROUTER_SKILL, STRICT
 
 # The count at which the retrospective notice is due, once per session.
 RETROSPECTIVE_THRESHOLD = 3
@@ -45,28 +45,25 @@ _SCRIPTED_EDIT_GATE = "scripted-edit"
 _ANY_FILE = "*"
 _COMMIT = "commit"
 _COUNTED_TURN_PARTS = ("loads", "skips", "calls")
-_PATH_FIELDS = ("file_path", "notebook_path")
 
 
-def action_of(tool_name: str, tool_input: dict) -> str:
+def action_of(call: Call) -> str:
     """The action a gated call takes, as a later call repeating it would: the
-    file a write changes, the kind of spawn, a commit or pull request whatever
-    its message, or else the command or the tool itself."""
+    file a write changes, a spawn, a commit or pull request whatever its
+    message, or else the command or the kind of call."""
 
-    path = next((tool_input.get(f) for f in _PATH_FIELDS if isinstance(tool_input.get(f), str)), None)
-    if path:
-        return "file:" + path.replace("\\", "/").lower()
-    if tool_name in SPAWN_TOOLS:
-        return "spawn:" + tool_name
-    if tool_name in COMMAND_TOOLS:
-        command = str(tool_input.get("command") or "")
-        found = shell.analyze(command, tool_name)
+    if call.kind == events.FILE_WRITE and call.path:
+        return "file:" + call.path.replace("\\", "/").lower()
+    if call.kind == events.SPAWN:
+        return "spawn"
+    if call.kind == events.SHELL_COMMAND:
+        found = shell.analyze(call.command, call.shell)
         if found.commit:
             return _COMMIT
         if found.opens_pr:
             return "pull-request"
-        return "command:" + command.strip()
-    return "tool:" + tool_name
+        return "command:" + call.command.strip()
+    return "call:" + call.kind
 
 
 def observe(state, turn: Turn, action: str, holds: list) -> None:
@@ -161,10 +158,10 @@ def _repeats(hold: dict, action: str) -> bool:
 def _script_files(action: str) -> list[str]:
     """The files the inline script of a held command writes, in comparable
     form, or `_ANY_FILE` when it names one only at run time. The action keeps
-    the command but not its tool, so both readings count."""
+    the command but not its shell, so both readings count."""
 
     command = action.partition(":")[2]
-    found = [shell.analyze(command, tool) for tool in sorted(COMMAND_TOOLS)]
+    found = [shell.analyze(command, kind) for kind in (events.POSIX, events.POWERSHELL)]
     if any(f.script_unknown_writes for f in found):
         return [_ANY_FILE]
     return sorted({_comparable(t) for f in found for t in f.script_targets})

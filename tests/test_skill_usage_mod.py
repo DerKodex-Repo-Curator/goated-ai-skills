@@ -445,7 +445,8 @@ class SkillUsageModFixtureTests(unittest.TestCase):
 
     def test_mod_counts_the_same_files_as_code_as_the_adapter(self) -> None:
         # The mod times reference reads against code changes, which it must judge as the adapter does.
-        from goated_adapter.actions import CODE_EXTENSIONS, FILE_WRITE_TOOLS
+        from goated_adapter.actions import CODE_EXTENSIONS
+        from goated_adapter.translation import FILE_WRITE_TOOLS
 
         source = (MOD_ROOT / "hooks" / "classify.ts").read_text(encoding="utf-8")
         found = MOD_CODE_EXTENSIONS.search(source)

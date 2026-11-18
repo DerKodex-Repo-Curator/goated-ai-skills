@@ -101,8 +101,8 @@ class SessionState:
         self.held_gates: dict = {}
         self.friction = 0
         self.retrospective_notice_shown = False
-        # The shell tool ("Bash" or "PowerShell") the session last called, or
-        # None before its first shell call: the carrier a hold names (Ticket 095).
+        # The shell (`events.POSIX` or `events.POWERSHELL`) of the session's last
+        # shell command, or None before its first: the carrier a hold names (Ticket 095).
         self.shell: str | None = None
 
     def forget_context(self) -> None:

@@ -3,7 +3,8 @@
 A Claude Code transcript is JSONL. A *turn* starts at a user prompt, or at a
 compaction boundary, and runs to the end of the file or to the next such
 entry. This module is the only place that knows the transcript's entry shapes
-and which prompts a person typed; the rest of the adapter sees `Turn` objects.
+and which prompts a person typed; the rest of the adapter sees the event
+model's turns (`events.Turn`), built with `translation`.
 
 The file can be large, so it is read backward from the end in blocks and only
 as far back as needed. Claude Code writes it asynchronously, so a reader asked
@@ -17,8 +18,11 @@ import os
 import re
 import time
 from pathlib import Path
+from typing import NamedTuple
 
-from .markers import ReplyMarkers, parse_reply
+from . import events, translation
+from .markers import parse_reply
+from .events import AgentFinished, Call, Compaction, Prompt, ReplyText, Result, SkillInvoked
 
 BLOCK_SIZE = 256 * 1024
 MAX_BYTES = 64 * 1024 * 1024
@@ -53,7 +57,7 @@ CONTINUATION_PREFIXES = ("<task-notification>", "<side-sessions-event>")
 # a prompt arrives without that line.
 #
 # A session started from another session gets that session's brief as its
-# first prompt, opening with one of `BRIEF_PREFIXES` (see `_brief_route`).
+# first prompt, opening with one of `BRIEF_PREFIXES` (see `_brief_text`).
 BRIEF_PREFIXES = (
     "Background (from the session that started this one)",
     "Task (from the session that started this one)",
@@ -81,31 +85,26 @@ SKILL_BODY_PREFIX = "Base directory for this skill:"
 # A call this adapter held: Claude Code 2.1.3xx records the deny reason as
 # `PreToolUse:<tool> hook error: <reason>`, and the reason opens with the hold line.
 HOLD_RESULT_RE = re.compile(r"(?:PreToolUse:\S+ hook error: )?goated-hold: ")
-# The one input field of each built-in tool that may carry route and skip
-# lines: a field that describes the call rather than holds its payload. Other
-# tools, MCP tools included, carry none, since their `description` is often
-# the payload, such as an issue or merge-request body. The skill-usage mod
-# keeps the same table (`LINE_FIELDS` in its `hooks/classify.ts`).
-LINE_FIELDS = {
-    "Bash": "description",
-    "PowerShell": "description",
-    "Agent": "description",
-    "Task": "description",
-    "Skill": "args",
-}
+# Text in a prompt the user did not type: `<system-reminder>` blocks, and text
+# the user pasted (a pasted agent report may quote an override). Claude Code
+# wraps a paste as `<pasted_content id="X">` ... `</pasted_content id="X">`, so
+# a paste ends only at a close tag repeating its own id: a bare or other-id
+# close tag inside it, or a nested paste, cannot end it early. An unclosed
+# paste runs to the end of the prompt.
+NOT_TYPED_RE = re.compile(
+    r"<system-reminder>.*?</system-reminder>"
+    r'|<pasted_content\b[^>]*?\bid="([^"]*)"[^>]*>(.*?)(?:</pasted_content\s+id="\1"\s*>|\Z)',
+    re.DOTALL,
+)
 
 
-def call_line_text(tool_name: str, tool_input: dict) -> str:
-    """The text of a tool call that may carry route and skip lines, or "".
+def typed_prompt(text: str) -> Prompt:
+    """A prompt a person typed, as the event model holds it: each reminder
+    block and paste becomes a space in its text, and each paste's body goes
+    to `pasted`."""
 
-    Claude Code can save a message's reply text as a summary that drops the
-    lines, but it keeps a call's input as written. Only the field
-    `LINE_FIELDS` names for the tool counts, so file text, edit text,
-    commands, and tool payloads never carry a line.
-    """
-
-    value = tool_input.get(LINE_FIELDS.get(tool_name, ""))
-    return value if isinstance(value, str) else ""
+    pasted = tuple(match.group(2) for match in NOT_TYPED_RE.finditer(text) if match.group(2) is not None)
+    return Prompt(events.PERSON, NOT_TYPED_RE.sub(" ", text), pasted)
 
 
 def prompt_text_kind(text: str) -> str:
@@ -140,153 +139,41 @@ class TranscriptUnreadable(Exception):
     """The transcript cannot be read well enough to judge the current call."""
 
 
-# The fields of a Read call's input that ask for part of a file.
-READ_RANGE_FIELDS = frozenset({"limit", "offset", "pages"})
+class Reading(NamedTuple):
+    """What `read_recent_turns` read: the turns, oldest first, ending with the
+    current turn, and the id of the prompt that opened the current turn, None
+    when it has none."""
+
+    turns: list[events.Turn]
+    prompt_id: str | None
 
 
-class Call:
-    """A tool call that has finished in the turn: its name, input, and outcome.
+class _Chunk:
+    """One turn as read from the transcript, before it is built into an
+    `events.Turn`: its key, opener, and entries in the event model's terms,
+    the id of its opening prompt, and the ids of every prompt it holds. A
+    turn opened by a brief from the session that started this one keeps the
+    brief's text (`_brief_text`) in `brief`; `starts_session` is set once
+    reading shows that brief opened the session, so its route counts."""
 
-    `ok` is False when the tool result was an error, which includes a call a
-    hook held; `held` is True only when this adapter held it, so it never ran.
-    `agent_id` is the subagent a spawn started, from the result's
-    `toolUseResult.agentId`, else None. `output` is the result's text, and
-    `tool_id` the call's `tool_use_id`, "" when the transcript gives none.
-    `launched_async` is True for a spawn whose result only says the agent
-    started in the background (`status: async_launched` or `isAsync`): its
-    work is done only once `Turn.finished_agents` names it.
-    """
-
-    __slots__ = ("name", "input", "ok", "held", "agent_id", "output", "tool_id",
-                 "launched_async")
-
-    def __init__(
-        self,
-        name: str,
-        tool_input: dict,
-        ok: bool,
-        agent_id: str | None = None,
-        held: bool = False,
-        output: str = "",
-        tool_id: str = "",
-        launched_async: bool = False,
-    ) -> None:
-        self.name = name
-        self.input = tool_input
-        self.ok = ok
-        self.held = held
-        self.agent_id = agent_id
-        self.output = output
-        self.tool_id = tool_id
-        self.launched_async = launched_async
-
-    def whole_read_path(self) -> str | None:
-        """The `file_path` a finished Read call read whole, else None.
-
-        A Read whose input carries a range field (`READ_RANGE_FIELDS`), whatever
-        its value, read part of the file or a part the call cannot show, so it
-        is partial (Ticket 092): a required reference, template, or the red
-        flags count only when read whole. Change reads are judged elsewhere.
-        """
-
-        if self.name != "Read" or not self.ok or READ_RANGE_FIELDS & self.input.keys():
-            return None
-        return str(self.input.get("file_path") or "") or None
-
-
-class Turn:
-    """What one turn contains that the adapter's gates care about.
-
-    `typed` says a person typed the prompt that opened the turn, so it may
-    carry overrides; `prompt_id` is that prompt's id. `loads` lists raw names
-    of skills loaded successfully, in order, the skill the prompt itself
-    invoked as `/<skill>` included once its body loaded. `route` is
-    the winning route line, `routes` every valid route line in order, and
-    `malformed` the route-like lines that failed the grammar. `skips` are the
-    valid `goated-skip` lines, and `texts` the turn's reply texts, in order, and `call_texts` the text of
-    the field `call_line_text` reads of each call, held calls included, in
-    order. Lines count from both, once per call id in `call_ids`. `calls` are the tool calls that finished in this
-    turn, oldest first, and `unfinished` the `(name, input)` of recorded calls
-    with no result yet, oldest first. `opens_transcript` is set on the oldest
-    turn read when reading reached the start of the transcript, so no earlier
-    turn exists. `brief_route` is the route line of the brief that opened the
-    session, set only on the session's first turn when another session
-    started it (see `_brief_route`); it is also the turn's first route line.
-    `finished_agents` are the ids of background agents whose completion
-    arrived in the turn (see `_finished_agents`).
-    """
-
-    __slots__ = (
-        "key", "is_compaction", "typed", "prompt_id", "loads",
-        "route", "routes", "malformed", "skips", "calls", "prompt_ids",
-        "opens_transcript", "call_ids",
-        "unfinished", "texts", "call_texts", "brief_route", "_brief_candidate",
-        "finished_agents",
-    )
+    __slots__ = ("key", "opener", "entries", "prompt_id", "prompt_ids", "brief",
+                 "starts_session")
 
     def __init__(self, key: str) -> None:
         self.key = key
-        self.is_compaction = False
-        self.typed = False
+        self.opener: Prompt | Compaction | None = None
+        self.entries: list = []
         self.prompt_id: str | None = None
-        self.loads: list[str] = []
-        self.route: dict | None = None
-        self.routes: list[dict] = []
-        self.opens_transcript = False
-        self.malformed: list[str] = []
-        self.skips: list[dict] = []
-        self.calls: list[Call] = []
         self.prompt_ids: set[str] = set()
-        self.call_ids: set[str] = set()
-        self.unfinished: list[tuple[str, dict]] = []
-        self.texts: list[str] = []
-        self.call_texts: list[str] = []
-        self.brief_route: dict | None = None
-        self.finished_agents: set[str] = set()
-        # The opener's brief route, until reading shows this turn is the first.
-        self._brief_candidate: dict | None = None
+        self.brief: str | None = None
+        self.starts_session = False
 
-    def confirm_brief(self) -> None:
-        """Make the opener's brief route this turn's oldest route line, if any.
-
-        Call it only once reading shows no prompt opened a turn before this one.
-        """
-
-        route = self._brief_candidate
-        if route is None:
-            return
-        self.brief_route = route
-        self.routes.insert(0, route)
-        if self.route is None:
-            self.route = route
-
-    def add_markers(self, markers: ReplyMarkers) -> None:
-        """Count the marker lines of one reply text or one tool call, in order."""
-
-        if markers.route is not None:
-            self.route = markers.route
-            self.routes.append(markers.route)
-        self.malformed.extend(markers.malformed)
-        self.skips.extend(markers.skips)
-
-    def add_call(self, tool_id: str, tool_name: str, tool_input: dict) -> None:
-        """Count the marker lines a tool call carries, once per call id.
-
-        A line in a call counts from that call on, so it covers the call itself.
-        A call with no id is taken to be the newest unfinished recorded call
-        when its name and input match that call's, so it is not counted twice.
-        """
-
-        if tool_id:
-            if tool_id in self.call_ids:
-                return
-            self.call_ids.add(tool_id)
-        elif self.unfinished[-1:] == [(tool_name, tool_input)]:
-            return
-        text = call_line_text(tool_name, tool_input)
-        if text:
-            self.call_texts.append(text)
-            self.add_markers(parse_reply(text))
+    def turn(self, *, opens_session: bool, pending: Call | None = None) -> events.Turn:
+        opener = self.opener
+        if self.starts_session and self.brief is not None:
+            opener = Prompt(events.SESSION, self.brief, starts_session=True)
+        return events.Turn(self.key, opener, self.entries, opens_session=opens_session,
+                           pending=pending)
 
 
 def read_recent_turns(
@@ -296,8 +183,8 @@ def read_recent_turns(
     prompt_id: str | None = None,
     wait_seconds: float = 0.0,
     sidechain: bool = False,
-    current_call: tuple[str, str, dict] | None = None,
-) -> list[Turn]:
+    current_call: Call | None = None,
+) -> Reading:
     """Return recent turns, oldest first, ending with the current turn.
 
     Turns are collected back to and including the turn keyed `since_key`, the
@@ -305,7 +192,7 @@ def read_recent_turns(
     caller last looked is included. Without `since_key`, or when it is not
     found within the read limits, only the turns read so far are returned.
     Without `since_key`, reading goes on past the current turn only far enough
-    to tell whether an earlier turn exists (see `Turn.opens_transcript`).
+    to tell whether an earlier turn exists (see `events.Turn.opens_session`).
     Reading never crosses a compaction boundary. It raises
     `TranscriptUnreadable` only when the current turn itself cannot be read.
 
@@ -315,9 +202,9 @@ def read_recent_turns(
     call being judged. In an interactive session Claude Code records the
     assistant message holding that call, with any text and sibling calls in
     it, only after PreToolUse returns, so callers take the call from the hook
-    input instead. `current_call` is that call, as `(tool_use_id, tool_name,
-    tool_input)`: the route and skip lines it carries count in the current
-    turn, once even if the transcript already shows it.
+    input instead. `current_call` is that call: the route and skip lines it
+    carries count in the current turn, once even if the transcript already
+    shows it.
 
     `sidechain` reads a subagent's own transcript, where every entry is a
     sidechain entry and every prompt was written by the parent agent, so none
@@ -326,12 +213,14 @@ def read_recent_turns(
 
     deadline = time.monotonic() + max(wait_seconds, 0.0)
     while True:
-        turns = _read_turns_once(Path(path), since_key, sidechain)
-        current = turns[-1]
-        if prompt_id is None or current.is_compaction or prompt_id in current.prompt_ids:
-            if current_call is not None:
-                current.add_call(*current_call)
-            return turns
+        chunks, opens_session = _read_turns_once(Path(path), since_key, sidechain)
+        current = chunks[-1]
+        if (prompt_id is None or isinstance(current.opener, Compaction)
+                or prompt_id in current.prompt_ids):
+            turns = [chunk.turn(opens_session=opens_session and index == 0,
+                                pending=current_call if chunk is current else None)
+                     for index, chunk in enumerate(chunks)]
+            return Reading(turns, current.prompt_id)
         if time.monotonic() >= deadline:
             raise TranscriptUnreadable(
                 "the transcript does not yet show the prompt this call belongs to"
@@ -339,7 +228,10 @@ def read_recent_turns(
         time.sleep(POLL_SECONDS)
 
 
-def _read_turns_once(path: Path, since_key: str | None, sidechain: bool) -> list[Turn]:
+def _read_turns_once(path: Path, since_key: str | None,
+                     sidechain: bool) -> tuple[list[_Chunk], bool]:
+    """The turns read, oldest first, and whether the oldest opens the session."""
+
     # Each chunk is one turn's entries, oldest first, with its opener kind;
     # chunks are collected newest first and built into turns at the end, once
     # every own-report candidate is settled (see `_OwnReports`).
@@ -400,7 +292,8 @@ def _read_turns_once(path: Path, since_key: str | None, sidechain: bool) -> list
             entries = list(reversed(pending))
             chunks.append((kind, entries))
             pending = []
-            brief = kind == MACHINE and not sidechain and _brief_route(entries[0]) is not None
+            brief = (kind == MACHINE and not sidechain and (text := _brief_text(entries[0]))
+                     is not None and parse_reply(text).route is not None)
             brief_chunk = entries if brief else None
             if kind == "compaction":
                 break
@@ -422,18 +315,18 @@ def _read_turns_once(path: Path, since_key: str | None, sidechain: bool) -> list
         # session-start attachments and are dropped; otherwise they (or a
         # transcript with no prompt yet) form a turn of their own.
         chunks.append((None, list(reversed(pending))))
-    turns: list[Turn] = []
-    brief_turn: Turn | None = None
+    turns: list[_Chunk] = []
+    brief_turn: _Chunk | None = None
     for kind, entries in reversed(chunks):
         for index, (part_kind, part) in enumerate(reports.split(kind, entries)):
             turns.append(_build_turn(part, part_kind, sidechain))
             if index == 0 and entries is brief_chunk:
                 brief_turn = turns[-1]
-    if reached_start and not earlier_opener and not reports.opened_earlier_turn:
-        if brief_turn is not None:
-            brief_turn.confirm_brief()
-        turns[0].opens_transcript = True
-    return turns
+    first = reached_start and not earlier_opener and not reports.opened_earlier_turn
+    if first and brief_turn is not None:
+        # No prompt opened a turn before the brief, so its route counts.
+        brief_turn.starts_session = True
+    return turns, first
 
 
 def _lines_backward(path: Path):
@@ -526,32 +419,42 @@ def _prompt_text(entry: dict) -> str | None:
     return None
 
 
-def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) -> Turn:
-    """Summarize one turn's entries, given oldest first, opener included."""
+def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) -> _Chunk:
+    """One turn's entries, given oldest first, opener included, in the event
+    model's terms.
+
+    A call is an entry where its result is, so finished calls come in the
+    order they finished; a call with no result yet stays where it was made.
+    """
 
     opener = entries[0] if kind else None
-    turn = Turn(key=str((opener or {}).get("uuid") or "transcript-start"))
-    turn.is_compaction = kind == "compaction"
-    turn.typed = kind == TYPED
+    chunk = _Chunk(str((opener or {}).get("uuid") or "transcript-start"))
     if opener is not None and opener.get("promptId"):
-        turn.prompt_id = str(opener["promptId"])
+        chunk.prompt_id = str(opener["promptId"])
     # Every prompt the turn holds, including background results that continue
     # it; Claude Code marks user entries only.
-    turn.prompt_ids = {
+    chunk.prompt_ids = {
         str(e["promptId"]) for e in entries if e.get("type") == "user" and e.get("promptId")
     }
     invoked = None
-    if opener is not None and kind in (TYPED, MACHINE):
-        match = COMMAND_NAME_RE.search(_prompt_text(opener) or "")
+    if kind == "compaction":
+        chunk.opener = Compaction()
+    elif opener is not None:
+        text = _prompt_text(opener) or ""
+        match = COMMAND_NAME_RE.search(text)
         invoked = match.group(1) if match else None
-    if opener is not None and kind == MACHINE and not sidechain:
-        turn._brief_candidate = _brief_route(opener)
+        if kind == TYPED:
+            chunk.opener = typed_prompt(text)
+        else:
+            chunk.opener = Prompt(events.SESSION, ANY_REMINDER_RE.sub("\n", text))
+            if not sidechain:
+                chunk.brief = _brief_text(opener)
 
-    skill_calls: dict[str, str] = {}
-    pending: dict[str, tuple[str, dict]] = {}
+    made: dict[str, Call] = {}  # Calls with no result yet, by tool_use id.
+    model = chunk.entries
     for entry in entries[1:] if opener is not None else entries:
         if bool(entry.get("isSidechain")) == sidechain:
-            turn.finished_agents |= _finished_agents(entry)
+            model += [AgentFinished(agent) for agent in sorted(_finished_agents(entry))]
         content = (entry.get("message") or {}).get("content")
         if not isinstance(content, list) or bool(entry.get("isSidechain")) != sidechain:
             continue
@@ -560,55 +463,46 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
                 if not isinstance(block, dict):
                     continue
                 if block.get("type") == "text":
-                    text = str(block.get("text", ""))
-                    turn.texts.append(text)
-                    turn.add_markers(parse_reply(text))
+                    model.append(ReplyText(str(block.get("text", ""))))
                 elif block.get("type") == "tool_use":
                     tool_id = str(block.get("id", ""))
-                    tool_input = block.get("input")
-                    pending[tool_id] = (
-                        str(block.get("name", "")),
-                        tool_input if isinstance(tool_input, dict) else {},
-                    )
-                    turn.add_call(tool_id, *pending[tool_id])
-                    if block.get("name") == "Skill":
-                        skill = skill_name((block.get("input") or {}).get("skill"))
-                        if skill:
-                            skill_calls[tool_id] = skill
+                    if tool_id in made:
+                        model.remove(made[tool_id])
+                    made[tool_id] = translation.call_of(
+                        str(block.get("name", "")), block.get("input"), tool_id)
+                    model.append(made[tool_id])
         elif entry.get("type") == "user":
             if invoked and entry.get("isMeta") and _starts_skill_body(content):
                 # The prompt invoked a skill as `/<skill>`; Claude Code adds
                 # its body as a meta entry, which proves the load.
-                turn.loads.append(invoked)
+                model.append(SkillInvoked(invoked))
                 continue
             for block in content:
                 if not isinstance(block, dict) or block.get("type") != "tool_result":
                     continue
-                finished_id = str(block.get("tool_use_id", ""))
-                finished = pending.pop(finished_id, None)
-                if finished is not None:
-                    result = entry.get("toolUseResult")
-                    result = result if isinstance(result, dict) else {}
-                    agent = result.get("agentId")
-                    text = _result_text(block)
-                    turn.calls.append(Call(
-                        *finished,
-                        ok=not block.get("is_error"),
-                        agent_id=agent if isinstance(agent, str) else None,
-                        held=bool(block.get("is_error")) and bool(HOLD_RESULT_RE.match(text)),
-                        output=text,
-                        tool_id=finished_id,
-                        launched_async=(result.get("status") == "async_launched"
-                                        or result.get("isAsync") is True),
-                    ))
-                if (
-                    block.get("tool_use_id") in skill_calls
-                    and not block.get("is_error")
-                ):
-                    skill = skill_calls.pop(block["tool_use_id"])
-                    turn.loads.append(skill)
-    turn.unfinished = list(pending.values())
-    return turn
+                call = made.pop(str(block.get("tool_use_id", "")), None)
+                if call is None:
+                    continue
+                model.remove(call)
+                model.append(call.finished(_result(entry, block)))
+    return chunk
+
+
+def _result(entry: dict, block: dict) -> Result:
+    """A tool result's outcome. A spawn's result names its agent in
+    `toolUseResult.agentId`, and says the agent started in the background with
+    `status: async_launched` or `isAsync`."""
+
+    found = entry.get("toolUseResult")
+    found = found if isinstance(found, dict) else {}
+    agent = found.get("agentId")
+    text = _result_text(block)
+    failed = bool(block.get("is_error"))
+    return Result(
+        ok=not failed, held=failed and bool(HOLD_RESULT_RE.match(text)), output=text,
+        agent_id=agent if isinstance(agent, str) else None,
+        background=found.get("status") == "async_launched" or found.get("isAsync") is True,
+    )
 
 
 # A background agent's completion, in the two shapes Claude Code 2.1.3xx
@@ -768,8 +662,8 @@ class _OwnReports:
         yield kind, entries[start:]
 
 
-def _brief_route(opener: dict) -> dict | None:
-    """The route line of a brief from the session that started this one, or None.
+def _brief_text(opener: dict) -> str | None:
+    """The text of a brief from the session that started this one, or None.
 
     Desktop-app builds seen in November 2026 submit that brief as the new
     session's first prompt: one or more `<system-reminder>` blocks, then text
@@ -790,7 +684,7 @@ def _brief_route(opener: dict) -> dict | None:
     body = REMINDER_RE.sub("", _prompt_text(opener) or "", count=1).lstrip()
     if not body.startswith(BRIEF_PREFIXES):
         return None
-    return parse_reply(ANY_REMINDER_RE.sub("\n", body)).route
+    return ANY_REMINDER_RE.sub("\n", body)
 
 
 def _starts_skill_body(content: list) -> bool:
@@ -807,13 +701,3 @@ def _result_text(block: dict) -> str:
             str(part.get("text", "")) for part in content if isinstance(part, dict)
         )
     return str(content or "")
-
-
-def skill_name(value: object) -> str:
-    """Normalize a Skill-tool argument such as `/tdd args` to `tdd`, keeping any
-    `namespace:` prefix for the gates to judge."""
-
-    if not isinstance(value, str):
-        return ""
-    words = value.strip().lstrip("/").split()
-    return words[0] if words else ""
