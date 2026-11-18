@@ -1205,8 +1205,15 @@ matches them; so `dispatch` holds no patch, and `retrieve` no retry.
 `assert kind == "patch"` and `name = 'MagicMock'` match nothing. Where the
 line's strings cannot be read for certain, the whole line is matched: a
 quote left open, three quotes in a row, a string holding `${`, `#{`, or
-`\(`, or one with an `f` or `$` prefix holding `{` (`_without_strings` in
-`reference_reads.py`). `sleep-retry-or-timeout` matches inside strings too:
+`\(`, one with an `f`, `t`, `$`, or `$@` prefix holding `{`, or, outside a
+`.py` or `.pyi` file, one holding `$` before a name (`"$fakeRepo"`). In a
+`.rs`, `.c`, `.h`, `.cc`, `.cpp`, `.cxx`, `.hpp`, `.cs`, `.java`, `.go`,
+`.kt`, `.kts`, `.scala`, or `.swift` file, `'` opens only a char literal
+(`'x'`, `'\n'`), and any other `'`, such as a Rust lifetime (`&'a MockDb`),
+leaves the line unread; a file whose place in the project is unknown is read
+as no such language (`_without_strings` in `reference_reads.py`). A hold
+names the matched word and stops at a call's parenthesis
+(`"patch.object"`). `sleep-retry-or-timeout` matches inside strings too:
 
 | Pattern | Matches |
 | --- | --- |

@@ -171,6 +171,43 @@ class MockingAndSeams(ReferenceReadsTestCase):
                 self.assertHeldFor(s.call("Edit", edit(TEST_FILE, added)),
                                    "tdd/references/mocking-and-seams.md")
 
+    def test_a_quote_that_opens_no_string_in_its_language_leaves_the_line_unread(self) -> None:
+        """Lead review of 100: a Rust lifetime is no string, so its words select."""
+
+        s = self.first_turn("tdd")
+        self.assertHeldFor(s.call("Edit", edit("tests/x_test.rs",
+                                               "fn f(m: &'a MockDb, n: &'a X) {}")),
+                           "tdd/references/mocking-and-seams.md")
+        # The near miss: a char literal and a string hold no mock.
+        s = self.first_turn("tdd")
+        self.assertPasses(s.call("Edit", edit("tests/x_test.rs",
+                                              "let c = 'm'; assert_eq!(kind, \"mock\");")))
+
+    def test_a_string_that_interpolates_code_leaves_the_line_unread(self) -> None:
+        for path, added in (("tests/a_test.kt", 'val s = "$fakeRepo"'),
+                            ("tests/a_test.cs", 'var s = $@"{mock}";'),
+                            (TEST_FILE, 'label = t"{mock}"')):
+            with self.subTest(added=added):
+                s = self.first_turn("tdd")
+                self.assertHeldFor(s.call("Edit", edit(path, added)),
+                                   "tdd/references/mocking-and-seams.md")
+        # The near misses: no interpolation, or `$` in a Python string, which is text.
+        for path, added in (("tests/a_test.kt", 'val s = "fake"'),
+                            ("tests/a_test.cs", 'var s = @"{mock}";'),
+                            (TEST_FILE, 'label = "$mock"')):
+            with self.subTest(added=added):
+                s = self.first_turn("tdd")
+                self.assertPasses(s.call("Edit", edit(path, added)))
+
+    def test_a_patch_token_ends_at_the_call(self) -> None:
+        for added, token in (('patch.object(A, "b")', '("patch.object")'),
+                             ('patch ("x")', '("patch")'),
+                             ('patch.dict(os.environ, {})', '("patch.dict")')):
+            with self.subTest(added=added):
+                s = self.first_turn("tdd")
+                held = s.call("Edit", edit(TEST_FILE, added))
+                self.assertIn(f"adds a mock or patch {token}", reason(held))
+
     def test_a_mock_outside_a_test_file_is_not_held_for_it(self) -> None:
         s = self.first_turn("tdd")
         self.assertPasses(s.call("Edit", edit(CODE_FILE, "client = MagicMock()")))
