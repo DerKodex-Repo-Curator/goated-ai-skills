@@ -18,9 +18,9 @@ Listed in the combined ranking's order.
      which wait for it.
    - Enables: a large edit applied once, its reads asked at the closeout.
 2. `tickets/110-core-whole-shell-prints-orient.md`
-   - Status: Waiting for 108 and 109. Decision H1.
-   - Blocked by: `108` and `109` on branch `tickets/shell-pr-follow-ups`
-     (ordering: adjacent lines in `shell._add_segment`).
+   - Status: Ready. Decision H1.
+   - Blocked by: `108` and `109` (merged; ordering: adjacent lines in
+     `shell._add_segment`).
    - Overlaps: `gates.py` with 111 and 117 (other functions).
    - Enables: a session that oriented with `cat` not held for orientation.
 3. `tickets/116-core-proof-kept-while-nothing-material-changed.md`
@@ -58,26 +58,26 @@ Listed in the combined ranking's order.
      existing test, asking for no design read their size alone selected.
 
 Only 110 touches `shell.py`, and not its pull request reading, which
-Tickets 108 and 109 are changing. No round 5 ticket touches that reading.
+Tickets 108 and 109 changed. No round 5 ticket touches that reading.
 
 Decision Q, the `true` carrier call (item 12), has no ticket: the
 maintainer chose to keep it.
 
 ## Merge Order
 
-Branch `tickets/shell-pr-follow-ups` (Tickets 108 and 109, waves 16 and
-17) merges before this branch. Both add wave rows after 085's; keep 108's
-and 109's rows first, then round 5's (waves 18 and 19).
+Tickets 108 and 109 (waves 16 and 17) merged first; this branch is rebased
+on them, and round 5's waves 18 and 19 follow their rows.
 
 ## Ready Frontier
 
 - `tickets/114-core-large-writes-land-and-read-after.md`
+- `tickets/110-core-whole-shell-prints-orient.md`
 - `tickets/115-core-mocking-pattern-for-code-patches.md`
 - `tickets/117-core-continue-meets-router-first-in-a-briefed-task.md`
 - `tickets/111-core-one-clearing-section-per-message.md`
 - `tickets/112-core-scripted-edit-names-unknown-kinds.md`
 
-110 joins once 108 and 109 merge; 113 and 116 once 114 merges.
+113 and 116 join once 114 merges.
 
 ## Coverage
 

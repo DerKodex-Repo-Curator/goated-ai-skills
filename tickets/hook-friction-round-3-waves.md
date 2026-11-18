@@ -57,11 +57,13 @@ waves 16 and 17. Their tickets were archived under `tickets/archive/` on
 | 14 (merged) | [107](archive/107-core-a-reviewer-starts-work.md) | 4 | core | AFK | 081 |
 | 15 (merged) | [106](archive/106-core-definition-starts-read-their-keyword.md) | 4 | core | AFK | 081, 101 |
 | 15 | [085](085-opencode-adapter.md) | 2 | new adapter | HITL (build decision after research) | 084 |
+| 16 (merged) | [108](archive/108-core-pull-request-options-between-noun-and-verb.md) | 4 | core | AFK | 103 (merged) |
+| 17 (merged) | [109](archive/109-core-one-pull-request-per-simple-command.md) | 4 | core | AFK | 108 (same lines) |
 | 18 (ready) | [111](111-core-one-clearing-section-per-message.md) | 5 | core and adapter | AFK | None |
 | 18 (ready) | [112](112-core-scripted-edit-names-unknown-kinds.md) | 5 | core | AFK | None |
 | 18 (ready) | [115](115-core-mocking-pattern-for-code-patches.md) | 5 | core and registry | AFK | None |
 | 18 (ready) | [117](117-core-continue-meets-router-first-in-a-briefed-task.md) | 5 | core | AFK | None |
-| 18 | [110](110-core-whole-shell-prints-orient.md) | 5 | core | AFK | 108, 109 (adjacent `shell.py` lines) |
+| 18 (ready) | [110](110-core-whole-shell-prints-orient.md) | 5 | core | AFK | 108, 109 (merged; adjacent `shell.py` lines) |
 | 18 (ready) | [114](114-core-large-writes-land-and-read-after.md) | 5 | core, event model and skills | AFK | None |
 | 19 | [113](113-core-design-reads-sized-by-substance.md) | 5 | core | AFK | 114 (same rows) |
 | 19 | [116](116-core-proof-kept-while-nothing-material-changed.md) | 5 | core | AFK | 114 (same closeout items) |
@@ -165,14 +167,13 @@ to 13 the same day; the lead brought 7 to 12 into the spec.
   maintainer chose its first option: a background launch is not a check
   (116). L1 was narrowed to keep the `design` gate and hold writes whose
   lines cannot be counted; the maintainer confirmed it (114).
-- **Waves 18 and 19 follow 108 (wave 16) and 109 (wave 17)**, whose rows
-  live on branch `tickets/shell-pr-follow-ups`. That branch merges first;
-  keep its rows above round 5's.
+- **Waves 18 and 19 follow 108 (wave 16) and 109 (wave 17)**, which
+  merged first.
 - **113 and 116 wait for 114**, which changes the read-gate rows and the
   closeout items they also change; 114 ranks first.
 - **Only 110 touches `shell.py`**, in its file printers, not the pull
-  request reading that 108 and 109 change; its lines sit next to 108's,
-  so it lands after 108 and 109.
+  request reading that 108 and 109 changed; its lines sit next to
+  108's.
 - **Item 6 (a hold pointing at a section) is deferred**, and item 12 (the
   `true` carrier call) is decision Q with no ticket; item 13 repeats
   item 1.

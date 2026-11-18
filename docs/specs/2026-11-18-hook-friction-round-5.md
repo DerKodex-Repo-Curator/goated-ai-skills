@@ -153,7 +153,7 @@ reference, the diff read before each commit, `code-security-review`, and
     `gates`; the contract's Terms (a new Whole print), the `pipeline` row
     and Shell Reading. Not `shell.py`'s pull request reading, though its
     printer branch in `_add_segment` sits beside 108's `FORGE_DIFFS`
-    change, so Ticket 110 lands after 108 and 109.
+    change; 108 and 109 have merged, so Ticket 110 builds on them.
 - **R2, design reads sized by substance** (item 2; decision K).
   - **K1:** an edit that adds fewer than five code lines (comments,
     docstrings and blank lines left out, as `comment_only` reads them) and
@@ -334,10 +334,10 @@ hook, and its translation tests show R3's section.
 ## Constraints
 
 - Work lands in `adapters/core/`, so each rule changes once.
-- Tickets 108 and 109, on branch `tickets/shell-pr-follow-ups`, are
-  changing `shell.py`'s pull request reading now. Only R1 touches
-  `shell.py`, in its file printers, beside 108's change; Ticket 110 lands
-  after 108 and 109. No requirement changes the pull request reading.
+- Tickets 108 and 109 changed `shell.py`'s pull request reading; both
+  merged on 2026-11-18, before this spec's branch. Only R1 touches
+  `shell.py`, in its file printers, beside 108's change. No requirement
+  changes the pull request reading.
 - Skill texts change only where a rule they state changes. R5 is such a
   rule: it changes `software-design-principles`'s step 4.
 

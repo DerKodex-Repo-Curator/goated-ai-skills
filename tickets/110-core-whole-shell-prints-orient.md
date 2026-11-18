@@ -36,10 +36,9 @@ as `AGENTS.md` requires: the contract's Terms (a new Whole print), the
 `pipeline` row and Shell Reading; a scenario under
 `stack/fixtures/enforcement/`.
 
-**`shell.py`'s pull request reading:** not touched. But the printer
-branch of `_add_segment` sits in the lines next to Ticket 108's
-`FORGE_DIFFS` change, so land this ticket after 108 and 109 (branch
-`tickets/shell-pr-follow-ups`).
+**`shell.py`'s pull request reading:** not touched. The printer branch
+of `_add_segment` sits in the lines next to Ticket 108's `FORGE_DIFFS`
+change; 108 and 109 have merged, so read that code as it is now.
 
 ## Recommended First Reads
 
@@ -80,10 +79,9 @@ branch of `_add_segment` sits in the lines next to Ticket 108's
 
 ## Blocked By
 
-- `tickets/108-core-pull-request-options-between-noun-and-verb.md` and
-  `tickets/109-core-one-pull-request-per-simple-command.md`, on branch
-  `tickets/shell-pr-follow-ups` (ordering: adjacent lines in
-  `shell._add_segment`).
+- `tickets/archive/108-core-pull-request-options-between-noun-and-verb.md`
+  and `tickets/archive/109-core-one-pull-request-per-simple-command.md`
+  (merged; ordering: adjacent lines in `shell._add_segment`).
 
 ## Overlaps
 
