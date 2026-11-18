@@ -8,7 +8,7 @@ on C, D1 and D2, each the recommended option
 ([Decisions](#decisions)). Builds on
 [the portable enforcement core spec](2026-11-17-portable-enforcement-core.md):
 every change here is made once, in the shared core that
-[Ticket 081](../../tickets/081-shared-enforcement-core.md) creates at
+[Ticket 081](../../tickets/archive/081-shared-enforcement-core.md) creates at
 `adapters/core/`, and stated in
 [the enforcement contract](../../stack/enforcement-contract.md).
 

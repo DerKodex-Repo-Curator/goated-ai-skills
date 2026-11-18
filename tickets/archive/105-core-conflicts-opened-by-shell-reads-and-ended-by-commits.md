@@ -61,16 +61,16 @@ scenarios change with the code, as `AGENTS.md` requires:
 
 ## Acceptance Criteria
 
-- [ ] After a merge reports a conflict, a finished `commit` call ends it:
+- [x] After a merge reports a conflict, a finished `commit` call ends it:
       a later write in the turn meets no `conflict-resolution` hold.
-- [ ] A held or failed `commit` call ends nothing.
-- [ ] A `cat` of a file showing a `<<<<<<<` line opens the conflict for a
+- [x] A held or failed `commit` call ends nothing.
+- [x] A `cat` of a file showing a `<<<<<<<` line opens the conflict for a
       write to that file and not for a write to another.
-- [ ] A `git diff` showing `++<<<<<<<` in a path's section opens it for
+- [x] A `git diff` showing `++<<<<<<<` in a path's section opens it for
       that path.
-- [ ] The contract states each rule, and conformance scenarios cover each
+- [x] The contract states each rule, and conformance scenarios cover each
       hold and near miss above.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 
@@ -80,7 +80,7 @@ scenarios change with the code, as `AGENTS.md` requires:
 
 ## Blocked By
 
-- `tickets/081-shared-enforcement-core.md` (merged)
+- `tickets/archive/081-shared-enforcement-core.md` (merged)
 
 ## Overlaps
 
@@ -93,3 +93,11 @@ scenarios change with the code, as `AGENTS.md` requires:
   concern 3, a separate follow-up).
 - Conflicts opened in an earlier turn, and stash pop or apply.
 - Reading the repository's state instead of the turn.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-18.
+
+- Merged as `d3b07a1` (`57137ed`, follow-up `16b5bf5`).
+- Maintainer decision: G1 (option 1 of decision G).
+- Exercised in later sessions; no separate live-check record.

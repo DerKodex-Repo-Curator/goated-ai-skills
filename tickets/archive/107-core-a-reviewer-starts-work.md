@@ -42,13 +42,13 @@ change with the code, as `AGENTS.md` requires:
 
 ## Acceptance Criteria
 
-- [ ] A finished spawn with `starts_now` false, not `separate`, and a
+- [x] A finished spawn with `starts_now` false, not `separate`, and a
       reviewer brief meets no Review item and opens no `review-intake`
       hold.
-- [ ] The same spawn with `starts_now` true still does both.
-- [ ] The contract states the rule, and a conformance scenario covers the
+- [x] The same spawn with `starts_now` true still does both.
+- [x] The contract states the rule, and a conformance scenario covers the
       reviewer and the proposed-spawn near miss.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 
@@ -58,7 +58,7 @@ change with the code, as `AGENTS.md` requires:
 
 ## Blocked By
 
-- `tickets/081-shared-enforcement-core.md` (merged)
+- `tickets/archive/081-shared-enforcement-core.md` (merged)
 
 ## Overlaps
 
@@ -71,3 +71,10 @@ change with the code, as `AGENTS.md` requires:
 
 - How a harness sets `starts_now` or `separate`.
 - Whether a review was any good, and the reviewer template's headings.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-18.
+
+- Merged as `58b99b2` (`b0b4d5b`).
+- Exercised in later sessions; no separate live-check record.

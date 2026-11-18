@@ -48,8 +48,8 @@ conformance scenario change with the code, as `AGENTS.md` requires:
   references table.
 - The core's `design_reads.py`: `DEFINITION_START_RE`, `_definition`,
   `_signals`, `applies` and `_is_config`.
-- `tickets/099-core-fixture-data-is-test-data.md` and
-  `tickets/100-core-narrower-reference-triggers.md`, which change the same
+- `tickets/archive/099-core-fixture-data-is-test-data.md` and
+  `tickets/archive/100-core-narrower-reference-triggers.md`, which change the same
   module.
 
 ## Acceptance Criteria
@@ -71,8 +71,8 @@ conformance scenario change with the code, as `AGENTS.md` requires:
 
 ## Blocked By
 
-- `tickets/081-shared-enforcement-core.md` (merged)
-- `tickets/101-core-read-skips-last-the-task.md` (ordering: both change
+- `tickets/archive/081-shared-enforcement-core.md` (merged)
+- `tickets/archive/101-core-read-skips-last-the-task.md` (ordering: both change
   the `design-reads` gate and its contract row)
 
 ## Overlaps

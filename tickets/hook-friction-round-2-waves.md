@@ -9,7 +9,7 @@ order files remain the source of truth for blockers:
 [portable enforcement core](portable-enforcement-core-order.md). A ticket's
 wave is one after the latest of its blockers' waves.
 
-Waves 1 to 4 are merged. Their tickets, with 078 and 079, were archived
+Waves 1 to 4 are merged. Their tickets, with 078 to 083, were archived
 under `tickets/archive/` on 2026-11-18. For 078 to 085, waves 5 to 10 below
 are replaced by
 [hook-friction-round-3-waves.md](hook-friction-round-3-waves.md).
@@ -35,10 +35,10 @@ are replaced by
 | 4 | [073](archive/073-notices-for-retrospective-and-onboarding.md) | adapter | AFK | 072 |
 | 5 | [078](archive/078-skill-usage-reference-counts.md) | mod | AFK | 068, 076 |
 | 5 | [079](archive/079-enforcement-contract-and-event-model.md) | core | HITL (maintainer accepts the ADR and event model) | 065, 068, 069, 070, 072, 073, 077 |
-| 6 | [080](080-adapter-rules-read-the-event-model.md) | adapter | AFK | 079 |
-| 7 | [081](081-shared-enforcement-core.md) | core | AFK | 080 |
-| 8 | [082](082-neutral-usage-log-and-report.md) | core | AFK | 078, 081 |
-| 8 | [083](083-adapter-guide-and-worked-example.md) | docs | AFK | 081 |
+| 6 | [080](archive/080-adapter-rules-read-the-event-model.md) | adapter | AFK | 079 |
+| 7 | [081](archive/081-shared-enforcement-core.md) | core | AFK | 080 |
+| 8 | [082](archive/082-neutral-usage-log-and-report.md) | core | AFK | 078, 081 |
+| 8 | [083](archive/083-adapter-guide-and-worked-example.md) | docs | AFK | 081 |
 | 9 | [084](084-pi-agent-adapter.md) | new adapter | HITL (build decision after research) | 082, 083 |
 | 10 | [085](085-opencode-adapter.md) | new adapter | HITL (build decision after research) | 084 |
 

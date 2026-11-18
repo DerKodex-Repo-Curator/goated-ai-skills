@@ -50,12 +50,12 @@ keeps the move itself mechanical.
 
 ## Acceptance Criteria
 
-- [ ] No rule module names a Claude Code tool, transcript field or hook
+- [x] No rule module names a Claude Code tool, transcript field or hook
       field; a check enforces it.
-- [ ] The adapter's existing tests pass with no change to expected
+- [x] The adapter's existing tests pass with no change to expected
       outcomes or hold texts.
-- [ ] Every conformance scenario still passes against the adapter.
-- [ ] The adapter's measured latency stays within the README's stated
+- [x] Every conformance scenario still passes against the adapter.
+- [x] The adapter's measured latency stays within the README's stated
       budget.
 
 ## Expected Proof
@@ -69,10 +69,19 @@ keeps the move itself mechanical.
 ## Blocked By
 
 - `tickets/archive/079-enforcement-contract-and-event-model.md`
-- `tickets/098-adapter-contract-gaps.md`
+- `tickets/archive/098-adapter-contract-gaps.md`
 
 ## Scope Exclusions
 
 - Moving modules out of the adapter (Ticket 081).
 - Any rule change.
 - The JSON command.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-18.
+
+- Merged as `eacea8f` (`0314f2d`, `eb1df81`, `d580b66`, follow-up
+  `08540db`).
+- Maintainer decision: option A, with the event model bumped to version 2.
+- Exercised in later sessions; no separate live-check record.

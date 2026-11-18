@@ -58,9 +58,16 @@ code, as `AGENTS.md` requires:
 
 ## Blocked By
 
-- `tickets/081-shared-enforcement-core.md`
+- `tickets/archive/081-shared-enforcement-core.md`
 
 ## Scope Exclusions
 
 - `security`, `Setup` and the code-file rule for files under `fixtures/`.
 - Other folder names for test data (`testdata/`, `samples/`).
+
+## Closeout
+
+Completed, merged and archived on 2026-11-18.
+
+- Merged as `45f17fc` (`26cb859`).
+- Exercised in later sessions; no separate live-check record.

@@ -169,7 +169,7 @@ the spec. Fixed on this branch:
   template's brief, and that the design gates judge file writes only.
 - Where the adapter is looser than the contract, the maintainer decided
   that the contract and scenarios state today's behaviour and mark each
-  gap, and that [Ticket 098](../098-adapter-contract-gaps.md) fixes the code
+  gap, and that [Ticket 098](098-adapter-contract-gaps.md) fixes the code
   before 080: (a) orientation counts partial reads, (b) the design gates
   never judge a shell write, (c) a subagent's commit meets no closeout.
   Scenarios with `case: gap` pin (a) and (b); (c) needs a subagent-role

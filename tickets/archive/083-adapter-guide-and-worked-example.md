@@ -66,9 +66,17 @@ no way to check their adapter against the rules.
 
 ## Blocked By
 
-- `tickets/081-shared-enforcement-core.md`
+- `tickets/archive/081-shared-enforcement-core.md`
 
 ## Scope Exclusions
 
 - Adapters for real harnesses (Tickets 084 and 085).
 - An example that calls a model.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-18.
+
+- Merged as `feddcc6` (`3ae8425`, follow-ups `b99c559`, `b745e6a`; its
+  branch took 082's `dd222f5` in `201b187`).
+- Exercised in later sessions; no separate live-check record.

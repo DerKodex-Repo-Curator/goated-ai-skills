@@ -66,8 +66,8 @@ core, and what its extension points allow is not yet known to this repo.
 
 ## Blocked By
 
-- `tickets/083-adapter-guide-and-worked-example.md`
-- `tickets/082-neutral-usage-log-and-report.md` (the live check reads the
+- `tickets/archive/083-adapter-guide-and-worked-example.md`
+- `tickets/archive/082-neutral-usage-log-and-report.md` (the live check reads the
   log).
 
 ## Scope Exclusions

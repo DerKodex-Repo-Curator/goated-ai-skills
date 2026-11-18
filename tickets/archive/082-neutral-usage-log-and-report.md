@@ -81,7 +81,7 @@ folder; the report lists projects and takes `--project-folder`.
 
 ## Blocked By
 
-- `tickets/081-shared-enforcement-core.md`
+- `tickets/archive/081-shared-enforcement-core.md`
 - `tickets/archive/078-skill-usage-reference-counts.md` (the mod's final stored
   shape and counts).
 
@@ -90,3 +90,10 @@ folder; the report lists projects and takes `--project-folder`.
 - A viewer for other harnesses beyond the report command.
 - Sending the log anywhere.
 - Token or cost accounting.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-18.
+
+- Merged as `e885027` (`daa8e5a`, follow-up `dd222f5`).
+- Exercised in later sessions; no separate live-check record.
