@@ -34,6 +34,18 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["<adapter-dir>/goated_hook.py"]
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

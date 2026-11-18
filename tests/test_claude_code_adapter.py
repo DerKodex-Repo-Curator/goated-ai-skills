@@ -719,8 +719,15 @@ class SpawnTests(AdapterTestCase):
             self.assertTrue(name in gates.GATED_TOOLS or actions.is_action_tool(name), name)
         self.assertIsNone(re.fullmatch(matcher, "Read"))
         self.assertEqual(
-            set(snippet["hooks"]), {"SessionStart", "UserPromptSubmit", "PreToolUse", "Stop"}
+            set(snippet["hooks"]),
+            {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"},
         )
+        # The early closeout note's hook starts for the file edit tools alone (Ticket 096).
+        after = snippet["hooks"]["PostToolUse"][0]["matcher"]
+        for name in actions.FILE_WRITE_TOOLS:
+            self.assertTrue(re.fullmatch(after, name), name)
+        for name in ("Bash", "PowerShell", "Read", "Agent", "mcp__github__push_files"):
+            self.assertIsNone(re.fullmatch(after, name), name)
         for entries in snippet["hooks"].values():
             self.assertEqual(entries[0]["hooks"][0]["args"], ["<adapter-dir>/goated_hook.py"])
 

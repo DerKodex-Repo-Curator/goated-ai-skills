@@ -3,7 +3,8 @@
 `run_hook` dispatches on `hook_event_name` and owns the adapter's failure rule
 (ADR 0003, "fail open, visibly"): when it cannot read what it needs, it lets
 the action through and returns a `systemMessage` warning the user sees. It
-never blocks because of its own failure.
+never blocks because of its own failure. A hook that runs after the action
+(`PostToolUse`) has no action to let through, so its failure adds nothing.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from .policy import (
 from .state import StateStore, StateUnsafe
 from .transcript import (
     CONTINUATION,
+    Call,
     LINE_FIELDS,
     NOT_PROMPT,
     TYPED,
@@ -61,6 +63,9 @@ ROUTER_NOTICE = (
     "or plugin skills, so writes, spawns, and commands will stay held. Install it, "
     "or type `skip routing` in a prompt to proceed without it."
 )
+# The turn marker's purpose for the early closeout note (Ticket 096), apart
+# from the unseen-line advice's and each hold's.
+CLOSEOUT_NOTE = "closeout-note"
 
 
 class Config:
@@ -157,8 +162,10 @@ def run_hook(raw_input: str, config: Config) -> str:
     try:
         return handler(payload, config)
     except (_FailOpen, StateUnsafe) as exc:
-        return _fail_open(str(exc))
+        return "" if event in _AFTER_THE_ACTION else _fail_open(str(exc))
     except Exception as exc:  # noqa: BLE001 - any adapter bug must fail open, visibly
+        if event in _AFTER_THE_ACTION:
+            return ""
         return _fail_open(f"it hit an internal error ({type(exc).__name__})")
 
 
@@ -390,6 +397,74 @@ def _stop(payload: dict, config: Config) -> str:
         store, session_id, current.key, purpose))
     output = {"decision": "block", "reason": text} if text else {}
     return _with_warnings(output, warnings)
+
+
+def _post_tool_use(payload: dict, config: Config) -> str:
+    """After the main agent's first finished code change of a turn by a file
+    edit tool, add one note naming the closeout items the turn will meet
+    (Ticket 096), as context for the agent. It never holds anything.
+
+    The call is taken from the hook's own payload, since the transcript may
+    not show it yet; the transcript and state say only what the payload
+    cannot, such as which skills count as loaded. A subagent has no
+    closeout, so gets no note; nor does a turn the closeout already held,
+    which has seen its items. The note's claim on the turn marker has its
+    own purpose, and a claim that fails or cannot be made adds no note.
+    """
+
+    tool_name = str(payload.get("tool_name") or "")
+    if (tool_name not in actions.FILE_WRITE_TOOLS or payload.get("agent_id")
+            or not _finished(payload.get("tool_response"))):
+        return ""
+    tool_input = payload.get("tool_input")
+    tool_input = tool_input if isinstance(tool_input, dict) else {}
+    session_id, transcript_path = _session_fields(payload)
+    store = StateStore(config.state_dir)
+    state, _ = store.load(session_id)
+    # The call's PreToolUse saved its turn as the last seen, so a turn that
+    # already has its note is known here without reading the transcript.
+    if state.last_turn and store.turn_claimed(session_id, state.last_turn, CLOSEOUT_NOTE):
+        return ""
+    try:
+        turns = read_recent_turns(
+            transcript_path,
+            since_key=state.last_turn,
+            prompt_id=_prompt_id(payload),
+            wait_seconds=config.lag_wait_seconds,
+            current_call=_current_call(payload, tool_name, tool_input),
+        )
+    except TranscriptUnreadable as exc:
+        raise _FailOpen(str(exc)) from exc
+    # Read only: the hooks that judge calls own the saved state.
+    gates.fold_turns(state, turns, config.skill_namespaces)
+    current = turns[-1]
+    if (state.held_gates.get("turn") == current.key
+            and actions.CLOSEOUT_GATE in state.held_gates["gates"]):
+        return ""
+    call = Call(tool_name, tool_input, ok=True, tool_id=str(payload.get("tool_use_id") or ""))
+    text = actions.closeout_note(
+        current, call, _overrides_for(state, current, payload.get("prompt_id")),
+        config.skill_namespaces, _project(payload, config), _since_compaction(state),
+        _route_intensity(state))
+    if not text:
+        return ""
+    try:
+        claimed = store.claim_turn(session_id, current.key, CLOSEOUT_NOTE)
+    except (OSError, StateUnsafe):
+        claimed = False  # The note is advice: without a marker it could repeat, so none.
+    if not claimed:
+        return ""
+    return json.dumps({"hookSpecificOutput": {
+        "hookEventName": "PostToolUse", "additionalContext": _sentence([text])}})
+
+
+def _finished(tool_response: object) -> bool:
+    """Whether a PostToolUse `tool_response` shows the call did its work: an
+    object that reports no error and no failure. Anything else, such as an
+    error's text, may be a call that changed nothing."""
+
+    return (isinstance(tool_response, dict) and not tool_response.get("error")
+            and not tool_response.get("is_error") and tool_response.get("success") is not False)
 
 
 def _settle_holds(state, turns, config: Config) -> None:
@@ -634,8 +709,14 @@ def _fail_open(why: str) -> str:
     )
 
 
+# Events that run after the action: their failure has no action to let
+# through, and the call's `PreToolUse` has already warned of the same cause,
+# so it adds nothing (Ticket 096).
+_AFTER_THE_ACTION = frozenset({"PostToolUse"})
+
 _HANDLERS = {
     "PreToolUse": _pre_tool_use,
+    "PostToolUse": _post_tool_use,
     "Stop": _stop,
     "UserPromptSubmit": _user_prompt_submit,
     "SessionStart": _session_start,
