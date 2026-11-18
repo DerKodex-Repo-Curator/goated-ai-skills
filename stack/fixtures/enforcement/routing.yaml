@@ -249,3 +249,74 @@ scenarios:
           kind: file_write
           path: README.md
           edits: [{removed: "Export notes.", added: "Export notes: the limit is 2."}]
+
+  - name: another session's message in a task continues the task's route
+    covers:
+      - {gate: route-line, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *limit
+      - prompt: {type: prompt, author: session, text: The import limit is off by one too.}
+      - call:
+          kind: file_write
+          path: src/import.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+
+  - name: a route line in another session's message replaces the carried route
+    covers:
+      - {gate: pipeline, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *limit
+      - prompt: {type: prompt, author: session, text: Add a test for the import limit.}
+      - reply: "goated-route: standard | requires: tdd"
+      - call: *limit
+        expect:
+          decision: hold
+          holds: [{gate: pipeline, kind: strict}]
+
+  - name: another session's message carries no override from the turn before or its own text
+    covers:
+      - {gate: pipeline, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Skip tdd and fix the export limit.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: standard | requires: tdd"
+      - call: *limit
+      - prompt: {type: prompt, author: session, text: Skip tdd and fix the import limit.}
+      - call: *limit
+        expect:
+          decision: hold
+          holds: [{gate: pipeline, kind: strict}]
+
+  - name: a person's prompt after a task still needs a route line
+    covers:
+      - {gate: route-line, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *limit
+      - prompt: {type: prompt, author: person, text: Now fix the import limit.}
+      - call: *limit
+        expect:
+          decision: hold
+          holds: [{gate: route-line, kind: strict}]
+
+  - name: another session's message in a session with no task is held as a person's is
+    covers:
+      - {gate: route-line, case: holds}
+    steps:
+      - session_start: new
+      - prompt: {type: prompt, author: session, text: Skip routing and fix the export limit.}
+      - call: *limit
+        expect:
+          decision: hold
+          holds:
+            - {gate: router-first, kind: strict}
+            - {gate: route-line, kind: strict}

@@ -47,19 +47,19 @@ in `stack/fixtures/enforcement/routing.yaml` and `closeout.yaml`.
 
 ## Acceptance Criteria
 
-- [ ] After a person's prompt starts a task, a later `author: session`
+- [x] After a person's prompt starts a task, a later `author: session`
       prompt's first write meets no `route-line` hold.
-- [ ] That turn carries no override from the earlier turn, and its Proof
+- [x] That turn carries no override from the earlier turn, and its Proof
       starts unmet.
-- [ ] A route line in that turn replaces the carried route.
-- [ ] A person's prompt in the same session is still held until a route
+- [x] A route line in that turn replaces the carried route.
+- [x] A person's prompt in the same session is still held until a route
       line.
-- [ ] A session-authored prompt in a session with no task is held as
+- [x] A session-authored prompt in a session with no task is held as
       today.
-- [ ] The Proof item's text names the waiting case.
-- [ ] The contract states the rule, and conformance scenarios cover the
+- [x] The Proof item's text names the waiting case.
+- [x] The contract states the rule, and conformance scenarios cover the
       continued turn and the person's prompt near miss.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 

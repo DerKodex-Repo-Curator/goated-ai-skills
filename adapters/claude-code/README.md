@@ -204,7 +204,7 @@ read.
 | Gate | Kind | Holds | Clears when |
 | --- | --- | --- | --- |
 | `router-first` | strict | An `Edit`, `Write`, `MultiEdit`, or `NotebookEdit`, a spawn, or a `Bash` or `PowerShell` command; a command made only of [plain reads](#plain-reads) passes, as Read and Grep do, and so does a write whose every file is a [scratch file](../../stack/enforcement-contract.md#project-folders-and-scratch-files) | A `Skill` load of `using-goated-ai-skills`; or the session's first prompt is a brief with a route line (see above), until a typed prompt opens a turn |
-| `route-line` | strict | The first write or spawn after each typed prompt until the turn has a valid route line, in reply text or a call's line field (see above) | A valid route line appears in the turn |
+| `route-line` | strict | The first write or spawn after each typed prompt until the turn has a valid route line, in reply text or a call's line field (see above); also after a prompt from elsewhere in a session with no task yet (see [User Overrides](#user-overrides)) | A valid route line appears in the turn |
 | `pipeline` | strict | Writes and spawns while a `requires:` skill has not loaded, or a brief-routed session's orientation is unmet while Claude Code can find `session-start-progressive-disclosure`; a spawn of a [read-only subagent](#plain-reads) passes | Each listed skill loads by the Skill tool, or orientation by that skill or three [whole reads](#whole-reads) by the Read tool |
 | `commit` | strict | A `git commit` in a `Bash` or `PowerShell` command, or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit`; the tool's `message` is the commit message | `commit-message` [counts as loaded](#loads), the message passes the [content check](#content-checks), and a [change read](#change-reads) follows the last change; then the [closeout](#closeout-at-commit) |
 | `pull-request` | strict | `gh pr create` or `new`, `glab mr create` or `new` in a shell command, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` [counts as loaded](#loads), and a [change read](#change-reads) |
@@ -546,9 +546,12 @@ Claude Code also submits prompts nobody typed in this session:
 - **Requests from elsewhere**, such as a subagent's final report, a message
   from another Claude session, a brief from the session that started this
   one, or any prompt whose recorded origin is not a person. They start a new
-  turn, which needs its own route line (`goated-route: continue` when it
-  continues the current task; a session's first brief may carry it, see
-  [What It Holds](#what-it-holds)), and never carry overrides: not ones they quote,
+  turn. In a session that already has a task, the turn runs as
+  `goated-route: continue` until a route line in it says otherwise, so it
+  needs no route line of its own; its skip lines, checks and change reads
+  start empty. In a session with no task yet, it needs a route line (a
+  session's first brief may carry it, see [What It Holds](#what-it-holds)).
+  They never carry overrides: not ones they quote,
   and not ones you typed earlier, which covered only the turn your prompt
   opened. The adapter neither records nor announces an override for them.
   The user-prompt hook's input does not say where a prompt came from, so the
@@ -624,7 +627,8 @@ typed origin from the transcript and open a new turn, to which no override
 applies. A prompt the adapter cannot tie to one of its spawns,
 such as another session's message, a scheduler's prompt, a report naming an
 agent this session never spawned, or a shape the adapter does not know,
-opens a new turn as before.
+opens a new turn as before; in a session with a task, that turn runs as
+`goated-route: continue`.
 
 ## Session Start Notices
 

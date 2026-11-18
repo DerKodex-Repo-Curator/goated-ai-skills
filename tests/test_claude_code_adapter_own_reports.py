@@ -178,12 +178,16 @@ class RouteLineTests(OwnReportTestCase):
 
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
-    def test_near_misses_open_a_turn_that_needs_a_route_line(self) -> None:
+    def test_near_misses_open_a_turn_that_continues_the_route(self) -> None:
+        # Ticket 102: the new turn runs under the task's route, but a skip
+        # line from before it does not count, so its Proof starts unmet.
         for label, deliver in self.near_misses():
             with self.subTest(label):
                 s = self.launched()
+                s.say(PROOF_SKIP)
                 deliver(s)
-                self.assertNotEqual(decision(s.call("Edit", EDIT)), "pass")
+                self.assertEqual(decision(write_code(s)), "pass")
+                self.assertIn("- Proof:", stop(s).get("reason", ""))
 
     def test_near_miss_a_report_from_a_spawn_before_a_compaction_opens_a_turn(self) -> None:
         s = self.launched()
@@ -192,9 +196,11 @@ class RouteLineTests(OwnReportTestCase):
         s.load(ROUTER)
         s.say("goated-route: direct")
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+        s.say(PROOF_SKIP)
         report(s)
+        write_code(s)
 
-        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: route-line | strict")
+        self.assertIn("- Proof:", stop(s).get("reason", ""))
 
     def test_a_report_spawned_in_an_earlier_turn_continues_the_current_turn(self) -> None:
         s = self.launched()
@@ -238,6 +244,16 @@ class CarriedStateTests(OwnReportTestCase):
         self.assertIn("changed code", held["reason"])
         self.assertIn("- Proof:", held["reason"])
 
+    def test_the_proof_item_names_a_session_waiting_on_another(self) -> None:
+        # Ticket 102 (R6): the existing skip line fits; the text names the case.
+        s = self.launched()
+        write_code(s)
+
+        held = stop(s)["reason"]
+        proof = next(line for line in held.splitlines() if line.startswith("- Proof:"))
+        self.assertIn("waiting on another session's result", proof)
+        self.assertIn("`goated-skip: verification-before-completion: <what it waits for>`", proof)
+
     def test_near_miss_after_another_message_the_closeout_sees_only_the_new_turn(self) -> None:
         for label, deliver in self.near_misses():
             with self.subTest(label):
@@ -272,11 +288,12 @@ class BriefRouteTests(OwnReportTestCase):
         self.assertEqual(decision(s.call("Bash", STATUS)), "pass")
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
-    def test_near_miss_another_sessions_message_ends_it(self) -> None:
+    def test_another_sessions_message_continues_the_brief_route(self) -> None:
+        # Ticket 102: a message nobody typed opens a turn under the task's route.
         s = self.briefed()
         s.peer("Also cover the empty file.")
 
-        self.assertNotEqual(decision(s.call("Edit", EDIT)), "pass")
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
 
 class ReviewIntakeTests(OwnReportTestCase):

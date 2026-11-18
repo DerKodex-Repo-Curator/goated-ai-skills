@@ -308,6 +308,25 @@ def _task_route_in(turn: Turn) -> dict | None:
     return next((route for route in reversed(turn.routes) if route["form"] != "continue"), None)
 
 
+def _turn_route(state: SessionState, turn: Turn) -> dict | None:
+    """The route `turn` runs under, or None when it needs a route line.
+
+    That is the turn's winning route line; failing one, a message from
+    another session in a session with a task runs as `goated-route: continue`
+    (spec R5): nobody typed it, so it is not a new task the router must
+    judge. Only the route carries over; overrides come only from a person's
+    prompt, and skips, checks and change reads count within their turn.
+    """
+
+    if turn.route is not None:
+        return turn.route
+    opener = turn.opener
+    if (isinstance(opener, events.Prompt) and opener.author == events.SESSION
+            and not opener.starts_session and state.task is not None):
+        return {"form": "continue"}
+    return None
+
+
 def writes_like_an_edit(call: Call) -> bool:
     """True for a file write, a spawn that starts work now, or a shell command
     that writes files. A spawn that only proposes work runs nothing."""
@@ -374,9 +393,10 @@ def check_routing(
         ))
     if not writes_like_an_edit(call) or writes_scratch():
         return holds
-    if turn.route is None:
+    route = _turn_route(state, turn)
+    if route is None:
         return holds + [Hold("route-line", STRICT, *_route_line_texts(turn))]
-    if turn.route["form"] == "continue" and state.task is None:
+    if route["form"] == "continue" and state.task is None:
         # Only when saved state was missing or reset: otherwise folding the
         # turn started a task.
         return holds + [Hold(
