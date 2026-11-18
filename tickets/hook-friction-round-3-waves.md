@@ -2,13 +2,17 @@
 
 Tickets 086 to 097 grouped by which can run at the same time, together
 with the tickets of round 2 that had not started when round 3 was planned
-(078 to 085). The order files remain the source of truth for blockers:
+(078 to 085) and the tickets of round 4 (099 to 102). The order files
+remain the source of truth for blockers:
 [low-signal holds](adapter-low-signal-holds-order.md) and
 [hold delivery and coverage](adapter-hold-delivery-and-coverage-order.md)
-for round 3, and
+for round 3,
 [skill-usage data detail](skill-usage-data-detail-order.md) and
 [portable enforcement core](portable-enforcement-core-order.md) for
-round 2. A ticket's wave is one after the latest of its blockers' waves.
+round 2, and [hook friction round 4](hook-friction-round-4-order.md) for
+round 4. A ticket's wave is one after the latest of its blockers' waves.
+This one table holds the waves of all three rounds; round 4 has no table
+of its own.
 
 This table replaces waves 5 to 10 of
 [hook-friction-round-2-waves.md](hook-friction-round-2-waves.md). Waves 1
@@ -38,7 +42,11 @@ archived under `tickets/archive/` on 2026-11-18.
 | 12 | [081](081-shared-enforcement-core.md) | 2 | core | AFK | 080 |
 | 13 | [082](082-neutral-usage-log-and-report.md) | 2 | core | AFK | 078, 081 |
 | 13 | [083](083-adapter-guide-and-worked-example.md) | 2 | docs | AFK | 081 |
+| 13 | [099](099-core-fixture-data-is-test-data.md) | 4 | core | AFK | 081 |
+| 13 | [100](100-core-narrower-reference-triggers.md) | 4 | core and registry | AFK | 081 |
+| 13 | [102](102-core-session-messages-continue-the-task.md) | 4 | core | HITL until decisions D1 and D2 (draft) | 081 |
 | 14 | [084](084-pi-agent-adapter.md) | 2 | new adapter | HITL (build decision after research) | 082, 083 |
+| 14 | [101](101-core-read-skips-last-the-task.md) | 4 | core | HITL until decision C (draft) | 081, 099, 100 |
 | 15 | [085](085-opencode-adapter.md) | 2 | new adapter | HITL (build decision after research) | 084 |
 
 ## Decisions Recorded Here
@@ -85,6 +93,25 @@ The maintainer decided these on 2026-11-17, when round 3 was planned:
   058), and harness nudges opening turns (they are recorded as
   attachments).
 
+## Round 4 (planned 2026-11-18)
+
+Round 4 comes from the agents of Tickets 079, 095, 096 and 098.
+
+- **It runs after Ticket 081.** Each rule changes once, in the shared core
+  at `adapters/core/`, not in the Claude Code adapter that 080 and 081
+  are moving.
+- **Wave 13 runs 099, 100 and 102 beside 082 and 083.** None of them
+  touches the usage log or the guide. 099 and 100 both edit the design
+  gates' code (`applies` and `_signals`, different functions) and the
+  same contract rows; resolve at merge time.
+- **Ticket 101 waits for 099 and 100.** It changes how long skips of the
+  same two gates last, on the same rows; once their narrower triggers
+  land, the need for it can be judged again.
+- **084 and 085 do not wait for round 4.** They call the core, so a rule
+  change reaches them without a change of theirs.
+- **Open decisions:** C (Ticket 101) and D1, D2 (Ticket 102), in the
+  [round 4 spec](../docs/specs/2026-11-18-hook-friction-round-4.md#open-questions).
+
 ## Where Each Feedback Item Went
 
 | Feedback item | Ticket |
@@ -108,6 +135,13 @@ The maintainer decided these on 2026-11-17, when round 3 was planned:
 | Closeout timing after the final report | 096 |
 | How many references one edit asks for | No ticket (kept) |
 | The spawn-brief skills line: strict or justified skip | No ticket (kept) |
+| Round 4: `design-reads` treats fixture YAML as configuration | 099 |
+| Round 4: the mocking reference fires on the bare word `patch` or `MagicMock` in data | 100 |
+| Round 4: `readability.md` and the Design item for a docstring-only edit | 100 |
+| Round 4: a skip line lasts one turn, so it repeats | 101 (draft, decision C) |
+| Round 4: `route-line` holds after a lead's or peer's message | 102 (draft, decision D1) |
+| Round 4: Proof asked while a session waits on another | 102 (draft, decision D2) |
+| Round 4: the `true` carrier call for a line | No ticket (kept) |
 
 ## Notes
 
