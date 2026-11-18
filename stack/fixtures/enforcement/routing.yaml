@@ -320,3 +320,40 @@ scenarios:
           holds:
             - {gate: router-first, kind: strict}
             - {gate: route-line, kind: strict}
+
+  - name: a prompt the harness wrote, or one of unknown origin, in a task still needs a route line
+    covers:
+      - {gate: route-line, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *limit
+      - prompt: {type: prompt, author: host, text: Run the nightly check.}
+      - call: *limit
+        expect:
+          decision: hold
+          holds: [{gate: route-line, kind: strict}]
+      - prompt: {type: prompt, author: unknown, text: Run the import.}
+      - call: *limit
+        expect:
+          decision: hold
+          holds: [{gate: route-line, kind: strict}]
+
+  - name: a malformed route line in another session's message is held until a valid one
+    covers:
+      - {gate: route-line, case: holds}
+      - {gate: route-line, case: clears, way: route-line}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *limit
+      - prompt: {type: prompt, author: session, text: The import limit is off by one too.}
+      - reply: "goated-route: garbage"
+      - call: *limit
+        expect:
+          decision: hold
+          holds: [{gate: route-line, kind: strict}]
+      - reply: "goated-route: continue"
+      - call: *limit

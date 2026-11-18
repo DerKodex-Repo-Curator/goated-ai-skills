@@ -39,6 +39,9 @@ SPAWN_CALL, SPAWN_RESULT, REPORT = (
 )
 AGENT = REPORT["origin"]["from"]
 UNKNOWN_AGENT = "a9f8e7d6c5b4a3921"
+# The near misses (`near_misses`) that are another session's or agent's
+# message, whose tag names the sender `origin.from` names (Ticket 102).
+PEER_MESSAGES = ("another session's message", "a report naming no spawn of this session")
 
 EDIT = {"file_path": "src/export.py", "old_string": "a = 1", "new_string": "a = 2"}
 STATUS = {"command": "uv run pytest"}
@@ -178,10 +181,22 @@ class RouteLineTests(OwnReportTestCase):
 
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
-    def test_near_misses_open_a_turn_that_continues_the_route(self) -> None:
+    def test_near_misses_not_from_another_session_open_a_turn_that_needs_a_route_line(
+            self) -> None:
+        for label, deliver in self.near_misses():
+            if label in PEER_MESSAGES:
+                continue
+            with self.subTest(label):
+                s = self.launched()
+                deliver(s)
+                self.assertNotEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_another_sessions_message_opens_a_turn_that_continues_the_route(self) -> None:
         # Ticket 102: the new turn runs under the task's route, but a skip
         # line from before it does not count, so its Proof starts unmet.
         for label, deliver in self.near_misses():
+            if label not in PEER_MESSAGES:
+                continue
             with self.subTest(label):
                 s = self.launched()
                 s.say(PROOF_SKIP)

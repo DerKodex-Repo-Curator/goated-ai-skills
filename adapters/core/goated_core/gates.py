@@ -315,13 +315,16 @@ def _turn_route(state: SessionState, turn: Turn) -> dict | None:
     another session in a session with a task runs as `goated-route: continue`
     (spec R5): nobody typed it, so it is not a new task the router must
     judge. Only the route carries over; overrides come only from a person's
-    prompt, and skips, checks and change reads count within their turn.
+    prompt, and skips, checks and change reads count within their turn. A
+    route-like line that fails the grammar meant to route the turn, so it
+    still needs a valid one and the hold quotes the bad line.
     """
 
     if turn.route is not None:
         return turn.route
     opener = turn.opener
-    if (isinstance(opener, events.Prompt) and opener.author == events.SESSION
+    if (not turn.malformed and isinstance(opener, events.Prompt)
+            and opener.author == events.SESSION
             and not opener.starts_session and state.task is not None):
         return {"form": "continue"}
     return None

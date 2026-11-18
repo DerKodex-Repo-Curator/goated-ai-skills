@@ -295,12 +295,11 @@ class NotABriefTests(BriefTestCase):
         self.assertEqual(hold_line(s.call("Bash", STATUS)), "goated-hold: router-first | strict")
 
     def test_a_route_line_in_a_later_brief_shaped_prompt_does_not_count(self) -> None:
-        # No task yet, so the prompt's route line is the only one it could have.
         s = self.session
         s.prompt("Add the CSV exporter.")
         s.load(ROUTER)
-
-        self.assertEqual(decision(s.call("Bash", STATUS)), "pass")
+        s.say("goated-route: direct")
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
         s.prompt(brief_text("goated-route: direct"), origin=None, turnOrigin="host_synthetic")
         self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: route-line | strict")
@@ -392,16 +391,14 @@ class HostRetryTests(BriefTestCase):
         self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: router-first | strict")
 
     def test_other_host_text_still_opens_a_turn(self) -> None:
-        # The near miss to the retry above: the typed turn's override ends.
-        s = self.session
-        s.prompt("Skip routing and fix the typo.")
-        self.api_error()
-        s.prompt(
+        s = self.brief("goated-route: direct")
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+        self.session.prompt(
             f"{REMINDER}Try again with the importer too.",
             origin=None, turnOrigin="host_synthetic", promptSource="sdk",
         )
 
-        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: router-first | strict")
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: route-line | strict")
 
 
 class BriefShapeTests(BriefTestCase):

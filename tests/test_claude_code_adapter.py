@@ -1038,6 +1038,32 @@ class MachinePromptTests(AdapterTestCase):
         s.prompt("Now the importer.")
         self.assertIn("goated-hold: route-line | strict", reason(s.call("Edit")))
 
+    def test_other_prompts_nobody_typed_still_need_a_route_line_in_a_task(self) -> None:
+        # Ticket 102 widens nothing past another session's message: each of
+        # these is `host` or `unknown`, not `session`, so it is held as before.
+        cases = {
+            "a scheduler prompt": lambda s: s.prompt(
+                "Run the nightly check.", origin={"kind": "scheduled"},
+                turnOrigin="host_synthetic"),
+            "a desktop-app prompt": lambda s: s.prompt(
+                "Carry on with the importer.", origin=None, turnOrigin="host_synthetic"),
+            "an unknown origin kind": lambda s: s.prompt(
+                "Run the import.", origin={"kind": "webhook"}),
+            "a peer message in an unknown wrapper": lambda s: s.peer(
+                "Update the README too.", first_line="A teammate wrote:"),
+        }
+        for index, (label, deliver) in enumerate(cases.items()):
+            with self.subTest(label):
+                folder = self.root / f"case-{index}"
+                folder.mkdir()
+                s = Session(folder, session_id=f"case-{index}")
+                s.prompt("Start the export work.")
+                s.load(ROUTER)
+                s.say("goated-route: direct")
+                self.assertEqual(decision(s.call("Edit")), "pass")
+                deliver(s)
+                self.assertIn("goated-hold: route-line | strict", reason(s.call("Edit")))
+
     def test_a_host_written_brief_carries_no_overrides(self) -> None:
         s = self.session
         s.prompt(

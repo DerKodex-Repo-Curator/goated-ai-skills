@@ -256,9 +256,12 @@ A recorded override brings an `override_recorded` notice.
   prompt from another session (`author: session`) opens a turn with no
   override. In a session with a task, that turn's route is `continue` until
   a route line in it says otherwise, so `route-line` does not hold it; its
-  skip lines, checks, and change reads still start empty. In a session with
-  no task, or as the brief that starts a session, it meets `route-line` as
-  a person's prompt does. A prompt the
+  skip lines, checks, and change reads still start empty. A route-like line
+  in that turn that fails the grammar ends the carried route: `route-line`
+  holds, quoting it, until a valid line. In a session with no task, or as
+  the brief that starts a session, it meets `route-line` as a person's
+  prompt does, and so does every prompt with `author: host` or `unknown`
+  that opens a turn. A prompt the
   harness wrote, or a report from an agent this session spawned, continues
   the current turn as an entry: the turn's lines, overrides, checks, and
   change reads stand.

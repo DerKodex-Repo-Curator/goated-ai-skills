@@ -457,7 +457,8 @@ def _build_turn(entries: list[dict], kind: str | None, sidechain: bool = False) 
         if kind == TYPED:
             chunk.opener = typed_prompt(text)
         else:
-            chunk.opener = Prompt(events.SESSION, ANY_REMINDER_RE.sub("\n", text))
+            chunk.opener = Prompt(_machine_author(opener, text, sidechain),
+                                  ANY_REMINDER_RE.sub("\n", text))
             if not sidechain:
                 chunk.brief = _brief_text(opener)
 
@@ -550,6 +551,12 @@ def _finished_agents(entry: dict) -> set[str]:
 REPORT_RE = re.compile(
     r'\A(?:Another Claude session sent a message:[ \t]*\r?\n\s*)?<agent-message from="([^"\s]+)">'
 )
+# Another session's or agent's message, as Claude Code 2.1.3xx wraps it; the
+# group is the sender its tag names (see `_machine_author`).
+PEER_MESSAGE_RE = re.compile(
+    r'\A(?:Another Claude session sent a message:[ \t]*\r?\n\s*)?'
+    r'<(?:cross-session-message|agent-message) from="([^"\s]+)"[^>]*>'
+)
 
 
 def is_own_report(path: str | os.PathLike, text: str) -> bool:
@@ -582,6 +589,32 @@ def is_own_report(path: str | os.PathLike, text: str) -> bool:
     except OSError:
         return False
     return False
+
+
+def _machine_author(entry: dict, text: str, sidechain: bool) -> str:
+    """Who wrote `entry`, a prompt nobody typed here, as an event-model author.
+
+    `session` only where another session or agent surely sent it: every
+    prompt of a subagent's own transcript (its parent's), and a `peer` prompt
+    whose `<cross-session-message>` or `<agent-message>` tag names the sender
+    its `origin.from` names. The brief that starts a session becomes
+    `session` once reading shows it opened the session (`_Chunk.turn`).
+    `host` for prompts the desktop app or its scheduler wrote, and `unknown`
+    for anything else, such as a peer prompt in a wrapper not known here. The
+    core lets only `session` prompts continue a task's route (Ticket 102).
+    """
+
+    if sidechain:
+        return events.SESSION
+    origin = entry.get("origin") if isinstance(entry.get("origin"), dict) else {}
+    kind = origin.get("kind")
+    if kind == "peer" or entry.get("turnOrigin") == "peer":
+        match = PEER_MESSAGE_RE.match(REMINDER_RE.sub("", text, count=1).lstrip())
+        sender = origin.get("from")
+        return events.SESSION if match and sender == match.group(1) else events.UNKNOWN
+    if kind == "scheduled" or (not origin and entry.get("turnOrigin") == "host_synthetic"):
+        return events.HOST
+    return events.UNKNOWN
 
 
 def _report_sender(text: str) -> str | None:
