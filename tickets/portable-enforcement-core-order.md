@@ -11,22 +11,26 @@ replaces waves 5 to 10 of
    - Blocked by: 065, 068, 069, 070, 072, 073, 077, and 086 to 096
    - Enables: a harness-neutral statement of the rules, and scenarios any
      adapter can be checked against.
-2. `tickets/080-adapter-rules-read-the-event-model.md`
+2. `tickets/098-adapter-contract-gaps.md`
    - Blocked by: 079
+   - Enables: an adapter as strict as the contract it enforces, before its
+     code moves.
+3. `tickets/080-adapter-rules-read-the-event-model.md`
+   - Blocked by: 079, 098
    - Enables: rules that no longer know which harness they run in.
-3. `tickets/081-shared-enforcement-core.md`
+4. `tickets/081-shared-enforcement-core.md`
    - Blocked by: 080
    - Enables: one core, callable by import or by a JSON command.
-4. `tickets/082-neutral-usage-log-and-report.md`
+5. `tickets/082-neutral-usage-log-and-report.md`
    - Blocked by: 081, `tickets/078-skill-usage-reference-counts.md`
    - Enables: the same measurement in every harness.
-5. `tickets/083-adapter-guide-and-worked-example.md`
+6. `tickets/083-adapter-guide-and-worked-example.md`
    - Blocked by: 081
    - Enables: adapters written by anyone, checked by the scenarios.
-6. `tickets/084-pi-agent-adapter.md`
+7. `tickets/084-pi-agent-adapter.md`
    - Blocked by: 083, 082
    - Enables: the enforced workflow in Pi Agent.
-7. `tickets/085-opencode-adapter.md`
+8. `tickets/085-opencode-adapter.md`
    - Blocked by: 084
    - Enables: the enforced workflow in OpenCode.
 
@@ -51,19 +55,24 @@ and how holds are delivered, so the contract is written once, after them.
 The waves from here on are in
 [hook-friction-round-3-waves.md](hook-friction-round-3-waves.md).
 
+Ticket 098 was added by Ticket 079's review. Where the adapter was looser
+than the contract, the maintainer decided on 2026-11-18 that the contract
+states today's behaviour and marks each gap, and that 098 fixes the code
+before 080 starts moving it.
+
 Ticket 085 follows 084 so the second real adapter can reuse what the
 first learned; they could run in parallel if the maintainer prefers, at
 the cost of some duplicated translation code.
 
 ## Ready Frontier
 
-None yet. Ticket 079 becomes ready when 065, 068, 069, 070, 072, 073,
-077, and 086 to 096 are complete.
+Ticket 079 is built and in review. Ticket 098 becomes ready when 079
+merges, and 080 when 098 merges.
 
 ## Coverage
 
 - AC1 (the ADR) → 079
-- AC2 (the contract covers every gate) → 079
+- AC2 (the contract covers every gate) → 079, 098 (its gaps)
 - AC3 (the core knows no harness) → 081
 - AC4 (Claude Code behaviour unchanged) → 080, 081
 - AC5 (command and import agree) → 081
