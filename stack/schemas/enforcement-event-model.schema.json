@@ -6,7 +6,7 @@
   "$ref": "#/$defs/request",
   "$defs": {
     "version": {
-      "description": "The event model's major version. A request or decision of any other version is refused, not guessed at.",
+      "description": "The event model's version: a whole number every change bumps. A request or decision of any other version is refused, not guessed at.",
       "const": 1
     },
     "request": {
@@ -23,7 +23,9 @@
           "items": {"$ref": "#/$defs/turn"}
         },
         "event": {"$ref": "#/$defs/event"}
-      }
+      },
+      "if": {"not": {"properties": {"event": {"properties": {"type": {"const": "session_start"}}}}}},
+      "then": {"properties": {"turns": {"minItems": 1}}}
     },
     "session": {
       "type": "object",
@@ -434,7 +436,7 @@
       "properties": {
         "name": {"type": "string", "minLength": 1},
         "covers": {
-          "description": "What the scenario proves, for the coverage check: a gate holding, a way it clears (a clear way the contract's Gates table names), or a near miss it must not hold.",
+          "description": "What the scenario proves, for the coverage check: a gate holding, a way it clears (a clear way the contract's Gates table names, shown by the same call held without it), a near miss it must not hold, or a gap the contract's Known Gaps section names, pinned as today's behaviour.",
           "type": "array",
           "minItems": 1,
           "items": {
@@ -443,7 +445,7 @@
             "required": ["gate", "case"],
             "properties": {
               "gate": {"$ref": "#/$defs/hold/properties/gate"},
-              "case": {"enum": ["holds", "clears", "near-miss"]},
+              "case": {"enum": ["holds", "clears", "near-miss", "gap"]},
               "way": {"type": "string", "pattern": "^[a-z]+(?:-[a-z]+)*$"}
             }
           }
@@ -548,12 +550,21 @@
             "required": ["gate", "kind"],
             "properties": {
               "gate": {"$ref": "#/$defs/hold/properties/gate"},
-              "kind": {"$ref": "#/$defs/hold/properties/kind"}
+              "kind": {"$ref": "#/$defs/hold/properties/kind"},
+              "items": {
+                "description": "For a closeout hold: exactly the labels of the items it lists, as the contract's Closeout Items table names them.",
+                "type": "array",
+                "items": {"type": "string", "pattern": "^[A-Z][a-z]+$"}
+              }
             }
           }
         },
         "notices": {"type": "array", "items": {"$ref": "#/$defs/notice/properties/kind"}}
-      }
+      },
+      "oneOf": [
+        {"properties": {"decision": {"const": "allow"}}, "not": {"required": ["holds"]}},
+        {"properties": {"decision": {"const": "hold"}, "holds": {"minItems": 1}}, "required": ["holds"]}
+      ]
     },
     "notice": {
       "type": "object",

@@ -9,18 +9,23 @@ clears, and a near miss.
 from __future__ import annotations
 
 import copy
+import json
 import re
 import tempfile
 import unittest
 from pathlib import Path
 
 from claude_code_scenarios import run_scenario
-from enforcement_support import contract_gates, scenario_files, validator
+from enforcement_support import (
+    contract_closeout_labels, contract_gates, scenario_files, validator,
+)
 
-# Names only a harness, or a harness's hook or tool, would use.
+# Names only a harness, or a harness's hook or tool, would use: whole words,
+# case-sensitive, so "read" or "pipeline" in prose is fine.
 HARNESS_NAMES = re.compile(
-    r"\b(?:Claude|PreToolUse|PostToolUse|UserPromptSubmit|SessionStart|MultiEdit|NotebookEdit"
-    r"|OpenCode|Codex|Orca)\b|mcp__|\bPi Agent\b"
+    r"\b(?:Claude|PreToolUse|PostToolUse|UserPromptSubmit|SessionStart|Stop|SubagentStop"
+    r"|Bash|PowerShell|Edit|MultiEdit|NotebookEdit|Write|Read|Skill|Task|Agent"
+    r"|OpenCode|Codex|Orca|Pi)\b|mcp__"
 )
 
 
@@ -40,35 +45,84 @@ class ScenarioFileTests(unittest.TestCase):
                 self.assertIsNone(HARNESS_NAMES.search(path.read_text(encoding="utf-8")))
 
 
+def _scenarios() -> list[dict]:
+    return [scenario for document in scenario_files().values()
+            for scenario in document["scenarios"]]
+
+
+def _judged(scenario: dict) -> list[tuple[str, dict]]:
+    """Each call or turn end the scenario judges, as a key that is the same
+    for the same call, with the decision it expects."""
+
+    judged = []
+    for step in scenario["steps"]:
+        if "call" in step:
+            key = json.dumps(step["call"], sort_keys=True)
+        elif "turn_end" in step:
+            key = "turn_end"
+        else:
+            continue
+        judged.append((key, step.get("expect", {"decision": "allow"})))
+    return judged
+
+
+def _held_by(expect: dict, gate: str) -> bool:
+    return any(hold["gate"] == gate for hold in expect.get("holds", []))
+
+
 class ScenarioCoverageTests(unittest.TestCase):
-    def covered(self) -> set[tuple[str, str, str]]:
-        return {(c["gate"], c["case"], c.get("way", ""))
-                for document in scenario_files().values()
-                for scenario in document["scenarios"] for c in scenario["covers"]}
-
-    def test_every_contract_gate_holds_clears_each_way_and_has_a_near_miss(self) -> None:
-        covered = self.covered()
-        for gate, ways in contract_gates().items():
+    def test_every_contract_gate_holds_and_has_a_near_miss(self) -> None:
+        covered = {(c["gate"], c["case"]) for s in _scenarios() for c in s["covers"]}
+        for gate in contract_gates():
             with self.subTest(gate):
-                missing = [case for case in ("holds", "near-miss")
-                           if (gate, case, "") not in covered]
-                missing += [f"clears by {way}" for way in sorted(ways)
-                            if (gate, "clears", way) not in covered]
-                self.assertEqual(missing, [])
+                self.assertEqual([case for case in ("holds", "near-miss")
+                                  if (gate, case) not in covered], [])
 
-    def test_scenarios_cover_only_gates_and_ways_the_contract_names(self) -> None:
+    def test_scenarios_cover_only_gates_the_contract_names(self) -> None:
         gates = contract_gates()
-        for gate, case, way in self.covered():
-            with self.subTest(gate=gate, case=case, way=way):
-                self.assertIn(gate, gates)
-                if case == "clears":
-                    self.assertIn(way, gates[gate])
+        for scenario in _scenarios():
+            for cover in scenario["covers"]:
+                with self.subTest(scenario["name"], gate=cover["gate"]):
+                    self.assertIn(cover["gate"], gates)
+
+    def test_each_case_is_shown_by_the_scenario_itself(self) -> None:
+        """A scenario that says a gate holds shows it holding; one that says
+        it clears shows the same call held without the clearing step and
+        allowed with it; a near miss never holds by that gate."""
+
+        for scenario in _scenarios():
+            judged = _judged(scenario)
+            for cover in scenario["covers"]:
+                gate, case = cover["gate"], cover["case"]
+                with self.subTest(scenario["name"], gate=gate, case=case):
+                    held = {key for key, expect in judged if _held_by(expect, gate)}
+                    allowed = {key for key, expect in judged if expect["decision"] == "allow"}
+                    if case == "holds":
+                        self.assertTrue(held)
+                    elif case == "clears":
+                        self.assertTrue(held & allowed)
+                    elif case == "near-miss":
+                        self.assertFalse(held)
 
     def test_a_scenario_covers_a_joint_hold(self) -> None:
-        joint = [step for document in scenario_files().values()
-                 for scenario in document["scenarios"] for step in scenario["steps"]
+        joint = [step for scenario in _scenarios() for step in scenario["steps"]
                  if len(step.get("expect", {}).get("holds", [])) > 1]
         self.assertTrue(joint)
+
+    def test_every_closeout_label_is_pinned_by_a_scenario(self) -> None:
+        pinned = {label for scenario in _scenarios() for step in scenario["steps"]
+                  for hold in step.get("expect", {}).get("holds", [])
+                  for label in hold.get("items", [])}
+        self.assertEqual(sorted(contract_closeout_labels() - pinned), [])
+        self.assertEqual(sorted(pinned - contract_closeout_labels()), [])
+
+    def test_every_closeout_hold_names_its_items(self) -> None:
+        for scenario in _scenarios():
+            for step in scenario["steps"]:
+                for hold in step.get("expect", {}).get("holds", []):
+                    if hold["gate"] == "closeout":
+                        with self.subTest(scenario["name"]):
+                            self.assertIn("items", hold)
 
 
 class EventModelVersionTests(unittest.TestCase):

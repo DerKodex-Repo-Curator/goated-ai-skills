@@ -23,7 +23,12 @@ from claude_code_adapter_support import (
 REGISTRY = REPO_ROOT / "stack" / "goated-stack.yaml"
 
 HOLD_LINE = re.compile(r"^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-skip)$", re.M)
+# A closeout item's line, as the contract's Hold Messages section defines it.
+ITEM_LABEL = re.compile(r"^- ([A-Z][a-z]+): ", re.M)
+ADAPTER_NAME = "GOATED Claude Code adapter"
 FAIL_OPEN = "so this action was allowed without checks."
+# Notices that mean the adapter could not judge: never expected unless named.
+FAILURE_NOTICES = frozenset({"fail_open", "warning"})
 OVERRIDE_RECORDED = "recorded your override"
 BRIEF_OPENING = "Background (from the session that started this one):"
 SESSION_SOURCES = {"new": "startup", "resumed": "resume", "after_compaction": "compact",
@@ -155,6 +160,12 @@ class _Run:
         """The Claude Code tool and input that make `call`."""
 
         kind, line = call["kind"], call.get("line_text")
+        # Claude Code reads a line only from a shell or agent call's
+        # description and a Skill call's args; anything else cannot carry one.
+        if line is not None and not (kind in ("shell_command", "skill_load")
+                                     or (kind == "spawn" and call["starts_now"])):
+            raise ValueError(f"step {self.number}: Claude Code has no field to carry "
+                             f"line_text on a {kind} call")
         if kind == "file_write":
             path, edits = self._expand(call["path"]), call["edits"]
             if call.get("whole_file"):
@@ -238,16 +249,22 @@ class _Run:
             "event": event,
         })
         if expect is None:
-            return
+            # Unchecked, but an adapter that could not judge never passes.
+            expect = {"decision": got["decision"], "holds": [
+                {"gate": gate, "kind": kind} for gate, kind in got["holds"]]}
+        holds = expect.get("holds", [])
         wanted = {"decision": expect["decision"],
-                  "holds": [(h["gate"], h["kind"]) for h in expect.get("holds", [])]}
+                  "holds": [(h["gate"], h["kind"]) for h in holds]}
         found = {"decision": got["decision"], "holds": got["holds"]}
-        if expect["decision"] == "allow":
-            wanted.pop("holds")
-            found.pop("holds")
+        labels = next((h["items"] for h in holds if "items" in h), None)
+        if labels is not None:
+            wanted["items"], found["items"] = sorted(labels), got["items"]
         if "notices" in expect:
             wanted["notices"] = sorted(expect["notices"])
             found["notices"] = sorted(got["notices"])
+        else:
+            wanted["failures"] = []
+            found["failures"] = sorted(FAILURE_NOTICES.intersection(got["notices"]))
         if wanted != found:
             self.failures.append(
                 f"step {self.number} ({event['type']}): expected {wanted}, got {got}")
@@ -256,7 +273,7 @@ class _Run:
 def _decision(output: dict, shape: str) -> dict:
     """The decision a hook's output stands for. `shape` names where the hook
     puts a hold: `tool` (a denied call), `stop` (a blocked end), or `context`
-    (a hook that never holds)."""
+    (a hook that never holds). `items` are the closeout hold's item labels."""
 
     if shape == "tool":
         text = reason(output)
@@ -264,20 +281,37 @@ def _decision(output: dict, shape: str) -> dict:
         text = str(output.get("reason", "")) if output.get("decision") == "block" else ""
     else:
         text = ""
+    specific = output.get("hookSpecificOutput") or {}
+    context = specific.get("additionalContext", "")
     notices = []
-    message = output.get("systemMessage", "")
-    # An override's notice is shown to the user too, with the same sentence
-    # as its context, so it is one notice, read from the context.
-    if message and OVERRIDE_RECORDED not in message:
-        notices.append("fail_open" if message.endswith(FAIL_OPEN) else "warning")
-    context = (output.get("hookSpecificOutput") or {}).get("additionalContext", "")
     if context:
-        event = (output.get("hookSpecificOutput") or {}).get("hookEventName")
-        if event == "PostToolUse":
+        if specific.get("hookEventName") == "PostToolUse":
             notices.append("closeout_note")
         elif OVERRIDE_RECORDED in context:
             notices.append("override_recorded")
         else:
             notices.append("session_notice")
-    return {"decision": "hold" if text else "allow",
-            "holds": HOLD_LINE.findall(text), "notices": notices}
+    notices += _warnings(output.get("systemMessage", ""), context)
+    holds, items = [], []
+    found = list(HOLD_LINE.finditer(text))
+    for n, match in enumerate(found):
+        holds.append((match[1], match[2]))
+        if match[1] == "closeout":
+            section = text[match.end():found[n + 1].start() if n + 1 < len(found) else None]
+            items = sorted(set(ITEM_LABEL.findall(section)))
+    return {"decision": "hold" if text else "allow", "holds": holds, "items": items,
+            "notices": notices}
+
+
+def _warnings(message: str, context: str) -> list[str]:
+    """The notice kinds the user-facing message adds. It repeats the hook's
+    context notices, sentence parts joined by "; ", and adds any warnings;
+    only a part the context does not hold is a warning."""
+
+    if not message:
+        return []
+    if message.endswith(FAIL_OPEN):
+        return ["fail_open"]
+    body = message.removeprefix(f"{ADAPTER_NAME}: ").removesuffix(".")
+    extra = [part for part in body.split("; ") if part.rstrip(".") not in context]
+    return ["warning"] if extra else []

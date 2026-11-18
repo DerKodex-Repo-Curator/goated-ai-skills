@@ -25,17 +25,27 @@ scenarios:
       - prompt: {type: prompt, author: person, text: Add the export totals.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
+      - call: *totals
+        expect:
+          decision: hold
+          holds: [{gate: design, kind: justified-skip}]
       - reply: "goated-skip: software-design-principles: one mechanical list of constants"
       - call: *totals
 
   - name: a person's skip clears the design hold
     covers:
       - {gate: design, case: clears, way: override}
-      - {gate: design-reads, case: clears, way: override}
     steps:
-      - prompt: {type: prompt, author: person, text: Skip software-design-principles and add the export totals.}
+      - prompt: {type: prompt, author: person, text: Add the export totals.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
+      - call: *totals
+        expect:
+          decision: hold
+          holds: [{gate: design, kind: justified-skip}]
+      - prompt: {type: prompt, author: person, text: Skip software-design-principles and add the export totals.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - reply: "goated-route: continue"
       - call: *totals
 
   - name: a test file never meets the design hold
@@ -49,6 +59,18 @@ scenarios:
           kind: file_write
           path: tests/test_export.py
           edits: [{removed: "pass", added: "total_0 = 0\ntotal_1 = 1\ntotal_2 = 2\ntotal_3 = 3\ntotal_4 = 4\ntotal_5 = 5"}]
+
+  - name: "gap (b): a shell write of six code lines meets no design hold"
+    covers:
+      - {gate: design, case: gap}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export totals.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call:
+          kind: shell_command
+          shell: posix
+          command: "cat > src/export.py <<'EOF'\ntotal_0 = 0\ntotal_1 = 1\ntotal_2 = 2\ntotal_3 = 3\ntotal_4 = 4\ntotal_5 = 5\nEOF"
 
   - name: a configuration change waits for the reference it selects
     covers:
@@ -78,7 +100,28 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: {kind: skill_load, skill: software-design-principles}
+      - call: *settings
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
       - reply: "goated-skip: software-design-principles: one setting with no design in it"
+      - call: *settings
+
+  - name: a person's skip clears the design-reads hold
+    covers:
+      - {gate: design-reads, case: clears, way: override}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export settings.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *settings
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+      - prompt: {type: prompt, author: person, text: Skip software-design-principles and add the export settings.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - reply: "goated-route: continue"
       - call: *settings
 
   - name: a docs change selects no design reference
@@ -123,6 +166,10 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: standard | requires: tdd"
       - call: {kind: skill_load, skill: tdd}
+      - call: *new_test
+        expect:
+          decision: hold
+          holds: [{gate: reference-reads, kind: justified-skip}]
       - reply: "goated-skip: tdd: the test only copies an existing one"
       - call: *new_test
 
@@ -130,10 +177,17 @@ scenarios:
     covers:
       - {gate: reference-reads, case: clears, way: override}
     steps:
-      - prompt: {type: prompt, author: person, text: Skip tdd and add the export test.}
+      - prompt: {type: prompt, author: person, text: Add the export test first.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
-      - reply: "goated-route: direct"
+      - reply: "goated-route: standard | requires: tdd"
       - call: {kind: skill_load, skill: tdd}
+      - call: *new_test
+        expect:
+          decision: hold
+          holds: [{gate: reference-reads, kind: justified-skip}]
+      - prompt: {type: prompt, author: person, text: Skip tdd and add the export test.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - reply: "goated-route: continue"
       - call: *new_test
 
   - name: a small edit to an existing test selects no reference
@@ -153,13 +207,13 @@ scenarios:
     covers:
       - {gate: review-intake, case: holds}
       - {gate: review-intake, case: clears, way: proof}
-    steps: &reviewed
+    steps:
       - prompt: {type: prompt, author: person, text: "Have the export change reviewed, then act on it."}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: {kind: skill_load, skill: subagent-driven-development}
-      - call: {kind: file_read, path: "{outside}/skills/subagent-driven-development/references/reviewer-prompt.md", whole: true}
-      - call:
+      - call: &reviewer_prompt {kind: file_read, path: "{outside}/skills/subagent-driven-development/references/reviewer-prompt.md", whole: true}
+      - call: &review
           kind: spawn
           starts_now: true
           brief: "## Review Mode\n\nSpec review.\n\n## Review Inputs\n\n- The export change.\n\n## Required Report Format\n\n- Findings.\n\ngoated-skills: standards-and-spec-review\n"
@@ -182,29 +236,36 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: {kind: skill_load, skill: subagent-driven-development}
-      - call: {kind: file_read, path: "{outside}/skills/subagent-driven-development/references/reviewer-prompt.md", whole: true}
-      - call:
-          kind: spawn
-          starts_now: true
-          brief: "## Review Mode\n\nSpec review.\n\n## Review Inputs\n\n- The export change.\n\n## Required Report Format\n\n- Findings.\n\ngoated-skills: standards-and-spec-review\n"
-        result: {ok: true, output: "No findings.", agent: {id: reviewer-1}}
-      - reply: "goated-skip: receiving-code-review: the review found nothing to act on"
+      - call: *reviewer_prompt
+      - call: *review
+        result: {ok: true, output: "One finding.", agent: {id: reviewer-1}}
+      - call: *fix
+        expect:
+          decision: hold
+          holds: [{gate: review-intake, kind: justified-skip}]
+      - reply: "goated-skip: receiving-code-review: the one finding is a typo to fix"
       - call: *fix
 
   - name: a person's skip clears the review-intake hold
     covers:
       - {gate: review-intake, case: clears, way: override}
     steps:
-      - prompt: {type: prompt, author: person, text: Skip receiving-code-review; have the change reviewed and fix it.}
+      - prompt: {type: prompt, author: person, text: "Have the export change reviewed, then act on it."}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: {kind: skill_load, skill: subagent-driven-development}
-      - call: {kind: file_read, path: "{outside}/skills/subagent-driven-development/references/reviewer-prompt.md", whole: true}
-      - call:
-          kind: spawn
-          starts_now: true
-          brief: "## Review Mode\n\nSpec review.\n\n## Review Inputs\n\n- The export change.\n\n## Required Report Format\n\n- Findings.\n\ngoated-skills: standards-and-spec-review\n"
+      - call: *reviewer_prompt
+      - call: *review
         result: {ok: true, output: "One finding.", agent: {id: reviewer-1}}
+      - call: *fix
+        expect:
+          decision: hold
+          holds: [{gate: review-intake, kind: justified-skip}]
+      - prompt: {type: prompt, author: person, text: "Skip receiving-code-review; review it again and fix it."}
+        expect: {decision: allow, notices: [override_recorded]}
+      - reply: "goated-route: continue"
+      - call: *review
+        result: {ok: true, output: "One finding.", agent: {id: reviewer-2}}
       - call: *fix
 
   - name: a docs change after a review is not held for intake
@@ -215,11 +276,8 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: {kind: skill_load, skill: subagent-driven-development}
-      - call: {kind: file_read, path: "{outside}/skills/subagent-driven-development/references/reviewer-prompt.md", whole: true}
-      - call:
-          kind: spawn
-          starts_now: true
-          brief: "## Review Mode\n\nSpec review.\n\n## Review Inputs\n\n- The export change.\n\n## Required Report Format\n\n- Findings.\n\ngoated-skills: standards-and-spec-review\n"
+      - call: *reviewer_prompt
+      - call: *review
         result: {ok: true, output: "One finding.", agent: {id: reviewer-1}}
       - call:
           kind: file_write
@@ -251,6 +309,10 @@ scenarios:
       - prompt: {type: prompt, author: person, text: Pin the requests version.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
+      - call: *manifest
+        expect:
+          decision: hold
+          holds: [{gate: security, kind: justified-skip}]
       - reply: "goated-skip: code-security-review: a version pin to an audited release"
       - call: *manifest
 
@@ -258,9 +320,16 @@ scenarios:
     covers:
       - {gate: security, case: clears, way: override}
     steps:
-      - prompt: {type: prompt, author: person, text: Skip code-security-review and pin the requests version.}
+      - prompt: {type: prompt, author: person, text: Pin the requests version.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
+      - call: *manifest
+        expect:
+          decision: hold
+          holds: [{gate: security, kind: justified-skip}]
+      - prompt: {type: prompt, author: person, text: Skip code-security-review and pin the requests version.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - reply: "goated-route: continue"
       - call: *manifest
 
   - name: a sensitive word inside a longer name is not sensitive
@@ -302,9 +371,16 @@ scenarios:
     covers:
       - {gate: scripted-edit, case: clears, way: override}
     steps:
-      - prompt: {type: prompt, author: person, text: Skip software-design-principles and fix the export limit.}
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
+      - call: *script
+        expect:
+          decision: hold
+          holds: [{gate: scripted-edit, kind: justified-skip}]
+      - prompt: {type: prompt, author: person, text: Skip software-design-principles and fix the export limit.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - reply: "goated-route: continue"
       - call: *script
 
   - name: an inline script that writes nothing is not held
@@ -325,7 +401,7 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: &merge {kind: shell_command, shell: posix, command: git merge feature}
-        result: {ok: false, output: "CONFLICT (content): Merge conflict in src/export.py\nAutomatic merge failed; fix conflicts and then commit the result."}
+        result: &conflicted {ok: false, output: "CONFLICT (content): Merge conflict in src/export.py\nAutomatic merge failed; fix conflicts and then commit the result."}
       - call: &resolve
           kind: file_write
           path: src/export.py
@@ -344,7 +420,11 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: *merge
-        result: {ok: false, output: "CONFLICT (content): Merge conflict in src/export.py\nAutomatic merge failed; fix conflicts and then commit the result."}
+        result: *conflicted
+      - call: *resolve
+        expect:
+          decision: hold
+          holds: [{gate: conflict-resolution, kind: justified-skip}]
       - reply: "goated-skip: resolving-merge-conflicts: the feature side replaces one constant"
       - call: *resolve
 
@@ -352,11 +432,20 @@ scenarios:
     covers:
       - {gate: conflict-resolution, case: clears, way: override}
     steps:
-      - prompt: {type: prompt, author: person, text: Skip resolving-merge-conflicts and merge the feature branch.}
+      - prompt: {type: prompt, author: person, text: Merge the feature branch.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: *merge
-        result: {ok: false, output: "CONFLICT (content): Merge conflict in src/export.py\nAutomatic merge failed; fix conflicts and then commit the result."}
+        result: *conflicted
+      - call: *resolve
+        expect:
+          decision: hold
+          holds: [{gate: conflict-resolution, kind: justified-skip}]
+      - prompt: {type: prompt, author: person, text: Skip resolving-merge-conflicts and merge the feature branch.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - reply: "goated-route: continue"
+      - call: *merge
+        result: *conflicted
       - call: *resolve
 
   - name: a heading underline is not a conflict marker
@@ -380,9 +469,9 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: &check {kind: shell_command, shell: posix, command: pytest -q}
-        result: {ok: false, output: "F\n1 failed in 0.10s"}
+        result: &failed {ok: false, output: "F\n1 failed in 0.10s"}
       - call: *check
-        result: {ok: false, output: "F\n1 failed in 0.10s"}
+        result: *failed
       - call: &patch
           kind: file_write
           path: src/export.py
@@ -408,9 +497,13 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: *check
-        result: {ok: false, output: "F\n1 failed in 0.10s"}
+        result: *failed
       - call: *check
-        result: {ok: false, output: "F\n1 failed in 0.10s"}
+        result: *failed
+      - call: *patch
+        expect:
+          decision: hold
+          holds: [{gate: repeated-failure, kind: justified-skip}]
       - reply: "goated-skip: diagnose: the failure names the wrong constant directly"
       - call: *patch
 
@@ -418,13 +511,24 @@ scenarios:
     covers:
       - {gate: repeated-failure, case: clears, way: override}
     steps:
-      - prompt: {type: prompt, author: person, text: Skip diagnose and make the export tests pass.}
+      - prompt: {type: prompt, author: person, text: Make the export tests pass.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: *check
-        result: {ok: false, output: "F\n1 failed in 0.10s"}
+        result: *failed
       - call: *check
-        result: {ok: false, output: "F\n1 failed in 0.10s"}
+        result: *failed
+      - call: *patch
+        expect:
+          decision: hold
+          holds: [{gate: repeated-failure, kind: justified-skip}]
+      - prompt: {type: prompt, author: person, text: Skip diagnose and make the export tests pass.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - reply: "goated-route: continue"
+      - call: *check
+        result: *failed
+      - call: *check
+        result: *failed
       - call: *patch
 
   - name: a second run with fewer failures is progress, not a repeat
@@ -437,5 +541,5 @@ scenarios:
       - call: *check
         result: {ok: false, output: "FFF\n3 failed in 0.10s"}
       - call: *check
-        result: {ok: false, output: "F.. \n1 failed, 2 passed in 0.10s"}
+        result: {ok: false, output: "F..\n1 failed, 2 passed in 0.10s"}
       - call: *patch

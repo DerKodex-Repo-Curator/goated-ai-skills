@@ -8,7 +8,7 @@ scenarios:
       - {gate: route-line, case: clears, way: route-line}
     steps:
       - prompt: {type: prompt, author: person, text: Fix the export bug.}
-      - call:
+      - call: &limit
           kind: file_write
           path: src/export.py
           edits: [{removed: "limit = 1", added: "limit = 2"}]
@@ -19,10 +19,7 @@ scenarios:
             - {gate: route-line, kind: strict}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
-      - call:
-          kind: file_write
-          path: src/export.py
-          edits: [{removed: "limit = 1", added: "limit = 2"}]
+      - call: *limit
 
   - name: a command of plain reads and a scratch write pass before routing
     covers:
@@ -37,7 +34,7 @@ scenarios:
           whole_file: true
           edits: [{removed: "", added: "note = 1\n"}]
 
-  - name: the brief that starts a session carries its route
+  - name: the brief that starts a session carries its route until a person's prompt
     covers:
       - {gate: router-first, case: clears, way: brief-route}
     steps:
@@ -47,23 +44,30 @@ scenarios:
           author: session
           starts_session: true
           text: "## Goal\n\nFix the export limit.\n\ngoated-route: direct\n"
-      - call:
-          kind: file_write
-          path: src/export.py
-          edits: [{removed: "limit = 1", added: "limit = 2"}]
+      - call: *limit
+      - prompt: {type: prompt, author: person, text: Now change it once more.}
+      - call: *limit
+        expect:
+          decision: hold
+          holds:
+            - {gate: router-first, kind: strict}
+            - {gate: route-line, kind: strict}
 
   - name: a person's override stands down the routing gates for the turn
     covers:
       - {gate: router-first, case: clears, way: override}
       - {gate: route-line, case: clears, way: override}
-      - {gate: pipeline, case: clears, way: override}
     steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: *limit
+        expect:
+          decision: hold
+          holds:
+            - {gate: router-first, kind: strict}
+            - {gate: route-line, kind: strict}
       - prompt: {type: prompt, author: person, text: Skip routing and fix the export limit.}
         expect: {decision: allow, notices: [override_recorded]}
-      - call:
-          kind: file_write
-          path: src/export.py
-          edits: [{removed: "limit = 1", added: "limit = 2"}]
+      - call: *limit
 
   - name: a required skill holds the write until it loads
     covers:
@@ -73,18 +77,12 @@ scenarios:
       - prompt: {type: prompt, author: person, text: Fix the export limit test first.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: standard | requires: tdd"
-      - call:
-          kind: file_write
-          path: src/export.py
-          edits: [{removed: "limit = 1", added: "limit = 2"}]
+      - call: *limit
         expect:
           decision: hold
           holds: [{gate: pipeline, kind: strict}]
       - call: {kind: skill_load, skill: tdd}
-      - call:
-          kind: file_write
-          path: src/export.py
-          edits: [{removed: "limit = 1", added: "limit = 2"}]
+      - call: *limit
 
   - name: a corrected route line drops a required skill
     covers:
@@ -93,18 +91,28 @@ scenarios:
       - prompt: {type: prompt, author: person, text: Fix the export limit.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: standard | requires: tdd"
-      - call:
-          kind: file_write
-          path: src/export.py
-          edits: [{removed: "limit = 1", added: "limit = 2"}]
+      - call: *limit
         expect:
           decision: hold
           holds: [{gate: pipeline, kind: strict}]
       - reply: "goated-route: direct"
-      - call:
-          kind: file_write
-          path: src/export.py
-          edits: [{removed: "limit = 1", added: "limit = 2"}]
+      - call: *limit
+
+  - name: a person's skip of a required skill stands down the pipeline for the turn
+    covers:
+      - {gate: pipeline, case: clears, way: override}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: standard | requires: tdd"
+      - call: *limit
+        expect:
+          decision: hold
+          holds: [{gate: pipeline, kind: strict}]
+      - prompt: {type: prompt, author: person, text: Skip tdd and fix the export limit.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - reply: "goated-route: continue"
+      - call: *limit
 
   - name: a read-only agent is not held for the route's skills
     covers:
@@ -115,3 +123,24 @@ scenarios:
       - reply: "goated-route: standard | requires: tdd"
       - call: {kind: spawn, brief: Find where the export limit is set., starts_now: true, read_only: true}
         result: {ok: true, output: It is set in the export module.}
+
+  - name: "gap (a): partial reads of three files meet a briefed session's orientation"
+    covers:
+      - {gate: pipeline, case: gap}
+    setup: {installed_skills: [session-start-progressive-disclosure]}
+    steps:
+      - session_start: new
+      - prompt:
+          type: prompt
+          author: session
+          starts_session: true
+          text: "## Goal\n\nFix the export limit.\n\ngoated-route: standard | requires: tdd\n"
+      - call: {kind: skill_load, skill: tdd}
+      - call: *limit
+        expect:
+          decision: hold
+          holds: [{gate: pipeline, kind: strict}]
+      - call: {kind: file_read, path: src/export.py, whole: false}
+      - call: {kind: file_read, path: src/limits.py, whole: false}
+      - call: {kind: file_read, path: docs/export.md, whole: false}
+      - call: *limit

@@ -149,3 +149,37 @@ rested on the Orca research in commit `46f9836`:
    Pi, delivers the closeout as a continue request and documents the gap.
 9. **Versioning:** a whole-number `event_model` that every change bumps.
 10. **Scenarios** live under `stack/fixtures/enforcement/`.
+
+### Review, 2026-11-18
+
+Two reviewers compared the contract with the code and the scenarios with
+the spec. Fixed on this branch:
+
+- The contract states the real firing order, that `pr-review` is judged
+  with `pull-request`, that `review-intake` follows only a reviewer
+  template's brief, and that the design gates judge file writes only.
+- Where the adapter is looser than the contract, the maintainer decided
+  that the contract and scenarios state today's behaviour and mark each
+  gap, and that [Ticket 098](098-adapter-contract-gaps.md) fixes the code
+  before 080: (a) orientation counts partial reads, (b) the design gates
+  never judge a shell write, (c) a subagent's commit meets no closeout.
+  Scenarios with `case: gap` pin (a) and (b); (c) needs a subagent-role
+  scenario, which the runner gains in Ticket 080.
+- Every scenario that says a gate clears now shows the same call held
+  without the clearing step, and a test enforces it. A fail-open or
+  warning notice nobody expected fails the step. Each closeout hold names
+  its items, pinning all eight labels. The runner raises on a line field
+  Claude Code cannot carry, and no longer misreads a mirrored notice as a
+  warning. Expectations are as strict as decisions, and only a session
+  start may have no turns.
+- The contract check follows forwarded gate names and keyword arguments,
+  fails on any it cannot read, and checks each gate's kind and clear ways
+  and the exact closeout labels. The harness-name guard covers tool and
+  hook names as whole words.
+
+**Partial thinning.** The Claude Code README now links the contract for
+the hold kinds, the gate list, the hold format and the override phrases,
+but keeps its gate and closeout tables as Claude Code detail, and the
+contract cites the README's detection tables. Ticket 081 moves those
+tables into the contract with the rule code and retargets the contract
+check to `adapters/core/`.

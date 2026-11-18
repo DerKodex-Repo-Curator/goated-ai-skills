@@ -38,6 +38,15 @@ API loop, cannot call them.
   library, covers the core, which an adapter may also import.
 - Update `adapters/README.md` to list the core and how an adapter uses it,
   and the Claude Code README's Install, State and Tests sections.
+- **Finish moving the rule text.** Ticket 079 thinned the Claude Code
+  README only in part. Move the detection tables (code extensions, check
+  commands, security path words, package managers, shell reading, comment
+  syntax, content checks, branch size) into `stack/enforcement-contract.md`
+  with the rule code, drop its Detection Detail citations of the README,
+  and reduce the README's gate and closeout tables to Claude Code detail.
+- **Retarget the contract check.** `tests/test_enforcement_contract.py`
+  reads the gates, kinds and closeout labels from
+  `adapters/claude-code/goated_adapter/`; point it at `adapters/core/`.
 
 ## Recommended First Reads
 
@@ -60,6 +69,11 @@ API loop, cannot call them.
       working with no change to the user's settings.
 - [ ] Two sessions with different ids keep separate state.
 - [ ] `AGENTS.md` and `adapters/README.md` describe `adapters/core/`.
+- [ ] The contract holds the detection tables and cites no adapter README;
+      the Claude Code README's gate and closeout tables keep only Claude
+      Code detail.
+- [ ] The contract check reads the gates, kinds and closeout labels from
+      `adapters/core/`.
 
 ## Expected Proof
 

@@ -103,6 +103,9 @@ The schema is the authority; this is its shape.
   put so the harness keeps it, and which shell call carries it. The adapter
   also strips the blocks its harness inserts into a prompt and moves pasted
   text into `pasted`, so the core never parses a harness's tags.
+- **The contract owns the gate list.** The schema checks only a gate name's
+  shape; the contract's Gates table lists the gates, and a test compares it
+  with the gates the adapter can return.
 - **Versions are whole numbers.** `event_model` is a whole number, and every
   change to the model bumps it.
 
@@ -211,7 +214,8 @@ Positive:
 
 - a new harness needs only a thin adapter, in any language, and has
   scenarios to be checked against;
-- rules are written once, in the contract, and enforced once, in the core;
+- rules are stated once, in the contract, which cites their owners, and
+  enforced once, in the core;
 - the Claude Code adapter's behaviour is pinned by harness-neutral scenarios
   before any code moves.
 

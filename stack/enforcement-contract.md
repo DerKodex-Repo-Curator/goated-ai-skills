@@ -33,6 +33,7 @@ A test fails when a gate an adapter can return is missing from the
 - [Notices](#notices)
 - [Failing Open](#failing-open)
 - [What An Adapter May Leave Out](#what-an-adapter-may-leave-out)
+- [Known Gaps](#known-gaps)
 - [Detection Detail](#detection-detail)
 
 ## Terms
@@ -112,11 +113,22 @@ Every hold follows these rules:
   appears. A held call is recorded as held, and never counts as a change, a
   check, or a read.
 - **Every hold at once.** A call is judged by every gate, and one decision
-  carries every hold it meets, in the order of the [Gates](#gates) table.
-  `router-first` and `route-line` are judged together. `pipeline` is judged
-  once the router counts as loaded and the turn has a route line, and the
-  closeout at a commit once the `commit` gate passes the commit; each may
-  follow on the retry.
+  carries every hold it meets, in firing order: the routing gates
+  (`router-first` and `route-line` together, then `pipeline`), then the
+  action gates for the call's kind:
+  - a file write: `conflict-resolution`, `security`, `review-intake`,
+    `design` or `design-reads`, `reference-reads`, `repeated-failure`;
+  - a shell command: `conflict-resolution`, `commit` (with the closeout in
+    its place once `commit` passes), `pull-request`, `pr-review`,
+    `security`, `review-intake`, `scripted-edit`, `reference-reads`,
+    `repeated-failure`;
+  - a `commit` call: `commit`, then the closeout in its place; a
+    `pull_request` call: `pull-request`, `pr-review`; a spawn: `spawn`.
+
+  `pipeline` is judged once the router counts as loaded and the turn has a
+  route line, and the closeout at a commit once the `commit` gate passes
+  the commit; each may follow on the retry. The [Gates](#gates) table lists
+  gates by subject, not in this order.
 - **Loads count until the next compaction**, in this turn or a later one, as
   do the reads a hold asks for. Route and skip lines, overrides, change
   reads, the red-flags read after the last change, and proof by a check
@@ -140,15 +152,15 @@ route line in the brief that started the session.
 | --- | --- | --- | --- | --- | --- |
 | `router-first` | strict | A write, spawn, or command while the router does not count as loaded; a command made only of plain reads passes | The router counts as loaded; or, until a person's prompt opens a turn, the session's first prompt is a brief with a route line | `proof`, `brief-route`, `override` | The router's "use at the start of each new task before the first edit or command" |
 | `route-line` | strict | The first write or spawn after each prompt until the turn has a valid route line; also `goated-route: continue` when no task is known | A valid route line in the turn | `route-line`, `override` | The router's output contract |
-| `pipeline` | strict | A write or spawn while a `requires:` skill of the task does not count as loaded; in a session routed by its brief on a `standard` or `full` route, also while orientation is unmet and the orientation skill is installed. A spawn of a read-only agent passes | Each listed skill counts as loaded; orientation by its skill's load or whole reads of three distinct files | `proof`, `route-line`, `override` | The router's route line ("must load before the first write") and the shared policy's corrected route line |
+| `pipeline` | strict | A write or spawn while a `requires:` skill of the task does not count as loaded; in a session routed by its brief on a `standard` or `full` route, also while orientation is unmet and the orientation skill is installed. A spawn of a read-only agent passes | Each listed skill counts as loaded; orientation by its skill's load or finished reads of three distinct files, partial reads included (gap (a): every other read a hold asks for must be whole; [Ticket 098](../tickets/098-adapter-contract-gaps.md) fixes it) | `proof`, `route-line`, `override` | The router's route line ("must load before the first write") and the shared policy's corrected route line |
 | `commit` | strict | A commit, by a git command (not a dry run) or a `commit` call | `commit-message` counts as loaded, an inline message passes the content check, and a change read follows the last change to any project file | `proof`, `override` | `commit-message` ("use before any Git commit") |
 | `pull-request` | strict | Opening a pull or merge request, by a `gh` or `glab` command or a `pull_request` call | `pr-description` counts as loaded, and a change read follows the last change to any project file | `proof`, `override` | `pr-description` |
-| `pr-review` | justified-skip | A pull request the `pull-request` gate passes, when it changes 400 or more lines of non-test code against its base | `standards-and-spec-review` counts as loaded, and a change read follows the last change | `proof`, `skip-line`, `override` | `standards-and-spec-review` ("diff size ... warrants") |
+| `pr-review` | justified-skip | Opening a pull or merge request that changes 400 or more lines of non-test code against its base. It is judged together with `pull-request`, so both may hold the same call | `standards-and-spec-review` counts as loaded, and a change read follows the last change | `proof`, `skip-line`, `override` | `standards-and-spec-review`'s rule to review a branch of 400 or more changed lines in code outside test paths (`skills/engineering/standards-and-spec-review/SKILL.md`) |
 | `spawn` | strict | A spawn with a brief, except of a read-only agent | `handoff` counts as loaded and its `references/spawn-brief.md` is read whole, or `subagent-driven-development` counts as loaded and its implementer or reviewer prompt is read whole; and the brief passes the content check | `proof`, `override` | `handoff` and `subagent-driven-development` |
-| `design` | justified-skip | The turn's first write adding five or more lines to a non-test code file inside the project, or any such write while the skill does not count as loaded | `software-design-principles` counts as loaded, and every reference the edit's signals select is read whole | `proof`, `skip-line`, `override` | `software-design-principles`, workflow steps 2 and 4 |
-| `design-reads` | justified-skip | A later write to a code or configuration file inside the project, once `software-design-principles` counts as loaded, whose signals select a reference not read whole since the last compaction | Each selected reference is read whole | `proof`, `skip-line`, `override` | `software-design-principles`'s Read now lists |
+| `design` | justified-skip | The turn's first file write adding five or more lines to a non-test code file inside the project, or any such file write while the skill does not count as loaded. A shell write is never judged (gap (b): [Ticket 098](../tickets/098-adapter-contract-gaps.md) adds it) | `software-design-principles` counts as loaded, and every reference the edit's signals select is read whole | `proof`, `skip-line`, `override` | `software-design-principles`, workflow steps 2 and 4 |
+| `design-reads` | justified-skip | A later file write to a code or configuration file inside the project, once `software-design-principles` counts as loaded, whose signals select a reference not read whole since the last compaction. A shell write is never judged (gap (b): [Ticket 098](../tickets/098-adapter-contract-gaps.md) adds it) | Each selected reference is read whole | `proof`, `skip-line`, `override` | `software-design-principles`'s Read now lists |
 | `reference-reads` | justified-skip | A write inside the project (or anywhere, for a `gate-fires` signal) that fires a signal the installed registry declares for a reference of a skill that counts as loaded | Each named reference is read whole | `proof`, `skip-line`, `override` | The registry's `references` signals (`stack/goated-stack.yaml`, `skills/README.md`) |
-| `review-intake` | justified-skip | A write to a code file inside the project once a reviewer agent spawned in the turn has reported | `receiving-code-review` counts as loaded | `proof`, `skip-line`, `override` | `receiving-code-review` |
+| `review-intake` | justified-skip | A write to a code file inside the project once a reviewer agent has reported in the turn: an agent started now by a spawn whose brief followed `subagent-driven-development`'s reviewer template, whose result arrived or, started in the background, whose completion did. Any other brief, and a held or failed spawn, trigger nothing | `receiving-code-review` counts as loaded | `proof`, `skip-line`, `override` | `receiving-code-review` |
 | `security` | justified-skip | A write to a security-sensitive path inside the project: dependency manifests and lockfiles, env and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files | `code-security-review` counts as loaded | `proof`, `skip-line`, `override` | `code-security-review` |
 | `scripted-edit` | justified-skip | A shell command whose inline script writes a code file inside the project, or a file it names only at run time. It follows `security` and `review-intake` for the same file | A skip line naming `software-design-principles`; loading the skill does not clear it | `skip-line`, `override` | `software-design-principles`: change code with the file edit tools |
 | `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an edit whose removed text has a conflict marker at a line start, a write to a file a read showed with one, or any write after a merge, rebase, cherry-pick, revert, or pull reported a conflict, until it finishes or is aborted | `resolving-merge-conflicts` counts as loaded | `proof`, `skip-line`, `override` | `resolving-merge-conflicts` |
@@ -247,8 +259,11 @@ For a subagent (`session.agent.role` of `subagent`):
 - every other gate applies, `reference-reads` and `review-intake` aside,
   judged from the subagent's own turn: only its own loads and reads count;
 - no override applies;
-- the closeout does not run when it stops. Its changes count toward the
-  closeout of the parent turn that spawned it.
+- the closeout does not run when it stops, and a subagent's commit meets no
+  closeout (gap (c): the main agent's commit meets one;
+  [Ticket 098](../tickets/098-adapter-contract-gaps.md) adds it for a
+  subagent). Its changes count toward the closeout of the parent turn that
+  spawned it.
 
 ## Notices
 
@@ -296,6 +311,17 @@ state:
 - a harness that cannot tell who wrote a prompt marks it `unknown`, and no
   override counts from it;
 - a harness with no subagents sends none.
+
+## Known Gaps
+
+Where today's adapter is looser than the rule it enforces, this contract
+states today's behaviour and marks the gap, and conformance scenarios with
+`case: gap` pin it. [Ticket 098](../tickets/098-adapter-contract-gaps.md)
+closes each before the rule code moves:
+
+- **(a)** A briefed session's orientation counts partial reads.
+- **(b)** `design` and `design-reads` never judge a shell write.
+- **(c)** A subagent's commit meets no closeout.
 
 ## Detection Detail
 
