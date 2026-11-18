@@ -88,15 +88,16 @@ Skills keep working unchanged.
 
 ## What It Holds
 
-The routing rules live in [`goated_adapter/gates.py`](goated_adapter/gates.py)
-and the action and closeout rules in
-[`goated_adapter/actions.py`](goated_adapter/actions.py). There are two kinds
-of hold:
-
-- **strict**: clears only on proof of use or a typed user override;
-- **justified-skip**: also clears on a `goated-skip: <skill>: <reason>` line,
-  with a reason of three or more words, in the current turn. The reason stays
-  in the transcript, where the skill-usage mod reads it.
+The [enforcement contract](../../stack/enforcement-contract.md) states every
+rule this adapter enforces in harness-neutral words: each gate, its kind
+(`strict` or `justified-skip`), what it holds and what clears it, the
+closeout items, the hold message format, the overrides, and the fail-open
+rules. This section says how those rules meet Claude Code's tools and
+transcript, and keeps the detection detail the contract cites. The routing
+rules live in [`goated_adapter/gates.py`](goated_adapter/gates.py) and the
+action and closeout rules in
+[`goated_adapter/actions.py`](goated_adapter/actions.py). A skip line's
+reason stays in the transcript, where the skill-usage mod reads it.
 
 Route and skip lines are read from the agent's reply text and
 from one field
@@ -150,6 +151,9 @@ session's message never counts, and a brief never carries an override. The
 A brief with a route line also marks the session as briefed, for good (one with none does not): typed prompts and
 compactions do not end that, and a briefed session meets no closeout Review
 item (see the closeout table below).
+
+The contract's [Gates](../../stack/enforcement-contract.md#gates) table is
+the authority for each gate. In Claude Code, with its detection detail:
 
 | Gate | Kind | Holds | Clears when |
 | --- | --- | --- | --- |
@@ -230,6 +234,9 @@ download without an output name, a .NET call) counts as a change to non-test
 code, wherever it runs, since where its files are cannot be said. Code a
 subagent changed counts too, at the point the parent spawned it; if the subagent ran a
 check after its own last change, that change is already proved.
+
+The contract's [Closeout Items](../../stack/enforcement-contract.md#closeout-items)
+table is the authority for each item; this one adds Claude Code's detail.
 
 | Item | Needed when | Met by | Skip line names |
 | --- | --- | --- | --- |
@@ -1101,13 +1108,10 @@ goated-hold: <gate> | <kind>
 <what the agent must do, in plain words>
 ```
 
-- `<gate>` is one of `router-first`, `route-line`, `pipeline`, `commit`,
-  `pull-request`, `pr-review`, `spawn`, `design`, `design-reads`,
-  `reference-reads`, `review-intake`, `scripted-edit`, `security`,
-  `conflict-resolution`, `repeated-failure`, or `closeout`.
-- `<kind>` is `strict` or `justified-skip`.
-- The first line matches
-  `^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified-skip)$`.
+- The contract's [Hold Messages](../../stack/enforcement-contract.md#hold-messages)
+  owns this format, the pattern the first line matches, and the closeout's
+  item labels; its [Gates](../../stack/enforcement-contract.md#gates) table
+  owns the list of gates.
 - When a call meets several holds, one message carries them all, in the
   order the gates fire: the first hold as it would be alone, then, after a
   blank line, each further hold opening with its own `goated-hold:` line,
@@ -1229,11 +1233,15 @@ tag runs to the end of the prompt. A phrase negated
 just before it, such as "don't skip routing", "never skip tdd", or "no need to
 skip doc-sync", is not an override.
 
-| Typed phrase | Effect for that turn |
-| --- | --- |
-| `skip routing`, `skip the router` | Stands down `router-first`, `route-line`, and `pipeline` |
-| `skip <skill>`, `skip the <skill> skill` | Stands down every requirement for that skill: in `pipeline`, in an action gate, or in a closeout item. `skip using-goated-ai-skills` also stands down `router-first`. `<skill>` must be a skill Claude Code can find (user, project, or plugin skills); when none can be found, a GOATED registry skill name. So "skip line" or "skip the first two lines" is not an override. The name may be wrapped in backticks, as in ``skip `tdd` ``, or carry a backtick on one side only |
-| `commit message: <text>`, `commit with the message "<text>"`, or a fenced block right after such a phrase | Stands down the `commit` hold for a commit whose inline message has the same subject line (whitespace aside); a commit with another message, or with none inline, is still held. The skill name `commit-message` is not such a phrase |
+The phrases and their effects are the contract's
+[Overrides](../../stack/enforcement-contract.md#overrides) table. In Claude
+Code, `<skill>` in `skip <skill>` must be a skill Claude Code can find (user,
+project, or plugin skills); when none can be found, a GOATED registry skill
+name. So "skip line" or "skip the first two lines" is not an override. The
+name may be wrapped in backticks, as in ``skip `tdd` ``, or carry a backtick
+on one side only. A commit-message override matches the subject line,
+whitespace aside; a commit with another message, or with none inline, is
+still held, and the skill name `commit-message` is not such a phrase.
 
 Claude Code also submits prompts nobody typed in this session:
 

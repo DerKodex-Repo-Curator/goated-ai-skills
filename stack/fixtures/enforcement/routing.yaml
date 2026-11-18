@@ -1,0 +1,117 @@
+event_model: 1
+scenarios:
+  - name: a write before routing meets router-first and route-line in one hold
+    covers:
+      - {gate: router-first, case: holds}
+      - {gate: route-line, case: holds}
+      - {gate: router-first, case: clears, way: proof}
+      - {gate: route-line, case: clears, way: route-line}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export bug.}
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+        expect:
+          decision: hold
+          holds:
+            - {gate: router-first, kind: strict}
+            - {gate: route-line, kind: strict}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+
+  - name: a command of plain reads and a scratch write pass before routing
+    covers:
+      - {gate: router-first, case: near-miss}
+      - {gate: route-line, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Look at the export.}
+      - call: {kind: shell_command, shell: posix, command: git status}
+      - call:
+          kind: file_write
+          path: "{outside}/notes.py"
+          whole_file: true
+          edits: [{removed: "", added: "note = 1\n"}]
+
+  - name: the brief that starts a session carries its route
+    covers:
+      - {gate: router-first, case: clears, way: brief-route}
+    steps:
+      - session_start: new
+      - prompt:
+          type: prompt
+          author: session
+          starts_session: true
+          text: "## Goal\n\nFix the export limit.\n\ngoated-route: direct\n"
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+
+  - name: a person's override stands down the routing gates for the turn
+    covers:
+      - {gate: router-first, case: clears, way: override}
+      - {gate: route-line, case: clears, way: override}
+      - {gate: pipeline, case: clears, way: override}
+    steps:
+      - prompt: {type: prompt, author: person, text: Skip routing and fix the export limit.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+
+  - name: a required skill holds the write until it loads
+    covers:
+      - {gate: pipeline, case: holds}
+      - {gate: pipeline, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit test first.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: standard | requires: tdd"
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+        expect:
+          decision: hold
+          holds: [{gate: pipeline, kind: strict}]
+      - call: {kind: skill_load, skill: tdd}
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+
+  - name: a corrected route line drops a required skill
+    covers:
+      - {gate: pipeline, case: clears, way: route-line}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: standard | requires: tdd"
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+        expect:
+          decision: hold
+          holds: [{gate: pipeline, kind: strict}]
+      - reply: "goated-route: direct"
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+
+  - name: a read-only agent is not held for the route's skills
+    covers:
+      - {gate: pipeline, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Find where the export limit is set.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: standard | requires: tdd"
+      - call: {kind: spawn, brief: Find where the export limit is set., starts_now: true, read_only: true}
+        result: {ok: true, output: It is set in the export module.}

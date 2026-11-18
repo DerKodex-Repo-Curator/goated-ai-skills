@@ -1,0 +1,181 @@
+event_model: 1
+scenarios:
+  - name: a commit waits for its skill and a read of the change
+    covers:
+      - {gate: commit, case: holds}
+      - {gate: commit, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the note in the README and commit it.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call:
+          kind: file_write
+          path: README.md
+          edits: [{removed: "Export notes.", added: "Export notes, fixed."}]
+      - call: {kind: shell_command, shell: posix, command: "git commit -am \"Fix the export note\""}
+        expect:
+          decision: hold
+          holds: [{gate: commit, kind: strict}]
+      - call: {kind: skill_load, skill: commit-message}
+      - call: {kind: shell_command, shell: posix, command: git diff}
+        result: {ok: true, output: "-Export notes.\n+Export notes, fixed."}
+      - call: {kind: shell_command, shell: posix, command: "git commit -am \"Fix the export note\""}
+
+  - name: a person's commit message stands down the commit hold
+    covers:
+      - {gate: commit, case: clears, way: override}
+    steps:
+      - prompt:
+          type: prompt
+          author: person
+          text: "Fix the note in the README, and commit with the message \"Fix the export note\"."
+        expect: {decision: allow, notices: [override_recorded]}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call:
+          kind: file_write
+          path: README.md
+          edits: [{removed: "Export notes.", added: "Export notes, fixed."}]
+      - call: {kind: shell_command, shell: posix, command: "git commit -am \"Fix the export note\""}
+
+  - name: a dry-run commit is not a commit
+    covers:
+      - {gate: commit, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Show what a commit would take.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: shell_command, shell: posix, command: "git commit --dry-run -am \"Fix the export note\""}
+
+  - name: a pull request waits for its skill and a read of the change
+    covers:
+      - {gate: pull-request, case: holds}
+      - {gate: pull-request, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Open the pull request.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: shell_command, shell: posix, command: "gh pr create --title \"Fix export\" --body \"Fixes the limit.\""}
+        expect:
+          decision: hold
+          holds: [{gate: pull-request, kind: strict}]
+      - call: {kind: skill_load, skill: pr-description}
+      - call: {kind: shell_command, shell: posix, command: git diff main}
+        result: {ok: true, output: "-limit = 1\n+limit = 2"}
+      - call: {kind: shell_command, shell: posix, command: "gh pr create --title \"Fix export\" --body \"Fixes the limit.\""}
+
+  - name: a person's skip stands down the pull-request hold
+    covers:
+      - {gate: pull-request, case: clears, way: override}
+    steps:
+      - prompt: {type: prompt, author: person, text: Skip pr-description and open the pull request.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: shell_command, shell: posix, command: "gh pr create --title \"Fix export\" --body \"Fixes the limit.\""}
+
+  - name: viewing a pull request is not opening one
+    covers:
+      - {gate: pull-request, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Show the open pull request.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: shell_command, shell: posix, command: gh pr view 12}
+
+  - name: a large pull request waits for a review
+    covers:
+      - {gate: pr-review, case: holds}
+      - {gate: pr-review, case: clears, way: proof}
+    setup: {branch_changed_lines: 450}
+    steps:
+      - prompt: {type: prompt, author: person, text: Open the pull request.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: pr-description}
+      - call: {kind: shell_command, shell: posix, command: git diff main}
+        result: {ok: true, output: "+line 1"}
+      - call: {kind: shell_command, shell: posix, command: "gh pr create --title \"Change\" --body \"A change.\""}
+        expect:
+          decision: hold
+          holds: [{gate: pr-review, kind: justified-skip}]
+      - call: {kind: skill_load, skill: standards-and-spec-review}
+      - call: {kind: shell_command, shell: posix, command: "gh pr create --title \"Change\" --body \"A change.\""}
+
+  - name: a skip line clears the review of a large pull request
+    covers:
+      - {gate: pr-review, case: clears, way: skip-line}
+    setup: {branch_changed_lines: 450}
+    steps:
+      - prompt: {type: prompt, author: person, text: Open the pull request.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: pr-description}
+      - call: {kind: shell_command, shell: posix, command: git diff main}
+        result: {ok: true, output: "+line 1"}
+      - reply: "goated-skip: standards-and-spec-review: the branch was reviewed before this request"
+      - call: {kind: shell_command, shell: posix, command: "gh pr create --title \"Change\" --body \"A change.\""}
+
+  - name: a person's skip clears the review of a large pull request
+    covers:
+      - {gate: pr-review, case: clears, way: override}
+    setup: {branch_changed_lines: 450}
+    steps:
+      - prompt: {type: prompt, author: person, text: Skip standards-and-spec-review and open the pull request.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: pr-description}
+      - call: {kind: shell_command, shell: posix, command: git diff main}
+        result: {ok: true, output: "+line 1"}
+      - call: {kind: shell_command, shell: posix, command: "gh pr create --title \"Change\" --body \"A change.\""}
+
+  - name: a small pull request needs no review
+    covers:
+      - {gate: pr-review, case: near-miss}
+    setup: {branch_changed_lines: 100}
+    steps:
+      - prompt: {type: prompt, author: person, text: Open the pull request.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: pr-description}
+      - call: {kind: shell_command, shell: posix, command: git diff main}
+        result: {ok: true, output: "+line 1"}
+      - call: {kind: shell_command, shell: posix, command: "gh pr create --title \"Change\" --body \"A change.\""}
+
+  - name: a spawn waits for the brief skill and its template
+    covers:
+      - {gate: spawn, case: holds}
+      - {gate: spawn, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Have an agent audit the exporter.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: &audit
+          kind: spawn
+          starts_now: true
+          brief: "## Goal\n\nAudit the exporter.\n\n## Scope\n\n- Work in: src/export/\n\n## Done Means\n\n- A list of findings.\n\ngoated-skills: code-security-review\n"
+        expect:
+          decision: hold
+          holds: [{gate: spawn, kind: strict}]
+      - call: {kind: skill_load, skill: handoff}
+      - call: {kind: file_read, path: "{outside}/skills/handoff/references/spawn-brief.md", whole: true}
+      - call: *audit
+        result: {ok: true, output: No findings., agent: {id: auditor-1}}
+
+  - name: a person's skip stands down the spawn hold
+    covers:
+      - {gate: spawn, case: clears, way: override}
+    steps:
+      - prompt: {type: prompt, author: person, text: Skip handoff and have an agent audit the exporter.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *audit
+        result: {ok: true, output: No findings., agent: {id: auditor-1}}
+
+  - name: offering work a person may start later carries no brief to check
+    covers:
+      - {gate: spawn, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Suggest a session for the audit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: spawn, starts_now: false, brief: ""}

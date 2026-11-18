@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://goated-ai-skills.dev/schemas/enforcement-event-model.schema.json",
   "title": "GOATED Enforcement Event Model",
-  "description": "What the enforcement core needs to judge one event, and what it answers (ADR 0004). The root is a request; `$defs/decision` is the answer. Calls have kinds, never harness tool names. DRAFT for maintainer review (Ticket 079).",
+  "description": "What the enforcement core needs to judge one event, and what it answers (ADR 0004). The root is a request; `$defs/decision` is the answer, and `$defs/scenario_file` a file of conformance scenarios. Calls have kinds, never harness tool names.",
   "$ref": "#/$defs/request",
   "$defs": {
     "version": {
@@ -18,7 +18,7 @@
         "session": {"$ref": "#/$defs/session"},
         "project": {"$ref": "#/$defs/project"},
         "turns": {
-          "description": "Turns oldest first; the last is the current turn. An adapter sends every turn since the last compaction, or only those the core has not seen; the core folds turns it has seen by key. Empty only at a session start.",
+          "description": "Every turn since the last compaction, oldest first; the last is the current turn. Facts that outlast these turns (the task's route, the briefed flag, turn markers, friction counts, spawn brief templates) are the core's own, kept by session id, and never carried here. Empty only at a session start.",
           "type": "array",
           "items": {"$ref": "#/$defs/turn"}
         },
@@ -415,6 +415,144 @@
           "type": "string",
           "minLength": 1
         }
+      }
+    },
+    "scenario_file": {
+      "description": "Conformance scenarios: sequences of events, each judged step with the decision it must get. They name no harness.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_model", "scenarios"],
+      "properties": {
+        "event_model": {"$ref": "#/$defs/version"},
+        "scenarios": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/scenario"}}
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "covers", "steps"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "covers": {
+          "description": "What the scenario proves, for the coverage check: a gate holding, a way it clears (a clear way the contract's Gates table names), or a near miss it must not hold.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["gate", "case"],
+            "properties": {
+              "gate": {"$ref": "#/$defs/hold/properties/gate"},
+              "case": {"enum": ["holds", "clears", "near-miss"]},
+              "way": {"type": "string", "pattern": "^[a-z]+(?:-[a-z]+)*$"}
+            }
+          }
+        },
+        "setup": {
+          "description": "The project as the scenario needs it before the first step.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "installed_skills": {"type": "array", "items": {"$ref": "#/$defs/skill_name"}},
+            "branch_changed_lines": {
+              "description": "The project is a checkout whose branch changes this many lines of non-test code against its base.",
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "steps": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/step"}}
+      }
+    },
+    "step": {
+      "description": "One event or entry. A prompt opens a turn unless it continues one; a call is judged before it is recorded; the turn's end and a session start are judged.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["prompt"],
+          "properties": {
+            "prompt": {"$ref": "#/$defs/prompt"},
+            "continues": {"description": "The prompt continues the current turn as an entry.", "type": "boolean"},
+            "expect": {"$ref": "#/$defs/expectation"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reply"],
+          "properties": {"reply": {"type": "string"}}
+        },
+        {
+          "description": "A call: judged as a pending call, then recorded with its result. An absent expect means it must be allowed. expect_after judges it again as a finished call.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["call"],
+          "properties": {
+            "call": {"$ref": "#/$defs/call"},
+            "result": {"$ref": "#/$defs/result"},
+            "expect": {"$ref": "#/$defs/expectation"},
+            "expect_after": {"$ref": "#/$defs/expectation"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["skill_invoked"],
+          "properties": {"skill_invoked": {"type": "string", "minLength": 1}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["agent_finished"],
+          "properties": {"agent_finished": {"type": "string", "minLength": 1}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["compaction"],
+          "properties": {"compaction": {"const": true}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["turn_end"],
+          "properties": {
+            "turn_end": {"const": true},
+            "expect": {"$ref": "#/$defs/expectation"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["session_start"],
+          "properties": {
+            "session_start": {"$ref": "#/$defs/event/oneOf/4/properties/source"},
+            "expect": {"$ref": "#/$defs/expectation"}
+          }
+        }
+      ]
+    },
+    "expectation": {
+      "description": "The decision a step must get. Holds are matched by gate and kind, in firing order; their text is guidance and is not compared. When notices are given, the decision carries exactly those kinds, in any order.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision"],
+      "properties": {
+        "decision": {"enum": ["allow", "hold"]},
+        "holds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["gate", "kind"],
+            "properties": {
+              "gate": {"$ref": "#/$defs/hold/properties/gate"},
+              "kind": {"$ref": "#/$defs/hold/properties/kind"}
+            }
+          }
+        },
+        "notices": {"type": "array", "items": {"$ref": "#/$defs/notice/properties/kind"}}
       }
     },
     "notice": {

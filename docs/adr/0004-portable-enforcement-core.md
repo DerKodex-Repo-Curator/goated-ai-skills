@@ -2,9 +2,10 @@
 
 ## Status
 
-Proposed on 2026-11-18, with the spec
+Accepted on 2026-11-18, with the spec
 [A Portable Enforcement Core For Any Agent Harness](../specs/2026-11-17-portable-enforcement-core.md)
-and Ticket 079. Awaiting the maintainer's acceptance.
+and Ticket 079, whose closeout records the maintainer's review of the event
+model.
 
 This ADR works under [ADR 0003](0003-opt-in-framework-enforcement-adapters.md)
 and supersedes nothing. Every exclusion that
@@ -81,7 +82,9 @@ The schema is the authority; this is its shape.
   a route or skip line may be read from. A commit or pull request made by a
   shell command stays a `shell_command`; the core reads the command, as it
   does today. The `commit` and `pull_request` kinds are for tools that do
-  nothing else.
+  nothing else. An adapter may label a harness-specific shell command with
+  another kind, such as Orca's worker start as a `spawn` (see below), so the
+  core never learns a harness's command names.
 - **A turn** is an ordered list of entries: the prompt that opened it, with
   who wrote it, then reply texts, finished calls with their results, skill
   loads a person invoked, and background agents that finished. A compaction
@@ -95,15 +98,31 @@ The schema is the authority; this is its shape.
   and its text, so a joint hold (Ticket 095) is one decision. Any decision
   may carry notices: a fail-open warning, a recorded override, the closeout
   note, or a session-start notice. A notice never holds.
+- **Text is split by owner.** The core returns each hold's rule text. The
+  adapter adds what only its harness can say, such as where a line can be
+  put so the harness keeps it, and which shell call carries it. The adapter
+  also strips the blocks its harness inserts into a prompt and moves pasted
+  text into `pasted`, so the core never parses a harness's tags.
+- **Versions are whole numbers.** `event_model` is a whole number, and every
+  change to the model bumps it.
 
 ### State
 
-The core keeps session state, keyed by the session id the adapter supplies:
-loads and reads that count until compaction, the current task's route, the
-turn markers that choose a hold's full or short text, and friction counts. An
-adapter may send every turn since the last compaction on each request, or
-only the turns the core has not seen; the core folds turns it has already
-seen by their key, as the Claude Code adapter folds transcript turns today.
+Requests carry the turns, not a stream of events: each request carries every
+turn since the last compaction, so the loads, reads, lines, and changes the
+rules read all come with it. The core keeps, keyed by the session id the
+adapter supplies, only the facts that outlast those turns:
+
+- the current task's route and its `requires:` skills, which carry across a
+  compaction;
+- whether the session was briefed, which lasts the whole session;
+- the turn markers that pick a hold's full or short text and give a
+  harness's line advice once per turn, even across calls judged in parallel;
+- the friction counts behind the retrospective notice;
+- which brief template each spawn followed, for the closeout.
+
+The event model carries none of these, so an adapter never stores or
+returns core state.
 
 ### What each harness can supply
 
@@ -128,9 +147,9 @@ loses without them:
 
 - **The prompt's author.** An adapter that cannot tell who wrote a prompt
   marks it `unknown`, and the core reads no override from it: no free bypass.
-- **Turn-end holds.** An adapter whose harness cannot hold a turn's end may
-  deliver the closeout as a continuation request (Pi) or not enforce it, and
-  must document which.
+- **Turn-end holds.** An adapter whose harness cannot hold a turn's end,
+  such as Pi's, delivers the closeout as a request to continue, and
+  documents the gap.
 - **Skill loads.** An adapter maps whatever its harness records as a load to
   `skill_load`; where nothing records one, it maps a whole read of an
   installed `SKILL.md`.
@@ -160,11 +179,9 @@ That shapes what an adapter needs there:
   worker with `orca orchestration worker-start --task <taskId>`, and workers
   report back with `orca orchestration send` [R3]. To the agent these are
   shell commands, not spawns, so the `spawn` gate and the closeout's
-  subagent rules do not see them. Counting a worker start as a `spawn`
-  means an adapter maps that command to the `spawn` kind, with the task's
-  brief, which it would have to look up from the task. The core must not
-  learn that command's name. Whether an adapter may classify shell commands
-  this way is open for the maintainer.
+  subagent rules do not see them unless an adapter labels the worker start
+  as a `spawn`, with the task's brief, which it looks up from the task. An
+  adapter may do that; the core never learns the command's name.
 - **Orca installs skills of its own** into the agents' skill folders, loaded
   through a stub that runs `orca skills get <topic>` [R4]. That load is a
   shell command, not a `skill_load`, so no GOATED rule counts it, and none

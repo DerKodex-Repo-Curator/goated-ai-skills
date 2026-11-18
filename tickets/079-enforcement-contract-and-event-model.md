@@ -63,19 +63,19 @@ adapter for another harness has nothing to build on or be checked against.
 
 ## Acceptance Criteria
 
-- [ ] The ADR is accepted by the maintainer and indexed.
-- [ ] Every gate and closeout item in the Claude Code README's tables
+- [x] The ADR is accepted by the maintainer and indexed.
+- [x] Every gate and closeout item in the Claude Code README's tables
       appears in the contract, and a check fails when a gate the adapter
       can return is missing from it.
-- [ ] The event model's schema validates every scenario, and a request of
+- [x] The event model's schema validates every scenario, and a request of
       an unknown version is rejected by the schema.
-- [ ] The decision schema carries one or more holds in firing order, and
+- [x] The decision schema carries one or more holds in firing order, and
       a scenario covers a joint hold.
-- [ ] The scenarios cover each gate holding, each way it clears, and a
+- [x] The scenarios cover each gate holding, each way it clears, and a
       near miss, and name no harness or harness tool.
-- [ ] Every scenario passes against the Claude Code adapter through the
+- [x] Every scenario passes against the Claude Code adapter through the
       test helper.
-- [ ] The maintainer's review of the event model is recorded in this
+- [x] The maintainer's review of the event model is recorded in this
       ticket's closeout.
 
 ## Expected Proof
@@ -117,3 +117,35 @@ one decision carry several holds, which the event model must allow.
 - Moving any rule code.
 - New rules.
 - Adapters for other harnesses.
+
+## Closeout
+
+### Maintainer's event-model review, 2026-11-18
+
+The maintainer accepted ADR 0004, Orca addition included, and settled the
+event model's open questions through the lead session's questions, which
+rested on the Orca research in commit `46f9836`:
+
+1. **Turn shape:** one ordered list of entries.
+2. **Requests carry the turns, not an event stream; the core keeps session
+   facts by session id** (option (a), clarified on 2026-11-18). Each request
+   carries every turn since the last compaction. The core keeps only the
+   facts that outlast those turns: the route and its `requires:` skills
+   across a compaction, the briefed flag, the turn markers, the friction
+   counts, and the spawn brief templates.
+3. **Hold text:** the core returns the rule text; each adapter adds its
+   harness's wording, such as the unseen-line advice and the shell carrier.
+4. **Prompt text:** the adapter strips blocks its harness inserted and moves
+   pasted text into `pasted`; the core never parses a harness's tags.
+5. **The end of a turn** is the `turn_end` event.
+6. **Shell kinds, option (a):** an adapter may label a harness-specific
+   shell command with a kind such as `spawn`, for example Orca's
+   `orca orchestration worker-start`. The core still parses git and gh
+   commit and pull-request commands itself.
+7. **Gate names:** the schema checks only their shape. The contract owns
+   the list, and the contract check compares it with the gates the adapter
+   can return.
+8. **No turn-end hold:** a harness that cannot hold a turn's end, such as
+   Pi, delivers the closeout as a continue request and documents the gap.
+9. **Versioning:** a whole-number `event_model` that every change bumps.
+10. **Scenarios** live under `stack/fixtures/enforcement/`.

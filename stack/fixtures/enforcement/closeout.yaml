@@ -1,0 +1,89 @@
+event_model: 1
+scenarios:
+  - name: a code change brings the closeout note, and the turn's end waits for proof and docs
+    covers:
+      - {gate: closeout, case: holds}
+      - {gate: closeout, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+        expect_after: {decision: allow, notices: [closeout_note]}
+      - turn_end: true
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip}]
+      - call: {kind: shell_command, shell: posix, command: pytest -q}
+        result: {ok: true, output: "4 passed in 0.10s"}
+      - call: {kind: skill_load, skill: doc-sync}
+      - call: {kind: shell_command, shell: posix, command: git diff}
+        result: {ok: true, output: "-limit = 1\n+limit = 2"}
+      - turn_end: true
+
+  - name: skip lines meet the closeout items
+    covers:
+      - {gate: closeout, case: clears, way: skip-line}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+      - reply: "goated-skip: verification-before-completion: the module has no test suite yet"
+      - reply: "goated-skip: doc-sync: no document names the limit"
+      - turn_end: true
+
+  - name: a person's skips stand down the closeout items
+    covers:
+      - {gate: closeout, case: clears, way: override}
+    steps:
+      - prompt:
+          type: prompt
+          author: person
+          text: Skip verification-before-completion, skip doc-sync, and fix the export limit.
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+      - turn_end: true
+
+  - name: a turn that changed only docs meets no closeout and gets no note
+    covers:
+      - {gate: closeout, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export notes.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call:
+          kind: file_write
+          path: docs/export.md
+          edits: [{removed: "Limit one.", added: "Limit two."}]
+        expect_after: {decision: allow, notices: []}
+      - turn_end: true
+
+  - name: a commit meets the closeout once the commit gate passes it
+    covers:
+      - {gate: closeout, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit and commit it.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+      - call: {kind: skill_load, skill: commit-message}
+      - call: {kind: shell_command, shell: posix, command: git diff}
+        result: {ok: true, output: "-limit = 1\n+limit = 2"}
+      - call: {kind: shell_command, shell: posix, command: "git commit -am \"Raise the export limit\""}
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip}]
