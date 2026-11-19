@@ -1376,6 +1376,61 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - call: {kind: shell_command, shell: powershell, command: "echo x > nul"}
 
+  - name: a test file named for sessions is not security-sensitive
+    covers:
+      - {gate: security, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the session timeout test.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call:
+          kind: file_write
+          path: tests/test_session_x.py
+          edits: [{removed: "assert ttl == 10", added: "assert ttl == 20"}]
+
+  - name: a test path that is not test code, or matches by its kind, is still security-sensitive
+    covers:
+      - {gate: security, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Change the test setup.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: file_write, path: tests/.env, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: &security_held {decision: hold, holds: [{gate: security, kind: justified-skip}]}
+      - call: {kind: file_write, path: tests/requirements.txt, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: *security_held
+      - call: {kind: file_write, path: requirements_test.txt, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: *security_held
+      - call: {kind: file_write, path: .github/workflows/run_test.yml, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: *security_held
+      - call: {kind: file_write, path: docker-compose.test.yml, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: *security_held
+      - call: {kind: file_write, path: test/fixtures/server.key, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: *security_held
+      - call: {kind: file_write, path: tests/secrets.json, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: *security_held
+      - call: {kind: file_write, path: migrations/0001_test.sql, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: *security_held
+      - call: {kind: file_write, path: src/testing/auth.py, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: *security_held
+      - call: {kind: file_write, path: src/contest/auth.py, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: *security_held
+
+  - name: session code is security-sensitive
+    covers:
+      - {gate: security, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the session timeout.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call:
+          kind: file_write
+          path: src/session.py
+          edits: [{removed: "ttl = 10", added: "ttl = 20"}]
+        expect:
+          decision: hold
+          holds: [{gate: security, kind: justified-skip}]
+
   - name: an edit inside an open merge conflict waits for the conflict skill
     covers:
       - {gate: conflict-resolution, case: holds}

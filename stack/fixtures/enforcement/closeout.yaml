@@ -135,7 +135,342 @@ scenarios:
           decision: hold
           holds: [{gate: closeout, kind: justified-skip, items: [Design]}]
 
-  - name: a commit meets the closeout once the commit gate passes it
+  - name: a doc changed after the code, then read, meets Docs with no load
+    covers:
+      - {gate: closeout, case: holds}
+      - {gate: closeout, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Raise the export limit and document it.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *limit
+      - call: {kind: shell_command, shell: posix, command: pytest -q}
+        result: {ok: true, output: "4 passed in 0.10s"}
+      - call: &limit_doc
+          kind: file_write
+          path: docs/export.md
+          edits: [{removed: "The limit is 1.", added: "The limit is 2."}]
+      - turn_end: true
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Docs]}]
+      - call: {kind: file_read, path: docs/export.md, whole: true}
+        result: {ok: true, output: "The limit is 2."}
+      - turn_end: true
+
+  - name: a doc changed before the code does not meet Docs
+    covers:
+      - {gate: closeout, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Document the export limit and raise it.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *limit_doc
+      - call: *limit
+      - call: {kind: shell_command, shell: posix, command: pytest -q}
+        result: {ok: true, output: "4 passed in 0.10s"}
+      - call: {kind: shell_command, shell: posix, command: git diff}
+        result: {ok: true, output: "-limit = 1\n+limit = 2"}
+      - turn_end: true
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Docs]}]
+
+  - name: with the conflict skill loaded, a conflict's commit asks for Proof alone, and the next commit for the full closeout
+    covers:
+      - {gate: closeout, case: holds}
+      - {gate: closeout, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Merge the feature branch and commit the result.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: shell_command, shell: posix, command: git merge feature}
+        result: &conflicted {ok: false, output: "CONFLICT (content): Merge conflict in src/export.py\nAutomatic merge failed; fix conflicts and then commit the result."}
+      - call: {kind: skill_load, skill: resolving-merge-conflicts}
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: &resolve_conflict
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "<<<<<<< HEAD\nlimit = 1\n=======\nlimit = 2\n>>>>>>> feature", added: "limit = 2"}]
+      - call: {kind: skill_load, skill: commit-message}
+      - call: &conflict_diff {kind: shell_command, shell: posix, command: git diff}
+        result: {ok: true, output: "-limit = 1\n+limit = 2"}
+      - call: &merge_commit {kind: shell_command, shell: posix, command: "git commit -am \"Merge the feature branch\""}
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Proof]}]
+      - call: &conflict_check {kind: shell_command, shell: posix, command: pytest -q}
+        result: {ok: true, output: "4 passed in 0.10s"}
+      - call: *merge_commit
+        result: {ok: true, output: "[main 1a2b3c4] Merge the feature branch"}
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 2", added: "limit = 3"}]
+      - call: *conflict_check
+      - call: *conflict_diff
+      - call: {kind: shell_command, shell: posix, command: "git commit -am \"Raise the export limit\""}
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Docs, Design]}]
+
+  - name: without the conflict skill loaded, a conflict's commit gets the full closeout
+    covers:
+      - {gate: closeout, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Merge the feature branch and commit the result.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: shell_command, shell: posix, command: git merge feature}
+        result: *conflicted
+      - reply: "goated-skip: resolving-merge-conflicts: one constant, the feature side wins"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *resolve_conflict
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *conflict_diff
+      - call: *conflict_check
+      - call: *merge_commit
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Docs, Design]}]
+
+  - name: with the conflict skill loaded, a large branch's conflict commit on a full route is not asked for Review or Verification
+    covers:
+      - {gate: closeout, case: holds}
+      - {gate: closeout, case: clears, way: proof}
+    setup: {branch_changed_lines: 450}
+    steps:
+      - prompt: {type: prompt, author: person, text: Merge the main branch into this one and commit the result.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: full | requires: tdd"
+      - call: {kind: skill_load, skill: tdd}
+      - call: {kind: shell_command, shell: posix, command: git merge main}
+        result: *conflicted
+      - call: {kind: skill_load, skill: resolving-merge-conflicts}
+      - call: *resolve_conflict
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *conflict_diff
+      - call: *merge_commit
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Proof]}]
+      - call: *conflict_check
+      - call: *merge_commit
+
+  - name: without the conflict skill loaded, the same commit is asked for Review and Verification
+    covers:
+      - {gate: closeout, case: holds}
+    setup: {branch_changed_lines: 450}
+    steps:
+      - prompt: {type: prompt, author: person, text: Merge the main branch into this one and commit the result.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: full | requires: tdd"
+      - call: {kind: skill_load, skill: tdd}
+      - call: {kind: shell_command, shell: posix, command: git merge main}
+        result: *conflicted
+      - reply: "goated-skip: resolving-merge-conflicts: one constant, the feature side wins"
+      - call: *resolve_conflict
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *conflict_diff
+      - call: *conflict_check
+      - call: *merge_commit
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Docs, Review, Verification]}]
+
+  - name: markers a doc shows are no conflict, so the commit gets the full closeout with the skill loaded
+    covers:
+      - {gate: closeout, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Raise the export limit and commit it.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: resolving-merge-conflicts}
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: {kind: file_read, path: docs/conflicts.md, whole: true}
+        result: {ok: true, output: "Example:\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n"}
+      - call: *limit
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *conflict_check
+      - call: *conflict_diff
+      - call: {kind: shell_command, shell: posix, command: "git commit -am \"Raise the export limit\""}
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Docs, Design]}]
+
+  - name: a conflict opened in an earlier turn and resolved now by an edit asks for less
+    covers:
+      - {gate: closeout, case: holds}
+      - {gate: closeout, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Merge the feature branch.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: shell_command, shell: posix, command: git merge feature}
+        result: *conflicted
+      - turn_end: true
+      - prompt: {type: prompt, author: person, text: Resolve the conflict and commit it.}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: resolving-merge-conflicts}
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *resolve_conflict
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *conflict_diff
+      - call: *merge_commit
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Proof]}]
+      - call: *conflict_check
+      - call: *merge_commit
+
+  - name: removing a marker example from a doc ends no conflict, so the commit gets the full closeout
+    covers:
+      - {gate: closeout, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: "Tidy the conflict doc, raise the limit, and commit."}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: resolving-merge-conflicts}
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: {kind: file_write, path: docs/conflicts.md, edits: [{removed: "Example:\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n", added: "See git's manual.\n"}]}
+      - call: *limit
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *conflict_check
+      - call: *conflict_diff
+      - call: &limit_commit {kind: shell_command, shell: posix, command: "git commit -am \"Raise the export limit\""}
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Docs, Design]}]
+
+  - name: removing one marker line from code ends no conflict, so the commit gets the full closeout
+    covers:
+      - {gate: closeout, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Drop the stray marker and commit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: resolving-merge-conflicts}
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: {kind: file_write, path: src/export.py, edits: [{removed: "<<<<<<< HEAD\nlimit = 2", added: "limit = 2"}]}
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *conflict_check
+      - call: *conflict_diff
+      - call: *limit_commit
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Docs, Design]}]
+
+  - name: a whole conflict block removed from code ends a conflict, with the skill, and asks for less
+    covers:
+      - {gate: closeout, case: holds}
+      - {gate: closeout, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Resolve the conflict and commit it.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: resolving-merge-conflicts}
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *resolve_conflict
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *conflict_diff
+      - call: *merge_commit
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Proof]}]
+      - call: *conflict_check
+      - call: *merge_commit
+
+  - name: the same block removed without the skill gets the full closeout
+    covers:
+      - {gate: closeout, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Resolve the conflict and commit it.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - reply: "goated-skip: resolving-merge-conflicts: one constant, the feature side wins"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *resolve_conflict
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *conflict_diff
+      - call: *conflict_check
+      - call: *merge_commit
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Docs, Design]}]
+
+  - name: a golden output file under a test path does not meet Docs
+    covers:
+      - {gate: closeout, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Raise the export limit and update its golden output.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *limit
+      - call: {kind: shell_command, shell: posix, command: pytest -q}
+        result: {ok: true, output: "4 passed in 0.10s"}
+      - call: {kind: file_write, path: tests/golden/export.txt, edits: [{removed: "limit 1", added: "limit 2"}]}
+      - call: {kind: file_read, path: tests/golden/export.txt, whole: true}
+        result: {ok: true, output: "limit 2"}
+      - turn_end: true
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Docs]}]
+
+  - name: the change the red flags scanned keeps its context lines in the count
+    covers:
+      - {gate: closeout, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export totals.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/errors.md", whole: true}
+      - call: {kind: file_write, path: src/export.py, edits: [{removed: "a = 0\nb = 0\nc = 0\nd = 0\ne = 0\nf = 0", added: "a = 0\nb = 0\nc = 0\nd = 0\ne = 0\nf = 0\nt1 = 1\nt2 = 2\nt3 = 3\nt4 = 4"}]}
+      - call: {kind: shell_command, shell: posix, command: pytest -q}
+        result: {ok: true, output: "4 passed in 0.10s"}
+      - reply: "goated-skip: doc-sync: internal totals with no documented behavior"
+      - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/red-flags.md", whole: true}
+      - call: {kind: file_write, path: src/export.py, edits: [{removed: "t4 = 4", added: "t4 = 40"}]}
+      - call: {kind: shell_command, shell: posix, command: pytest -q}
+        result: {ok: true, output: "4 passed in 0.10s"}
+      - call: {kind: shell_command, shell: posix, command: git diff}
+        result: {ok: true, output: "-t4 = 4\n+t4 = 40"}
+      - turn_end: true
+
+  - name: after the red flags, a two-line fix sent with three context lines needs only a change read
+    covers:
+      - {gate: closeout, case: holds}
+      - {gate: closeout, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export totals.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/errors.md", whole: true}
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "pass", added: "total_0 = 0\ntotal_1 = 1\ntotal_2 = 2\ntotal_3 = 3\ntotal_4 = 4\ntotal_5 = 5"}]
+      - call: {kind: shell_command, shell: posix, command: pytest -q}
+        result: {ok: true, output: "4 passed in 0.10s"}
+      - reply: "goated-skip: doc-sync: internal totals with no documented behavior"
+      - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/red-flags.md", whole: true}
+      - call: &totals_diff {kind: shell_command, shell: posix, command: git diff}
+        result: {ok: true, output: "+total_0 = 0"}
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "total_0 = 0\ntotal_1 = 1\ntotal_2 = 2\ntotal_3 = 3\ntotal_4 = 4", added: "total_0 = 0\ntotal_1 = 1\ntotal_2 = 2\ntotal_3 = 30\ntotal_4 = 40"}]
+      - call: {kind: shell_command, shell: posix, command: pytest -q}
+        result: {ok: true, output: "4 passed in 0.10s"}
+      - turn_end: true
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Design]}]
+      - call: *totals_diff
+      - turn_end: true
+
+  - name: a commit whose own asks are met is still held for the closeout
     covers:
       - {gate: closeout, case: holds}
     steps:

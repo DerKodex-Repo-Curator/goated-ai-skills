@@ -187,7 +187,8 @@ class SharedTextTests(SessionCase):
         s = self.changed_and_loaded("commit-pr")
         held = s.call("Bash", {"command": 'git commit -m "Add export" && gh pr create '
                                           '--title "Add export" --body "Adds it."'})
-        self.assertEqual(gates_of(held), ["commit", "pull-request"])
+        # The closeout comes beside the commit gate (Ticket 120, R4).
+        self.assertEqual(gates_of(held), ["commit", "closeout", "pull-request"])
         text = reason(held)
         self.assertEqual(text.count(CHANGE_READ), 1, text)
         self.assertEqual(text.count("rerun any steps chained before it"), 1, text)
@@ -386,12 +387,14 @@ class ShortFormKeepsTheAskTests(SessionCase):
         s = self.changed("commit-ask")
         s.call("Bash", self.COMMIT)
         s.load("commit-message")
-        second = reason(s.call("Bash", self.COMMIT))
+        # The commit gate's own hold, ahead of the closeout beside it (Ticket 120, R4).
+        commit_part = lambda output: reason(output).split("\n\ngoated-hold: closeout")[0]
+        second = commit_part(s.call("Bash", self.COMMIT))
         self.assertNotIn("Still unmet", second)
         self.assertIn("--stat", second)
         self.assertIn("chained in the same command", second)
         # Near miss: the same ask again in the turn is short, and still says what does not count.
-        third = reason(s.call("Bash", self.COMMIT))
+        third = commit_part(s.call("Bash", self.COMMIT))
         self.assertIn("Still unmet", third)
         self.assertIn("--stat", third)
         self.assertIn("chained", third)
