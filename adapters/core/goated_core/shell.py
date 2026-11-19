@@ -76,6 +76,8 @@ FILE_PRINTERS = {
     "get-content": _GET_CONTENT_VALUES, "gc": _GET_CONTENT_VALUES, "type": _GET_CONTENT_VALUES,
 }
 PS_FILE_PRINTERS = frozenset({"get-content", "gc", "type"})
+# The Get-Content parameters that print only part of a file (Ticket 110).
+PS_RANGE_PARAMS = frozenset({"-totalcount", "-head", "-first", "-tail", "-last"})
 # Writes whose files cannot be read from the command line.
 UNKNOWN_TARGET_COMMANDS = frozenset({"patch"})
 DOWNLOADERS = frozenset({"curl", "wget", "invoke-webrequest", "iwr", "invoke-restmethod", "irm"})
@@ -257,7 +259,13 @@ class ShellCommand:
     `shown_files` are the files a file printer (`FILE_PRINTERS`, such as
     `cat` or `Get-Content`) in it names, from where the command started, so
     its output may hold their text; `shows_git_diff` says it runs `git diff`,
-    whose output names each file's section (spec R10).
+    whose output names each file's section (spec R10). `whole_prints` are
+    those of its files a whole print shows the agent whole (Ticket 110): a
+    `cat`, or in PowerShell a `Get-Content`, `gc`, `type` or `cat` with no
+    range parameter (`PS_RANGE_PARAMS`), whose output goes neither into a
+    pipe nor into a file, not run as a background job (`&`), outside any
+    compound command, group or substitution; a file
+    named from a folder the command left unknown is left out.
     `script_targets` are the write targets that code given to an interpreter
     inline names (`python -c`, `node -e`, a heredoc on `python -`; see
     `_inline_script`), and `script_unknown_writes` says such code writes a
@@ -303,7 +311,7 @@ class ShellCommand:
         "non_check_writes", "unchecked_targets", "unchecked_unknown_writes", "prints_changes",
         "installs_globally", "install_folders", "read_only", "only_reads_and_writes_files",
         "script_targets", "script_unknown_writes", "text_writes", "redirects_into_nul",
-        "shown_files", "shows_git_diff",
+        "shown_files", "whole_prints", "shows_git_diff",
     )
 
     def __init__(self) -> None:
@@ -328,6 +336,7 @@ class ShellCommand:
         self.only_reads_and_writes_files = False
         self.redirects_into_nul = False
         self.shown_files: list[str] = []
+        self.whole_prints: list[str] = []
         self.shows_git_diff = False
 
     @property
@@ -516,6 +525,9 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
             result.shows_git_diff = True
     elif name in FILE_PRINTERS:
         result.shown_files += [_from_directory(directory, f) for f in _printed_files(name, args)]
+        if directory is not None:
+            result.whole_prints += [_from_directory(directory, f)
+                                    for f in _printed_whole(name, args, segment, shell)]
     elif name in FORGE_DIFFS:
         rest = _skip_options(args, {"-R", "--repo"})
         noun = FORGE_DIFFS[name]
@@ -1339,6 +1351,20 @@ def _printed_files(name: str, args: list[str]) -> list[str]:
     if name in PS_FILE_PRINTERS:
         return _ps_paths(args, values)
     return _positional(_drop_values(args, values))
+
+
+def _printed_whole(name: str, args: list[str], segment: "_Segment", shell: str) -> list[str]:
+    """The files the file printer `name`, run in `shell`, shows the agent
+    whole, as `ShellCommand.whole_prints` says, as written."""
+
+    if segment.nested or segment.after in ("|", "&") or segment.out_redirects:
+        return []
+    if shell == POSIX:
+        return _printed_files(name, args) if name == "cat" else []
+    # PowerShell's `cat` is an alias of Get-Content, so it takes the same parameters.
+    if any(arg.lower().partition(":")[0] in PS_RANGE_PARAMS for arg in args):
+        return []
+    return _printed_files("get-content", args)
 
 
 def _positional(args: list[str]) -> list[str]:

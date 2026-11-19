@@ -17,7 +17,9 @@ gates. The rules enforce contracts defined elsewhere, never new ones
   leaves the context. In a session routed by its brief, the router's
   orientation skill, when installed, joins a `standard` or `full` route;
   whole reads of `ORIENTATION_READS` distinct files meet it as well as its
-  load does (spec R3), since targeted reading is that skill's own work.
+  load does (spec R3), since targeted reading is that skill's own work. A
+  whole shell print of a file counts as a whole read of it here, and only
+  here (Ticket 110).
 
 The routing gates judge file writes, shell commands, and spawns. A spawn
 that only proposes work (`starts_now` false) runs nothing, so it passes
@@ -234,12 +236,15 @@ def goated_skill_name(raw: str, namespaces: tuple[str, ...]) -> str | None:
 
 
 def fold_turns(
-    state: SessionState, turns: list[Turn], namespaces: tuple[str, ...] = ()
+    state: SessionState, turns: list[Turn], namespaces: tuple[str, ...] = (),
+    folder: str | None = None,
 ) -> None:
     """Bring `state` up to date with turns read from the transcript, oldest first.
 
     Re-folding a turn already seen is harmless, so callers pass the last seen
-    turn again to pick up anything written after they last looked.
+    turn again to pick up anything written after they last looked. `folder`
+    is the session's folder, which relative paths start from, or None when
+    unknown.
     """
 
     if turns and turns[0].opens_session:
@@ -282,7 +287,9 @@ def fold_turns(
         state.template_reads = _unique(
             [*state.template_reads, *contracts.templates_read(turn.calls)]
         )
-        state.files_read = _unique([*state.files_read, *_files_read(turn.calls)])[:ORIENTATION_READS]
+        state.files_read = _unique(
+            [*state.files_read, *_files_read(turn.calls, folder)]
+        )[:ORIENTATION_READS]
         state.shell = last_shell([turn]) or state.shell
         state.last_turn = turn.key
 
@@ -295,17 +302,30 @@ def last_shell(turns: list[Turn]) -> str | None:
                  if call.kind == events.SHELL_COMMAND), None)
 
 
-def _files_read(calls) -> list[str]:
-    """A digest of each file a finished file read among `calls` read whole, in
-    order. Partial reads never count, as for every read a hold asks for.
+def _files_read(calls, folder: str | None) -> list[str]:
+    """A digest of each file among `calls` that a finished file read read
+    whole, or a finished, successful shell command printed whole
+    (`shell.ShellCommand.whole_prints`), in order. Partial reads never count.
+    Only orientation counts a shell print (Ticket 110): every other read a
+    hold asks for is a file read.
 
-    Two spellings of one path (case and separators on Windows) give one digest.
+    A relative path is taken from `folder`, the session's folder, when known,
+    and two spellings of one path (`./`, `..`, and case and separators on
+    Windows) give one digest.
     """
 
+    def paths(call: Call) -> list[str]:
+        if call.kind == events.SHELL_COMMAND:
+            if not call.ok or call.background:  # A background command's result is no print.
+                return []
+            return shell.analyze(call.command, call.shell).whole_prints
+        path = call.whole_read_path()
+        return [path] if path else []
+
     return [
-        hashlib.sha256(os.path.normcase(os.path.normpath(path)).encode("utf-8")).hexdigest()[:16]
-        for call in calls
-        if (path := call.whole_read_path())
+        hashlib.sha256(os.path.normcase(os.path.normpath(
+            os.path.join(folder, path) if folder else path)).encode("utf-8")).hexdigest()[:16]
+        for call in calls for path in paths(call)
     ]
 
 
@@ -477,12 +497,14 @@ def _routing_holds(
             f"A session started from a brief loads `{ORIENTATION_SKILL}` before its "
             "first write or spawn when its route is standard or full, or orients by "
             f"finishing {READ} calls of three distinct files, each read whole {NO_RANGE}, "
-            "such as the sources its brief names."
+            "such as the sources its brief names. A finished shell command that prints a "
+            "file whole, cat or Get-Content with no range and no pipe, counts as a read of it."
         )
         # A reader of hold texts takes this sentence's opening for the skill the
         # brief added.
         missing.append(f"A session started from a brief loads `{ORIENTATION_SKILL}` or "
-                       f"finishes {READ} calls of three distinct files, each whole")
+                       f"finishes {READ} calls of three distinct files, each whole, "
+                       "or shell commands that print them whole")
     parts.append(
         f"Load each with {SKILL_TOOL} and follow it. A load counts until the next "
         "compaction, in this turn or an earlier one"

@@ -86,6 +86,11 @@ other than a hold, which no check counts.
 - **Whole read**: a finished, successful `file_read` with `whole` true. A
   read asked for by a hold counts until the next compaction; partial reads
   never add up to a whole one.
+- **Whole print**: a finished, successful `shell_command`, not run in the
+  background, that prints a file whole to the agent, as
+  [Whole Prints](#whole-prints) reads it. Only orientation, in the
+  `pipeline` row, counts one as a whole read of that file; every other rule
+  that asks for a whole read asks for a `file_read`.
 - **Change read**: a finished call after the last change a step covers that
   puts the change in front of the agent: a command that prints the diff's
   content, or a read of a file the turn changed. A listing of names or
@@ -190,7 +195,7 @@ file (see [Holds](#holds)).
 | --- | --- | --- | --- | --- | --- |
 | `router-first` | strict | A write, spawn, or command while the router does not count as loaded; a command made only of plain reads passes | The router counts as loaded; or, until a person's prompt opens a turn, the session's first prompt is a brief with a route line | `proof`, `brief-route`, `override` | The router's "use at the start of each new task before the first edit or command" |
 | `route-line` | strict | The first write or spawn after each prompt until the turn has a valid route line, except in a turn another session's prompt opened in a session with a task, which runs as `continue` (see [Prompts, Turns, And Tasks](#prompts-turns-and-tasks)); also `goated-route: continue` when no task is known | A valid route line in the turn | `route-line`, `override` | The router's output contract |
-| `pipeline` | strict | A write or spawn while a `requires:` skill of the task does not count as loaded; in a session routed by its brief on a `standard` or `full` route, also while orientation is unmet and the orientation skill is installed. A spawn of a read-only agent passes | Each listed skill counts as loaded; orientation by its skill's load or whole reads of three distinct files; partial reads never count | `proof`, `route-line`, `override` | The router's route line ("must load before the first write") and the shared policy's corrected route line |
+| `pipeline` | strict | A write or spawn while a `requires:` skill of the task does not count as loaded; in a session routed by its brief on a `standard` or `full` route, also while orientation is unmet and the orientation skill is installed. A spawn of a read-only agent passes | Each listed skill counts as loaded; orientation by its skill's load or whole reads or whole prints of three distinct files, one file read and printed under two spellings counting once; partial reads never count | `proof`, `route-line`, `override` | The router's route line ("must load before the first write") and the shared policy's corrected route line |
 | `commit` | strict | A commit, by a git command (not a dry run) or a `commit` call | `commit-message` counts as loaded, an inline message passes the content check, and a change read follows the last change to any project file | `proof`, `override` | `commit-message` ("use before any Git commit") |
 | `pull-request` | strict | Opening a pull or merge request, by a `gh` or `glab` command or a `pull_request` call | `pr-description` counts as loaded, and a change read follows the last change to any project file | `proof`, `override` | `pr-description` |
 | `pr-review` | justified-skip | Opening a pull or merge request that changes 400 or more lines of non-test code against its base. It is judged together with `pull-request`, so both may hold the same call | `standards-and-spec-review` counts as loaded, and a change read follows the last change | `proof`, `skip-line`, `override` | `standards-and-spec-review`'s rule to review a branch of 400 or more changed lines in code outside test paths (`skills/engineering/standards-and-spec-review/SKILL.md`) |
@@ -1112,6 +1117,32 @@ the analysis cannot tell, the call is held. The lists are
 `READ_ONLY_COMMANDS`, `READ_ONLY_REFUSED_ARGS`, `READ_ONLY_REFUSED_OPTIONS`,
 the `GIT_READ_*` and `GIT_BRANCH_*` tables, and `NOT_PLAINLY_SPELLED_RE` in
 `shell.py`. Once the router loads, commands are judged as before.
+
+#### Whole Prints
+
+A simple command prints each file it names whole (a whole print, toward
+orientation only) when it is `cat` (with any options, so `cat -n a` counts),
+or in a `powershell` command `Get-Content`, `gc`, `type`, or `cat` (an
+alias of `Get-Content` there), with none of `-TotalCount`, `-Head`,
+`-First`, `-Tail`, or `-Last` (`PS_RANGE_PARAMS`), and when:
+
+- its output goes neither into a pipe (`cat a | head`) nor into a file or
+  null device; a redirect of standard error alone leaves it a print
+  (`cat a 2>/dev/null`);
+- it runs outside any compound command, group, or substitution, and not as
+  a background job (`cat a &`);
+- its folder is known: from where the command started, or after a `cd` the
+  core can follow (see `_change_directory`), so `cd ./src && cat a.py`
+  prints `src/a.py`, while after `cd src; ` or a bare `cd src`, which Bash
+  may resolve through `CDPATH`, the file cannot be named and does not count.
+
+`cat a b c` prints three files. `head`, `tail`, `sed`, `grep`, `less`, and
+every other command print none whole, nor does `type` in a `posix` command,
+which describes commands. A relative path is taken from the session's
+folder, so `cat src/a.py` and a `file_read` of the same file's absolute path
+are one file. A failed command, or one still running or run in the
+background, prints nothing. The core reads it as `whole_prints` in
+`shell.py`.
 
 ### Package Installs And Setup Files
 

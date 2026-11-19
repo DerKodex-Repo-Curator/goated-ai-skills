@@ -187,7 +187,7 @@ def judge_call(settings: Settings, situation: Situation, call: Call,
     store = settings.store()
     state, state_warning = store.load(situation.session_id)
     turns, prompt_key = read(state.last_turn)
-    settled = _fold(state, turns, settings)
+    settled = _fold(state, turns, settings, situation)
     current = turns[-1]
     overrides = overrides_for(state, current, prompt_key)
     unread: list[str] = []
@@ -273,7 +273,7 @@ def judge_turn_end(settings: Settings, situation: Situation, read: TurnReader,
     store = settings.store()
     state, state_warning = store.load(situation.session_id)
     turns, prompt_key = read(state.last_turn)
-    settled = _fold(state, turns, settings)
+    settled = _fold(state, turns, settings, situation)
     current = turns[-1]
     subagents, unread = situation.subagents(current)
     hold = actions.check_closeout(
@@ -330,7 +330,7 @@ def note_finished_call(settings: Settings, situation: Situation, call: Call,
                                               CLOSEOUT_NOTE):
         return Decision()
     turns, prompt_key = read(state.last_turn)
-    gates.fold_turns(state, turns, settings.skill_namespaces)
+    _fold_turns(state, turns, settings, situation)
     current = turns[-1]
     if (state.held_gates.get("turn") == current.key
             and actions.CLOSEOUT_GATE in state.held_gates["gates"]):
@@ -442,12 +442,21 @@ def start_session(settings: Settings, situation: Situation, source: str,
 # Helpers ------------------------------------------------------------------
 
 
-def _fold(state: SessionState, turns: list[Turn], settings: Settings) -> list[tuple[str, str]]:
+def _fold(state: SessionState, turns: list[Turn], settings: Settings,
+          situation: Situation) -> list[tuple[str, str]]:
     """Bring `state` up to date with `turns`, and settle the friction
     count's open holds against them; returns those settled, as (gate, outcome)."""
 
-    gates.fold_turns(state, turns, settings.skill_namespaces)
+    _fold_turns(state, turns, settings, situation)
     return _settle(state, turns, settings)
+
+
+def _fold_turns(state: SessionState, turns: list[Turn], settings: Settings,
+                situation: Situation) -> None:
+    """`gates.fold_turns`, relative paths taken from the session's folder."""
+
+    gates.fold_turns(state, turns, settings.skill_namespaces,
+                     situation.project.cwd if situation.project else None)
 
 
 def _settle(state: SessionState, turns: list[Turn],

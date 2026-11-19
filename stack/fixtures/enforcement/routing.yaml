@@ -181,6 +181,43 @@ scenarios:
       - call: {kind: file_read, path: docs/export.md, whole: true}
       - call: *limit
 
+  - name: a briefed session orients by whole prints of three files, never partial ones
+    covers:
+      - {gate: pipeline, case: holds}
+      - {gate: pipeline, case: clears, way: proof}
+    setup: {installed_skills: [session-start-progressive-disclosure]}
+    steps:
+      - session_start: new
+      - prompt:
+          type: prompt
+          author: session
+          starts_session: true
+          text: "## Goal\n\nFix the export limit.\n\ngoated-route: standard | requires: tdd\n"
+      - call: {kind: skill_load, skill: tdd}
+      # Prints that orient nothing: a partial printer, a pipe, a range, a failed and a background print.
+      - call: {kind: shell_command, shell: posix, command: head src/limits.py}
+      - call: {kind: shell_command, shell: posix, command: "sed -n 1,50p src/limits.py"}
+      - call: {kind: shell_command, shell: posix, command: grep limit src/limits.py}
+      - call: {kind: shell_command, shell: posix, command: cat src/limits.py | head}
+      - call: {kind: shell_command, shell: powershell, command: Get-Content src/limits.py -TotalCount 5}
+      - call: {kind: shell_command, shell: posix, command: cat docs/export.md}
+        result: {ok: false, output: "cat: docs/export.md: No such file or directory"}
+      - call: {kind: shell_command, shell: posix, command: cat docs/export.md, background: true}
+      # One file printed and read under two spellings counts once.
+      - call: {kind: shell_command, shell: posix, command: cat ./src/export.py}
+      - call: {kind: file_read, path: src/export.py, whole: true}
+      - call: *limit
+        expect:
+          decision: hold
+          holds: [{gate: pipeline, kind: strict}]
+      - call: {kind: shell_command, shell: posix, command: cat src/limits.py}
+      - call: *limit
+        expect:
+          decision: hold
+          holds: [{gate: pipeline, kind: strict}]
+      - call: {kind: shell_command, shell: powershell, command: Get-Content docs/export.md}
+      - call: *limit
+
   - name: a briefed direct route is not held for orientation
     covers:
       - {gate: pipeline, case: near-miss}
