@@ -17,7 +17,7 @@ others (whether the tool is "concurrency safe"):
 
 | Calls in one message | Order of `PreToolUse` hooks | State from an earlier call's hook | Transcript at the hook |
 | --- | --- | --- | --- |
-| Read-only calls (`echo` in Bash) | All start at once, in message order, about 0.2 s apart; each ran its full 2 s alongside the others | Not visible: all three read the counter before any wrote it | Shows none of the message's calls |
+| Read-only calls (`echo` in Bash; one run, all three `echo`) | All started at once, in message order, about 0.2 s apart; each ran its full 2 s alongside the others | Not visible: all three read the counter before any wrote it | Shows none of the message's calls |
 | File writes (`Write`), and a Bash command that writes a file | One at a time, in message order; each hook starts about 0.1 s to 1 s after the one before ends, and after any read-only call before it has run | Visible: each read the counter the one before wrote | From the second write on, shows every call of the message, its fields included |
 
 So for the calls the routing and design gates hold (writes, and commands
@@ -31,8 +31,9 @@ read-only one. In run 2 the second and third holds came back in their short
 "Still unmet" form, so the adapter's turn markers written while judging the
 first write were read when judging the second.
 
-Read-only calls of a message are judged together, so nothing written while
-judging one reaches another. The routing gates let plain reads through, so
+In the one run of read-only calls, they were judged together, so nothing
+written while judging one reached another; that rests on a single run of
+three `echo` calls. The routing gates let plain reads through, so
 this matters only for a line carried on a read-only call that a later
 read-only call would need, which no gate asks for.
 
@@ -77,6 +78,110 @@ follow-ups, each needing the maintainer's decision:
 - Each run's stream (`--output-format stream-json --verbose`) gave the
   message id of every call, so the calls of each run are shown to share one
   message.
+
+## Not Covered
+
+- No message mixing a write, a read, and a write, so whether a read between
+  two writes splits their order is not shown.
+- No write before a read in one message.
+- No `Edit`, `MultiEdit`, `NotebookEdit`, or `PowerShell` tool; only `Write`
+  and `Bash`.
+- One run per shape, with one model on one Claude Code version.
+
+## Probe Files
+
+To repeat the probe, put these two files in a scratch folder outside any
+checkout, with the project folder beside them, and replace `<probe-dir>`
+and `<adapter-dir>` with absolute paths.
+
+`<probe-dir>/probe_hook.py`, the probe hook (it writes `probe.log` and
+`counter.txt` beside itself):
+
+```python
+"""Carrier probe hook (ticket 119, phase 4). Not part of the repo.
+
+For each PreToolUse it records, as one JSON line in probe.log beside this file:
+when the hook started and ended, the tool_use_id, which tool_use ids of the
+current assistant message the transcript already shows, and the value of a
+shared counter file it read at its start. It then sleeps, so overlapping hook
+runs are visible, and writes counter + 1. It always allows the call.
+"""
+
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+LOG = HERE / "probe.log"
+COUNTER = HERE / "counter.txt"
+SLEEP = float(os.environ.get("PROBE_SLEEP", "2"))
+
+
+def transcript_tool_ids(path: str) -> list[str]:
+    ids = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                message = entry.get("message") or {}
+                content = message.get("content")
+                if entry.get("type") == "assistant" and isinstance(content, list):
+                    ids += [c.get("id") for c in content if c.get("type") == "tool_use"]
+    except OSError:
+        pass
+    return ids
+
+
+def main() -> int:
+    payload = json.loads(sys.stdin.read() or "{}")
+    start = time.time()
+    seen = int(COUNTER.read_text()) if COUNTER.exists() else 0
+    ids = transcript_tool_ids(payload.get("transcript_path", ""))
+    time.sleep(SLEEP)
+    COUNTER.write_text(str(seen + 1))
+    record = {
+        "event": payload.get("hook_event_name"),
+        "tool": payload.get("tool_name"),
+        "tool_use_id": payload.get("tool_use_id"),
+        "command": (payload.get("tool_input") or {}).get("command"),
+        "pid": os.getpid(),
+        "start": round(start, 3),
+        "end": round(time.time(), 3),
+        "counter_seen": seen,
+        "transcript_tool_ids": ids[-6:],
+    }
+    with open(LOG, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+`<probe-dir>/project/probe-settings.json`:
+
+```json
+{
+ "env": {"GOATED_ADAPTER_STATE_DIR": "<probe-dir>/state", "GOATED_USAGE_LOG": "off"},
+ "hooks": {
+  "SessionStart": [{"hooks": [{"type": "command", "command": "python", "args": ["<adapter-dir>/goated_hook.py"]}]}],
+  "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python", "args": ["<adapter-dir>/goated_hook.py"]}]}],
+  "PreToolUse": [
+   {"matcher": ".*", "hooks": [{"type": "command", "command": "python", "args": ["<probe-dir>/probe_hook.py"]}]},
+   {"matcher": "Edit|Write|Bash|PowerShell", "hooks": [{"type": "command", "command": "python", "args": ["<adapter-dir>/goated_hook.py"]}]}
+  ],
+  "Stop": [{"hooks": [{"type": "command", "command": "python", "args": ["<adapter-dir>/goated_hook.py"]}]}]
+ }
+}
+```
+
+`<adapter-dir>` is `adapters/claude-code` in the checkout under test.
 
 ## Commands
 
