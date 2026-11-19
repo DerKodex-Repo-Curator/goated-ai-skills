@@ -62,16 +62,16 @@ a check uses the shell reading that already finds checks.
 
 ## Acceptance Criteria
 
-- [ ] After a passing check, a docstring-only edit of a Python file, of
+- [x] After a passing check, a docstring-only edit of a Python file, of
       any size, meets no Proof item; an edit changing one code line does.
-- [ ] O1: a check run with `background` true after the last change does
+- [x] O1: a check run with `background` true after the last change does
       not meet Proof at a commit or at the turn's end; the same check in
       the foreground does; `pytest &` inside one command still does not.
-- [ ] The Proof text names waiting on the user and on a background
+- [x] The Proof text names waiting on the user and on a background
       check, and the skip line for each.
-- [ ] The contract states each rule, and conformance scenarios cover the
+- [x] The contract states each rule, and conformance scenarios cover the
       hold and each near miss.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 

@@ -1887,7 +1887,8 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     an MCP commit tool when `by_tool`, which has no command to rerun.
 
     A turn that changed code needs, after its last code change, a check
-    command (proof), in a later call or later in the same shell command. It
+    command (proof), in a later call or later in the same shell command, not
+    run in the background (`_checks`); a comment-only edit needs none. It
     also needs `doc-sync` when non-test code changed, `handoff` when the
     last check after the change failed (work left unfinished), and a read
     of the design red flags after the change when `_designing` says the
@@ -2137,15 +2138,18 @@ def _code_items(changes: "_Changes", proof: _Proof) -> list[_Item]:
     # Loading a verification skill is not proof; a check run, or a skip, is.
     if unproven and not checks and not proof.skipped(PROOF_SKILL):
         skip = f"`goated-skip: {PROOF_SKILL}: <reason>`"
-        # Spec R6: a session waiting on another's result meets it with the same skip.
+        # A session waiting on another's result (round 4, R6), on the user, or on a
+        # background check (round 5, R7) meets it with the same skip.
         waiting = f"`goated-skip: {PROOF_SKILL}: <what it waits for>`"
         items.append(_Item(
-            "- Proof: no test, lint, build, or check command ran after the last code "
-            f"change. Run the relevant check, or, if none can run, write {skip} and tell "
-            "the user it is unverified. If you are waiting on another session's result "
-            f"before checking, write {waiting}.",
-            f"- Proof: run a check after the last code change, or write {skip}; when "
-            f"waiting on another session's result, {waiting}."))
+            "- Proof: no test, lint, build, or check command ran in the foreground after "
+            f"the last code change. Run the relevant check in the foreground, or, if none "
+            f"can run, write {skip} and tell the user it is unverified. If you cannot check "
+            "yet because you are waiting on another session's result, on the user, or on a "
+            f"check running in the background, write {waiting}.",
+            f"- Proof: run a check in the foreground after the last code change, or write "
+            f"{skip}; when waiting on another session's result, on the user, or on a check "
+            f"running in the background, {waiting}."))
     if checks and not checks[-1].ok and not proof.loaded_or_skipped(HANDOFF_SKILL):
         skip = f"`goated-skip: {HANDOFF_SKILL}: <reason>`"
         items.append(_Item(
@@ -2400,8 +2404,8 @@ def _setup_changes(calls, project: Project | None) -> str:
 class _Change:
     """A finished call that changed files: where in the turn, which project
     files, which of them are code, whether it is already proved: by a check
-    later in the same command, or by a subagent's own check, whether it
-    is an edit that changed only comments and docstrings
+    later in the same command, by a subagent's own check, or by changing
+    only comments, whether it is an edit that changed only comments and docstrings
     (`design_reads.comment_only`), whether a spawned subagent made it, and
     how many lines an edit tool call added (`countable_lines`), None when
     unknown."""
@@ -2497,9 +2501,10 @@ def _changes(turn: Turn, subagents: dict, project: Project | None):
         paths = _changed_paths(call, project)
         if paths:
             edited = call.kind == events.FILE_WRITE
-            yield _Change(index, paths, _proves_itself(call, project),
-                          edited and design_reads.comment_only(
-                              call.path, call),
+            comment_only = edited and design_reads.comment_only(call.path, call)
+            # Comments do not run, so a comment-only edit is already proved (Ticket 116).
+            yield _Change(index, paths, comment_only or _proves_itself(call, project),
+                          comment_only,
                           added_lines=countable_lines(call) if edited else None)
 
 
@@ -2841,9 +2846,14 @@ def _proves_itself(call, project: Project | None) -> bool:
 
 
 def _checks(calls) -> list:
+    """The shell calls in `calls` that ran a check. One the harness ran in the
+    background is not a check (Ticket 116): its launch proves nothing, and
+    its result is not read."""
+
     return [
         call for call in calls
-        if call.kind == events.SHELL_COMMAND and shell.analyze(call.command).is_check
+        if call.kind == events.SHELL_COMMAND and not call.background
+        and shell.analyze(call.command).is_check
     ]
 
 

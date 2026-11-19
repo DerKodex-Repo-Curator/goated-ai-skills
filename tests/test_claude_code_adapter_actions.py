@@ -4457,7 +4457,8 @@ class ChangeReadOrderTests(AdapterTestCase):
 
 
 class CommentOnlyEditTests(AdapterTestCase):
-    """A comment-only edit does not reopen the Design item; Proof and Docs still count it (Ticket 059)."""
+    """A comment-only edit does not reopen the Design item (Ticket 059) and keeps the proof
+    (Ticket 116); Docs still counts it."""
 
     def designed(self) -> Session:
         """A turn that met every closeout item, the Design item's red flags and change read included."""
@@ -4550,15 +4551,64 @@ class CommentOnlyEditTests(AdapterTestCase):
 
         self.assertIn("- Design:", stop(s)["reason"])
 
-    def test_proof_still_needs_a_check_after_a_comment_only_edit(self) -> None:
+    def checked(self) -> Session:
+        """A turn that changed a code line and passed a check, with Docs and Design skipped."""
+
+        s = self.routed()
+        s.say(DESIGN_SKIP)
+        s.say(DOC_SKIP)
+        s.call("Edit", edit("src/export.py", PLAIN))
+        s.run("pytest -q")
+        self.assertEqual(stop(s), {})
+        return s
+
+    def test_a_comment_only_edit_after_a_passing_check_keeps_the_proof(self) -> None:
+        # Ticket 116 (N1): comments do not run, so a comment-only edit of any size is proved.
+        long_docstring = ('    """Return the export total.\n\n'
+                          + lines_of("    Line {n} of the explanation.", 30) + '\n    """')
+        changes = (*COMMENT_EDITS, {"file_path": "src/export.py",
+                                    "old_string": '    """Old doc."""\n    return total',
+                                    "new_string": long_docstring + "\n    return total"})
+        for change in changes:
+            with self.subTest(change=change):
+                self.session = self.fresh()
+                s = self.checked()
+                s.call("Edit", change)
+                self.assertEqual(stop(s), {})
+
+    def test_a_comment_only_edit_with_no_check_in_the_turn_needs_no_proof(self) -> None:
         s = self.routed()
         s.say(DESIGN_SKIP)
         s.say(DOC_SKIP)
         s.call("Edit", COMMENT_EDITS[0])
 
-        self.assertIn("- Proof:", stop(s)["reason"])
-        s.run("pytest -q")
         self.assertEqual(stop(s), {})
+
+    def test_near_miss_an_edit_changing_one_code_line_after_the_check_needs_proof(self) -> None:
+        s = self.checked()
+        s.call("Edit", {"file_path": "src/export.py", "old_string": "total_0 = 0",
+                        "new_string": "total_0 = 1  # the first"})
+
+        self.assertIn("- Proof:", stop(s)["reason"])
+
+    def test_near_miss_a_comment_edit_of_a_file_without_known_comments_needs_proof(self) -> None:
+        s = self.checked()
+        s.call("Edit", {"file_path": "src/export.lua", "old_string": "-- old",
+                        "new_string": "-- new"})
+
+        self.assertIn("- Proof:", stop(s)["reason"])
+
+    def test_a_failed_check_before_a_comment_only_edit_still_asks_for_a_handoff(self) -> None:
+        s = self.routed()
+        s.say(DESIGN_SKIP)
+        s.say(DOC_SKIP)
+        s.call("Edit", edit("src/export.py", PLAIN))
+        s.run("pytest -q", success=False)
+        s.call("Edit", COMMENT_EDITS[0])
+
+        held = stop(s)["reason"]
+        self.assertIn("- Unfinished:", held)
+        self.assertNotIn("- Proof:", held)
 
     def test_docs_still_needs_a_change_read_after_a_comment_only_edit(self) -> None:
         s = self.routed()
@@ -4572,6 +4622,79 @@ class CommentOnlyEditTests(AdapterTestCase):
         self.assertIn("- Docs:", stop(s)["reason"])
         s.run(DIFF)
         self.assertEqual(stop(s), {})
+
+
+class BackgroundCheckTests(AdapterTestCase):
+    """A check launched in the background is not a check (Ticket 116, O1)."""
+
+    def changed(self) -> Session:
+        """A turn that changed code, with Docs and Design skipped: only Proof is left."""
+
+        s = self.routed()
+        s.say(DESIGN_SKIP)
+        s.say(DOC_SKIP)
+        s.call("Write", write("src/export.py"))
+        return s
+
+    def background(self, s: Session, command: str = "pytest -q") -> None:
+        s.call("Bash", {"command": command, "run_in_background": True})
+
+    def test_a_background_check_does_not_meet_proof_at_the_turns_end(self) -> None:
+        s = self.changed()
+        self.background(s)
+
+        self.assertIn("- Proof:", stop(s)["reason"])
+
+    def test_a_background_check_does_not_meet_proof_at_a_commit(self) -> None:
+        s = self.changed()
+        s.load("commit-message")
+        s.run(DIFF)
+        self.background(s)
+
+        held = s.call("Bash", commit("Add CSV export"))
+        self.assertEqual(hold_line(held), CLOSEOUT_HOLD)
+        self.assertIn("- Proof:", reason(held))
+
+    def test_near_miss_the_same_check_in_the_foreground_meets_proof(self) -> None:
+        s = self.changed()
+        s.load("commit-message")
+        s.run(DIFF)
+        s.run("pytest -q")
+
+        self.assertEqual(decision(s.call("Bash", commit("Add CSV export"))), "pass")
+        self.assertEqual(stop(s), {})
+
+    def test_a_check_sent_to_the_background_inside_its_command_still_does_not(self) -> None:
+        s = self.changed()
+        s.run("cp a.py src/export.py && pytest -q &")
+
+        self.assertIn("- Proof:", stop(s)["reason"])
+
+    def test_a_failed_background_check_is_not_read(self) -> None:
+        s = self.changed()
+        s.call("Bash", {"command": "pytest -q", "run_in_background": True},
+               result="Exit code 1\nfailed", failed=True)
+
+        held = stop(s)["reason"]
+        self.assertIn("- Proof:", held)
+        self.assertNotIn("- Unfinished:", held)
+
+    def test_the_wait_skip_line_clears_proof_while_a_background_check_runs(self) -> None:
+        s = self.changed()
+        self.background(s)
+        s.say("goated-skip: verification-before-completion: the background pytest run")
+
+        self.assertEqual(stop(s), {})
+
+    def test_the_proof_text_names_waiting_on_the_user_and_on_a_background_check(self) -> None:
+        s = self.changed()
+
+        held = stop(s)["reason"]
+        proof = next(line for line in held.splitlines() if line.startswith("- Proof:"))
+        self.assertIn("on the user", proof)
+        self.assertIn("on a check running in the background", proof)
+        self.assertIn("in the foreground", proof)
+        self.assertIn("`goated-skip: verification-before-completion: <what it waits for>`", proof)
 
 
 class CloseoutAtCommitTests(AdapterTestCase):

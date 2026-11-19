@@ -79,7 +79,8 @@ other than a hold, which no check counts.
   to non-test code.
 - **Check**: a test runner, linter, type checker, or build command, or a
   script whose name says test, check, lint, verify, validate, or build. Inline
-  interpreter code is not a check.
+  interpreter code is not a check, nor is a shell call run in the background
+  (see [Checks](#checks)).
 - **Counts as loaded**: a finished, successful `skill_load` of the skill, or
   a `skill_invoked` entry, since the last compaction. A load counts by its
   bare name, or under a namespace the user configured. Naming a skill in text
@@ -243,7 +244,7 @@ that change is already proved.
 | Label | Needed when | Met by | Skip line names |
 | --- | --- | --- | --- |
 | `Reads` | A write of the turn [landed](#holds) past `design`, `design-reads`, or `reference-reads` before the references it needed were read. What a write owes ends with its turn, as the other items' evidence does | Each reference is read whole after the write, or a lasting skip or a person's skip covers it; then, for a write to a project file, a read of that file or a printed diff follows the last of those reads, and a read of another changed file does not count. It comes first, since revising the write may change what the other items judge | The skill whose references it asks for; the skip lasts as one clearing that gate would |
-| `Proof` | A change not already proved | A check after the last code change, in a later call or later in the same shell command, joined by sequencing operators, not in the background | `verification-before-completion` |
+| `Proof` | A change not already proved. A [comment-only edit](#comment-only-edits), of any size, is already proved | A check after the last code change, in a later call or later in the same shell command, joined by sequencing operators, not in the background: neither sent there inside its command (`pytest &`) nor a shell call the harness runs in the background (its `background`), whose result is not read | `verification-before-completion` |
 | `Unfinished` | The last check after the change failed | `handoff` counts as loaded | `handoff` |
 | `Docs` | A non-test code file changed | `doc-sync` counts as loaded, and a change read follows the last code change | `doc-sync` |
 | `Design` | `software-design-principles` loaded in the turn, or counts as loaded and the turn made an edit the `design` gate triggers on; in both, some code change in the turn is not a [comment-only edit](#comment-only-edits) adding fewer than twenty lines | `software-design-principles/references/red-flags.md` read whole after the last code change that is not comment-only, then a change read; later changes adding fewer than five lines in total need only the change read. The item repeats the question `red-flags.md` ends with; no answer is checked | `software-design-principles` |
@@ -252,8 +253,13 @@ that change is already proved.
 | `Security` | `code-security-review` counts as loaded and a security-sensitive file changed | A change read after the last sensitive change | `code-security-review` |
 | `Setup` | The turn installed or added a named package or tool, or wrote an env or settings file inside the project | `setup-scribe` counts as loaded, before or after the change | `setup-scribe` |
 
-A session waiting on another session's result meets Proof with the same
-skip line, giving what it waits for as the reason; the Proof text says so.
+A session that cannot check yet because it waits on another session's
+result, on the user, or on a check running in the background meets Proof
+with the same skip line, giving what it waits for as the reason; the Proof
+text names each wait, and says a background check counts once run in the
+foreground. Comments do not run, so a comment-only edit after the last
+check does not make Proof needed, nor does a turn whose code changes are
+all comment-only; a failed check before it still makes Unfinished needed.
 The Setup item is not judged against code changes. A bare install that only
 restores what a manifest records, or installs a local path, does not count.
 
@@ -578,7 +584,9 @@ from the write to the check must be joined by `&&`, `;`, or a newline, none
 of them an `exit`, `return`, or the like, and neither inside a branch, loop,
 function, or group (`if`, `( )`, `{ }`); the check must not run in the
 background (`pytest &`), though a pipe or `||` after it is fine
-(`pytest 2>&1 | tee log.txt`). A code file written after the check, or by a
+(`pytest 2>&1 | tee log.txt`). A shell call whose `background` is true is
+no check at all, in a later call or the same one: its launch proves
+nothing, and its result is not read. A code file written after the check, or by a
 .NET call (`[IO.File]::WriteAllText`) anywhere in the command, is not proved
 by it; another file written after it, such as a log, does not matter.
 
@@ -1355,8 +1363,10 @@ code changes are all such edits meets no Design item. A comment-only edit of
 twenty or more lines is still substantial and selects `readability.md`, and
 it makes the Design item needed, though it does not move its change point.
 
-Proof, Docs, and every other step still count a comment-only edit as a
-change.
+A comment-only edit of any size is already proved, so it does not make
+the Proof item needed (round 5, R7). Docs and every other step still count
+it as a change: a docstring is documentation, and durable docs may repeat
+it.
 
 ### Registry Reference Signals
 
