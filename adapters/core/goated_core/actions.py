@@ -464,16 +464,22 @@ def _owed_reference(gate: str, reference: str) -> str:
     return f"{design_reads.SKILL_REFERENCES}{reference}" if gate == "design-reads" else reference
 
 
-def _owed_notice(task: TaskSkips, owed_before: dict[str, list[OwedRead]]) -> list[str]:
+def _owed_notice(task: TaskSkips, owed_before: dict[str, list[OwedRead]], turn: Turn) -> list[str]:
     """The one notice for a call the read gates let land owing reads (round
     6, R1), or none: it names only references neither an earlier write of
-    the turn (`owed_before`, by call id) nor another gate of this call
-    already owes, so the turn's first such write lists them all and a later
-    one only what it adds. A reference already read is never owed."""
+    the turn that landed (`owed_before`, by call id) nor another gate of
+    this call already owes, so the turn's first such write lists them all
+    and a later one only what it adds. A write `turn` shows failed, or
+    refused, owes nothing, as the Reads item judges; one not finished yet,
+    such as another edit of the same message, counts. A reference already
+    read is never owed."""
 
     unique = lambda values: list(dict.fromkeys(values))
+    failed = {call.id for call in turn.calls
+              if call.id and call.result is not None and not call.ok}
     already_owed = {_owed_reference(read.gate, read.reference)
-                    for reads in owed_before.values() for read in reads}
+                    for call_id, reads in owed_before.items() if call_id not in failed
+                    for read in reads}
     clauses, skills = [], []
     for gate, name, needs, label in task.landings:
         fresh = []
@@ -701,7 +707,8 @@ def check_action(call: Call, turn: Turn, overrides: dict,
                                                     changes, landable))
         holds.add(lambda: _repeated_failure_hold(proof, project))
     if task_skips is not None:
-        task_skips.owed_notices = _owed_notice(task_skips, (closeout and closeout.owed_reads) or {})
+        task_skips.owed_notices = _owed_notice(
+            task_skips, (closeout and closeout.owed_reads) or {}, turn)
     return holds.found
 
 

@@ -179,9 +179,12 @@ Every hold follows these rules:
 - **A file edit lands and reads after.** A file edit tool's write that
   `design-reads` or `reference-reads` would hold is not held by that gate,
   at any size: the read follows the edit instead of refusing it, so a
-  batch of edits sent in one message is never left half-applied (round 6,
-  decision S, [Ticket 118](../tickets/118-core-design-reads-never-refuse-an-edit.md)).
-  So is one that `design` would hold once `software-design-principles`
+  read gate no longer leaves a batch of edits sent in one message
+  half-applied (round 6, decision S,
+  [Ticket 118](../tickets/118-core-design-reads-never-refuse-an-edit.md)).
+  One edit of a batch can still be held, by an edit that does not show its
+  text, `design` waiting for the skill's load, a subagent's edits, or
+  another gate. So is one that `design` would hold once `software-design-principles`
   counts as loaded, when it asks only for reads (the maintainer's choice,
   2026-11-19). An edit that does not show the text it adds is held. A
   shell write differs: it lands only when it adds thirty or more lines,
@@ -195,14 +198,16 @@ Every hold follows these rules:
   as a copy) counts as fewer and is held. The turn's
   [Reads](#closeout-items) item asks for what a landed write owes. When no
   other gate holds the call, it carries one `reads_owed` notice naming
-  each reference it owes that no earlier write of the turn already owes:
-  the turn's first such write names them all, a later one only those it
-  adds, and one that adds none carries no notice (round 6, R1). A
-  reference read whole since the last compaction is never owed.
+  each reference it owes that no earlier write of the turn that landed
+  already owes: the turn's first such write names them all, a later one
+  only those it adds, and one that adds none carries no notice (round 6,
+  R1). A write that failed or was refused owes nothing. A reference read
+  whole since the last compaction is never owed.
   A `design` hold asking for the skill's load never lets a write land,
-  and a subagent's write is held as before, since only the main agent
-  keeps what a write owes. A call with no `id` is held too, since the
-  closeout finds a landed write by its id.
+  and a subagent's write is held as before: a subagent's turn end is
+  never held and it keeps no state, so what its write owed would never be
+  collected. A call with no `id` is held too, since the closeout finds a
+  landed write by its id.
 - **A skip line never clears a strict hold.** To drop a skill a route
   requires, write a corrected route line without it.
 - **Scratch writes.** `router-first`, `route-line`, and `pipeline` let a
@@ -396,7 +401,7 @@ A notice never holds.
 - `reads_owed`: on a pending call of the main agent that no gate holds,
   when `design`, `design-reads`, or `reference-reads` let a write
   land before its reads (see [Holds](#holds)), one per call, and only
-  when the call owes a reference no earlier write of the turn owes. It
+  when the call owes a reference no earlier write of the turn that landed owes. It
   names each such reference with the gate that selected it and its skip
   line, and says the Reads item will ask for the reads and a change read.
   An adapter shows it to the agent.

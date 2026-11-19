@@ -99,27 +99,40 @@ class RetrospectiveNoticeTests(HeldTurnTestCase):
             s.compact()
         self.assert_no_notice(parse(s.prompt("Next task.")))
 
-    def read_held_turn(self) -> str:
-        """A turn whose design-reads hold asks for the decoupling reference,
-        on a shell write that shows no text: since Ticket 118 a file edit
-        lands owing its reads, so it cannot show the hold. Returns the
-        references folder, in the Windows form this test reads it by."""
+    # The three references one reference-reads hold asks for, in the Windows
+    # form these tests read them by.
+    THREE_REFERENCES = tuple(f"D:\\goated\\skills\\{path}" for path in (
+        "write-a-spec\\references\\spec-template.md",
+        "spec-to-tickets\\references\\ticket-slicing-templates.md",
+        "code-security-review\\references\\security-review-checklist.md"))
+
+    def read_held_turn(self) -> None:
+        """A turn whose one reference-reads hold asks for three references:
+        one shell write copying a spec and a ticket and adding a dependency,
+        after an earlier write to an env file made the dependency the turn's
+        second security category. Since Ticket 118 a file edit lands owing
+        its reads, so a short shell write shows the hold instead."""
 
         s = self.session
-        s.prompt("Add the export settings.")
+        s.config.registry_path = REGISTRY
+        s.prompt("Copy in the export spec, its ticket, and its settings.")
         s.say("goated-route: direct")
-        s.load("software-design-principles")
-        self.assertEqual(decision(s.call("Bash", {"command": "generate-settings > config/export.json"})),
-                         "deny")
-        return "D:\\goated\\skills\\software-design-principles\\references\\"
+        for skill in ("write-a-spec", "spec-to-tickets", "code-security-review"):
+            s.load(skill)
+        self.assertEqual(decision(s.call("Bash", {"command": "echo KEY=1 > .env"})), "pass")
+        held = s.call("Bash", {"command": "cp a.md docs/specs/export.md && cp b.md tickets/001.md"
+                                          " && echo left-pad >> requirements.txt"})
+        self.assertEqual(decision(held), "deny")
+        self.assertEqual(held["hookSpecificOutput"]["permissionDecisionReason"].count("goated-hold:"), 1)
 
     def test_a_hold_answered_by_a_read_does_not_count(self) -> None:
         s = self.session
         self.held_turn()
         self.held_turn()
-        references = self.read_held_turn()
-        # The read ends the turn: no hook runs after it before the next prompt.
-        s.read(references + "decoupling.md")
+        self.read_held_turn()
+        # The reads end the turn: no hook runs after them before the next prompt.
+        for path in self.THREE_REFERENCES:
+            s.read(path)
         # Two unanswered and one answered: the near miss of three.
         self.assert_no_notice(parse(s.prompt("Next task.")))
 
@@ -129,8 +142,11 @@ class RetrospectiveNoticeTests(HeldTurnTestCase):
         s = self.session
         self.held_turn()
         self.held_turn()
-        references = self.read_held_turn()
-        s.read(references + "decoupling.md", limit=20)
+        self.read_held_turn()
+        first, second, third = self.THREE_REFERENCES
+        s.read(first)
+        s.read(second)
+        s.read(third, limit=20)
         self.assert_notice(parse(s.prompt("Next task.")))
 
     def test_holds_a_typed_override_stands_down_do_not_count(self) -> None:

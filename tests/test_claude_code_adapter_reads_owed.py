@@ -149,6 +149,15 @@ class ReadsOwedTests(unittest.TestCase):
                 for name in ("process.md", "errors.md"):
                     self.assertIn(name, reads)
 
+    def test_an_edit_that_failed_owes_nothing_so_the_retry_names_the_references(self) -> None:
+        # Review of Ticket 118: a rejected or failed edit landed nothing, as
+        # the Reads item already judges, so it silences no later notice.
+        self.session.call("Edit", PUBLIC_FUNCTION, failed=True, result="String not found")
+        retry = self.session.call("Edit", PUBLIC_FUNCTION)
+        self.assertEqual(decision(retry), "pass", reason(retry))
+        self.assertEqual(owed_names(retry),
+                         {"process.md", "complexity-and-modules.md", "readability.md"})
+
     def test_the_next_turn_names_its_references_again(self) -> None:
         # Owed reads end with their turn, so the next turn's notice names them afresh.
         self.session.call("Edit", PUBLIC_FUNCTION)
