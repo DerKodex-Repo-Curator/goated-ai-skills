@@ -199,6 +199,77 @@ class MockingAndSeams(ReferenceReadsTestCase):
                 s = self.first_turn("tdd")
                 self.assertPasses(s.call("Edit", edit(path, added)))
 
+
+class MocksOfCode(ReferenceReadsTestCase):
+    """Ticket 115 (spec R6, AC8): the mocking reference is asked for a mock or
+    patch of code, not for a patched environment or test data in a string."""
+
+    def test_monkeypatch_selects_only_as_a_patch_of_code(self) -> None:
+        for added in ('monkeypatch.setattr(mod, "f", g)', 'monkeypatch.delattr(mod, "f")',
+                      "with monkeypatch.context() as m:"):
+            with self.subTest(added=added):
+                s = self.first_turn("tdd")
+                self.assertHeldFor(s.call("Edit", edit(TEST_FILE, added)),
+                                   "tdd/references/mocking-and-seams.md")
+        s = self.first_turn("tdd")
+        for added in ('monkeypatch.setenv("X", "1")', "def test_x(monkeypatch):",
+                      'monkeypatch.delenv("X")', 'monkeypatch.setitem(settings, "k", 1)',
+                      'monkeypatch.delitem(settings, "k")', "monkeypatch.chdir(tmp_path)",
+                      "monkeypatch.syspath_prepend(str(tmp_path))"):
+            with self.subTest(added=added):
+                self.assertPasses(s.call("Edit", edit(TEST_FILE, added)))
+
+    def test_lines_inside_a_triple_quoted_string_select_nothing(self) -> None:
+        s = self.first_turn("tdd")
+        for lines in (('CONFIG = """', "[providers.fake]", "fake = true", '"""'),
+                      ("write(tmp_path, '''", "[providers.fake]", "''')"),
+                      ('config = textwrap.dedent("""', "    [providers.fake]",
+                       '""").strip()')):
+            with self.subTest(lines=lines):
+                self.assertPasses(s.call("Edit", edit(TEST_FILE, *lines)))
+
+    def test_the_same_words_as_code_still_select(self) -> None:
+        for lines in (("[providers.fake]",), ("store = Fake()",), ("fake = Fake()",),
+                      # A string that opens and closes on one line ends there.
+                      ('label = """a"""', "fake = Fake()"),
+                      # A docstring is no string these lines are inside.
+                      ('"""Docs."""', "fake = Fake()"),
+                      # Code after the string has closed.
+                      ('CONFIG = """', "[x]", '"""', "store = FakeStore()")):
+            with self.subTest(lines=lines):
+                s = self.first_turn("tdd")
+                self.assertHeldFor(s.call("Edit", edit(TEST_FILE, *lines)),
+                                   "tdd/references/mocking-and-seams.md")
+
+    def test_a_line_whose_string_opener_the_edit_does_not_show_is_read_as_today(self) -> None:
+        for lines in (("[providers.fake]", '"""'),
+                      ("fake = true", '"""', "x = 1")):
+            with self.subTest(lines=lines):
+                s = self.first_turn("tdd")
+                self.assertHeldFor(s.call("Edit", edit(TEST_FILE, *lines)),
+                                   "tdd/references/mocking-and-seams.md")
+
+    def test_a_line_that_may_interpolate_code_is_read_as_today(self) -> None:
+        for path, lines in ((TEST_FILE, ('text = f"""', "{fake_client()}", '"""')),
+                            ("tests/a.test.js", ("const s = `", "${mockApi()}", "`;"))):
+            with self.subTest(lines=lines):
+                s = self.first_turn("tdd")
+                self.assertHeldFor(s.call("Edit", edit(path, *lines)),
+                                   "tdd/references/mocking-and-seams.md")
+        # The near miss: an f-string line holding no braces is text.
+        s = self.first_turn("tdd")
+        self.assertPasses(s.call("Edit", edit(TEST_FILE, 'text = f"""', "fake = true", '"""')))
+
+    def test_lines_inside_a_javascript_template_literal_select_nothing(self) -> None:
+        s = self.first_turn("tdd")
+        self.assertPasses(s.call("Edit", edit("tests/a.test.ts", "const toml = `",
+                                              "[providers.fake]", "fake = true", "`;")))
+        # The near miss: the same words as code, once the literal has closed.
+        s = self.first_turn("tdd")
+        self.assertHeldFor(s.call("Edit", edit("tests/a.test.ts", "const toml = `", "[x]", "`;",
+                                               "const api = fakeApi();")),
+                           "tdd/references/mocking-and-seams.md")
+
     def test_a_patch_token_ends_at_the_call(self) -> None:
         for added, token in (('patch.object(A, "b")', '("patch.object")'),
                              ('patch ("x")', '("patch")'),

@@ -1602,10 +1602,10 @@ def _reference_edit(path: str | None, write: Call | None, proof: _Proof,
     if path is None:
         return reference_reads.Edit(is_code=False, is_test=False, added_code=[], gates=gates)
     category, cwd = security_category(path), project.cwd if project else None
+    added = design_reads.added_lines(path, write, cwd)
     return reference_reads.Edit(
         is_code=is_code(path), is_test=is_test(path, project),
-        added_code=design_reads.added_code(path, write, cwd)
-        if write is not None else [],
+        added_code=added.code, in_strings=added.in_strings,
         project_paths=tuple(_paths_in_project(path, project)),
         gates=gates,
         categories=frozenset({category, *(c for _, c in changes().sensitive)})
