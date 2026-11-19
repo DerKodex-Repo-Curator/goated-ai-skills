@@ -234,6 +234,50 @@ scenarios:
           decision: hold
           holds: [{gate: closeout, kind: justified-skip, items: [Docs, Design]}]
 
+  - name: with the conflict skill loaded, a large branch's conflict commit on a full route is not asked for Review or Verification
+    covers:
+      - {gate: closeout, case: holds}
+      - {gate: closeout, case: clears, way: proof}
+    setup: {branch_changed_lines: 450}
+    steps:
+      - prompt: {type: prompt, author: person, text: Merge the main branch into this one and commit the result.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: full | requires: tdd"
+      - call: {kind: skill_load, skill: tdd}
+      - call: {kind: shell_command, shell: posix, command: git merge main}
+        result: *conflicted
+      - call: {kind: skill_load, skill: resolving-merge-conflicts}
+      - call: *resolve_conflict
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *conflict_diff
+      - call: *merge_commit
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Proof]}]
+      - call: *conflict_check
+      - call: *merge_commit
+
+  - name: without the conflict skill loaded, the same commit is asked for Review and Verification
+    covers:
+      - {gate: closeout, case: holds}
+    setup: {branch_changed_lines: 450}
+    steps:
+      - prompt: {type: prompt, author: person, text: Merge the main branch into this one and commit the result.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: full | requires: tdd"
+      - call: {kind: skill_load, skill: tdd}
+      - call: {kind: shell_command, shell: posix, command: git merge main}
+        result: *conflicted
+      - reply: "goated-skip: resolving-merge-conflicts: one constant, the feature side wins"
+      - call: *resolve_conflict
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *conflict_diff
+      - call: *conflict_check
+      - call: *merge_commit
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Docs, Review, Verification]}]
+
   - name: after the red flags, a two-line fix sent with three context lines needs only a change read
     covers:
       - {gate: closeout, case: holds}

@@ -41,8 +41,9 @@ phases; each phase lands green.
     before the last code change does not meet it.
   - **A conflict's commit asks for less (R8).** A commit that ends a
     conflict, in a session with `resolving-merge-conflicts` loaded, asks
-    for the change read and Proof. Docs, Design and Security are not asked
-    at that commit. Without the load it gets the full closeout, and so
+    for the change read, Reads, Proof, Unfinished and Setup. Docs,
+    Design, Security, Review and Verification are not asked at that commit
+    (the maintainer, 2026-11-19). Without the load it gets the full closeout, and so
     does the next ordinary commit.
   - **Test files are not security-sensitive (R9).** A test path, as the
     core already tells test files from code, does not match the security
@@ -81,8 +82,10 @@ Security-Sensitive Paths sections, and conformance scenarios under
       Docs with no load; with the doc changed before the code, it does
       not.
 - [x] With `resolving-merge-conflicts` loaded, a commit ending a conflict
-      asks for the change read and Proof only; the same commit without the
-      load, and the next ordinary commit, ask for the full closeout.
+      asks for the change read, Reads, Proof, Unfinished and Setup, and
+      not Docs, Design, Security, Review or Verification; the same commit
+      without the load, and the next ordinary commit, ask for the full
+      closeout.
 - [x] An edit to `tests/test_session_x.py` meets no security hold; an edit
       to `src/session.py` does.
 - [x] The contract states each rule, and conformance scenarios cover each

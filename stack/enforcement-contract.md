@@ -251,7 +251,7 @@ that change is already proved.
 | `Proof` | A change not already proved. A [comment-only edit](#comment-only-edits), of any size, is already proved | A check after the last code change, in a later call or later in the same shell command, joined by sequencing operators, not in the background: neither sent there with `&` (`pytest &`, as its own call or inside a longer command) nor a shell call the harness runs in the background (its `background`), even one that writes the change itself; such a run's result is not read | `verification-before-completion` |
 | `Unfinished` | The last check after the change failed | `handoff` counts as loaded | `handoff` |
 | `Docs` | A non-test code file changed | `doc-sync` counts as loaded, and a change read follows the last code change; or, with no load, a documentation file (`.md`, `.mdx`, `.rst`, `.adoc`, or `.txt`, a dependency manifest aside) changed after the last code change and a change read follows the last such doc change (the maintainer's choice X1, 2026-11-19). A doc changed only before the last code change does not meet it | `doc-sync` |
-| `Design` | `software-design-principles` loaded in the turn, or counts as loaded and the turn made an edit the `design` gate triggers on; in both, some code change in the turn is not a [comment-only edit](#comment-only-edits) adding fewer than twenty lines | `software-design-principles/references/red-flags.md` read whole after the last code change that is not comment-only, then a change read; later changes adding fewer than five lines in total need only the change read. A line counts only when it is not blank and its text, indentation aside, is not a line of the text the edit replaces, so unchanged context sent with an edit adds none (round 6, R6). The item repeats the question `red-flags.md` ends with; no answer is checked | `software-design-principles` |
+| `Design` | `software-design-principles` loaded in the turn, or counts as loaded and the turn made an edit the `design` gate triggers on; in both, some code change in the turn is not a [comment-only edit](#comment-only-edits) adding fewer than twenty lines | `software-design-principles/references/red-flags.md` read whole after the last code change that is not comment-only, then a change read; later changes adding fewer than five lines in total need only the change read. A line counts only when it is not blank and its text, indentation aside, is not a line of the text the edit replaces, so unchanged context sent with an edit adds none (round 6, R6); an edit that only moves existing lines therefore adds none, a gap the maintainer accepted. The item repeats the question `red-flags.md` ends with; no answer is checked | `software-design-principles` |
 | `Review` | The turn changed code, the session was not started from a brief with a route line, and the branch's work is large: 400 or more changed lines of non-test code against its base | A reviewer agent that finished after the last code change; or `standards-and-spec-review` counts as loaded and a change read follows the last code change | `standards-and-spec-review` |
 | `Verification` | The turn changed code or a security-sensitive file, and the route is `full`, a spawned agent changed code, a security-sensitive file changed, or the branch's work is large | `verification-before-completion` counts as loaded | `verification-before-completion` |
 | `Security` | `code-security-review` counts as loaded and a security-sensitive file changed | A change read after the last sensitive change | `code-security-review` |
@@ -268,8 +268,9 @@ subagent's comment-only edit after its own check.
 A commit made while a merge conflict is open in the turn (see
 [Conflicts](#conflicts)), in a session where `resolving-merge-conflicts`
 counts as loaded (a person's skip of it does not count), is not asked for
-Docs, Design, or Security: it still needs its change read and the other
-items, Proof among them (the maintainer's choice X2, 2026-11-19). The same
+Docs, Design, Security, Review, or Verification. It still needs its change
+read and the items about what the resolution itself did: Reads, Proof,
+Unfinished, and Setup (the maintainer's choice X2, 2026-11-19). The same
 commit without the load gets the full closeout, and so does the next
 commit once that one has ended the conflict, and the turn's end.
 The Setup item is not judged against code changes. A bare install that only
@@ -713,8 +714,9 @@ only by markers the turn shows: an edit whose removed text spans only
 `=======` and one side, in a file not shown this turn, is not held, because
 `=======` alone is also a heading underline. A conflicting stash pop or
 apply is not held. A commit made while a conflict is open, with
-`resolving-merge-conflicts` loaded, gets a lighter closeout (see
-[Closeout Items](#closeout-items)); `git merge --continue` ends the conflict
+`resolving-merge-conflicts` loaded, is not asked for the Docs, Design,
+Security, Review, or Verification items; it still needs its change read and
+Reads, Proof, Unfinished, and Setup (see [Closeout Items](#closeout-items)); `git merge --continue` ends the conflict
 but is not a commit, so it meets no closeout.
 
 ### Commits And Pull Requests

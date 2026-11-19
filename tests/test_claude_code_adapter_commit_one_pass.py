@@ -11,7 +11,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from claude_code_adapter_support import ROUTER, Session, decision, reason
+from claude_code_adapter_support import (
+    ROUTER,
+    Session,
+    decision,
+    git_branch_with_change,
+    reason,
+)
 
 HOLD_LINE = re.compile(r"^goated-hold: ([a-z-]+) \| ([a-z-]+)$", re.MULTILINE)
 COMMIT = {"command": 'git commit -am "Raise the export limit"'}
@@ -202,8 +208,23 @@ MERGE_COMMIT = {"command": 'git commit -am "Merge the feature branch"'}
 class ConflictCommitTests(SessionCase):
     """R8: with the conflict skill loaded, a conflict's commit asks for the change read and Proof."""
 
-    def resolved(self, loaded: bool) -> Session:
-        s = self.session("Merge the feature branch.")
+    def resolved(self, loaded: bool, large_full: bool = False) -> Session:
+        """A turn that resolved a merge conflict and read the change, the
+        conflict skill `loaded` or skipped. `large_full`: on a full route,
+        in a checkout whose branch is large, so Review and Verification apply."""
+
+        if large_full:
+            self._count += 1
+            folder = self.root / f"s{self._count}"
+            folder.mkdir()
+            s = Session(folder, session_id=f"session-{self._count}")
+            git_branch_with_change(s.project, 450)
+            s.prompt("Merge the feature branch.")
+            s.load(ROUTER)
+            s.say("goated-route: full | requires: tdd")
+            s.load("tdd")
+        else:
+            s = self.session("Merge the feature branch.")
         s.call("Bash", {"command": "git merge feature"}, result=MERGE_FAILED, failed=True)
         if loaded:
             s.load("resolving-merge-conflicts")
@@ -232,6 +253,20 @@ class ConflictCommitTests(SessionCase):
         s.run("pytest -q")
         s.run(DIFF)
         self.assertIn("Docs", self.closeout_items(s.call("Bash", COMMIT)))
+
+    def test_with_the_skill_loaded_review_and_verification_are_not_asked(self) -> None:
+        s = self.resolved(loaded=True, large_full=True)
+        s.run("pytest -q")
+        self.assertEqual(decision(s.call("Bash", MERGE_COMMIT, result="[feature 1a2b3c4] Merge")),
+                         "pass")
+
+    def test_without_the_load_a_large_full_route_commit_asks_for_review_and_verification(
+            self) -> None:
+        s = self.resolved(loaded=False, large_full=True)
+        s.run("pytest -q")
+        items = self.closeout_items(s.call("Bash", MERGE_COMMIT))
+        self.assertIn("Review", items)
+        self.assertIn("Verification", items)
 
     def test_without_the_load_the_commit_gets_the_full_closeout(self) -> None:
         s = self.resolved(loaded=False)

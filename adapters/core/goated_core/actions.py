@@ -1913,8 +1913,9 @@ def _folder_key(folder: str) -> str:
 # The closeout hold's gate name, in its `goated-hold:` line.
 CLOSEOUT_GATE = "closeout"
 # The items a commit ending a conflict does not ask for once `resolving-merge-conflicts`
-# has loaded (round 6, R8): the resolution joins two sides already written.
-CONFLICT_COMMIT_SPARED = frozenset({"Docs", "Design", "Security"})
+# has loaded (round 6, R8): the resolution joins two sides already written. Reads,
+# Proof, Unfinished and Setup, about what the resolution itself did, still apply.
+CONFLICT_COMMIT_SPARED = frozenset({"Docs", "Design", "Security", "Review", "Verification"})
 
 def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = (),
                    final_text: str = "", subagents: dict | None = None,
@@ -1968,8 +1969,8 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     (spec R10). A doc changed after the last code change, with a change read
     after it, meets Docs with no load (round 6, R7). A commit made while a
     conflict is open in the turn (`_open_conflict`), with
-    `resolving-merge-conflicts` loaded, is not asked for Docs, Design or
-    Security (`CONFLICT_COMMIT_SPARED`, round 6, R8).
+    `resolving-merge-conflicts` loaded, is not asked for Docs, Design,
+    Security, Review or Verification (`CONFLICT_COMMIT_SPARED`, round 6, R8).
 
     `owed_reads` maps the call id of each write of the turn that landed past
     a read gate to the reads it owes (`OwedRead`), which the Reads item asks
