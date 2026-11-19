@@ -185,26 +185,38 @@ Every hold follows these rules:
   lines last its turn. Every other skip line lasts its turn too, including
   one that clears a `design` hold asking for the load or one that clears a
   closeout item other than Reads, and so does a person's override.
-- **A large write lands and reads after.** A write that `design-reads` or
-  `reference-reads` would hold, adding thirty or more lines, is not held by
-  that gate: resending it costs more than revising it. So is one that
-  `design` would hold once `software-design-principles` counts as loaded,
-  when it asks only for reads (the maintainer's choice, 2026-11-19). The
-  lines are counted as the gate counts them: each edit's added text counts
-  its line breaks plus one, so a text ending in a line break counts one
-  more line than it shows; a shell write counts the lines of text the
-  command shows it writes into the files the gate judges, and lines it
-  writes anywhere else, such as a scratch file, do not count. A write
-  whose lines cannot be counted (an edit that does not show its text, or
-  a shell command that names no judged file, writes a file it does not
-  name, writes text it does not show into a judged file, or changes one
-  without new text, such as a copy) counts as fewer and is held. When no
-  other gate holds the call, it carries a `reads_owed` notice naming each
-  reference, and the turn's [Reads](#closeout-items) item asks for them.
+- **A file edit lands and reads after.** A file edit tool's write that
+  `design-reads` or `reference-reads` would hold is not held by that gate,
+  at any size: the read follows the edit instead of refusing it, so a
+  read gate no longer leaves a batch of edits sent in one message
+  half-applied (round 6, decision S,
+  [Ticket 118](../tickets/118-core-design-reads-never-refuse-an-edit.md)).
+  One edit of a batch can still be held, by an edit that does not show its
+  text, `design` waiting for the skill's load, a subagent's edits, or
+  another gate. So is one that `design` would hold once `software-design-principles`
+  counts as loaded, when it asks only for reads (the maintainer's choice,
+  2026-11-19). An edit that does not show the text it adds is held. A
+  shell write differs: it lands only when it adds thirty or more lines,
+  since resending it costs more than revising it (round 5, R5), and a
+  shorter one is held as before. Its lines are counted as the gate counts
+  them: the lines of text the command shows it writes into the files the
+  gate judges, and lines it writes anywhere else, such as a scratch file,
+  do not count. A shell write whose lines cannot be counted (one that
+  names no judged file, writes a file it does not name, writes text it
+  does not show into a judged file, or changes one without new text, such
+  as a copy) counts as fewer and is held. The turn's
+  [Reads](#closeout-items) item asks for what a landed write owes. When no
+  other gate holds the call, it carries one `reads_owed` notice naming
+  each reference it owes that no earlier write of the turn that landed
+  already owes: the turn's first such write names them all, a later one
+  only those it adds, and one that adds none carries no notice (round 6,
+  R1). A write that failed or was refused owes nothing. A reference read
+  whole since the last compaction is never owed.
   A `design` hold asking for the skill's load never lets a write land,
-  and a subagent's write is held as before, since only the main agent
-  keeps what a write owes. A call with no `id` is held too, since the
-  closeout finds a landed write by its id.
+  and a subagent's write is held as before: a subagent's turn end is
+  never held and it keeps no state, so what its write owed would never be
+  collected. A call with no `id` is held too, since the closeout finds a
+  landed write by its id.
 - **A skip line never clears a strict hold.** To drop a skill a route
   requires, write a corrected route line without it.
 - **Scratch writes.** `router-first`, `route-line`, and `pipeline` let a
@@ -237,9 +249,9 @@ file (see [Holds](#holds)).
 | `pull-request` | strict | Opening a pull or merge request, by a `gh` or `glab` command or a `pull_request` call | `pr-description` counts as loaded, and a change read follows the last change to any project file | `proof`, `override` | `pr-description` |
 | `pr-review` | justified-skip | Opening a pull or merge request that changes 400 or more lines of non-test code against its base. It is judged together with `pull-request`, so both may hold the same call | `standards-and-spec-review` counts as loaded, and a change read follows the last change | `proof`, `skip-line`, `override` | `standards-and-spec-review`'s rule to review a branch of 400 or more changed lines in code outside test paths (`skills/engineering/standards-and-spec-review/SKILL.md`) |
 | `spawn` | strict | A spawn with a brief, except of a read-only agent | `handoff` counts as loaded and its `references/spawn-brief.md` is read whole, or `subagent-driven-development` counts as loaded and its implementer or reviewer prompt is read whole; and the brief passes the content check | `proof`, `override` | `handoff` and `subagent-driven-development` |
-| `design` | justified-skip | The turn's first file write adding five or more lines to a non-test code file inside the project, or any such file write while the skill does not count as loaded. A [comment-only edit](#comment-only-edits) adding fewer than twenty lines is small, so it is not such a write. A shell write counts only where it puts new text into a file: a redirect, heredoc, `tee`, `Set-Content`, `Add-Content`, `Out-File`, or `New-Item` with a value. It adds the lines of text the command shows, such as a heredoc's body, and five or more when it shows none, as for a program's output or text holding a variable, command substitution, or subexpression. Writes to two spellings of one file add up. A copy, move, restore, or in-place edit adds no text designed in the command, so it is not judged; a script's files are `scripted-edit`'s; and a write naming no file is not judged, since no file's design can be asked for (the maintainer's choice, [Ticket 098](../tickets/archive/098-adapter-contract-gaps.md)). Once the skill counts as loaded, a write adding thirty or more counted lines [lands and reads after](#holds) | `software-design-principles` counts as loaded, and every reference the edit's signals select is read whole or a lasting skip covers it | `proof`, `skip-line`, `lasting-skip`, `override` | `software-design-principles`, workflow steps 2 and 4 |
-| `design-reads` | justified-skip | A later file write to a code file, or to a configuration file that is not test data, inside the project, once `software-design-principles` counts as loaded, whose signals select a reference not read whole since the last compaction. A shell write counts as for `design`; its text is not read for signals, so only its path selects (a configuration file, the third code file), and a test file it writes selects nothing. A comment-only edit adding fewer than twenty lines is small, so its comment selects no `readability.md`. A write adding thirty or more counted lines [lands and reads after](#holds) | Each selected reference is read whole, or a lasting skip covers it | `proof`, `skip-line`, `lasting-skip`, `override` | `software-design-principles`'s Read now lists |
-| `reference-reads` | justified-skip | A write inside the project (or anywhere, for a `gate-fires` signal) that fires a signal the installed registry declares for a reference of a skill that counts as loaded. A named pattern matches as [Registry Reference Signals](#registry-reference-signals) states: `mock-or-patch` takes `patch` only as a call or decorator, `monkeypatch` only as a patch of code, and no word inside a quoted string the line shows for certain or a multi-line string the edit shows opening. A write adding thirty or more counted lines [lands and reads after](#holds) | Each named reference is read whole, or a lasting skip covers it | `proof`, `skip-line`, `lasting-skip`, `override` | The registry's `references` signals (`stack/goated-stack.yaml`, `skills/README.md`) |
+| `design` | justified-skip | The turn's first file write adding five or more lines to a non-test code file inside the project, or any such file write while the skill does not count as loaded. A [comment-only edit](#comment-only-edits) adding fewer than twenty lines is small, so it is not such a write. A shell write counts only where it puts new text into a file: a redirect, heredoc, `tee`, `Set-Content`, `Add-Content`, `Out-File`, or `New-Item` with a value. It adds the lines of text the command shows, such as a heredoc's body, and five or more when it shows none, as for a program's output or text holding a variable, command substitution, or subexpression. Writes to two spellings of one file add up. A copy, move, restore, or in-place edit adds no text designed in the command, so it is not judged; a script's files are `scripted-edit`'s; and a write naming no file is not judged, since no file's design can be asked for (the maintainer's choice, [Ticket 098](../tickets/archive/098-adapter-contract-gaps.md)). Once the skill counts as loaded, a file edit that shows its text, or a shell write adding thirty or more counted lines, [lands and reads after](#holds) | `software-design-principles` counts as loaded, and every reference the edit's signals select is read whole or a lasting skip covers it | `proof`, `skip-line`, `lasting-skip`, `override` | `software-design-principles`, workflow steps 2 and 4 |
+| `design-reads` | justified-skip | A later file write to a code file, or to a configuration file that is not test data, inside the project, once `software-design-principles` counts as loaded, whose signals select a reference not read whole since the last compaction. A shell write counts as for `design`; its text is not read for signals, so only its path selects (a configuration file, the third code file), and a test file it writes selects nothing. A comment-only edit adding fewer than twenty lines is small, so its comment selects no `readability.md`. A file edit that shows its text, or a shell write adding thirty or more counted lines, [lands and reads after](#holds) | Each selected reference is read whole, or a lasting skip covers it | `proof`, `skip-line`, `lasting-skip`, `override` | `software-design-principles`'s Read now lists |
+| `reference-reads` | justified-skip | A write inside the project (or anywhere, for a `gate-fires` signal) that fires a signal the installed registry declares for a reference of a skill that counts as loaded. A named pattern matches as [Registry Reference Signals](#registry-reference-signals) states: `mock-or-patch` takes `patch` only as a call or decorator, `monkeypatch` only as a patch of code, and no word inside a quoted string the line shows for certain or a multi-line string the edit shows opening. A file edit that shows its text, or a shell write adding thirty or more counted lines, [lands and reads after](#holds) | Each named reference is read whole, or a lasting skip covers it | `proof`, `skip-line`, `lasting-skip`, `override` | The registry's `references` signals (`stack/goated-stack.yaml`, `skills/README.md`) |
 | `review-intake` | justified-skip | A write to a code file inside the project once a reviewer agent has reported in the turn: an agent started now by a spawn whose brief followed `subagent-driven-development`'s reviewer template, whose result arrived or, started in the background, whose completion did. Any other brief, and a held or failed spawn, trigger nothing | `receiving-code-review` counts as loaded | `proof`, `skip-line`, `override` | `receiving-code-review` |
 | `security` | justified-skip | A write to a security-sensitive path inside the project (test code meets no category a word in its name selects; see [Security-Sensitive Paths](#security-sensitive-paths)): dependency manifests and lockfiles, env and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files | `code-security-review` counts as loaded | `proof`, `skip-line`, `override` | `code-security-review` |
 | `scripted-edit` | justified-skip | A shell command whose inline script writes a code file inside the project, or a file it names only at run time. It follows `security` and `review-intake` for the same file | A skip line naming `software-design-principles`; loading the skill does not clear it | `skip-line`, `override` | `software-design-principles`: change code with the file edit tools |
@@ -432,10 +444,16 @@ A notice never holds.
   line's skill, the references, and the kind of file. An adapter shows it
   to the agent.
 - `reads_owed`: on a pending call of the main agent that no gate holds,
-  when `design`, `design-reads`, or `reference-reads` let a large write
-  land before its reads (see [Holds](#holds)), one per gate. It names each reference
-  and its skip line, and says the Reads item will ask for the reads and a
-  change read. An adapter shows it to the agent.
+  when `design`, `design-reads`, or `reference-reads` let a write
+  land before its reads (see [Holds](#holds)), one per call, and only
+  when the call owes a reference no earlier write of the turn that landed owes. It
+  names each such reference with the gate that selected it and its skip
+  line, and says the Reads item will ask for the reads and a change read.
+  An adapter shows it to the agent. A known limit, accepted: an edit of
+  the same message that has not finished yet counts as already owing, so
+  if it then fails, a second edit's notice may leave out references the
+  agent saw only on the failed edit's notice; the Reads item still asks
+  for them.
 - `route_continued`: at a person's prompt in a session with a routed task, which
   then runs as `goated-route: continue` (see
   [Prompts, Turns, And Tasks](#prompts-turns-and-tasks)), once per prompt.
@@ -1379,7 +1397,10 @@ the core sees only the whole command's result.
 `software-design-principles` names, for each moment of a change, which
 reference to read. The `design` and `design-reads` gates enforce those reads
 where the skill counts as loaded, judged from the edit itself
-(`design_reads.py`): no line the agent writes declares them. They apply to
+(`design_reads.py`): no line the agent writes declares them. A file edit
+that selects a reference lands, and the reference is owed to the closeout's
+Reads item ([Holds](#holds)); which references a signal selects does not
+depend on whether the edit lands. They apply to
 an edit of a code file, or of a configuration file (`.yaml`, `.yml`,
 `.toml`, `.json`, `.env`, `.env.*`, `settings.*`) that is neither a lock
 file (`*-lock.json`, `pnpm-lock.yaml`, `npm-shrinkwrap.json`) nor test
@@ -1508,7 +1529,8 @@ file under its `references/` folder with a signal that makes its read
 required, or `advisory` with the reason no signal fits; the registry schema
 and [`fixtures/reference-reads/README.md`](fixtures/reference-reads/README.md)
 own the shape. The `reference-reads` gate enforces those signals for the
-skills that count as loaded (`reference_reads.py`).
+skills that count as loaded (`reference_reads.py`); a file edit that fires
+one lands owing the reference, as [Holds](#holds) states.
 
 The core reads the installed registry on each write. It judges each write
 inside the project: a file write, and each file a shell command names as

@@ -99,19 +99,40 @@ class RetrospectiveNoticeTests(HeldTurnTestCase):
             s.compact()
         self.assert_no_notice(parse(s.prompt("Next task.")))
 
+    # The three references one reference-reads hold asks for, in the Windows
+    # form these tests read them by.
+    THREE_REFERENCES = tuple(f"D:\\goated\\skills\\{path}" for path in (
+        "write-a-spec\\references\\spec-template.md",
+        "spec-to-tickets\\references\\ticket-slicing-templates.md",
+        "code-security-review\\references\\security-review-checklist.md"))
+
+    def read_held_turn(self) -> None:
+        """A turn whose one reference-reads hold asks for three references:
+        one shell write copying a spec and a ticket and adding a dependency,
+        after an earlier write to an env file made the dependency the turn's
+        second security category. Since Ticket 118 a file edit lands owing
+        its reads, so a short shell write shows the hold instead."""
+
+        s = self.session
+        s.config.registry_path = REGISTRY
+        s.prompt("Copy in the export spec, its ticket, and its settings.")
+        s.say("goated-route: direct")
+        for skill in ("write-a-spec", "spec-to-tickets", "code-security-review"):
+            s.load(skill)
+        self.assertEqual(decision(s.call("Bash", {"command": "echo KEY=1 > .env"})), "pass")
+        held = s.call("Bash", {"command": "cp a.md docs/specs/export.md && cp b.md tickets/001.md"
+                                          " && echo left-pad >> requirements.txt"})
+        self.assertEqual(decision(held), "deny")
+        self.assertEqual(held["hookSpecificOutput"]["permissionDecisionReason"].count("goated-hold:"), 1)
+
     def test_a_hold_answered_by_a_read_does_not_count(self) -> None:
         s = self.session
         self.held_turn()
         self.held_turn()
-        references = "D:\\goated\\skills\\software-design-principles\\references\\"
-        new_code = {"file_path": "src/export.py", "content": "def export(rows):\n    return rows\n" * 4}
-        s.prompt("Add the exporter.")
-        s.say("goated-route: direct")
-        s.load("software-design-principles")
-        self.assertEqual(decision(s.call("Write", new_code)), "deny")
+        self.read_held_turn()
         # The reads end the turn: no hook runs after them before the next prompt.
-        for name in ("process.md", "complexity-and-modules.md", "readability.md"):
-            s.read(references + name)
+        for path in self.THREE_REFERENCES:
+            s.read(path)
         # Two unanswered and one answered: the near miss of three.
         self.assert_no_notice(parse(s.prompt("Next task.")))
 
@@ -121,15 +142,11 @@ class RetrospectiveNoticeTests(HeldTurnTestCase):
         s = self.session
         self.held_turn()
         self.held_turn()
-        references = "D:\\goated\\skills\\software-design-principles\\references\\"
-        new_code = {"file_path": "src/export.py", "content": "def export(rows):\n    return rows\n" * 4}
-        s.prompt("Add the exporter.")
-        s.say("goated-route: direct")
-        s.load("software-design-principles")
-        self.assertEqual(decision(s.call("Write", new_code)), "deny")
-        for name in ("process.md", "complexity-and-modules.md"):
-            s.read(references + name)
-        s.read(references + "readability.md", limit=20)
+        self.read_held_turn()
+        first, second, third = self.THREE_REFERENCES
+        s.read(first)
+        s.read(second)
+        s.read(third, limit=20)
         self.assert_notice(parse(s.prompt("Next task.")))
 
     def test_holds_a_typed_override_stands_down_do_not_count(self) -> None:
@@ -256,8 +273,8 @@ class OnboardingNoticeTests(NoticeTestCase):
 
 
 REGISTRY = Path(__file__).resolve().parents[1] / "stack" / "goated-stack.yaml"
-MOCKING = "/opt/goated/skills/tdd/references/mocking-and-seams.md"
-WAITING = "/opt/goated/skills/diagnose/references/condition-based-waiting.md"
+SPEC_TEMPLATE = "/opt/goated/skills/write-a-spec/references/spec-template.md"
+TICKET_TEMPLATES = "/opt/goated/skills/spec-to-tickets/references/ticket-slicing-templates.md"
 
 
 def commit(message: str) -> dict:
@@ -363,23 +380,22 @@ class HoldSettlementTests(HeldTurnTestCase):
     def reference_turn(self, s: Session, *reads: str) -> None:
         s.config.registry_path = REGISTRY
         s.project.mkdir(parents=True, exist_ok=True)
-        self.turn("Make the export test robust.")
-        s.load("tdd")
-        s.load("diagnose")
-        lines = ["client = MagicMock()", "time.sleep(1)"]
-        body = "\n".join(lines)
-        held = s.call("Edit", {"file_path": "tests/test_export.py", "old_string": "pass",
-                               "new_string": body})
+        self.turn("Copy in the export spec and its ticket.")
+        s.load("write-a-spec")
+        s.load("spec-to-tickets")
+        # A file edit lands owing its reads (Ticket 118); a shell write naming
+        # two judged files still meets the hold, asking for both references.
+        held = s.call("Bash", {"command": "cp a.md docs/specs/export.md && cp b.md tickets/001-export.md"})
         self.assertIn("reference-reads", held["hookSpecificOutput"]["permissionDecisionReason"])
         for path in reads:
             s.read(path)
 
     def test_a_reference_hold_with_one_of_two_references_read_counts(self) -> None:
-        self.assert_notice(self.two_unanswered_then(lambda s: self.reference_turn(s, MOCKING)))
+        self.assert_notice(self.two_unanswered_then(lambda s: self.reference_turn(s, SPEC_TEMPLATE)))
 
     def test_a_reference_hold_with_both_references_read_does_not_count(self) -> None:
-        self.assert_no_notice(
-            self.two_unanswered_then(lambda s: self.reference_turn(s, MOCKING, WAITING)))
+        self.assert_no_notice(self.two_unanswered_then(
+            lambda s: self.reference_turn(s, SPEC_TEMPLATE, TICKET_TEMPLATES)))
 
 
 class NoticeEdgeTests(HeldTurnTestCase):

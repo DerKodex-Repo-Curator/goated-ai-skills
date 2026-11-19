@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import unittest
 
-from claude_code_adapter_support import decision
+from claude_code_adapter_support import decision, owed_names
 from goated_core import shell
 from goated_core.events import POSIX, POWERSHELL
 from test_claude_code_adapter_briefs import ORIENTATION, BriefTestCase, hold_line, reason
@@ -244,9 +244,10 @@ class ShellPrintsMeetNoReferenceTests(DesignTestCase):
         s.load(DESIGN)
         s.run("cat " + " ".join(REFERENCES + name for name in DEFINITION_REFERENCES))
 
-        held = s.call("Edit", edit("src/export.py", DEFINITION))
-        self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
-        self.assertIn(DEFINITION_REFERENCES[0], reason(held))
+        # The edit lands (Ticket 118), still owing every reference the print showed.
+        landed = s.call("Edit", edit("src/export.py", DEFINITION))
+        self.assertEqual(decision(landed), "pass")
+        self.assertEqual(owed_names(landed), set(DEFINITION_REFERENCES))
 
 
 if __name__ == "__main__":

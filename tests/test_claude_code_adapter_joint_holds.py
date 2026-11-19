@@ -18,7 +18,9 @@ from claude_code_adapter_support import (
     REPO_ROOT,
     ROUTER,
     Session,
+    context,
     decision,
+    owed_references,
     parse,
     reason,
 )
@@ -26,8 +28,6 @@ from claude_code_adapter_support import (
 REGISTRY = REPO_ROOT / "stack" / "goated-stack.yaml"
 SKILLS = "/opt/goated/skills"
 CODING = f"{SKILLS}/software-design-principles/references/coding.md"
-MOCKING = f"{SKILLS}/tdd/references/mocking-and-seams.md"
-TEST_DESIGN = f"{SKILLS}/tdd/references/test-design.md"
 TEST_FILE = "tests/test_export.py"
 HOLD_LINE = re.compile(r"^goated-hold: ([a-z-]+) \| ([a-z-]+)$", re.MULTILINE)
 FULL_ADVICE = "may not be seen"
@@ -43,11 +43,15 @@ def gates_of(output: dict) -> list[str]:
     return [gate for gate, _ in hold_lines(output)]
 
 
-def mocking_edit(*extra: str) -> dict:
-    # Twenty or more lines meet the test signals; under thirty keeps the read
-    # gates holding, since a write of thirty lands and reads after (Ticket 114).
-    lines = ["client = MagicMock()", *extra, *(f"assert total_{n} == {n}" for n in range(25))]
-    return {"file_path": TEST_FILE, "old_string": "pass", "new_string": "\n".join(lines)}
+def three_gate_edit() -> dict:
+    """An edit meeting three holds a line can clear: it removes a conflict
+    marker from a security-sensitive file after a check failed twice. Since
+    Ticket 118 the read gates no longer hold a file edit, so these three
+    stand in for design-reads, reference-reads and repeated-failure."""
+
+    return {"file_path": "src/auth.py",
+            "old_string": "<<<<<<< HEAD\nkey = 1\n=======\nkey = 2\n>>>>>>> x\n",
+            "new_string": "key = 2\n"}
 
 
 class SessionCase(unittest.TestCase):
@@ -69,11 +73,9 @@ class SessionCase(unittest.TestCase):
         return s
 
     def three_gate_session(self) -> Session:
-        """A turn where a test edit meets design-reads, reference-reads and repeated-failure."""
+        """A turn where an edit meets conflict-resolution, security and repeated-failure."""
 
         s = self.session("three")
-        s.load("software-design-principles")
-        s.load("tdd")
         s.run("pytest -q", success=False)
         s.run("pytest -q", success=False)
         return s
@@ -82,28 +84,47 @@ class SessionCase(unittest.TestCase):
 class JointHoldTests(SessionCase):
     """R1: one message carries every hold a call meets, in today's order."""
 
-    def test_a_test_edit_meeting_three_gates_is_held_once_with_all_three(self) -> None:
+    def test_an_edit_meeting_three_gates_is_held_once_with_all_three(self) -> None:
         s = self.three_gate_session()
-        held = s.call("Edit", mocking_edit())
+        held = s.call("Edit", three_gate_edit())
         self.assertEqual(decision(held), "deny")
-        self.assertEqual(gates_of(held), ["design-reads", "reference-reads", "repeated-failure"])
-        self.assertTrue(reason(held).startswith("goated-hold: design-reads | justified-skip\n"))
+        self.assertEqual(gates_of(held), ["conflict-resolution", "security", "repeated-failure"])
+        self.assertTrue(reason(held).startswith("goated-hold: conflict-resolution | justified-skip\n"))
 
     def test_clearing_all_three_lets_the_retry_pass(self) -> None:
         s = self.three_gate_session()
-        s.call("Edit", mocking_edit())
-        s.read(CODING)
-        s.read(MOCKING)
-        s.read(TEST_DESIGN)
+        s.call("Edit", three_gate_edit())
+        s.load("resolving-merge-conflicts")
+        s.load("code-security-review")
         s.say(SKIP_DIAGNOSE)
-        self.assertEqual(decision(s.call("Edit", mocking_edit())), "pass")
+        self.assertEqual(decision(s.call("Edit", three_gate_edit())), "pass")
 
     def test_a_gate_already_met_is_left_out_of_the_joint_message(self) -> None:
         # Near miss: diagnose skipped, so repeated-failure passes and two holds remain.
         s = self.three_gate_session()
         s.say(SKIP_DIAGNOSE)
-        held = s.call("Edit", mocking_edit())
-        self.assertEqual(gates_of(held), ["design-reads", "reference-reads"])
+        held = s.call("Edit", three_gate_edit())
+        self.assertEqual(gates_of(held), ["conflict-resolution", "security"])
+
+    def test_a_read_gate_lands_beside_a_hold_and_owes_nothing_until_retried(self) -> None:
+        # Since Ticket 118 a file edit the read gates would hold lands, so on a
+        # call another gate holds they add no hold, and the held call owes nothing.
+        s = self.session("reads-beside")
+        s.load("software-design-principles")
+        s.load("tdd")
+        s.run("pytest -q", success=False)
+        s.run("pytest -q", success=False)
+        mocked = {"file_path": TEST_FILE, "old_string": "pass", "new_string": "\n".join(
+            ["client = MagicMock()", *(f"assert total_{n} == {n}" for n in range(25))])}
+        held = s.call("Edit", mocked)
+        self.assertEqual(gates_of(held), ["repeated-failure"])
+        self.assertEqual(context(held), "")
+        s.say(SKIP_DIAGNOSE)
+        landed = s.call("Edit", mocked)
+        self.assertEqual(decision(landed), "pass")
+        self.assertEqual(owed_references(landed), {
+            "software-design-principles/references/coding.md",
+            "tdd/references/mocking-and-seams.md", "tdd/references/test-design.md"})
 
     def test_a_spawn_meeting_pipeline_and_spawn_is_held_once_with_both(self) -> None:
         s = self.session("spawn", "goated-route: standard | requires: tdd")
@@ -169,10 +190,10 @@ class SharedTextTests(SessionCase):
     """R3: a paragraph several holds or closeout items share appears once in a message."""
 
     def test_holds_sharing_the_unseen_line_advice_carry_it_once(self) -> None:
-        text = reason(self.three_gate_session().call("Edit", mocking_edit()))
+        text = reason(self.three_gate_session().call("Edit", three_gate_edit()))
         self.assertEqual(text.count(FULL_ADVICE), 1, text)
         # Each hold keeps its own typed way out.
-        for way_out in ("skip software-design-principles", "skip diagnose"):
+        for way_out in ("skip code-security-review", "skip diagnose"):
             self.assertIn(f"`{way_out}`", text)
 
     def changed_and_loaded(self, name: str) -> Session:
@@ -212,7 +233,7 @@ class SharedTextTests(SessionCase):
         self.assertEqual(text.count(CHANGE_READ), 1, text)
 
 
-SKIPPED = ("software-design-principles", "tdd", "diagnose")
+SKIPPED = ("resolving-merge-conflicts", "code-security-review", "diagnose")
 SHORT_PLACEMENT = "as this turn's first such hold explained"
 CARRIER = "This call has no field for a line"
 
@@ -228,15 +249,15 @@ class ClearingSectionTests(SessionCase):
     """Ticket 111: several holds a line can clear share one closing clearing section."""
 
     def test_three_line_clearable_holds_end_in_one_clearing_section(self) -> None:
-        text = reason(self.three_gate_session().call("Edit", mocking_edit()))
+        text = reason(self.three_gate_session().call("Edit", three_gate_edit()))
         held = bodies(text)
-        self.assertEqual(list(held), ["design-reads", "reference-reads", "repeated-failure"])
+        self.assertEqual(list(held), ["conflict-resolution", "security", "repeated-failure"])
         for skill in SKIPPED:
             # Each hold keeps the line it asks for; the section names each override once.
             self.assertEqual(text.count(f"`goated-skip: {skill}: <reason>`"), 1, text)
             self.assertEqual(text.count(f"`skip {skill}`"), 1, text)
             self.assertIn(f"`skip {skill}`", held["repeated-failure"])
-        for gate in ("design-reads", "reference-reads"):
+        for gate in ("conflict-resolution", "security"):
             self.assertNotIn("Put the skip line", held[gate])
             self.assertNotIn("`skip ", held[gate])
         last = held["repeated-failure"]
@@ -248,8 +269,8 @@ class ClearingSectionTests(SessionCase):
 
     def test_a_later_joint_message_gives_the_placement_in_one_sentence(self) -> None:
         s = self.three_gate_session()
-        s.call("Edit", mocking_edit())
-        text = reason(s.call("Edit", mocking_edit()))
+        s.call("Edit", three_gate_edit())
+        text = reason(s.call("Edit", three_gate_edit()))
         self.assertNotIn(FULL_ADVICE, text)
         self.assertEqual(text.count(SHORT_PLACEMENT), 1, text)
         for skill in SKIPPED:
@@ -260,7 +281,7 @@ class ClearingSectionTests(SessionCase):
         # The turn had the full advice on a hold alone, so the section is one sentence.
         s = self.three_gate_session()
         s.call("Write", {"file_path": "src/auth.py", "content": "key = 1\nsecret = 2\n"})
-        text = reason(s.call("Edit", mocking_edit()))
+        text = reason(s.call("Edit", three_gate_edit()))
         self.assertNotIn(FULL_ADVICE, text)
         self.assertEqual(text.count(SHORT_PLACEMENT), 1, text)
 
@@ -462,14 +483,16 @@ class ShortFormKeepsTheAskTests(SessionCase):
         commit = self.changed("commit-load")
         commit.call("Bash", self.COMMIT)
         self.assertIn("typed", reason(commit.call("Bash", self.COMMIT)))
+        # Since Ticket 118 a file edit lands owing its reads, so the design-reads
+        # hold is a shell write's: one that shows no text still meets it.
         designed = self.session("design-reads")
         designed.load("software-design-principles")
-        edit = {"file_path": "src/export.py", "old_string": "pass",
-                "new_string": "\n".join(f"total_{n} = {n}" for n in range(6))}
-        designed.call("Edit", edit)
-        reads = {"file_path": "src/export.py", "old_string": "a", "new_string": "try:\n    rate = 1"}
-        designed.call("Edit", reads)
-        self.assertIn('"export.py"', reason(designed.call("Edit", reads)))
+        reads = {"command": "generate-settings > config/export.json"}
+        first = reason(designed.call("Bash", reads))
+        self.assertTrue(first.startswith("goated-hold: design-reads | justified-skip\n"), first)
+        second = reason(designed.call("Bash", reads))
+        self.assertIn("Still unmet", second)
+        self.assertIn('"export.json"', second)
 
     def test_the_briefed_pipeline_short_form_keeps_the_orientation_rule(self) -> None:
         folder = self.root / "briefed"

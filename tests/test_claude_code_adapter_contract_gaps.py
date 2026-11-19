@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import unittest
 
-from claude_code_adapter_support import decision, reason
+from claude_code_adapter_support import decision, owed, reason
 from test_claude_code_adapter_design_holds import DESIGN, REFERENCES, DesignTestCase, hold_line
 
 DESIGN_HOLD = "goated-hold: design | justified-skip"
@@ -138,15 +138,17 @@ class ShellWriteDesignTests(DesignTestCase):
         self.assertEqual(decision(self.routed().run(bare, tool="PowerShell")), "pass")
 
     def test_a_shell_write_is_the_turns_first_substantial_change(self) -> None:
-        # Review B9: a later edit after a substantial heredoc meets design-reads.
+        # Review B9: a later edit after a substantial heredoc meets design-reads,
+        # and since Ticket 118 lands owing its reads under that gate's name.
         s = self.routed()
         s.load(DESIGN)
         s.run(heredoc("src/a.py", 6))
 
         definition = "def export(rows):\n" + "\n".join(f"    total_{n} = {n}" for n in range(5))
-        held = s.call("Edit", {"file_path": "src/b.py", "old_string": "pass",
-                               "new_string": definition})
-        self.assertEqual(hold_line(held), DESIGN_READS_HOLD)
+        landed = s.call("Edit", {"file_path": "src/b.py", "old_string": "pass",
+                                 "new_string": definition})
+        self.assertEqual(decision(landed), "pass")
+        self.assertIn("the design-reads gate let this write", owed(landed))
 
     def test_shell_written_files_count_toward_the_third_code_file(self) -> None:
         # Review B8 and item 11, both ways round.
@@ -155,10 +157,12 @@ class ShellWriteDesignTests(DesignTestCase):
         s.load(DESIGN)
         s.run(heredoc("src/a.py", 6))
         s.run(heredoc("src/b.py", 6))
-        held = s.call("Edit", {"file_path": "src/c.py", "old_string": "pass", "new_string": plain})
-        self.assertEqual(hold_line(held), DESIGN_READS_HOLD)
-        self.assertIn("the third code file this turn edits", reason(held))
+        landed = s.call("Edit", {"file_path": "src/c.py", "old_string": "pass", "new_string": plain})
+        self.assertEqual(decision(landed), "pass")
+        self.assertIn("the design-reads gate let this write", owed(landed))
+        self.assertIn("the third code file this turn edits", owed(landed))
 
+        # A short shell write still meets the hold itself.
         s = self.routed()
         s.load(DESIGN)
         for name in ("a", "b"):

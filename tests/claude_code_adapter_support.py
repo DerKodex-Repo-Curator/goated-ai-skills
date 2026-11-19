@@ -9,6 +9,7 @@ All content is synthetic.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import threading
@@ -533,3 +534,46 @@ def decision(output: dict) -> str:
 
 def reason(output: dict) -> str:
     return output.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
+
+
+def context(output: dict) -> str:
+    """The notices a call that runs carries to the agent, as one text."""
+
+    return output.get("hookSpecificOutput", {}).get("additionalContext", "")
+
+
+# Words only the core's `reads_owed` notice holds (Ticket 118).
+OWED_WORDS = "land before a read of"
+
+
+def owed(output: dict) -> str:
+    """The `reads_owed` notice a call that landed owing reads carries, or ""
+    when it owes none: since Ticket 118 a file edit that selects a design or
+    registry reference lands with this notice instead of being held."""
+
+    text = context(output)
+    return text if OWED_WORDS in text else ""
+
+
+def owed_references(output: dict) -> set[str]:
+    """The reference paths a call's `reads_owed` notice names, as it
+    backticks them (`software-design-principles/references/errors.md`)."""
+
+    return set(re.findall(r"`([^`\s]+\.md)`", owed(output)))
+
+
+def next_turn(s: Session, prompt: str = "Go on.") -> None:
+    """Open the next turn of the same task. Within one turn a write's
+    `reads_owed` notice names only what the turn does not owe yet, so a
+    test that shows a read counts makes its write after the read here,
+    where an unread reference would be owed and named again."""
+
+    s.prompt(prompt)
+    s.say("goated-route: continue")
+
+
+def owed_names(output: dict) -> set[str]:
+    """The file names of the references a call's `reads_owed` notice names
+    (`errors.md`), for a test that names design references by file."""
+
+    return {path.rsplit("/", 1)[-1] for path in owed_references(output)}

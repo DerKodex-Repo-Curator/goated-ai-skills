@@ -222,9 +222,10 @@ DESIGN_MIN_LINES = 5
 # A comment-only edit (`design_reads.comment_only`) adding fewer lines than
 # this is no design change either (round 4, R3): it explains code, not changes it.
 COMMENT_EDIT_MIN_LINES = 20
-# A write adding at least this many lines, counted, lands past `design-reads`
-# and `reference-reads`, and its reads become the Reads closeout item (round
-# 5, R5): sending it again costs more than reading after it.
+# A shell write adding at least this many lines, counted, lands past the read
+# gates, owing its reads to the Reads closeout item (round 5, R5). A file edit
+# tool's write lands at any size (round 6, R1); shell writes keep this floor,
+# as Ticket 118 leaves them out of its scope.
 READS_LAND_MIN_LINES = 30
 # A pull request, or a branch's work at the closeout, changing at least this
 # many lines against its base, added plus deleted, in code files outside test
@@ -349,13 +350,14 @@ class TaskSkips:
     `kept` are those earlier calls made, as (gate, skill, kind, reference).
     The `design-reads` and `reference-reads` gates add to `cleared` the
     lasting skips this turn's skip lines make, and to `notices` one text for
-    each gate a kept skip let the call through. A write adding
-    `READS_LAND_MIN_LINES` or more that a gate would hold for reads alone
-    lands instead: the gate adds its references to `owed` and a text to
-    `owed_notices`. The caller saves `cleared`, and `owed` when the call
-    goes through, and shows the notices. A caller that keeps no state, as
-    for a subagent, passes none: every skip line lasts its turn, and a
-    large write is held as a small one is, since nothing would keep what it
+    each gate a kept skip let the call through. A write that may land
+    (`_lands`) and that a gate would hold for reads alone lands instead:
+    the gate adds its references to `owed`, and `check_action` gives
+    `owed_notices` the call's one notice naming those the turn did not
+    already owe (round 6, R1). The caller saves `cleared`, and `owed` when
+    the call goes through, and shows the notices. A caller that keeps no
+    state, as for a subagent, passes none: every skip line lasts its turn,
+    and every write is held for its reads, since nothing would keep what it
     owes."""
 
     def __init__(self, kept=()) -> None:
@@ -364,6 +366,9 @@ class TaskSkips:
         self.notices: list[str] = []
         self.owed: list[OwedRead] = []
         self.owed_notices: list[str] = []
+        # Each gate that let this call land owing reads, in firing order:
+        # (gate, the name the notice gives it, its needs, how it labels each).
+        self.landings: list[tuple[str, str, list[_Need], Callable[[str, object], str]]] = []
 
 
 class _Need(NamedTuple):
@@ -427,33 +432,86 @@ def _carried_notice(gate: str, carried: list[_Need], label: Callable[[str], str]
             "and it lasts until the task ends or the context compacts")
 
 
-def _lands(proof: "_Proof", gate: str, needs: list[_Need], lines: int | None,
+def _may_land(call: Call, shell_lines: int | None = None) -> bool:
+    """Whether a write the read gates would hold for reads alone may land
+    instead, owing them (`_lands`). A file edit tool's write lands at any
+    size (round 6, R1) when it shows the text it adds; a shell write
+    (`shell_lines`, the lines it shows it writes into judged files, or None
+    when they cannot be counted) lands at `READS_LAND_MIN_LINES` or more
+    (round 5, R5). A write whose text cannot be seen is held, so a shell
+    write showing no text cannot slip past, and so is a call with no `id`,
+    since the closeout finds a landed write by its id."""
+
+    if not call.id:
+        return False
+    if call.kind == events.SHELL_COMMAND:
+        return shell_lines is not None and shell_lines >= READS_LAND_MIN_LINES
+    return countable_lines(call) is not None
+
+
+def _lands(proof: "_Proof", gate: str, needs: list[_Need], landable: bool,
            label: Callable[[str, object], str], named: str | None = None) -> bool:
     """Whether a write `gate` would hold for `needs`, the reads it still
-    lacks, lands instead (round 5, R5): it adds `lines`,
-    `READS_LAND_MIN_LINES` or more, and the caller keeps the task's state. A
-    write whose lines cannot be counted (None) is held, as a small one is,
-    so a shell write showing no text cannot slip past. A landed write's
-    needs are owed under `gate`, as its lasting skips are keyed, for the
-    Reads closeout item, with one notice naming the gate as `named` (by
-    default `gate`) and each reference by `label(reference, detail)`."""
+    lacks, lands instead: it is `landable` (`_may_land`) and the caller keeps
+    the task's state. A landed write's needs are owed under `gate`, as its
+    lasting skips are keyed, for the Reads closeout item, and the call's
+    notice (`_owed_notice`) names the gate as `named` (by default `gate`)
+    and each reference by `label(reference, detail)`."""
 
-    if not proof.keeps_task or lines is None or lines < READS_LAND_MIN_LINES:
+    if not (proof.keeps_task and landable):
         return False
     task = proof.task_skips
     task.owed += [OwedRead(gate, n.skill, n.kind or "", n.reference, n.path or "") for n in needs]
-    unique = lambda values: list(dict.fromkeys(values))
-    files = _listed(unique(f'"{_file_name(n.path)}"' for n in needs if n.path))
-    target = f" to {files}" if files else ""
-    references = ", ".join(unique(label(n.reference, n.detail) for n in needs))
-    skip_lines = " or ".join(unique(f"`goated-skip: {n.skill}: <reason>`" for n in needs))
-    task.owed_notices.append(
-        f"the {named or gate} gate let this {lines}-line write{target} land before a read of "
-        f"{references}, since a write this long costs more to send again than to revise. "
-        f"Read each {WHOLE_READ} before your final report, then read the change itself and "
-        "revise it against them; the closeout's Reads item asks for both. If one does not "
-        f"apply, write {skip_lines} on its own line instead")
+    task.landings.append((gate, named or gate, needs, label))
     return True
+
+
+def _owed_reference(gate: str, reference: str) -> str:
+    """A reference a read gate's landed write owes, as the Reads item and the
+    notice name it: a design reference by its path under the skill's folder,
+    a registry reference by its own path."""
+
+    return f"{design_reads.SKILL_REFERENCES}{reference}" if gate == "design-reads" else reference
+
+
+def _owed_notice(task: TaskSkips, owed_before: dict[str, list[OwedRead]], turn: Turn) -> list[str]:
+    """The one notice for a call the read gates let land owing reads (round
+    6, R1), or none: it names only references neither an earlier write of
+    the turn that landed (`owed_before`, by call id) nor another gate of
+    this call already owes, so the turn's first such write lists them all
+    and a later one only what it adds. A write `turn` shows failed, or
+    refused, owes nothing, as the Reads item judges; one not finished yet,
+    such as another edit of the same message, counts. A reference already
+    read is never owed."""
+
+    unique = lambda values: list(dict.fromkeys(values))
+    failed = {call.id for call in turn.calls
+              if call.id and call.result is not None and not call.ok}
+    already_owed = {_owed_reference(read.gate, read.reference)
+                    for call_id, reads in owed_before.items() if call_id not in failed
+                    for read in reads}
+    clauses, skills = [], []
+    for gate, name, needs, label in task.landings:
+        fresh = []
+        for need in needs:
+            reference = _owed_reference(gate, need.reference)
+            if reference not in already_owed:
+                already_owed.add(reference)
+                fresh.append(need)
+        if not fresh:
+            continue
+        files = _listed(unique(f'"{_file_name(n.path)}"' for n in fresh if n.path))
+        target = f" to {files}" if files else ""
+        references = ", ".join(unique(label(n.reference, n.detail) for n in fresh))
+        clauses.append(f"the {name} gate let this write{target} land before a read of {references}")
+        skills += [n.skill for n in fresh]
+    if not clauses:
+        return []
+    skip_lines = " or ".join(unique(f"`goated-skip: {skill}: <reason>`" for skill in skills))
+    return [f"{'; '.join(clauses)}. Read each {WHOLE_READ} before a commit or your final "
+            "report, then read the change itself and revise it against them; the closeout's "
+            f"Reads item asks for both. If one does not apply, write {skip_lines} on its own "
+            "line instead"]
 
 
 class _Proof:
@@ -573,11 +631,9 @@ def check_action(call: Call, turn: Turn, overrides: dict,
     loaded skill declares references, since the turn's sensitive categories
     include its subagents' changes.
     `task_skips` are the task's lasting skips, which the `design-reads` and
-    `reference-reads` gates read and add to (`TaskSkips`), and where a large
-    write those gates let land records what it owes; without it, every skip
-    line lasts its turn and no write lands owing reads. A write with no
-    `call.id` never lands either, since the closeout finds a landed write by
-    its id: its lines count as uncounted.
+    `reference-reads` gates read and add to (`TaskSkips`), and where a write
+    those gates let land (`_may_land`) records what it owes; without it,
+    every skip line lasts its turn and no write lands owing reads.
     """
 
     proof = _Proof(turn, overrides, namespaces, earlier=earlier, task_skips=task_skips)
@@ -623,11 +679,11 @@ def check_action(call: Call, turn: Turn, overrides: dict,
             placed = [_norm(t) for t in inside if t not in command.unplaced_targets]
             judged = [t for t in inside
                       if t not in command.unplaced_targets and t not in command.script_targets]
-            lines = _shell_written_lines(command, judged) if call.id else None
+            landable = _may_land(call, _shell_written_lines(command, judged))
             holds.add(lambda: _design_hold(_shell_text_writes(command, project), None, proof,
-                                           project, references, lines))
+                                           project, references, landable))
             holds.add(lambda: _reference_reads_hold(placed or [None], None, proof, project,
-                                                    references, changes, lines))
+                                                    references, changes, landable))
             holds.add(lambda: _repeated_failure_hold(proof, project))
     elif call.kind == events.PULL_REQUEST:
         holds.add(lambda: _pr_hold(proof, changes, by_tool=True))
@@ -647,20 +703,23 @@ def check_action(call: Call, turn: Turn, overrides: dict,
         # (a worktree may sit outside the project folder), as the shell branch
         # above holds every write target for them.
         holds.add(lambda: _conflict_hold([path], call, proof))
-        lines = countable_lines(call) if call.id else None
+        landable = _may_land(call)
         if _in_project(path, project):
             # A scratch file elsewhere is not the project's design or security.
             holds.add(lambda: _security_hold([path], proof, project))
             holds.add(lambda: reviewed(path))
             holds.add(lambda: _design_hold({path: _small_edit(call)}, call, proof,
-                                           project, references, lines))
+                                           project, references, landable))
             holds.add(lambda: _reference_reads_hold([path], call, proof, project,
-                                                    references, changes, lines))
+                                                    references, changes, landable))
         else:
             # Only the turn's gate signals reach it, as the repeated-failure gate does.
             holds.add(lambda: _reference_reads_hold([None], None, proof, project, references,
-                                                    changes, lines))
+                                                    changes, landable))
         holds.add(lambda: _repeated_failure_hold(proof, project))
+    if task_skips is not None:
+        task_skips.owed_notices = _owed_notice(
+            task_skips, (closeout and closeout.owed_reads) or {}, turn)
     return holds.found
 
 
@@ -1458,7 +1517,7 @@ def _git_unquoted(name: str) -> str:
 def _design_hold(writes: dict[str, bool], write: Call | None, proof: _Proof,
                  project: Project | None,
                  references: Callable[[], tuple] | None,
-                 lines: int | None = None) -> Hold | None:
+                 landable: bool = False) -> Hold | None:
     """Hold a write of project files until its design is done (spec R5).
     `writes` maps each file the call writes to whether its write is small,
     adding fewer than `DESIGN_MIN_LINES` lines or a short comment-only edit
@@ -1484,10 +1543,9 @@ def _design_hold(writes: dict[str, bool], write: Call | None, proof: _Proof,
     selects nothing. One hold asks for what every file needs: `design` when
     any of them is the turn's first substantial code change.
 
-    Once the skill counts as loaded, a write that adds `lines`,
-    `READS_LAND_MIN_LINES` or more, lands instead, owing its reads
-    (`_lands`), whichever gate would hold it; a `design` hold asking for the
-    load never lands. `lines` is None when they cannot be counted.
+    Once the skill counts as loaded, a `landable` write (`_may_land`) lands
+    instead, owing its reads (`_lands`), whichever gate would hold it; a
+    `design` hold asking for the load never lands.
     """
 
     if DESIGN_SKILL in proof.user_skips:
@@ -1516,9 +1574,9 @@ def _design_hold(writes: dict[str, bool], write: Call | None, proof: _Proof,
     # Unloaded, every judged write is substantial and held; loaded, only one with unread references.
     if loaded and not unread:
         return None
-    # Loaded, both gates ask only for reads, so a large write lands owing them;
+    # Loaded, both gates ask only for reads, so a landable write owes them;
     # the two share their lasting skips, keyed as `design-reads`.
-    if loaded and _lands(proof, "design-reads", needs, lines,
+    if loaded and _lands(proof, "design-reads", needs, landable,
                          lambda name, why: f"`{design_reads.SKILL_REFERENCES}{name}` ({why})",
                          named="design" if first else "design-reads"):
         return None
@@ -1619,7 +1677,7 @@ def _test_edit(path: str, write: Call, project: Project | None,
 def _reference_reads_hold(paths: list[str | None], write: Call | None, proof: _Proof,
                           project: Project | None, references: Callable[[], tuple] | None,
                           changes: Callable[[], "_Changes"],
-                          lines: int | None = None) -> Hold | None:
+                          landable: bool = False) -> Hold | None:
     """Hold a write until the skill references its signals select are read
     (registry reference reads spec, R5). `paths` are the project files one
     call writes, judged together so one hold asks for every reference any of
@@ -1636,9 +1694,8 @@ def _reference_reads_hold(paths: list[str | None], write: Call | None, proof: _P
     read after a finished whole read of it since the last compaction. With no
     `references`, or a registry that declares none, nothing is held. A skip
     line naming a reference's skill clears it, and lasts the task for that
-    reference on files of the same kind (spec R4, `_unexcused`). A write
-    that adds `lines`, `READS_LAND_MIN_LINES` or more, lands instead, owing
-    its reads (`_lands`); `lines` is None when they cannot be counted.
+    reference on files of the same kind (spec R4, `_unexcused`). A
+    `landable` write (`_may_land`) lands instead, owing its reads (`_lands`).
     """
 
     declared = [r for r in references() if proof.loaded(r.skill)
@@ -1658,7 +1715,7 @@ def _reference_reads_hold(paths: list[str | None], write: Call | None, proof: _P
     held = _unexcused(proof, "reference-reads", needs, lambda path: f"`{path}`")
     for need in held:
         found.setdefault(need.reference, need.detail)
-    if not found or _lands(proof, "reference-reads", held, lines,
+    if not found or _lands(proof, "reference-reads", held, landable,
                            lambda path, detail: f"`{path}` ({detail[1]})"):
         return None
     unread = list(found.values())
@@ -2197,8 +2254,7 @@ def _reads_item(owed_reads: dict[str, list[OwedRead]], changes: "_Changes",
                 continue
             if owed.skill in proof.user_skips or (owed.kind and skip in task.kept):
                 continue
-            reference = (f"{design_reads.SKILL_REFERENCES}{owed.reference}"
-                         if owed.gate == "design-reads" else owed.reference)
+            reference = _owed_reference(owed.gate, owed.reference)
             read = proof.read_index(reference, after=index)
             if read is None:
                 unread.setdefault(reference, owed.skill)

@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest import mock
 
 from core_scenarios import (
     COMMAND, command_judge, python_judge, run_scenario,
@@ -315,6 +317,73 @@ class LargeWriteTests(unittest.TestCase):
         broken = {**state.to_json(), "owed_reads": {"turn": "t1", "edits": {"w1": [{"gate": 1}]}}}
         with self.assertRaises(ValueError):
             SessionState.from_json(broken)
+
+    def test_the_state_lock_is_one_holder_at_a_time_and_never_hangs(self) -> None:
+        # Review of Ticket 118: hooks judged at once take turns at the state.
+        import time
+        from goated_core import state as state_module
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = state_module.StateStore(Path(tmp) / "state")
+            with store.locked("s1") as first:
+                self.assertTrue(first)
+                # Near miss: a hook that cannot have the lock in time goes on without it.
+                with mock.patch.object(state_module, "LOCK_WAIT_SECONDS", 0.05):
+                    with store.locked("s1") as second:
+                        self.assertFalse(second)
+                # Another session's lock is its own.
+                with store.locked("s2") as other:
+                    self.assertTrue(other)
+            # Released, and a lock a dead hook left long ago is broken.
+            lock = Path(tmp) / "state" / state_module.LOCKS_DIR / "s1.lock"
+            self.assertFalse(lock.exists())
+            lock.write_text("", encoding="utf-8")
+            old = time.time() - state_module.LOCK_STALE_SECONDS - 1
+            os.utime(lock, (old, old))
+            with store.locked("s1") as broken_in:
+                self.assertTrue(broken_in)
+
+    def test_a_lock_whose_holder_is_gone_is_broken_at_once(self) -> None:
+        # Second review of Ticket 118: a hook killed while holding the lock must
+        # not make every hook after it wait and then run unlocked.
+        import time
+        from goated_core import state as state_module
+
+        finished = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"],
+                                  capture_output=True, text=True, check=True)
+        dead_pid = int(finished.stdout)
+        with tempfile.TemporaryDirectory() as tmp:
+            store = state_module.StateStore(Path(tmp) / "state")
+            lock = Path(tmp) / "state" / state_module.LOCKS_DIR / "s1.lock"
+            for left in (str(dead_pid), ""):  # A dead holder's id, or none written.
+                with self.subTest(left=left):
+                    lock.parent.mkdir(parents=True, exist_ok=True)
+                    lock.write_text(left, encoding="utf-8")
+                    if not left:
+                        old = time.time() - 2
+                        os.utime(lock, (old, old))
+                    started = time.monotonic()
+                    with store.locked("s1") as held:
+                        self.assertTrue(held)
+                    self.assertLess(time.monotonic() - started, state_module.LOCK_WAIT_SECONDS / 2)
+            # Near miss: a live holder, this process, keeps its lock.
+            lock.write_text(str(os.getpid()), encoding="utf-8")
+            with mock.patch.object(state_module, "LOCK_WAIT_SECONDS", 0.05):
+                with store.locked("s1") as held:
+                    self.assertFalse(held)
+            self.assertTrue(lock.exists())
+
+    def test_a_folder_at_the_lock_path_goes_on_unlocked_without_waiting(self) -> None:
+        import time
+        from goated_core import state as state_module
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = state_module.StateStore(Path(tmp) / "state")
+            (Path(tmp) / "state" / state_module.LOCKS_DIR / "s1.lock").mkdir(parents=True)
+            started = time.monotonic()
+            with store.locked("s1") as held:
+                self.assertFalse(held)
+            self.assertLess(time.monotonic() - started, state_module.LOCK_WAIT_SECONDS / 2)
 
 
 class ContextDocTests(CoreTestCase):

@@ -17,6 +17,7 @@ with a warning, when its state cannot be saved.
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
@@ -187,6 +188,21 @@ def overrides_for(state: SessionState, turn: Turn, prompt_key: object) -> dict:
     return stored
 
 
+def _one_hook_at_a_time(judge_event: Callable[..., "Decision"]) -> Callable[..., "Decision"]:
+    """Judge an event that loads, changes, and saves the session's state while
+    holding the session's lock (`StateStore.locked`), so hooks the harness
+    runs at once, such as those of several edits sent in one message, do not
+    drop each other's changes: what one edit owes, or a lasting skip."""
+
+    @functools.wraps(judge_event)
+    def judged(settings: Settings, situation: Situation, *args, **kwargs) -> Decision:
+        with settings.store().locked(situation.session_id):
+            return judge_event(settings, situation, *args, **kwargs)
+
+    return judged
+
+
+@_one_hook_at_a_time
 def judge_call(settings: Settings, situation: Situation, call: Call,
                read: TurnReader) -> Decision:
     """Judge `call`, about to run: every hold it meets, in one decision."""
@@ -285,6 +301,7 @@ def _judge_subagent_call(settings: Settings, situation: Situation, call: Call,
     return Decision(shown, _warnings(log), gates.last_shell(turns))
 
 
+@_one_hook_at_a_time
 def judge_turn_end(settings: Settings, situation: Situation, read: TurnReader,
                    final_text: str = "") -> Decision:
     """Judge the end of the current turn: the closeout of a turn that changed
@@ -384,6 +401,7 @@ def note_finished_call(settings: Settings, situation: Situation, call: Call,
     return Decision([], [Notice(CLOSEOUT_NOTE_KIND, text)] if claimed else [], state.shell)
 
 
+@_one_hook_at_a_time
 def record_prompt(settings: Settings, situation: Situation, typed_text: str | None,
                   prompt_key: object = None,
                   unseen: Callable[[str | None], list[Turn] | None] = lambda since: None
@@ -461,6 +479,7 @@ def record_prompt(settings: Settings, situation: Situation, typed_text: str | No
     return Decision([], notices, state.shell)
 
 
+@_one_hook_at_a_time
 def start_session(settings: Settings, situation: Situation, source: str,
                   first_notices: Callable[[], list[str]] = lambda: []) -> Decision:
     """Start or restart the session's context, from `source` (`NEW`,

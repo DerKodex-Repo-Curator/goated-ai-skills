@@ -9,19 +9,21 @@ task's lasting skips (`actions.LastingSkip`), the reads the current turn's
 landed writes owe (`actions.OwedRead`), which
 template each of the current turn's spawns' briefs followed, the last turn
 seen, the latest user overrides, and the friction count (`friction.py`). Beside it,
-markers name what the current turn's holds already gave in full, and a
-record per project names what its onboarding notice last named. Apart from
+markers name what the current turn's holds already gave in full, a
+record per project names what its onboarding notice last named, and a lock
+file is held while a hook changes the session's state. Apart from
 the short override phrases a user typed, it holds no prompt or reply text.
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 UNSAFE_NAME_CHARS = re.compile(r"[^a-z0-9_-]")
@@ -40,6 +42,20 @@ AGENT_SEPARATOR = "~"
 # Beside the state files: per project, which onboarding skills its notice
 # last named.
 ONBOARDING_DIR = "onboarding-notices"
+# Beside the state files: one lock file per session while a hook loads,
+# changes, and saves its state (`StateStore.locked`).
+LOCKS_DIR = "locks"
+# How long a hook waits for another hook's lock before it goes on without
+# it, and how old a lock is before it counts as left by a hook that died
+# even when its holder cannot be told; no more than the wait, so a dead
+# holder's lock is broken before any hook gives up on it. A judgement takes
+# well under a second; a hook must never hang.
+LOCK_WAIT_SECONDS = 5.0
+LOCK_STALE_SECONDS = 5.0
+# A lock file holds its holder's process id, written just after the file is
+# made; one still empty this long after was left by a hook that died first.
+LOCK_EMPTY_GRACE_SECONDS = 0.5
+LOCK_RETRY_SECONDS = 0.01
 
 
 class Task:
@@ -469,6 +485,70 @@ class StateStore:
         self._ensure_private_directory()
         _write_json(self._path(session_id), state.to_json())
 
+    @contextlib.contextmanager
+    def locked(self, session_id: str) -> Iterator[bool]:
+        """Hold the session's lock while the caller loads, changes, and saves
+        its state, so of hooks judging at once each sees what the one before
+        it saved: two edits of one message are judged at the same moment,
+        and without it the last save drops what the other recorded (review
+        of Ticket 118). Yields whether the lock is held.
+
+        The lock is one exclusive file create, holding the holder's process
+        id. A lock left by a hook that died is broken at once
+        (`_abandoned`). A known limit is that two hooks breaking one
+        abandoned lock at once may both take it, and a judgement slower than
+        `LOCK_STALE_SECONDS` whose holder cannot be told may lose it. After
+        `LOCK_WAIT_SECONDS`, or at once when the lock file cannot be made at
+        all, as when a folder sits at its path, the caller goes on without
+        it, as before the lock, since a hook must not hang; that risks only
+        the old race."""
+
+        folder = self.directory / LOCKS_DIR
+        path = folder / f"{_safe_name(session_id)}.lock"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        deadline = time.monotonic() + LOCK_WAIT_SECONDS
+        try:
+            self._ensure_private_directory(folder)
+            usable = True
+        except (OSError, StateUnsafe):
+            usable = False  # The caller's own load meets the same folder and says so.
+        held = False
+        while usable and not held:
+            try:
+                handle = os.open(path, flags, 0o600)
+            except FileExistsError:
+                if path.is_dir():
+                    break  # Not a lock any hook can take or break.
+                if _abandoned(path):
+                    with contextlib.suppress(OSError):  # Another waiter broke it first.
+                        path.unlink(missing_ok=True)
+                elif time.monotonic() >= deadline:
+                    break
+                else:
+                    time.sleep(LOCK_RETRY_SECONDS)
+                continue
+            except PermissionError:
+                # On Windows, a lock whose deletion waits on a reader refuses
+                # a new create for a moment: busy, unless a folder is there.
+                if path.is_dir() or time.monotonic() >= deadline:
+                    break
+                time.sleep(LOCK_RETRY_SECONDS)
+                continue
+            except OSError:
+                break
+            held = True
+            try:
+                os.write(handle, str(os.getpid()).encode("ascii"))
+            except OSError:
+                pass  # The lock still holds; with no id, only its age frees it.
+            finally:
+                os.close(handle)
+        try:
+            yield held
+        finally:
+            if held:
+                _unlink_lock(path)
+
     def onboarding_shown(self, project_key: str) -> list[str] | None:
         """The skills the onboarding notice last named for the project
         `project_key`, or None when it was never shown or its record is unreadable."""
@@ -602,6 +682,98 @@ def _write_json(path: Path, data) -> None:
     except BaseException:
         temp.unlink(missing_ok=True)
         raise
+
+
+def _unlink_lock(path: Path) -> None:
+    """Let the lock at `path` go, retried briefly: on Windows deleting it
+    fails while a waiting hook has it open to read its holder's id, and a
+    lock left behind under a live holder's id would hold every hook up
+    until it is stale. One that still cannot be deleted is left to that."""
+
+    for attempt in range(REPLACE_ATTEMPTS):
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            if attempt < REPLACE_ATTEMPTS - 1:
+                time.sleep(REPLACE_RETRY_SECONDS)
+        except OSError:
+            return
+
+
+def _abandoned(path: Path) -> bool:
+    """Whether the lock file at `path` was left by a hook that died: the
+    process its id names is gone, it holds no id well after it was made, or
+    it is older than `LOCK_STALE_SECONDS`, which also covers a holder whose
+    process cannot be told. A file that cannot be read is not abandoned,
+    since its holder may be letting it go."""
+
+    age = _age_seconds(path)
+    if age > LOCK_STALE_SECONDS:
+        return True
+    try:
+        text = path.read_text(encoding="ascii").strip()
+    except (OSError, ValueError):
+        return False
+    if not text:
+        return age > LOCK_EMPTY_GRACE_SECONDS
+    try:
+        pid = int(text)
+    except ValueError:
+        return age > LOCK_EMPTY_GRACE_SECONDS  # Not a lock this core wrote.
+    return _process_alive(pid) is False
+
+
+def _process_alive(pid: int) -> bool | None:
+    """Whether process `pid` still runs, or None when that cannot be told.
+    On Windows it asks the process's exit code; elsewhere, signal 0, which
+    tests the process without touching it (on Windows `os.kill` would end it)."""
+
+    if pid == os.getpid():
+        return True
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes  # Only on a held lock: importing it costs every hook a few milliseconds.
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        query_limited_information, invalid_parameter, still_active = 0x1000, 87, 259
+        handle = kernel32.OpenProcess(query_limited_information, False, pid)
+        if not handle:
+            # No such process; any other refusal, such as access denied,
+            # cannot be told, so the lock's age decides.
+            return False if ctypes.get_last_error() == invalid_parameter else None
+        try:
+            code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return None
+            return code.value == still_active
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return None
+    return True
+
+
+def _age_seconds(path: Path) -> float:
+    """How long ago `path` was last written; 0 when it cannot be seen, as
+    when the hook holding it has just let it go."""
+
+    try:
+        return time.time() - path.stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 def _replace(source: Path, target: Path) -> None:
