@@ -194,7 +194,7 @@ scenarios:
           starts_session: true
           text: "## Goal\n\nFix the export limit.\n\ngoated-route: standard | requires: tdd\n"
       - call: {kind: skill_load, skill: tdd}
-      # Prints that orient nothing: a partial printer, a pipe, a range, a failed and a background print.
+      # Prints that orient nothing: a partial printer, a pipe, a range, a failed, a background and an unchecked print.
       - call: {kind: shell_command, shell: posix, command: head src/limits.py}
       - call: {kind: shell_command, shell: posix, command: "sed -n 1,50p src/limits.py"}
       - call: {kind: shell_command, shell: posix, command: grep limit src/limits.py}
@@ -203,6 +203,8 @@ scenarios:
       - call: {kind: shell_command, shell: posix, command: cat docs/export.md}
         result: {ok: false, output: "cat: docs/export.md: No such file or directory"}
       - call: {kind: shell_command, shell: posix, command: cat docs/export.md, background: true}
+      # The command succeeds whether or not the print did.
+      - call: {kind: shell_command, shell: posix, command: cat docs/export.md || true}
       # One file printed and read under two spellings counts once.
       - call: {kind: shell_command, shell: posix, command: cat ./src/export.py}
       - call: {kind: file_read, path: src/export.py, whole: true}

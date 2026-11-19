@@ -69,7 +69,10 @@ PS_VALUE_PARAMS = PS_PATH_PARAMS | frozenset(
 _COUNTS = frozenset({"-n", "-c", "--lines", "--bytes"})
 _GET_CONTENT_VALUES = frozenset(
     {"-totalcount", "-head", "-first", "-tail", "-last", "-readcount", "-delimiter",
-     "-encoding", "-stream"}
+     "-encoding", "-stream",
+     # PowerShell's common parameters that take a value, with their aliases.
+     "-erroraction", "-ea", "-warningaction", "-wa", "-outvariable", "-ov",
+     "-errorvariable", "-ev"}
 )
 FILE_PRINTERS = {
     "cat": frozenset(), "head": _COUNTS, "tail": _COUNTS,
@@ -77,6 +80,9 @@ FILE_PRINTERS = {
 }
 PS_FILE_PRINTERS = frozenset({"get-content", "gc", "type"})
 # The Get-Content parameters that print only part of a file (Ticket 110).
+# PowerShell takes a parameter by any prefix of its name, so a prefix of one
+# of these counts as it (`-Tot 5`); `-T`, which PowerShell finds ambiguous
+# and refuses, counts too.
 PS_RANGE_PARAMS = frozenset({"-totalcount", "-head", "-first", "-tail", "-last"})
 # Writes whose files cannot be read from the command line.
 UNKNOWN_TARGET_COMMANDS = frozenset({"patch"})
@@ -264,8 +270,9 @@ class ShellCommand:
     `cat`, or in PowerShell a `Get-Content`, `gc`, `type` or `cat` with no
     range parameter (`PS_RANGE_PARAMS`), whose output goes neither into a
     pipe nor into a file, not run as a background job (`&`), outside any
-    compound command, group or substitution; a file
-    named from a folder the command left unknown is left out.
+    compound command, group or substitution, in the command's trailing `&&`
+    chain (see `_sets_status`); a file named by a word the shell expands,
+    or from a folder the command left unknown, is left out.
     `script_targets` are the write targets that code given to an interpreter
     inline names (`python -c`, `node -e`, a heredoc on `python -`; see
     `_inline_script`), and `script_unknown_writes` says such code writes a
@@ -359,7 +366,8 @@ def analyze(command: str, shell: str = POSIX) -> ShellCommand:
         start = len(result.write_targets)
         before = segments[index - 1] if index else None
         piped = _piped_text(before) if before is not None and before.after == "|" else None
-        directory, unknown, is_check = _add_segment(result, segment, directory, shell, piped)
+        directory, unknown, is_check = _add_segment(result, segment, directory, shell, piped,
+                                                    _sets_status(segments, index))
         if is_check and not segment.nested and segment.after in CHECK_ENDS:
             awaiting, awaiting_unknown = [], False
         awaiting += result.write_targets[start:]
@@ -459,14 +467,15 @@ def _runs_dotnet_write(segments: list["_Segment"], index: int) -> bool:
 
 
 def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | None,
-                 shell: str, piped: tuple[str, bool] | None = None
-                 ) -> tuple[str | None, bool, bool]:
+                 shell: str, piped: tuple[str, bool] | None = None,
+                 sets_status: bool = False) -> tuple[str | None, bool, bool]:
     """Add one segment's facts to `result`, its write targets taken from
     `directory` (see `_change_directory`) and its redirects read as `shell`
     reads them; return the directory later segments run in, whether it
     writes files it does not name, and whether it is a check. `piped` is the
     text the segment before pipes into it, when a text producer gives it
-    (see `_piped_text`)."""
+    (see `_piped_text`). `sets_status` says the command fails whenever this
+    segment fails, as `_sets_status` reads it."""
 
     null_targets = NULL_TARGETS[shell]
     targets = [t for t in segment.redirects if t.lower() not in null_targets]
@@ -525,7 +534,7 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
             result.shows_git_diff = True
     elif name in FILE_PRINTERS:
         result.shown_files += [_from_directory(directory, f) for f in _printed_files(name, args)]
-        if directory is not None:
+        if directory is not None and sets_status:
             result.whole_prints += [_from_directory(directory, f)
                                     for f in _printed_whole(name, args, segment, shell)]
     elif name in FORGE_DIFFS:
@@ -1353,18 +1362,40 @@ def _printed_files(name: str, args: list[str]) -> list[str]:
     return _positional(_drop_values(args, values))
 
 
+def _sets_status(segments: list["_Segment"], index: int) -> bool:
+    """True when the command fails whenever segment `index` fails: it sits in
+    the command's trailing `&&` chain, every separator after it `&&` or a
+    later pipe, so no `;`, `||`, newline, or `&` lets a later command set the
+    exit status instead (`cat a || true` succeeds with no print)."""
+
+    return segments[index].after in AND_THEN and all(
+        later.after in (*AND_THEN, "|") for later in segments[index + 1:])
+
+
 def _printed_whole(name: str, args: list[str], segment: "_Segment", shell: str) -> list[str]:
     """The files the file printer `name`, run in `shell`, shows the agent
-    whole, as `ShellCommand.whole_prints` says, as written."""
+    whole, as `ShellCommand.whole_prints` says, as written. The caller
+    checks that the command's exit status is the print's."""
 
     if segment.nested or segment.after in ("|", "&") or segment.out_redirects:
         return []
     if shell == POSIX:
-        return _printed_files(name, args) if name == "cat" else []
-    # PowerShell's `cat` is an alias of Get-Content, so it takes the same parameters.
-    if any(arg.lower().partition(":")[0] in PS_RANGE_PARAMS for arg in args):
+        printed = _printed_files(name, args) if name == "cat" else []
+    elif any(_is_range_param(arg) for arg in args):
         return []
-    return _printed_files("get-content", args)
+    else:
+        # PowerShell's `cat` is an alias of Get-Content, so it takes the same parameters.
+        printed = _printed_files("get-content", args)
+    # A word the shell expands may name no file, or several.
+    return [path for path in printed if _plain(path) and not path.startswith("~")]
+
+
+def _is_range_param(arg: str) -> bool:
+    """True when `arg` names a Get-Content range parameter, by any prefix."""
+
+    param = arg.lower().partition(":")[0]
+    return len(param) > 1 and param.startswith("-") and any(
+        name.startswith(param) for name in PS_RANGE_PARAMS)
 
 
 def _positional(args: list[str]) -> list[str]:

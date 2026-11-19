@@ -1124,7 +1124,13 @@ A simple command prints each file it names whole (a whole print, toward
 orientation only) when it is `cat` (with any options, so `cat -n a` counts),
 or in a `powershell` command `Get-Content`, `gc`, `type`, or `cat` (an
 alias of `Get-Content` there), with none of `-TotalCount`, `-Head`,
-`-First`, `-Tail`, or `-Last` (`PS_RANGE_PARAMS`), and when:
+`-First`, `-Tail`, or `-Last` (`PS_RANGE_PARAMS`), each by any prefix of its
+name as PowerShell takes it (`-Tot 5`, `-T 5`), and when:
+
+- the command fails whenever it fails: it sits in the command's trailing
+  `&&` chain, with only `&&` or a later pipe after it, since after a `;`,
+  `||`, or newline another command sets the exit status
+  (`cat a || true`, `cat a; echo ok`);
 
 - its output goes neither into a pipe (`cat a | head`) nor into a file or
   null device; a redirect of standard error alone leaves it a print
@@ -1136,7 +1142,11 @@ alias of `Get-Content` there), with none of `-TotalCount`, `-Head`,
   prints `src/a.py`, while after `cd src; ` or a bare `cd src`, which Bash
   may resolve through `CDPATH`, the file cannot be named and does not count.
 
-`cat a b c` prints three files. `head`, `tail`, `sed`, `grep`, `less`, and
+`cat a b c` prints three files. A word the shell expands (holding `$`, a
+backtick, `%`, `*`, `?`, `[`, `{`, or `(`, or opening with `~`) names no
+one file and does not count, so `cat *.py` prints none whole; a value of
+`-ErrorAction`, `-WarningAction`, `-OutVariable`, `-ErrorVariable`, or
+their aliases names no file. `head`, `tail`, `sed`, `grep`, `less`, and
 every other command print none whole, nor does `type` in a `posix` command,
 which describes commands. A relative path is taken from the session's
 folder, so `cat src/a.py` and a `file_read` of the same file's absolute path

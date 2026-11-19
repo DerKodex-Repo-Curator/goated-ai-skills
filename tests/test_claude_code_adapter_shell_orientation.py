@@ -80,6 +80,37 @@ class WholePrintTests(unittest.TestCase):
         # The last command of a pipeline prints to the agent.
         self.assertEqual(self.whole("echo x | cat a.md"), ["a.md"])
 
+    def test_a_print_counts_only_when_its_exit_status_is_the_commands(self) -> None:
+        """A finished command's success proves a print only when nothing after
+        it but `&&` (or a pipe after a later command) can set its exit status."""
+
+        for command in ("cat a.md || true", "cat a.md; echo ok", "cat a.md; true",
+                        "cat a.md\ntrue", "cat a.md && true || true"):
+            with self.subTest(command=command):
+                self.assertEqual(self.whole(command), [])
+        self.assertEqual(self.whole("cat a.md && cat b.md"), ["a.md", "b.md"])
+        self.assertEqual(self.whole("true; cat a.md"), ["a.md"])
+        self.assertEqual(self.whole("cat a.md && git status | head"), ["a.md"])
+
+    def test_option_values_are_not_files(self) -> None:
+        for command in ("Get-Content a.md -ErrorAction SilentlyContinue", "gc a.md -EA 0",
+                        "Get-Content a.md -WarningAction Ignore", "gc a.md -WA 0",
+                        "Get-Content a.md -OutVariable out", "gc a.md -OV out",
+                        "Get-Content a.md -ErrorVariable err", "gc a.md -EV err"):
+            with self.subTest(command=command):
+                self.assertEqual(self.whole(command, POWERSHELL), ["a.md"])
+
+    def test_a_shortened_range_parameter_prints_part(self) -> None:
+        for parameter in ("-Tot 5", "-T 5", "-Ta 5", "-He 5", "-Fir 5"):
+            with self.subTest(parameter=parameter):
+                self.assertEqual(self.whole(f"Get-Content a.md {parameter}", POWERSHELL), [])
+
+    def test_a_word_the_shell_expands_names_no_one_file(self) -> None:
+        for word in ("*.py", "src/?.py", "[ab].md", "$HOME/a.md", "~/a.md"):
+            with self.subTest(word=word):
+                self.assertEqual(self.whole(f"cat {word} c.md"), ["c.md"])
+        self.assertEqual(self.whole("cat {a,b}.md"), [])
+
     def test_a_print_is_named_from_where_the_command_started(self) -> None:
         self.assertEqual(self.whole("cd ./src && cat a.py"), ["src/a.py"])
         self.assertEqual(self.whole("cat /abs/a.py"), ["/abs/a.py"])
@@ -108,8 +139,12 @@ class ShellOrientationTests(OrientedTestCase):
 
     def test_get_content_counts(self) -> None:
         s = self.full_brief()
+        # After `;` only the last print's status is the command's.
         s.run("Get-Content a.md; Get-Content b.md; gc c.md", tool="PowerShell")
+        s.run("Get-Content a.md", tool="PowerShell")
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), PIPELINE)
 
+        s.run("type b.md", tool="PowerShell")
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
     def test_partial_prints_do_not_count(self) -> None:
