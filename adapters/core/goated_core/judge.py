@@ -432,11 +432,6 @@ def record_prompt(settings: Settings, situation: Situation, typed_text: str | No
         if typed_text is not None:
             recorder.prompt(typed_text, found["phrases"])
 
-    state.overrides = {"prompt": prompt_key, **found}
-    notices = []
-    if found["phrases"]:
-        typed = ", ".join(f'"{phrase}"' for phrase in found["phrases"])
-        notices.append(Notice(OVERRIDE_RECORDED, f"recorded your override for this prompt: {typed}"))
     continued = None
     if typed_text is not None:
         # Only from a turn already seen, as the next judged call folds: with
@@ -447,7 +442,16 @@ def record_prompt(settings: Settings, situation: Situation, typed_text: str | No
             before = turns if turns is not None else unseen(state.last_turn)
             if before:
                 _fold_turns(state, before, settings, situation)
+                # The overrides still kept are the last typed turn's, so a
+                # `skip routing` there routes a task its later lines started.
+                for turn in before:
+                    gates.note_task_routed(state, turn, overrides_for(state, turn, None))
         continued = gates.continued_route_notice(state)
+    state.overrides = {"prompt": prompt_key, **found}
+    notices = []
+    if found["phrases"]:
+        typed = ", ".join(f'"{phrase}"' for phrase in found["phrases"])
+        notices.append(Notice(OVERRIDE_RECORDED, f"recorded your override for this prompt: {typed}"))
     if continued:
         notices.append(Notice(ROUTE_CONTINUED, continued))
     if typed_text is not None and friction.claim_retrospective_notice(state):

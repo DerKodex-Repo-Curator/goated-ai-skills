@@ -633,7 +633,7 @@
       "required": ["kind", "text"],
       "properties": {
         "kind": {
-          "description": "fail_open: the core could not judge and allowed the event. warning: it judged, but something it reads was missing. override_recorded: a person's override for the turn. closeout_note: the turn's closeout items, early. session_notice: a session-start or friction notice. skip_carried: a read gate let a call through on a skip line that lasts the task. reads_owed: a read gate let a large write through before its references were read, which the closeout's Reads item then asks for. route_continued: a person's prompt in a session with a task runs as `goated-route: continue`, and says that new work needs a new route line.",
+          "description": "fail_open: the core could not judge and allowed the event. warning: it judged, but something it reads was missing. override_recorded: a person's override for the turn. closeout_note: the turn's closeout items, early. session_notice: a session-start or friction notice. skip_carried: a read gate let a call through on a skip line that lasts the task. reads_owed: a read gate let a write through before its references were read, which the closeout's Reads item then asks for. route_continued: a person's prompt in a session with a routed task runs as `goated-route: continue`, and says that new work needs a new route line.",
           "enum": ["fail_open", "warning", "override_recorded", "closeout_note", "session_notice", "skip_carried", "reads_owed", "route_continued"]
         },
         "text": {"type": "string", "minLength": 1}

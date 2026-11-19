@@ -331,16 +331,18 @@ A recorded override brings an `override_recorded` notice.
 
 - A prompt with `author: person` opens a turn and may carry overrides. A
   prompt from another session (`author: session`) opens a turn with no
-  override. In a session with a task, the turn either prompt opens runs as
-  `continue` until a route line in it says otherwise, so `route-line` does
-  not hold it; its skip lines, checks, and change reads still start empty.
-  A route-like line in that turn that fails the grammar ends the carried
-  route: `route-line` holds, quoting it, until a valid line. A route line
-  that starts a new task replaces the carried route, and its skills load
-  through `pipeline`. In a session with no task, or as the brief that
-  starts a session, either prompt meets `route-line` and `router-first` as
-  today, and so does every prompt with `author: host` or `unknown` that
-  opens a turn.
+  override. The turn another session's prompt opens in a session with a
+  task, and the turn a person's prompt opens in a session with a routed
+  task (see below), runs as `continue` until a route line in it says
+  otherwise, so `route-line` does not hold it; its skip lines, checks, and
+  change reads still start empty. A route-like line in that turn that
+  fails the grammar ends the carried route: `route-line` holds, quoting
+  it, until a valid line. A route line that starts a new task replaces the
+  carried route, and its skills load through `pipeline`. In a session with
+  no task, as the brief that starts a session, or, for a person's prompt,
+  in a task that is not routed, either prompt meets `route-line` and
+  `router-first` as today, and so does every prompt with `author: host` or
+  `unknown` that opens a turn.
 - **A person's follow-up** (decision T1 of round 6). A task is **routed**
   when a route line other than bare `continue` or a brief's route line
   started it, or when the turn whose bare `continue` line started it met

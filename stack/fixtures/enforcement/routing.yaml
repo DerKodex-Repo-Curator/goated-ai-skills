@@ -239,6 +239,18 @@ scenarios:
         expect: {decision: allow, notices: [route_continued]}
       - call: *import_limit
 
+  - name: a person's skip of routing counts for a continue line written after the turn's last judged call
+    covers:
+      - {gate: route-line, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Skip routing and fix the export limit.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - call: {kind: shell_command, shell: posix, command: git status}
+      - reply: "goated-route: continue"
+      - prompt: {type: prompt, author: person, text: Now the import limit.}
+        expect: {decision: allow, notices: [route_continued]}
+      - call: *limit
+
   - name: a route line after a turn's last judged call still carries the next prompt, with its notice
     covers:
       - {gate: route-line, case: near-miss}
