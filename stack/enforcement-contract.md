@@ -41,9 +41,10 @@ A test fails when a gate an adapter can return is missing from the
 The event model's names are used throughout: call kinds, turns, entries,
 prompts and their authors, and the project.
 
-The event model is at version 3. Every change to it bumps the version
-(ADR 0004), so a request of version 1 or 2 is refused. Version 3 (Ticket
-101) added the `skip_carried` notice kind (see [Notices](#notices)). Version 2 (Ticket 080) added
+The event model is at version 4. Every change to it bumps the version
+(ADR 0004), so a request of version 1, 2, or 3 is refused. Version 4
+(Ticket 114) added the `reads_owed` notice kind, and version 3 (Ticket
+101) the `skip_carried` notice kind (see [Notices](#notices)). Version 2 (Ticket 080) added
 what the rules read and version 1 could not carry: a pull request's `base`,
 `head`, and `repository`, for its size; an edit's `removed` or `added` text
 as null when the call does not show it, such as a whole-file write's or a
@@ -154,7 +155,8 @@ Every hold follows these rules:
   compaction: one that clears a `reference-reads` hold, or a `design-reads`
   or `design` hold while `software-design-principles` counts as loaded,
   when both ask only for reads. The same goes for a skip line that would
-  clear the hold a write meets. It lasts for each reference that hold names
+  clear the hold a write meets, and one that meets the Reads closeout item,
+  for the gate whose reads the landed write owes. It lasts for each reference that hold names
   and the same kind of file: a test file, a configuration file, another
   code file, or another file. The two design gates share one set of lasting
   skips, so a skip from `design-reads` covers the reads of a later turn's
@@ -167,7 +169,21 @@ Every hold follows these rules:
   lasting skip. Only the main agent keeps lasting skips: a subagent's skip
   lines last its turn. Every other skip line lasts its turn too, including
   one that clears a `design` hold asking for the load or one that clears a
-  closeout item, and so does a person's override.
+  closeout item other than Reads, and so does a person's override.
+- **A large write lands and reads after.** A write that `design-reads` or
+  `reference-reads` would hold, adding thirty or more lines, is not held by
+  that gate: resending it costs more than revising it. The lines are
+  counted as the gate counts them: every line of each edit's added text,
+  or for a shell write, the lines of text the command shows in all. A
+  write whose lines cannot be counted (an edit that does not show its
+  text, or a shell command that writes text it does not show, a file it
+  does not name, or a file without new text, such as a copy) counts as
+  fewer and is held. When no other gate holds the call, it carries a
+  `reads_owed` notice naming each reference, and the turn's
+  [Reads](#closeout-items) item asks for them. `design` never lets a
+  write land this way, and a subagent's write is held as before, since
+  only the main agent keeps what a write owes. A call with no `id` is held
+  too, since the closeout finds a landed write by its id.
 - **A skip line never clears a strict hold.** To drop a skill a route
   requires, write a corrected route line without it.
 - **Scratch writes.** `router-first`, `route-line`, and `pipeline` let a
@@ -196,23 +212,25 @@ file (see [Holds](#holds)).
 | `pr-review` | justified-skip | Opening a pull or merge request that changes 400 or more lines of non-test code against its base. It is judged together with `pull-request`, so both may hold the same call | `standards-and-spec-review` counts as loaded, and a change read follows the last change | `proof`, `skip-line`, `override` | `standards-and-spec-review`'s rule to review a branch of 400 or more changed lines in code outside test paths (`skills/engineering/standards-and-spec-review/SKILL.md`) |
 | `spawn` | strict | A spawn with a brief, except of a read-only agent | `handoff` counts as loaded and its `references/spawn-brief.md` is read whole, or `subagent-driven-development` counts as loaded and its implementer or reviewer prompt is read whole; and the brief passes the content check | `proof`, `override` | `handoff` and `subagent-driven-development` |
 | `design` | justified-skip | The turn's first file write adding five or more lines to a non-test code file inside the project, or any such file write while the skill does not count as loaded. A [comment-only edit](#comment-only-edits) adding fewer than twenty lines is small, so it is not such a write. A shell write counts only where it puts new text into a file: a redirect, heredoc, `tee`, `Set-Content`, `Add-Content`, `Out-File`, or `New-Item` with a value. It adds the lines of text the command shows, such as a heredoc's body, and five or more when it shows none, as for a program's output or text holding a variable, command substitution, or subexpression. Writes to two spellings of one file add up. A copy, move, restore, or in-place edit adds no text designed in the command, so it is not judged; a script's files are `scripted-edit`'s; and a write naming no file is not judged, since no file's design can be asked for (the maintainer's choice, [Ticket 098](../tickets/archive/098-adapter-contract-gaps.md)) | `software-design-principles` counts as loaded, and every reference the edit's signals select is read whole or a lasting skip covers it | `proof`, `skip-line`, `lasting-skip`, `override` | `software-design-principles`, workflow steps 2 and 4 |
-| `design-reads` | justified-skip | A later file write to a code file, or to a configuration file that is not test data, inside the project, once `software-design-principles` counts as loaded, whose signals select a reference not read whole since the last compaction. A shell write counts as for `design`; its text is not read for signals, so only its path selects (a configuration file, the third code file), and a test file it writes selects nothing. A comment-only edit adding fewer than twenty lines is small, so its comment selects no `readability.md` | Each selected reference is read whole, or a lasting skip covers it | `proof`, `skip-line`, `lasting-skip`, `override` | `software-design-principles`'s Read now lists |
-| `reference-reads` | justified-skip | A write inside the project (or anywhere, for a `gate-fires` signal) that fires a signal the installed registry declares for a reference of a skill that counts as loaded. A named pattern matches as [Registry Reference Signals](#registry-reference-signals) states: `mock-or-patch` takes `patch` only as a call or decorator, and no word inside a quoted string the line shows for certain | Each named reference is read whole, or a lasting skip covers it | `proof`, `skip-line`, `lasting-skip`, `override` | The registry's `references` signals (`stack/goated-stack.yaml`, `skills/README.md`) |
+| `design-reads` | justified-skip | A later file write to a code file, or to a configuration file that is not test data, inside the project, once `software-design-principles` counts as loaded, whose signals select a reference not read whole since the last compaction. A shell write counts as for `design`; its text is not read for signals, so only its path selects (a configuration file, the third code file), and a test file it writes selects nothing. A comment-only edit adding fewer than twenty lines is small, so its comment selects no `readability.md`. A write adding thirty or more counted lines [lands and reads after](#holds) | Each selected reference is read whole, or a lasting skip covers it | `proof`, `skip-line`, `lasting-skip`, `override` | `software-design-principles`'s Read now lists |
+| `reference-reads` | justified-skip | A write inside the project (or anywhere, for a `gate-fires` signal) that fires a signal the installed registry declares for a reference of a skill that counts as loaded. A named pattern matches as [Registry Reference Signals](#registry-reference-signals) states: `mock-or-patch` takes `patch` only as a call or decorator, and no word inside a quoted string the line shows for certain. A write adding thirty or more counted lines [lands and reads after](#holds) | Each named reference is read whole, or a lasting skip covers it | `proof`, `skip-line`, `lasting-skip`, `override` | The registry's `references` signals (`stack/goated-stack.yaml`, `skills/README.md`) |
 | `review-intake` | justified-skip | A write to a code file inside the project once a reviewer agent has reported in the turn: an agent started now by a spawn whose brief followed `subagent-driven-development`'s reviewer template, whose result arrived or, started in the background, whose completion did. Any other brief, and a held or failed spawn, trigger nothing | `receiving-code-review` counts as loaded | `proof`, `skip-line`, `override` | `receiving-code-review` |
 | `security` | justified-skip | A write to a security-sensitive path inside the project: dependency manifests and lockfiles, env and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files | `code-security-review` counts as loaded | `proof`, `skip-line`, `override` | `code-security-review` |
 | `scripted-edit` | justified-skip | A shell command whose inline script writes a code file inside the project, or a file it names only at run time. It follows `security` and `review-intake` for the same file | A skip line naming `software-design-principles`; loading the skill does not clear it | `skip-line`, `override` | `software-design-principles`: change code with the file edit tools |
 | `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an edit whose removed text has a conflict marker at a line start, a write to a file a read, a file printer, or `git diff` showed with one, or any write after a merge, rebase, cherry-pick, revert, or pull reported a conflict, until it finishes or is aborted | `resolving-merge-conflicts` counts as loaded | `proof`, `skip-line`, `override` | `resolving-merge-conflicts` |
 | `repeated-failure` | justified-skip | A write once the same check has failed twice in a row in the turn. A run that only fails to load a missing module, the first run after a test file was written, a run with fewer failures than the one before, and a call that never ran (held, refused, or interrupted) neither add nor reset | `diagnose` counts as loaded | `proof`, `skip-line`, `override` | `diagnose` ("a check that keeps failing") |
-| `closeout` | justified-skip | A commit the `commit` gate passes, or the turn's end, in a turn that changed code or a security-sensitive file or setup, while a [closeout item](#closeout-items) is unmet | Every item is met or skipped | `proof`, `skip-line`, `override` | The shared policy's closeout and the skills each item names |
+| `closeout` | justified-skip | A commit the `commit` gate passes, or the turn's end, in a turn that changed code or a security-sensitive file or setup, or landed a write owing reads, while a [closeout item](#closeout-items) is unmet | Every item is met or skipped | `proof`, `skip-line`, `override` | The shared policy's closeout and the skills each item names |
 
 ## Closeout Items
 
-Each item is judged against the turn's last code change. Code a subagent
+Each item is judged against the turn's last code change, but Reads, which
+is judged against the writes that owe it. Code a subagent
 changed counts at its spawn; if it ran a check after its own last change,
 that change is already proved.
 
 | Label | Needed when | Met by | Skip line names |
 | --- | --- | --- | --- |
+| `Reads` | A write of the turn [landed](#holds) past `design-reads` or `reference-reads` before the references it needed were read | Each reference is read whole after the write, or a lasting skip or a person's skip covers it; then, for a write to a project file, a change read follows the last of those reads. It comes first, since revising the write may change what the other items judge | The skill whose references it asks for; the skip lasts as one clearing that gate would |
 | `Proof` | A change not already proved | A check after the last code change, in a later call or later in the same shell command, joined by sequencing operators, not in the background | `verification-before-completion` |
 | `Unfinished` | The last check after the change failed | `handoff` counts as loaded | `handoff` |
 | `Docs` | A non-test code file changed | `doc-sync` counts as loaded, and a change read follows the last code change | `doc-sync` |
@@ -335,6 +353,11 @@ A notice never holds.
   `reference-reads` (see [Holds](#holds)), one per gate. It names the skip
   line's skill, the references, and the kind of file. An adapter shows it
   to the agent.
+- `reads_owed`: on a pending call of the main agent that no gate holds,
+  when `design-reads` or `reference-reads` let a large write land before
+  its reads (see [Holds](#holds)), one per gate. It names each reference
+  and its skip line, and says the Reads item will ask for the reads and a
+  change read. An adapter shows it to the agent.
 
 ## Failing Open
 

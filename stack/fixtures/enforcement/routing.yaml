@@ -1,4 +1,4 @@
-event_model: 3
+event_model: 4
 scenarios:
   - name: a write before routing meets router-first and route-line in one hold
     covers:

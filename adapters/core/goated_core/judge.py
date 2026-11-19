@@ -38,6 +38,7 @@ OVERRIDE_RECORDED = "override_recorded"
 CLOSEOUT_NOTE_KIND = "closeout_note"
 SESSION_NOTICE = "session_notice"
 SKIP_CARRIED = "skip_carried"
+READS_OWED = "reads_owed"
 
 # Session start sources, as the event model's `session_start` names them.
 NEW = "new"
@@ -213,7 +214,8 @@ def judge_call(settings: Settings, situation: Situation, call: Call,
         call, current, overrides, settings.skill_namespaces, situation.project, spawned,
         earlier,
         closeout=actions.Closeout(state.spawn_templates_of(current.key),
-                                  _route_intensity(state), state.briefed),
+                                  _route_intensity(state), state.briefed,
+                                  _owed_reads(state, current.key)),
         references=lambda: _registry_references(settings, registry_warnings),
         task_skips=task_skips,
     )
@@ -224,16 +226,28 @@ def judge_call(settings: Settings, situation: Situation, call: Call,
             call, current, overrides, settings.skill_namespaces, earlier)
         if templates:
             state.record_spawn_templates(current.key, call.id, templates)
+        # What a write that landed past a read gate still owes, for the Reads item.
+        if task_skips.owed:
+            state.record_owed_reads(current.key, call.id, task_skips.owed)
     settled += friction.observe(state, current, friction.action_of(call), holds)
     shown = gates.shown_holds(holds, lambda purpose: _claim_turn(
         store, situation.session_id, current.key, purpose), call=True)
     log = _logged(settings, situation, lambda r: (r.turns(turns, pending=call),
                                                   r.outcomes(settled), r.holds(shown)))
-    # A held call did not go through, so no lasting skip let it through.
-    notices = [] if holds else [Notice(SKIP_CARRIED, text) for text in task_skips.notices]
+    # A held call did not go through, so no lasting skip let it through, and it owes nothing.
+    notices = [] if holds else (
+        [Notice(SKIP_CARRIED, text) for text in task_skips.notices]
+        + [Notice(READS_OWED, text) for text in task_skips.owed_notices])
     notices += _warnings(state_warning, _save(store, situation.session_id, state),
                          _unread_warning(unread), *registry_warnings, log)
     return Decision(shown, notices, state.shell)
+
+
+def _owed_reads(state: SessionState, turn: str) -> dict[str, list[actions.OwedRead]]:
+    """The reads `turn`'s landed writes owe, as the closeout takes them."""
+
+    return {call_id: [actions.OwedRead(**read) for read in reads]
+            for call_id, reads in state.owed_reads_of(turn).items()}
 
 
 def _judge_subagent_call(settings: Settings, situation: Situation, call: Call,
@@ -276,6 +290,7 @@ def judge_turn_end(settings: Settings, situation: Situation, read: TurnReader,
     settled = _fold(state, turns, settings)
     current = turns[-1]
     subagents, unread = situation.subagents(current)
+    task_skips = actions.TaskSkips(state.lasting_skip_keys())
     hold = actions.check_closeout(
         current, overrides_for(state, current, prompt_key), settings.skill_namespaces,
         final_text, subagents, situation.project,
@@ -283,7 +298,11 @@ def judge_turn_end(settings: Settings, situation: Situation, read: TurnReader,
         spawn_templates=state.spawn_templates_of(current.key),
         intensity=_route_intensity(state),
         briefed=state.briefed,
+        owed_reads=_owed_reads(state, current.key),
+        task_skips=task_skips,
     )
+    # A skip line meeting the Reads item lasts as one clearing its gate would.
+    state.record_lasting_skips(current.key, task_skips.cleared)
     holds = [hold] if hold else []
     settled += friction.observe(state, current, friction.STOP, holds)
     if hold is None:

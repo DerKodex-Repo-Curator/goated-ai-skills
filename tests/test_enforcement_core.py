@@ -33,7 +33,7 @@ WRITE = {"type": "pending_call", "call": {
 
 def _request(session_id: str = "s1", **changes) -> dict:
     request = {
-        "event_model": 3,
+        "event_model": 4,
         "session": {"id": session_id, "agent": {"role": "main"}},
         "project": {"folders": ["/work/app"], "working_folder": "/work/app",
                     "home": "/home/u", "installed_skills": []},
@@ -80,13 +80,13 @@ class FailOpenTests(CoreTestCase):
         self.assert_allowed_with_reason(decision, "could not read the request")
 
     def test_a_request_the_core_cannot_read_is_allowed_with_a_reason(self) -> None:
-        for broken in (["a list"], {"event_model": 3}, _request(turns="none"),
+        for broken in (["a list"], {"event_model": 4}, _request(turns="none"),
                        _request(event={"type": "pending_call", "call": {"kind": "file_write"}})):
             with self.subTest(request=broken):
                 self.assert_allowed_with_reason(self.decide(broken), "could not read the request")
 
     def test_a_request_of_an_unknown_version_is_allowed_with_a_reason(self) -> None:
-        for version in (1, 2, 4, "3", None):
+        for version in (1, 2, 3, 5, "4", None):
             with self.subTest(version=version):
                 decision = self.decide(_request(event_model=version))
                 self.assert_allowed_with_reason(decision, "event model version")
@@ -98,7 +98,7 @@ class FailOpenTests(CoreTestCase):
     def test_the_command_answers_json_python_cannot_parse_with_a_reason(self) -> None:
         # An integer longer than Python's digit limit, and nesting deeper
         # than its recursion limit, both stop the parser itself.
-        for text in ('{"event_model": 3, "n": ' + "1" * 5000 + "}",
+        for text in ('{"event_model": 4, "n": ' + "1" * 5000 + "}",
                      "[" * 100_000 + "]" * 100_000):
             with self.subTest(text=text[:20]):
                 self.assert_allowed_with_reason(_command(text, self.state_dir),
@@ -114,8 +114,8 @@ class FailOpenTests(CoreTestCase):
         self.assert_allowed_with_reason(self.decide(request), "could not read the request")
 
     def test_the_command_answers_an_unknown_version_the_same_way(self) -> None:
-        decision = _command(json.dumps(_request(event_model=4)), self.state_dir)
-        self.assert_allowed_with_reason(decision, "event model version 4")
+        decision = _command(json.dumps(_request(event_model=5)), self.state_dir)
+        self.assert_allowed_with_reason(decision, "event model version 5")
 
     def test_a_readable_request_of_the_known_version_is_judged(self) -> None:
         # The near miss: the same write, well formed, meets router-first.
@@ -217,6 +217,53 @@ class ConformanceTests(unittest.TestCase):
                 for sent, got in by_call.exchanges:
                     self.assertEqual([e.message for e in request.iter_errors(sent)], [])
                     self.assertEqual([e.message for e in decision.iter_errors(got)], [])
+
+
+class LargeWriteTests(unittest.TestCase):
+    """Ticket 114: what a landed write owes, kept between requests."""
+
+    SETTINGS = {"kind": "file_write", "path": "config/export.json", "whole_file": True,
+                "edits": [{"removed": None, "added": "{\n" + "".join(
+                    f'  "key_{n:02d}": {n},\n' for n in range(37)) + '  "last": 0\n}\n'}]}
+
+    def landing(self, call: dict, expect: dict) -> dict:
+        return {"name": "a large settings write", "steps": [
+            {"prompt": {"type": "prompt", "author": "person", "text": "Add the settings."}},
+            {"call": {"kind": "skill_load", "skill": "using-goated-ai-skills"}},
+            {"reply": "goated-route: direct"},
+            {"call": {"kind": "skill_load", "skill": "software-design-principles"}},
+            {"call": call, "expect": expect}]}
+
+    def run_both(self, scenario: dict) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, judge in (("python", python_judge), ("command", command_judge)):
+                root = Path(tmp) / name
+                root.mkdir()
+                with self.subTest(way_in=name):
+                    self.assertEqual(run_scenario(root, scenario, judge(root / "state")).failures,
+                                     [])
+
+    def test_a_large_write_lands_only_when_the_closeout_can_find_it_by_its_id(self) -> None:
+        self.run_both(self.landing(self.SETTINGS, {"decision": "allow",
+                                                   "notices": ["reads_owed"]}))
+        # Near miss: the same write with no id is held, as nothing could ask for its reads.
+        self.run_both(self.landing({**self.SETTINGS, "id": ""}, {
+            "decision": "hold", "holds": [{"gate": "design-reads", "kind": "justified-skip"}]}))
+
+    def test_owed_reads_survive_saved_state_and_a_bad_shape_is_refused(self) -> None:
+        from goated_core import actions
+        from goated_core.state import SessionState
+
+        state = SessionState()
+        owed = actions.OwedRead("design-reads", "software-design-principles",
+                                "configuration", "decoupling.md", "config/export.json")
+        state.record_owed_reads("t1", "w1", [owed])
+        kept = SessionState.from_json(json.loads(json.dumps(state.to_json())))
+        self.assertEqual(kept.owed_reads_of("t1"), {"w1": [owed._asdict()]})
+        self.assertEqual(kept.owed_reads_of("t2"), {})
+        broken = {**state.to_json(), "owed_reads": {"turn": "t1", "edits": {"w1": [{"gate": 1}]}}}
+        with self.assertRaises(ValueError):
+            SessionState.from_json(broken)
 
 
 def _neutral_paths(decision: dict) -> dict:

@@ -7,7 +7,7 @@
   "$defs": {
     "version": {
       "description": "The event model's version: a whole number every change bumps. A request or decision of any other version is refused, not guessed at.",
-      "const": 3
+      "const": 4
     },
     "request": {
       "type": "object",
@@ -628,8 +628,8 @@
       "required": ["kind", "text"],
       "properties": {
         "kind": {
-          "description": "fail_open: the core could not judge and allowed the event. warning: it judged, but something it reads was missing. override_recorded: a person's override for the turn. closeout_note: the turn's closeout items, early. session_notice: a session-start or friction notice. skip_carried: a read gate let a call through on a skip line that lasts the task.",
-          "enum": ["fail_open", "warning", "override_recorded", "closeout_note", "session_notice", "skip_carried"]
+          "description": "fail_open: the core could not judge and allowed the event. warning: it judged, but something it reads was missing. override_recorded: a person's override for the turn. closeout_note: the turn's closeout items, early. session_notice: a session-start or friction notice. skip_carried: a read gate let a call through on a skip line that lasts the task. reads_owed: a read gate let a large write through before its references were read, which the closeout's Reads item then asks for.",
+          "enum": ["fail_open", "warning", "override_recorded", "closeout_note", "session_notice", "skip_carried", "reads_owed"]
         },
         "text": {"type": "string", "minLength": 1}
       }

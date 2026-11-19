@@ -1,4 +1,4 @@
-event_model: 3
+event_model: 4
 scenarios:
   - name: a code change brings the closeout note, and the turn's end waits for proof and docs
     covers:
@@ -150,6 +150,63 @@ scenarios:
         expect:
           decision: hold
           holds: [{gate: closeout, kind: justified-skip, items: [Proof, Docs]}]
+
+  - name: a landed write's Reads item holds a commit until its read, then a change read
+    covers:
+      - {gate: closeout, case: holds}
+      - {gate: closeout, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export settings and commit them.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: &large_settings
+          kind: file_write
+          path: config/export.json
+          whole_file: true
+          edits: [{removed: null, added: "{\n  \"key_00\": 0,\n  \"key_01\": 1,\n  \"key_02\": 2,\n  \"key_03\": 3,\n  \"key_04\": 4,\n  \"key_05\": 5,\n  \"key_06\": 6,\n  \"key_07\": 7,\n  \"key_08\": 8,\n  \"key_09\": 9,\n  \"key_10\": 10,\n  \"key_11\": 11,\n  \"key_12\": 12,\n  \"key_13\": 13,\n  \"key_14\": 14,\n  \"key_15\": 15,\n  \"key_16\": 16,\n  \"key_17\": 17,\n  \"key_18\": 18,\n  \"key_19\": 19,\n  \"key_20\": 20,\n  \"key_21\": 21,\n  \"key_22\": 22,\n  \"key_23\": 23,\n  \"key_24\": 24,\n  \"key_25\": 25,\n  \"key_26\": 26,\n  \"key_27\": 27,\n  \"key_28\": 28,\n  \"key_29\": 29,\n  \"key_30\": 30,\n  \"key_31\": 31,\n  \"key_32\": 32,\n  \"key_33\": 33,\n  \"key_34\": 34,\n  \"key_35\": 35,\n  \"key_36\": 36\n}\n"}]
+        expect: {decision: allow, notices: [reads_owed]}
+      - call: {kind: skill_load, skill: commit-message}
+      - call: {kind: shell_command, shell: posix, command: git diff}
+        result: {ok: true, output: "+  \"key_00\": 0,"}
+      - call: &commit_settings {kind: shell_command, shell: posix, command: "git commit -am \"Add the export settings\""}
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Reads]}]
+      - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/decoupling.md", whole: true}
+      - call: *commit_settings
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Reads]}]
+      - call: {kind: shell_command, shell: posix, command: git diff}
+        result: {ok: true, output: "+  \"key_00\": 0,"}
+      - call: *commit_settings
+        result: {ok: true, output: "[main 1a2b3c4] Add the export settings"}
+
+  - name: a skip line that meets the Reads item lasts the task as the gate's skip does
+    covers:
+      - {gate: closeout, case: clears, way: skip-line}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export settings.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *large_settings
+        expect: {decision: allow, notices: [reads_owed]}
+      - turn_end: true
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Reads]}]
+      - reply: "goated-skip: software-design-principles: plain keys with no design in them"
+      - turn_end: true
+      - prompt: {type: prompt, author: person, text: Add the import settings too.}
+      - reply: "goated-route: continue"
+      - call:
+          kind: file_write
+          path: config/import.json
+          whole_file: true
+          edits: [{removed: null, added: "{\n  \"limit\": 3,\n  \"format\": \"csv\"\n}\n"}]
+        expect: {decision: allow, notices: [skip_carried]}
 
   - name: a subagent's commit meets the closeout of its own turn
     covers:
