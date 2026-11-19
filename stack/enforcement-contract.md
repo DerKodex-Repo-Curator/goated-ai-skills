@@ -404,7 +404,11 @@ A notice never holds.
   when the call owes a reference no earlier write of the turn that landed owes. It
   names each such reference with the gate that selected it and its skip
   line, and says the Reads item will ask for the reads and a change read.
-  An adapter shows it to the agent.
+  An adapter shows it to the agent. A known limit, accepted: an edit of
+  the same message that has not finished yet counts as already owing, so
+  if it then fails, a second edit's notice may leave out references the
+  agent saw only on the failed edit's notice; the Reads item still asks
+  for them.
 
 ## Failing Open
 
