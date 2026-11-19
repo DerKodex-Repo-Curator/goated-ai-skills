@@ -23,8 +23,8 @@ Listed in the combined ranking's order.
      `shell._add_segment`).
    - Overlaps: `gates.py` with 111 and 117 (other functions).
    - Enables: a session that oriented with `cat` not held for orientation.
-3. `tickets/116-core-proof-kept-while-nothing-material-changed.md`
-   - Status: Ready (114 merged). Decisions N1 and O1 (restated).
+3. `tickets/archive/116-core-proof-kept-while-nothing-material-changed.md`
+   - Status: Completed, merged and archived on 2026-11-19. Decisions N1 and O1 (restated).
    - Blocked by: `114` (ordering, `_closeout_items`).
    - Overlaps: `_closeout_items` with 114.
    - Enables: no new Proof after a comment-only edit, and no background
@@ -50,15 +50,16 @@ Listed in the combined ranking's order.
    - Blocked by: None.
    - Overlaps: hold-text tests with 111.
    - Enables: the `scripted-edit` hold no longer calling a docs file code.
-8. `tickets/113-core-design-reads-sized-by-substance.md`
-   - Status: Ready (114 merged). Decisions K1.1 and K2.1.
+8. `tickets/archive/113-core-design-reads-sized-by-substance.md`
+   - Status: Completed, merged and archived on 2026-11-19. Decisions K1.1 and K2.1.
    - Blocked by: `114` (ordering, the same contract rows).
    - Overlaps: `reference_reads.py` with 115.
    - Enables: a short code edit with a comment, and new cases in an
      existing test, asking for no design read their size alone selected.
 
-Only 110 touches `shell.py`, and not its pull request reading, which
-Tickets 108 and 109 changed. No round 5 ticket touches that reading.
+Tickets 110 and 116 touch `shell.py` (116 at review, for a check sent
+with `&`), and not its pull request reading, which Tickets 108 and 109
+changed. No round 5 ticket touches that reading.
 
 Decision Q, the `true` carrier call (item 12), has no ticket: the
 maintainer chose to keep it.
@@ -70,8 +71,8 @@ on them, and round 5's waves 18 and 19 follow their rows.
 
 ## Ready Frontier
 
-Wave 18 (110, 111, 112, 114, 115 and 117) is merged and archived
-(2026-11-19). Tickets 113 and 116 are ready (wave 19).
+Waves 18 (110, 111, 112, 114, 115 and 117) and 19 (113 and 116) are
+merged and archived (2026-11-19). Every round 5 ticket is done.
 
 ## Coverage
 

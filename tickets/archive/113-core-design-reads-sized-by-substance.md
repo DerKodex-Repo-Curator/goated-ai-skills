@@ -96,3 +96,17 @@ is not read for signals, so this ticket does not touch `shell.py` at all.
 - Which references a typical change needs (kept in round 3).
 - The size rule of the `design` gate and the Design item (option K1.2).
 - Pointing a hold at a section of a reference (feedback item 6).
+
+## Closeout
+
+Completed, merged and archived on 2026-11-19.
+
+- Merged as `cf8d76f` (`c6be5e6`, review fixes `d366122`).
+- Maintainer decisions K1.1 and K2.1. Lead decisions at review: an edit
+  that adds a test or function definition line counts every line it adds;
+  a line of only brackets and commas is never case data; and one K1 count
+  judges every edit, comment-only or not, so a comment-only edit selects
+  `readability.md` only at twenty or more comment lines. `marks=` rows,
+  f-string rows, and call arguments added inside an existing test body are
+  documented limits.
+- Exercised in later sessions; no separate live-check record.

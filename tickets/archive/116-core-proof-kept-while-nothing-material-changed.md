@@ -89,3 +89,16 @@ a check uses the shell reading that already finds checks.
 
 - A status line that defers the closeout.
 - Under O1, reading a background check's later result.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-19.
+
+- Merged as `185bcf9` (`f789ee4`, review fixes `2413319`).
+- Maintainer decisions N1 and the restated O1. Lead decisions at review:
+  an edit that leaves a block comment or docstring open or closed
+  differently is not comment-only; directive comments
+  (`DIRECTIVE_PREFIXES`) are code; a background call proves no write of
+  its own; `pytest -q &` sent as its own call is no check (`shell.py`); and
+  a subagent's comment-only edit after its check keeps the proof.
+- Exercised in later sessions; no separate live-check record.
