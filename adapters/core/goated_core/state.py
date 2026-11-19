@@ -60,7 +60,7 @@ class SessionState:
 
     __slots__ = (
         "router_loaded", "last_turn", "task", "task_unknown", "overrides", "policy_notice_shown",
-        "reference_reads", "brief_routed", "briefed", "loads", "template_reads",
+        "reference_reads", "brief_routed", "brief_task", "briefed", "loads", "template_reads",
         "skill_reference_reads", "spawn_templates", "open_holds", "held_gates", "friction",
         "retrospective_notice_shown", "files_read", "shell", "lasting_skips", "owed_reads",
     )
@@ -70,6 +70,12 @@ class SessionState:
         # True while the route came from the brief that opened the session and
         # no prompt a person typed has opened a turn since: router-first is met.
         self.brief_routed = False
+        # True while the current task is the one the brief's turn started and
+        # no compaction has come since: in it, a person's prompt then a
+        # `goated-route: continue` line meets router-first (spec R8). Unlike
+        # `brief_routed`, a typed prompt does not end it, and it switches on no
+        # briefed-session orientation.
+        self.brief_task = False
         # True once the session's first prompt is known to be a brief from the
         # session that started it, which reviews the work (spec R10). A fact
         # about the session: no typed prompt or compaction ends it.
@@ -125,14 +131,15 @@ class SessionState:
 
     def forget_context(self, boundary_turn: str | None = None) -> None:
         """Drop what counted only while its text was in the agent's context: the
-        router and other loads, the brief's route, the design references,
-        skill references, spawn-brief templates, and files read, and the
-        lasting skips. Called at a compaction or `/clear`. `boundary_turn` is
-        the compaction's own turn when it is folded again: its lasting skips
-        came after the compaction, so they stay."""
+        router and other loads, the brief's route and its hold on the task,
+        the design references, skill references, spawn-brief templates, and
+        files read, and the lasting skips. Called at a compaction or `/clear`.
+        `boundary_turn` is the compaction's own turn when it is folded again:
+        its lasting skips came after the compaction, so they stay."""
 
         self.router_loaded = False
         self.brief_routed = False
+        self.brief_task = False
         self.loads = []
         self.reference_reads = []
         self.skill_reference_reads = []
@@ -189,6 +196,7 @@ class SessionState:
         return {
             "router_loaded": self.router_loaded,
             "brief_routed": self.brief_routed,
+            "brief_task": self.brief_task,
             "briefed": self.briefed,
             "last_turn": self.last_turn,
             "task": self.task.to_json() if self.task else None,
@@ -219,6 +227,7 @@ class SessionState:
         state = cls()
         state.router_loaded = _expect(data.get("router_loaded", False), bool)
         state.brief_routed = _expect(data.get("brief_routed", False), bool)
+        state.brief_task = _expect(data.get("brief_task", False), bool)
         state.briefed = _expect(data.get("briefed", False), bool)
         state.policy_notice_shown = _expect(data.get("policy_notice_shown", False), bool)
         state.last_turn = _expect(data.get("last_turn"), (str, type(None)))

@@ -298,11 +298,13 @@ def fold_turns(
         if route is not None:
             state.task = Task(route=route, started_turn=turn.key)
             state.task_unknown = False
+            state.brief_task = turn.brief_route is not None
             state.end_lasting_skips(turn.key)  # A new task ends them (spec R4).
         elif turn.route is not None and state.task is None and not state.task_unknown:
             # Only `continue` lines, in a session with no task, such as one
             # started from another session: they start a task with no skills.
             state.task = Task(route={"form": "continue"}, started_turn=turn.key)
+            state.brief_task = turn.brief_route is not None
         state.loads = _unique([*state.loads, *loads])
         state.reference_reads = _unique(
             [*state.reference_reads, *design_reads.reads_in(turn.calls)]
@@ -457,27 +459,15 @@ def _routing_holds(
             or (call.kind == events.SPAWN and not call.starts_now)):
         return []
     user_skipped = set(overrides.get("skills") or ())
-    routed = state.router_loaded or state.brief_routed or ROUTER_SKILL in user_skipped
+    routed = (state.router_loaded or state.brief_routed or ROUTER_SKILL in user_skipped
+              or _continues_brief_task(state, turn))
     holds = []
     if not routed:
         if call.kind == events.SHELL_COMMAND and shell.analyze(call.command, call.shell).read_only:
             return []
         if writes_scratch():
             return []
-        holds.append(Hold(
-            "router-first",
-            STRICT,
-            f"Load the `{ROUTER_SKILL}` skill with {SKILL_TOOL} before the first "
-            "write, spawn, or command of a task, and follow the route it selects. "
-            "Reads stay free, and so does a shell command made only of read-only "
-            "commands, such as cat, grep, ls, git diff, or git branch, perhaps "
-            "after a leading cd, with no output redirect but 2>/dev/null. If "
-            "that skill is not installed, tell the user: they can type "
-            "`skip routing` in their prompt to proceed without it.",
-            short_form(f"the `{ROUTER_SKILL}` skill has not loaded",
-                       f"Load it with {SKILL_TOOL}, or tell the user they can type "
-                       "`skip routing` in their prompt."),
-        ))
+        holds.append(_router_first_hold(state))
     if not writes_like_an_edit(call) or writes_scratch():
         return holds
     route = _turn_route(state, turn)
@@ -556,6 +546,46 @@ def _routing_holds(
                    + (drops_orientation + " " if orient else "")
                    + short_advice("route line", "skip routing")),
     )]
+
+
+def _router_first_hold(state: SessionState) -> Hold:
+    """The router-first hold. In the task the brief started, it also says that
+    a `goated-route: continue` line meets it (`_continues_brief_task`), with
+    where that line can go so the check sees it."""
+
+    text = (
+        f"Load the `{ROUTER_SKILL}` skill with {SKILL_TOOL} before the first "
+        "write, spawn, or command of a task, and follow the route it selects. "
+        "Reads stay free, and so does a shell command made only of read-only "
+        "commands, such as cat, grep, ls, git diff, or git branch, perhaps "
+        "after a leading cd, with no output redirect but 2>/dev/null. If "
+        "that skill is not installed, tell the user: they can type "
+        "`skip routing` in their prompt to proceed without it."
+    )
+    short = (f"Load it with {SKILL_TOOL}, or tell the user they can type "
+             "`skip routing` in their prompt.")
+    if state.brief_task:
+        continued = ("This task began from the brief that started the session: if "
+                     "this prompt continues it, a `goated-route: continue` line "
+                     "meets this hold without the router.")
+        text += f" {continued} " + unseen_line_advice("route line", "skip routing")
+        short = (f"Load it with {SKILL_TOOL}. {continued} "
+                 + short_advice("route line", "skip routing"))
+    return Hold("router-first", STRICT, text,
+                short_form(f"the `{ROUTER_SKILL}` skill has not loaded", short))
+
+
+def _continues_brief_task(state: SessionState, turn: Turn) -> bool:
+    """True when `turn`'s route line is `goated-route: continue` and the task
+    it continues is the one the brief started (spec R8, decision P): the
+    router would only say `continue`, so router-first is met without it.
+
+    A turn with no route line yet, or whose route line starts a new task, is
+    not one. Only router-first reads this; briefed-session orientation stays
+    with `brief_routed`, so a typed `continue` does not bring it back.
+    """
+
+    return state.brief_task and turn.route is not None and turn.route["form"] == "continue"
 
 
 def _brief_orientation(state: SessionState, task: Task) -> bool:
