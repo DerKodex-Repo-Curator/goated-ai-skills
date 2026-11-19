@@ -105,6 +105,22 @@ scenarios:
       # The person's prompt ended briefed-session orientation; continue keeps it ended.
       - call: *limit
 
+  - name: in the brief's task a person's prompt passes plain reads, then its continue line passes writes
+    covers:
+      - {gate: router-first, case: near-miss}
+    steps:
+      - session_start: new
+      - prompt:
+          type: prompt
+          author: session
+          starts_session: true
+          text: "## Goal\n\nFix the export limit.\n\ngoated-route: direct\n"
+      - call: *limit
+      - prompt: {type: prompt, author: person, text: Also cover the empty file.}
+      - call: {kind: shell_command, shell: posix, command: git status}
+      - reply: "goated-route: continue"
+      - call: *limit
+
   - name: a new route line after a person's prompt in a briefed session still needs the router
     covers:
       - {gate: router-first, case: holds}

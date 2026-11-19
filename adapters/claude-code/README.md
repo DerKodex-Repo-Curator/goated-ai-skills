@@ -993,7 +993,12 @@ of the call's prompt, which is normally already there.
   a brief with `turnOrigin` `sdk`; such a brief, one passed to `claude -p`,
   or one in any other shape is a prompt like any other, so its session loads
   the router and writes its own route line. After a compaction
-  the brief is gone, so `router-first` needs the router again. Harness
+  the brief is gone, so `router-first` needs the router again. The brief's
+  task, which lets a typed prompt's `goated-route: continue` meet
+  `router-first`, is known only once the hook has read the brief's turn:
+  at a call judged in it or at its Stop. A session that types its next
+  prompt before either happens is held as if not started from a brief, so
+  it loads the router. Harness
   nudges such as "The user hasn't heard from you in a while" are recorded as
   `attachment` entries and never open a turn.
 - A briefed session's orientation counts any three distinct files read whole

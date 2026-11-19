@@ -322,8 +322,8 @@ change, as `AGENTS.md` requires.
 - [ ] **AC11.** R8: in a briefed session that never loaded the router, a
       person's prompt followed by `goated-route: continue` meets no
       `router-first` hold, and brings back neither briefed-session
-      orientation nor any `pipeline` hold; one followed by a new route
-      line is held.
+      orientation nor any `pipeline` hold that the person's prompt had
+      ended; one followed by a new route line is held.
 
 ## Proof Surface
 

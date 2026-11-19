@@ -477,7 +477,7 @@ class TypedContinueTests(BriefTestCase):
     router-first without a router load (Ticket 117, spec R8, decision P).
 
     Each brief turn makes a call, as a briefed session does: the brief's turn
-    reaches saved state only when a call in it is judged."""
+    reaches saved state only when a call in it is judged or its Stop is."""
 
     def briefed(self, route: str) -> Session:
         s = self.brief(route)
