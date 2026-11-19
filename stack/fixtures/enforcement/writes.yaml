@@ -1023,15 +1023,12 @@ scenarios:
         expect:
           decision: hold
           holds: [{gate: design, kind: justified-skip}]
+      # Its nineteen comment lines are too few to select `readability.md`
+      # (round 5, K1), so the load alone clears it.
       - call: {kind: skill_load, skill: software-design-principles}
       - call: *twenty_comment_lines
-        expect:
-          decision: hold
-          holds: [{gate: design, kind: justified-skip}]
-      - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/readability.md", whole: true}
-      - call: *twenty_comment_lines
 
-  - name: a later comment-only edit of twenty lines waits for the readability reference
+  - name: a later comment-only edit of twenty comment lines waits for the readability reference
     covers:
       - {gate: design-reads, case: holds}
     steps:
@@ -1042,6 +1039,10 @@ scenarios:
       - call: *totals
       - call: *nineteen_comment_lines
       - call: *twenty_comment_lines
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "pass", added: "# n0\n# n1\n# n2\n# n3\n# n4\n# n5\n# n6\n# n7\n# n8\n# n9\n# n10\n# n11\n# n12\n# n13\n# n14\n# n15\n# n16\n# n17\n# n18\n# n19\npass"}]
         expect:
           decision: hold
           holds: [{gate: design-reads, kind: justified-skip}]

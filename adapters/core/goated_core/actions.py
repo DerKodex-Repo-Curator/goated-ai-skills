@@ -1498,7 +1498,7 @@ def _design_need(path: str, write: Call | None, small: bool, loaded: bool,
             cwd=project.cwd if project else None,
             test_edit=_test_edit(path, write, project, references,
                                  written_before=written_before) if test else None,
-            little_code=write is not None and _comment_on_little_code(write),
+            comment_on_little_code=write is not None and _comment_on_little_code(write),
         )
     first = substantial and not any(not s for p, s in earlier if not is_test(p, project))
     return first, required
@@ -2891,17 +2891,15 @@ def _comment_on_little_code(write: Call) -> bool:
     """Whether a code edit adds too little for its comment to select
     `readability.md` (round 5, K1): fewer than `DESIGN_MIN_LINES` code lines
     and fewer than `COMMENT_EDIT_MIN_LINES` comment lines
-    (`design_reads.written_line_counts`). It changes only that signal: the
-    write may still be substantial for the `design` gate. A comment-only
-    edit keeps its own rule (`_short_comment_edit`), so one of twenty or
-    more lines still selects it. One whose lines cannot be split, as in a
-    language whose comments the core does not read, is judged by its size
-    alone, as before."""
+    (`design_reads.written_line_counts`), a comment-only edit included. It
+    changes only that signal: the write may still be substantial for the
+    `design` gate. One whose lines cannot be split, as in a language whose
+    comments the core does not read, is judged by its size alone, as
+    before."""
 
     counts = design_reads.written_line_counts(write.path, write)
     return (counts is not None and counts.code < DESIGN_MIN_LINES
-            and counts.comments < COMMENT_EDIT_MIN_LINES
-            and not design_reads.comment_only(write.path, write))
+            and counts.comments < COMMENT_EDIT_MIN_LINES)
 
 
 def _short_comment_edit(added_lines: int | None, comment_only: Callable[[], bool]) -> bool:

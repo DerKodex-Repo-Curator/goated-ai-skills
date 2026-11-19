@@ -290,14 +290,17 @@ class ShortCommentEditTests(DesignTestCase):
         self.assertEqual(decision(s.call("Edit", comment_edit(19))), "pass")
         self.assertEqual(self.finish(s), [])
 
-        # The near miss: 20 lines ask for `readability.md`, and the Design item.
+        # The near miss: 20 lines are substantial, so the Design item counts
+        # them; their 19 comment lines are too few for `readability.md`, and
+        # 20 comment lines ask for it (round 5, K1).
         s = self.routed()
         s.load(DESIGN)
-        held = s.call("Edit", comment_edit(20))
-        self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
+        self.assertEqual(decision(s.call("Edit", comment_edit(20))), "pass")
+        held = s.call("Edit", comment_edit(21))
+        self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
         self.assertIn("references/readability.md", reason(held))
         s.read(REFERENCES + "readability.md")
-        self.assertEqual(decision(s.call("Edit", comment_edit(20))), "pass")
+        self.assertEqual(decision(s.call("Edit", comment_edit(21))), "pass")
         self.assertEqual(len(self.finish(s)), 1)
 
     def test_a_19_line_comment_edit_in_a_later_turn_meets_no_design_item(self) -> None:

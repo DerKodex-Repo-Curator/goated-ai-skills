@@ -266,9 +266,11 @@ def _edit_fires(signal: dict, edit: Edit) -> str | None:
         return None
     if signal.get("new_file") is True and edit.new_file:
         return f"a new {file_kind} file"
-    # New cases in an existing test are data, not test design (round 5, K2).
+    # New cases in an existing test are data, not test design (round 5, K2);
+    # an edit that adds a test or function is design, all of it.
+    counts_all = edit.new_file or any(TEST_DEFINITION_RE.match(code) for code in edit.added_code)
     least, added = signal.get("min_added_lines", 1), len(
-        edit.added_code if edit.new_file
+        edit.added_code if counts_all
         else [code for code in edit.added_code if not _is_case_data(code)])
     if added < least:
         return None
@@ -286,6 +288,13 @@ CASE_DATA_PIECE_RE = re.compile(
     rf"\s+|(?:{_LITERAL})|[()\[\]{{}},:]|[A-Za-z_]\w*=(?={_LITERAL})|(?:pytest\.)?param\(")
 # What makes a line of literals a row of cases rather than a statement.
 CASE_ROW_MARK_RE = re.compile(r"[()\[\]{},]")
+# A line of only brackets and commas, such as `],` or `([`, which opens or
+# closes code as often as data.
+LONE_BRACKETS_RE = re.compile(r"[()\[\]{},\s]*")
+# A line that defines a test or function, indented or not: an edit adding
+# one counts every line it adds, case data included.
+TEST_DEFINITION_RE = re.compile(
+    r"\s*(?:(?:async\s+)?def|func|fn|function)\b|\s*(?:it|test|describe)\(")
 
 
 def _is_case_data(code: str) -> bool:
@@ -293,10 +302,13 @@ def _is_case_data(code: str) -> bool:
     data: string and number literals, constants, brackets, commas, colons,
     keyword arguments of literals, and case wrappers (`pytest.param(`), with
     at least one bracket or comma, as a row inside a list or call has. So a
-    statement such as `flag=True`, and an empty line such as a comment line,
-    are not: they count as before."""
+    statement such as `flag=True`, a line of brackets alone such as `],`,
+    and an empty line such as a comment line, are not: they count as
+    before."""
 
     at, code = 0, code.strip()
+    if LONE_BRACKETS_RE.fullmatch(code):
+        return False
     while at < len(code):
         match = CASE_DATA_PIECE_RE.match(code, at)
         if match is None or match.end() == at:
