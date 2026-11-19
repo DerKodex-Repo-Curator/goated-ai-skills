@@ -81,6 +81,61 @@ scenarios:
             - {gate: router-first, kind: strict}
             - {gate: route-line, kind: strict}
 
+  - name: in the brief's task a person's prompt then a continue line meets router-first
+    covers:
+      - {gate: router-first, case: holds}
+      - {gate: router-first, case: clears, way: brief-route}
+    setup: {installed_skills: [session-start-progressive-disclosure]}
+    steps:
+      - session_start: new
+      - prompt:
+          type: prompt
+          author: session
+          starts_session: true
+          text: "## Goal\n\nFix the export limit.\n\ngoated-route: standard | requires: tdd\n"
+      - call: {kind: skill_load, skill: tdd}
+      - call: {kind: shell_command, shell: posix, command: uv run pytest}
+      - prompt: {type: prompt, author: person, text: Also cover the empty file.}
+      - call: {kind: shell_command, shell: posix, command: uv run pytest}
+        expect:
+          decision: hold
+          holds: [{gate: router-first, kind: strict}]
+      - reply: "goated-route: continue"
+      - call: {kind: shell_command, shell: posix, command: uv run pytest}
+      # The person's prompt ended briefed-session orientation; continue keeps it ended.
+      - call: *limit
+
+  - name: a new route line after a person's prompt in a briefed session still needs the router
+    covers:
+      - {gate: router-first, case: holds}
+    steps:
+      - session_start: new
+      - prompt:
+          type: prompt
+          author: session
+          starts_session: true
+          text: "## Goal\n\nFix the export limit.\n\ngoated-route: direct\n"
+      - call: *limit
+      - prompt: {type: prompt, author: person, text: Now redesign the importer.}
+      - reply: "goated-route: continue"
+      - reply: "goated-route: standard | requires: tdd"
+      - call: {kind: skill_load, skill: tdd}
+      - call: *limit
+        expect:
+          decision: hold
+          holds: [{gate: router-first, kind: strict}]
+
+  - name: a continue line in a session not started from a brief still needs the router
+    covers:
+      - {gate: router-first, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - reply: "goated-route: continue"
+      - call: {kind: shell_command, shell: posix, command: uv run pytest}
+        expect:
+          decision: hold
+          holds: [{gate: router-first, kind: strict}]
+
   - name: a person's override stands down the routing gates for the turn
     covers:
       - {gate: router-first, case: clears, way: override}

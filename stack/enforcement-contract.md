@@ -181,14 +181,15 @@ Clear ways: `proof` is the gate's own proof of use, in the Clears column;
 `skip-line` is a skip line naming the gate's skill; `override` is a person's
 override (see [Overrides](#overrides)); `route-line` is a route line in the
 turn, or a corrected one that drops the requirement; `brief-route` is a
-route line in the brief that started the session; `lasting-skip` is a skip
+route line in the brief that started the session, or, in the task it
+started, a `goated-route: continue` line; `lasting-skip` is a skip
 line from an earlier turn of the task that cleared the same gate (the two
 design gates count as one) for the same references on the same kind of
 file (see [Holds](#holds)).
 
 | Gate | Kind | Holds | Clears | Clear ways | Enforces |
 | --- | --- | --- | --- | --- | --- |
-| `router-first` | strict | A write, spawn, or command while the router does not count as loaded; a command made only of plain reads passes | The router counts as loaded; or, until a person's prompt opens a turn, the session's first prompt is a brief with a route line | `proof`, `brief-route`, `override` | The router's "use at the start of each new task before the first edit or command" |
+| `router-first` | strict | A write, spawn, or command while the router does not count as loaded; a command made only of plain reads passes | The router counts as loaded; or, until a person's prompt opens a turn, the session's first prompt is a brief with a route line; or, in the task that brief's turn started and with no compaction since, the turn's route line is `goated-route: continue` (see [Prompts, Turns, And Tasks](#prompts-turns-and-tasks)) | `proof`, `brief-route`, `override` | The router's "use at the start of each new task before the first edit or command" |
 | `route-line` | strict | The first write or spawn after each prompt until the turn has a valid route line, except in a turn another session's prompt opened in a session with a task, which runs as `continue` (see [Prompts, Turns, And Tasks](#prompts-turns-and-tasks)); also `goated-route: continue` when no task is known | A valid route line in the turn | `route-line`, `override` | The router's output contract |
 | `pipeline` | strict | A write or spawn while a `requires:` skill of the task does not count as loaded; in a session routed by its brief on a `standard` or `full` route, also while orientation is unmet and the orientation skill is installed. A spawn of a read-only agent passes | Each listed skill counts as loaded; orientation by its skill's load or whole reads of three distinct files; partial reads never count | `proof`, `route-line`, `override` | The router's route line ("must load before the first write") and the shared policy's corrected route line |
 | `commit` | strict | A commit, by a git command (not a dry run) or a `commit` call | `commit-message` counts as loaded, an inline message passes the content check, and a change read follows the last change to any project file | `proof`, `override` | `commit-message` ("use before any Git commit") |
@@ -298,6 +299,14 @@ A recorded override brings an `override_recorded` notice.
   `goated-route: direct` exempts the task from `pipeline`.
 - A session whose first prompt is a brief with a route line is **briefed**
   for good: it meets no Review item.
+- **The brief's task** is the task its turn started. A person's prompt ends
+  the brief's route, and with it briefed-session orientation in `pipeline`,
+  but not that task: while it runs, with no compaction since, a turn whose
+  route line is `goated-route: continue` meets `router-first` without a
+  router load, and brings back no orientation. Before that turn has a route
+  line, a command that is not a plain read is held as before, and the hold
+  names the `continue` line. A route line that starts a new task ends the
+  brief's task, so it and every later turn need the router.
 
 ## Subagents
 

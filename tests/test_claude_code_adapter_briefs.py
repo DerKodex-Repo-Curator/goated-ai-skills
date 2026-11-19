@@ -472,5 +472,95 @@ class AttachmentTests(BriefTestCase):
         self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: route-line | strict")
 
 
+class TypedContinueTests(BriefTestCase):
+    """In a briefed task, a person's prompt then `goated-route: continue` meets
+    router-first without a router load (Ticket 117, spec R8, decision P).
+
+    Each brief turn makes a call, as a briefed session does: the brief's turn
+    reaches saved state only when a call in it is judged."""
+
+    def briefed(self, route: str) -> Session:
+        s = self.brief(route)
+        self.assertEqual(decision(s.call("Bash", STATUS)), "pass")
+        return s
+
+    def test_a_typed_continue_meets_router_first_in_the_briefs_task(self) -> None:
+        s = self.briefed("goated-route: standard | requires: tdd")
+        s.load("tdd")
+        s.prompt("Also cover the empty file.")
+        s.say("goated-route: continue")
+
+        self.assertEqual(decision(s.call("Bash", STATUS)), "pass")
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_before_the_route_line_a_command_is_held_as_today(self) -> None:
+        s = self.briefed("goated-route: direct")
+        s.prompt("Also cover the empty file.")
+
+        held = s.call("Bash", STATUS)
+        self.assertEqual(hold_line(held), "goated-hold: router-first | strict")
+        # The hold says the line that clears it in the brief's task.
+        self.assertIn("`goated-route: continue`", reason(held))
+        s.say("goated-route: continue")
+        self.assertEqual(decision(s.call("Bash", STATUS)), "pass")
+
+    def test_a_new_route_line_after_the_prompt_still_needs_the_router(self) -> None:
+        s = self.briefed("goated-route: direct")
+        s.prompt("Also cover the empty file.")
+        s.say("goated-route: continue")
+        s.say("goated-route: standard | requires: tdd")
+        s.load("tdd")
+
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: router-first | strict")
+
+    def test_a_continue_of_a_later_task_needs_the_router(self) -> None:
+        s = self.briefed("goated-route: direct")
+        s.prompt("Skip routing and redesign the importer.")
+        s.say("goated-route: direct")
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+        s.prompt("Also cover the empty file.")
+        s.say("goated-route: continue")
+
+        held = s.call("Bash", STATUS)
+        self.assertEqual(hold_line(held), "goated-hold: router-first | strict")
+        self.assertNotIn("`goated-route: continue`", reason(held))
+
+    def test_a_compaction_ends_the_briefs_exemption_for_continue_too(self) -> None:
+        s = self.briefed("goated-route: direct")
+        s.compact()
+        s.prompt("Also cover the empty file.")
+        s.say("goated-route: continue")
+
+        self.assertEqual(hold_line(s.call("Bash", STATUS)), "goated-hold: router-first | strict")
+
+    def test_a_session_not_started_from_a_brief_is_unchanged(self) -> None:
+        s = self.session
+        s.prompt("Add the CSV exporter.")
+        s.say("goated-route: continue")
+
+        self.assertEqual(hold_line(s.call("Bash", STATUS)), "goated-hold: router-first | strict")
+
+
+class TypedContinueOrientationTests(BriefTestCase):
+    """A typed `continue` brings back no briefed-session orientation."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        folder = self.session.config.home / ".claude" / "skills" / ORIENTATION
+        folder.mkdir(parents=True)
+        (folder / "SKILL.md").write_text("---\nname: x\n---\n", encoding="utf-8")
+
+    def test_a_typed_continue_does_not_bring_back_orientation(self) -> None:
+        s = self.brief("goated-route: standard | requires: tdd")
+        s.load("tdd")
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: pipeline | strict")
+        s.prompt("Also cover the empty file.")
+        s.say("goated-route: continue")
+
+        # Router-first is met, and the brief's orientation stays ended.
+        self.assertEqual(decision(s.call("Bash", STATUS)), "pass")
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -163,7 +163,10 @@ outside fenced blocks and `<system-reminder>` blocks, is the first turn's
 route, as if the new session had written it first; when the brief has
 several, the last one wins. It meets `router-first`, as a subagent's parent
 brief does, until a prompt you type opens a turn: from then on the router
-must load, as in any session. The route's `requires:` skills must still load
+must load, as in any session, except that while the task the brief's turn
+started runs, with no compaction since, a turn whose route line is
+`goated-route: continue` meets `router-first` without it and brings back no
+orientation (Ticket 117). The route's `requires:` skills must still load
 in the new session before its first write (`pipeline`), and a later route
 line in the turn corrects it as usual. While the brief's route counts, a
 `standard` or `full` route also requires orientation
@@ -203,7 +206,7 @@ read.
 
 | Gate | Kind | Holds | Clears when |
 | --- | --- | --- | --- |
-| `router-first` | strict | An `Edit`, `Write`, `MultiEdit`, or `NotebookEdit`, a spawn, or a `Bash` or `PowerShell` command; a command made only of [plain reads](#plain-reads) passes, as Read and Grep do, and so does a write whose every file is a [scratch file](../../stack/enforcement-contract.md#project-folders-and-scratch-files) | A `Skill` load of `using-goated-ai-skills`; or the session's first prompt is a brief with a route line (see above), until a typed prompt opens a turn |
+| `router-first` | strict | An `Edit`, `Write`, `MultiEdit`, or `NotebookEdit`, a spawn, or a `Bash` or `PowerShell` command; a command made only of [plain reads](#plain-reads) passes, as Read and Grep do, and so does a write whose every file is a [scratch file](../../stack/enforcement-contract.md#project-folders-and-scratch-files) | A `Skill` load of `using-goated-ai-skills`; or the session's first prompt is a brief with a route line (see above), until a typed prompt opens a turn; or, in the brief's task, a `goated-route: continue` line in the turn |
 | `route-line` | strict | The first write or spawn after each typed prompt until the turn has a valid route line, in reply text or a call's line field (see above), and after each prompt from elsewhere except another session's message in a session with a task (see [User Overrides](#user-overrides)) | A valid route line appears in the turn |
 | `pipeline` | strict | Writes and spawns while a `requires:` skill has not loaded, or a brief-routed session's orientation is unmet while Claude Code can find `session-start-progressive-disclosure`; a spawn of a [read-only subagent](#plain-reads) passes | Each listed skill loads by the Skill tool, or orientation by that skill or three [whole reads](#whole-reads) by the Read tool |
 | `commit` | strict | A `git commit` in a `Bash` or `PowerShell` command, or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit`; the tool's `message` is the commit message | `commit-message` [counts as loaded](#loads), the message passes the [content check](#content-checks), and a [change read](#change-reads) follows the last change; then the [closeout](#closeout-at-commit) |
