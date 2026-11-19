@@ -1059,9 +1059,12 @@ holding `+`, or is not a literal.
 
 The `scripted-edit` gate judges a code file such a script writes inside the
 project, test files included, and a file it names only at run time, which
-counts as code wherever the command runs. A path through a name the script
-binds once to one literal is judged as that literal's file. Once cleared,
-the script runs and its files count as changed.
+is held as code would be wherever the command runs. The hold names such a
+file as one whose kind cannot be told, not as a code file, in its full and
+short forms; a named code file is "the code file" and its name. A path
+through a name the script binds once to one literal is judged as that
+literal's file. Once cleared, the script runs and its files count as
+changed.
 
 #### Plain Reads
 

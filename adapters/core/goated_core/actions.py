@@ -1216,12 +1216,14 @@ def _listed(names: list[str]) -> str:
 def _scripted_edit_hold(paths: list[str], unknown: bool, proof: _Proof) -> Hold | None:
     """Hold an inline interpreter script that writes the project code files
     among `paths`, or, when `unknown`, a file it names only at run time,
-    which counts as code as an unnamed write does for the closeout; one hold
-    names them all. A script's edit meets no design or reference read, so the
-    hold asks for a file edit tool; a skip
-    line or the typed override for the design skill clears it for the turn,
-    loading the skill does not. So the text names the skill only in its skip
-    line: a bare backticked name reads as a skill to load (`friction.py`)."""
+    which is held as code would be, as an unnamed write counts as code for
+    the closeout; one hold names them all. Its kind cannot be told, so the
+    text says so rather than calling the file code (spec R4). A script's
+    edit meets no design or reference read, so the hold asks for a file edit
+    tool; a skip line or the typed override for the design skill clears it
+    for the turn, loading the skill does not. So the text names the skill
+    only in its skip line: a bare backticked name reads as a skill to load
+    (`friction.py`)."""
 
     code = [f"\"{_file_name(p)}\"" for p in paths if is_code(p)]
     if (not code and not unknown) or proof.skipped(DESIGN_SKILL):
@@ -1229,7 +1231,8 @@ def _scripted_edit_hold(paths: list[str], unknown: bool, proof: _Proof) -> Hold 
     named = [("the code file " if len(code) == 1 else "the code files ") + _listed(code)] \
         if code else []
     if unknown:
-        named.append("a file it names only at run time, which counts as code")
+        named.append("a file it names only at run time, whose kind cannot be told, "
+                     "so it is held as code would be")
     what = " and ".join(named)
     return Hold(
         "scripted-edit", JUSTIFIED_SKIP,

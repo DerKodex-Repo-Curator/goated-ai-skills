@@ -246,5 +246,34 @@ class ReadingTimeTests(unittest.TestCase):
         self.assertLess(time.perf_counter() - started, 1.0)
 
 
+class RunTimeFileWordingTests(ScriptTestCase):
+    """R4 (decision J1): a file named only at run time is of unknown kind, not code."""
+
+    RUN_TIME = "a file it names only at run time, whose kind cannot be told"
+
+    def test_a_run_time_file_is_named_as_of_unknown_kind_in_both_forms(self) -> None:
+        s = self.routed()
+        full = reason(s.call("Bash", {"command": UNNAMED}))
+        self.assertIn(self.RUN_TIME + ", so it is held as code would be", full)
+        self.assertNotIn("counts as code", full)
+        self.assertNotIn("the code file", full)
+        short = reason(s.call("Bash", {"command": UNNAMED}))
+        self.assertIn("Still unmet", short)
+        self.assertIn(self.RUN_TIME, short)
+        self.assertNotIn("counts as code", short)
+
+    def test_a_named_code_file_is_still_the_code_file(self) -> None:
+        s = self.routed()
+        held = reason(s.call("Bash", {"command": heredoc("open('src/app.py', 'w')")}))
+        self.assertIn("writes the code file \"app.py\".", held)
+        self.assertNotIn("kind cannot be told", held)
+
+    def test_a_command_doing_both_names_each_in_its_own_words(self) -> None:
+        s = self.routed()
+        both = heredoc("open('src/app.py', 'w')", "open(other, 'w')")
+        held = reason(s.call("Bash", {"command": both}))
+        self.assertIn("writes the code file \"app.py\" and " + self.RUN_TIME, held)
+
+
 if __name__ == "__main__":
     unittest.main()
