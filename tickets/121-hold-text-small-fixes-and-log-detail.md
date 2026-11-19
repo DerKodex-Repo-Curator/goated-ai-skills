@@ -113,12 +113,13 @@ entry is unchanged because no reference file is added or renamed.
 
 ## Blocked By
 
-- `tickets/118-core-design-reads-never-refuse-an-edit.md`
-- `tickets/119-core-routing-and-orientation-for-continued-work.md`
-- `tickets/120-core-commit-time-holds-in-one-pass.md`
+- `tickets/archive/118-core-design-reads-never-refuse-an-edit.md`
+- `tickets/archive/119-core-routing-and-orientation-for-continued-work.md`
+- `tickets/archive/120-core-commit-time-holds-in-one-pass.md`
 
 All three are ordering: each changes hold or notice text that phase 1
-reorders.
+reorders. All three are merged and archived (2026-11-19), so this ticket
+is ready.
 
 ## Scope Exclusions
 

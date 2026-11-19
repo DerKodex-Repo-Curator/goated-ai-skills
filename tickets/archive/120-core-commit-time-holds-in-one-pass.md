@@ -112,3 +112,23 @@ Security-Sensitive Paths sections, and conformance scenarios under
   round 5's intent.
 - Treating `git merge --continue` as a commit.
 - The order of words inside each item: Ticket 121 owns hold text.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-19.
+
+- Merged with wave 20 as `48b7012` (`2df298c`, `b1143d7`; review fixes
+  `4ff527d`, `c199514`).
+- Maintainer decisions V1, V2, X1, X2 and X3, and at review: a conflict's
+  commit, with `resolving-merge-conflicts` loaded, is not asked for Docs,
+  Design, Security, Review or Verification, and is still asked for the
+  change read, Proof, Reads, Unfinished and Setup.
+- Lead decisions at review: only test code is spared, and only from the
+  auth and secrets categories; a change to a security-sensitive file that
+  is not code resets the commit's change read; a `.txt` file under a test
+  path, or a build file, is not a doc; an edit resolves a conflict only
+  when it removes a full marker block, adds no marker, and is not in a
+  doc.
+- Accepted limit, stated in the contract: an edit that only moves lines
+  counts no new lines for the Design item's small follow-up.
+- Exercised in later sessions; no separate live-check record.

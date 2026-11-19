@@ -113,3 +113,25 @@ phase 3, bumps the event model's version.
 - Counting the files a brief names without a read of them.
 - The words of the routing holds beyond the new notice: Ticket 121 owns
   hold text, including the malformed route line's reason.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-19.
+
+- Merged with wave 20 as `48b7012` (`2505387`, probe finding `1b87a58`;
+  review fixes `bd6b50d`, `6c15010`, `e55c88a`).
+- Maintainer decisions T1, U1, W1 and Y1. The event model is now
+  version 5: the `route_continued` notice and the `project.context_docs`
+  request field.
+- Lead decisions at review: a person's prompt continues only a routed
+  task (one started by a route line other than a bare `continue`, by a
+  brief, or by a bare `continue` turn that loaded the router or carried a
+  person's `skip routing`); an explicit `continue` counts like no line;
+  a clear ends the task; a `sed` script that writes prints nothing; the
+  five-file count takes project files only.
+- The probe's finding is in `docs/reference/carrier-probe-2026-11-19.md`:
+  one message's write calls were judged in order, each seeing the calls
+  before it. It is small (one run for each shape), and Ticket 121 carries
+  the wording change that follows from it.
+- Exercised in later sessions: the notice appeared on the lead's next
+  typed prompt after the merge.

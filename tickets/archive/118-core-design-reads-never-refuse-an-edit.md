@@ -88,3 +88,25 @@ must still cover a reference it covered before, now at the Reads item.
 - Writes made by a shell command or an inline script.
 - The words of the Reads item beyond what the new rule needs: Ticket 121
   reorders hold text.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-19.
+
+- Merged with wave 20 as `48b7012` (`ae43ed8`, `b25d618`; test conversion
+  `602179d`; review fixes `b660c1a`, `45286ea`, `9413aca`, `89b4c8f`,
+  `f328c5d`).
+- Maintainer decision S1. About 82 tests were converted from "the edit is
+  refused" to "the notice names these references", about 19 moved to
+  writes that still hold, none removed.
+- Lead decisions at review: shell writes keep the 30-line floor; a
+  subagent's edit is still refused, because its turn end is never held and
+  it keeps no state; the saves of session state take a per-session lock
+  that breaks at once when its holder is gone; a write that failed does
+  not silence a later notice.
+- Accepted limits, stated in the contract: an unfinished edit of the same
+  message counts as already owing; a compaction between an edit and the
+  turn's end drops what the turn owed (the spec's Deferred list).
+- Left open: the skill-usage pane shows nothing for an edit that lands
+  owing its reads with no hold.
+- Exercised in later sessions; no separate live-check record.

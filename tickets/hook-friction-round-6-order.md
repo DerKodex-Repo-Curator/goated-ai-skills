@@ -6,28 +6,28 @@ The maintainer chose every decision on 2026-11-19 and asked for as few
 tickets as the work allows: closely related changes share a ticket and are
 phased inside it, for one agent each.
 
-1. `tickets/118-core-design-reads-never-refuse-an-edit.md`
-   - Status: Ready. Decision S1.
+1. `tickets/archive/118-core-design-reads-never-refuse-an-edit.md`
+   - Status: Completed, merged and archived on 2026-11-19. Decision S1.
    - Blocked by: None.
    - Overlaps: the closeout Reads item with 120 (other items).
    - Enables: no edit refused, and no batch half-applied, for a design
      read.
-2. `tickets/119-core-routing-and-orientation-for-continued-work.md`
-   - Status: Ready. Decisions T1, U1, W1 and Y1.
+2. `tickets/archive/119-core-routing-and-orientation-for-continued-work.md`
+   - Status: Completed, merged and archived on 2026-11-19. Decisions T1, U1, W1 and Y1.
    - Blocked by: None.
    - Overlaps: none with 118 or 120 beyond the contract's Gates table.
    - Enables: a typed follow-up with no route line, orientation by
      distinct files, the project's own documents named, and the carrier
      probe's finding.
-3. `tickets/120-core-commit-time-holds-in-one-pass.md`
-   - Status: Ready. Decisions V1, V2, X1, X2 and X3, and the Design
+3. `tickets/archive/120-core-commit-time-holds-in-one-pass.md`
+   - Status: Completed, merged and archived on 2026-11-19. Decisions V1, V2, X1, X2 and X3, and the Design
      item's count bug.
    - Blocked by: None.
    - Overlaps: the closeout items with 118 (the Reads item only).
    - Enables: one message per held commit, and commit and closeout asks
      that fire where they can find something.
 4. `tickets/121-hold-text-small-fixes-and-log-detail.md`
-   - Status: Waiting on 118, 119 and 120. Decisions Z, Y2 and Y4.
+   - Status: Ready. Decisions Z, Y2 and Y4.
    - Blocked by: `118`, `119` and `120` (ordering: hold and notice text).
    - Enables: holds that open with their clearing action, temp paths
      outside the project, log detail, and the spawn brief's two lines.
@@ -42,9 +42,9 @@ gets its own spec.
 
 ## Ready Frontier
 
-- `tickets/118-core-design-reads-never-refuse-an-edit.md`
-- `tickets/119-core-routing-and-orientation-for-continued-work.md`
-- `tickets/120-core-commit-time-holds-in-one-pass.md`
+Wave 20 (118, 119 and 120) is merged and archived (2026-11-19).
+
+- `tickets/121-hold-text-small-fixes-and-log-detail.md`
 
 ## Coverage
 

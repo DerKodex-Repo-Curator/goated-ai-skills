@@ -190,7 +190,7 @@ Every hold follows these rules:
   at any size: the read follows the edit instead of refusing it, so a
   read gate no longer leaves a batch of edits sent in one message
   half-applied (round 6, decision S,
-  [Ticket 118](../tickets/118-core-design-reads-never-refuse-an-edit.md)).
+  [Ticket 118](../tickets/archive/118-core-design-reads-never-refuse-an-edit.md)).
   One edit of a batch can still be held, by an edit that does not show its
   text, `design` waiting for the skill's load, a subagent's edits, or
   another gate. So is one that `design` would hold once `software-design-principles`
