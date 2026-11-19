@@ -132,6 +132,7 @@ class DesignReferenceTests(WholeReadTestCase):
         self.assertEqual(owed_names(landed), {"readability.md"})
         self.assertIn(WHOLE, owed(landed))
         s.read(REFERENCES + "readability.md")
+        self.later_turn(s)  # A new turn, where an unread reference would be owed again.
         self.assertEqual(owed(s.call("Edit", edit("src/export.py", DEFINITION))), "")
 
     def test_a_read_with_a_limit_leaves_the_hold_on_a_write_that_cannot_land(self) -> None:
@@ -193,6 +194,7 @@ class RegistryReferenceTests(WholeReadTestCase):
         self.assertIn("tdd/references/mocking-and-seams.md", owed(landed))
         self.assertIn(WHOLE, owed(landed))
         s.read(MOCKING)
+        self.later_turn(s)  # A new turn, where an unread reference would be owed again.
         self.assertEqual(owed(s.call("Edit", MOCK_EDIT)), "")
 
 

@@ -133,6 +133,7 @@ class MockingAndSeams(ReferenceReadsTestCase):
         self.assertIn("mock-or-patch", owed(held))
         self.assertIn('"MagicMock"', owed(held))
         s.read(MOCKING)
+        self.later_turn(s)  # A new turn, where an unread reference would be owed again.
         self.assertPasses(s.call("Edit", edit(TEST_FILE, "client = MagicMock()")))
 
     def test_each_form_of_a_mock_or_patch_is_held(self) -> None:
@@ -442,6 +443,7 @@ class ConditionBasedWaiting(ReferenceReadsTestCase):
         self.assertOwes(held, "diagnose/references/condition-based-waiting.md")
         self.assertIn("`goated-skip: diagnose: <reason>`", owed(held))
         s.read(WAITING)
+        self.later_turn(s)  # A new turn, where an unread reference would be owed again.
         self.assertPasses(s.call("Edit", edit(CODE_FILE, "time.sleep(0.5)")))
 
     def test_each_form_of_a_sleep_retry_or_timeout_is_held(self) -> None:
@@ -697,6 +699,7 @@ class SpecTemplate(ReferenceReadsTestCase):
         self.assertIn('"docs/specs/"', owed(held))
         self.assertIn("`goated-skip: write-a-spec: <reason>`", owed(held))
         s.read(SPEC_TEMPLATE)
+        self.later_turn(s)  # A new turn, where an unread reference would be owed again.
         self.assertPasses(s.call("Write", {"file_path": "docs/specs/2026-11-17-export.md",
                                            "content": "# X\n"}))
 
@@ -734,6 +737,7 @@ class TicketTemplates(ReferenceReadsTestCase):
         held = s.call("Write", {"file_path": "tickets/080-export.md", "content": "# T\n"})
         self.assertOwes(held, "spec-to-tickets/references/ticket-slicing-templates.md")
         s.read(TICKET_TEMPLATES)
+        self.later_turn(s)  # A new turn, where an unread reference would be owed again.
         self.assertPasses(s.call("Write", {"file_path": "tickets/080-export.md", "content": "# T\n"}))
 
     def test_the_hold_names_the_write(self) -> None:
@@ -800,6 +804,8 @@ class RootCauseTracing(ReferenceReadsTestCase):
         self.assertIn("repeated-failure", owed(held))
         s.read(ROOT_CAUSE)
         self.assertPasses(s.call("Edit", edit(CODE_FILE, "total = 2")))
+        # The read counts at the Reads item: it asks only for the change read.
+        self.assertNotIn("root-cause-tracing.md", stop(s).get("reason", ""))
 
     def test_a_document_or_shell_write_is_held_too(self) -> None:
         s = self.first_turn("diagnose")
@@ -863,6 +869,8 @@ class SecurityChecklist(ReferenceReadsTestCase):
         self.assertIn("2 categories (auth, dependencies)", owed(held))
         s.read(CHECKLIST)
         self.assertPasses(s.call("Edit", edit("package.json", '"left-pad": "1.0.0"')))
+        # The read counts at the Reads item: it asks only for the change read.
+        self.assertNotIn("security-review-checklist.md", stop(s).get("reason", ""))
 
     def test_writes_in_one_category_are_not_held(self) -> None:
         s = self.first_turn("code-security-review")

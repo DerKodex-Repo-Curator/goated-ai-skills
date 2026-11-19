@@ -190,6 +190,9 @@ scenarios:
           edits: [{removed: null, added: "{\n  \"limit\": 2,\n  \"format\": \"csv\",\n  \"header\": true,\n  \"quote\": \"minimal\"\n}\n"}]
         expect: {decision: allow, notices: [reads_owed]}
       - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/decoupling.md", whole: true}
+      # A new turn, where an unread reference would be owed and named again.
+      - prompt: {type: prompt, author: person, text: Go on.}
+      - reply: "goated-route: continue"
       - call: *settings
         expect: {decision: allow, notices: []}
 
@@ -668,6 +671,9 @@ scenarios:
       - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/process.md", whole: true}
       - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/complexity-and-modules.md", whole: true}
       - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/readability.md", whole: true}
+      # A new turn, where an unread reference would be owed and named again.
+      - prompt: {type: prompt, author: person, text: Go on.}
+      - reply: "goated-route: continue"
       - call: *make_module
         expect: {decision: allow, notices: []}
 
@@ -700,6 +706,9 @@ scenarios:
           edits: [{removed: null, added: "def test_limit():\n    assert 2 == 2\n"}]
         expect: {decision: allow, notices: [reads_owed]}
       - call: {kind: file_read, path: "{outside}/skills/tdd/references/test-design.md", whole: true}
+      # A new turn, where an unread reference would be owed and named again.
+      - prompt: {type: prompt, author: person, text: Go on.}
+      - reply: "goated-route: continue"
       - call: *new_test
         expect: {decision: allow, notices: []}
 
@@ -975,6 +984,9 @@ scenarios:
           edits: [{removed: "pass", added: "doc = \"\"\"uses MagicMock\"\"\""}]
         expect: {decision: allow, notices: [reads_owed]}
       - call: {kind: file_read, path: "{outside}/skills/tdd/references/mocking-and-seams.md", whole: true}
+      # A new turn, where an unread reference would be owed and named again.
+      - prompt: {type: prompt, author: person, text: Go on.}
+      - reply: "goated-route: continue"
       - call: *patch_decorator
         expect: {decision: allow, notices: []}
 
@@ -1115,6 +1127,9 @@ scenarios:
           edits: [{removed: "pass", added: "# Rounded totals.\nfix_0 = 0\nfix_1 = 1\nfix_2 = 2\nfix_3 = 3\nfix_4 = 4"}]
         expect: {decision: allow, notices: [reads_owed]}
       - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/readability.md", whole: true}
+      # A new turn, where an unread reference would be owed and named again.
+      - prompt: {type: prompt, author: person, text: Go on.}
+      - reply: "goated-route: continue"
       - call: *five_code_lines_and_a_comment
         expect: {decision: allow, notices: []}
 
@@ -1146,6 +1161,9 @@ scenarios:
           edits: [{removed: "pass", added: "def test_totals():\n    assert total(0) == 0\n    assert total(1) == 1\n    assert total(2) == 2\n    assert total(3) == 3\n    assert total(4) == 4\n    assert total(5) == 5\n    assert total(6) == 6\n    assert total(7) == 7\n    assert total(8) == 8\n    assert total(9) == 9\n    assert total(10) == 10\n    assert total(11) == 11\n    assert total(12) == 12\n    assert total(13) == 13\n    assert total(14) == 14\n    assert total(15) == 15\n    assert total(16) == 16\n    assert total(17) == 17\n    assert total(18) == 18\n    assert total(19) == 19\n    assert total(20) == 20\n    assert total(21) == 21\n    assert total(22) == 22"}]
         expect: {decision: allow, notices: [reads_owed]}
       - call: {kind: file_read, path: "{outside}/skills/tdd/references/test-design.md", whole: true}
+      # A new turn, where an unread reference would be owed and named again.
+      - prompt: {type: prompt, author: person, text: Go on.}
+      - reply: "goated-route: continue"
       - call: *new_test_function
         expect: {decision: allow, notices: []}
 

@@ -14,7 +14,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from claude_code_adapter_support import ROUTER, Session, decision, owed, owed_names, parse, reason
+from claude_code_adapter_support import (
+    ROUTER, Session, decision, next_turn, owed, owed_names, parse, reason,
+)
 
 DESIGN = "software-design-principles"
 REFERENCES = "/opt/goated/skills/software-design-principles/references/"
@@ -108,6 +110,7 @@ class DesignGateTests(DesignTestCase):
 
         # The near miss: once read, the same edit owes nothing, still with no line.
         s.read(REFERENCES + "readability.md")
+        next_turn(s)  # A new turn, where an unread reference would be owed again.
         again = s.call("Edit", edit("src/export.py", DEFINITION))
         self.assertEqual((decision(again), owed(again)), ("pass", ""))
 
@@ -121,6 +124,7 @@ class DesignGateTests(DesignTestCase):
                        s.call("Edit", edit("src/export.py", DEFINITION))]
             for name in DEFINITION_REFERENCES:
                 s.read(REFERENCES + name)
+            next_turn(s)  # A new turn, where an unread reference would be owed again.
             outputs.append(s.call("Edit", edit("src/export.py", DEFINITION)))
             return [(decision(o), reason(o), owed_names(o)) for o in outputs]
 
@@ -304,6 +308,7 @@ class ShortCommentEditTests(DesignTestCase):
         self.assertEqual(decision(landed), "pass")
         self.assertEqual(owed_names(landed), {"readability.md"})
         s.read(REFERENCES + "readability.md")
+        next_turn(s)  # A new turn, where an unread reference would be owed again.
         self.assertEqual(owed(s.call("Edit", comment_edit(21))), "")
         self.assertEqual(len(self.finish(s)), 1)
 

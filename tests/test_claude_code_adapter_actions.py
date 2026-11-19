@@ -22,6 +22,7 @@ from claude_code_adapter_support import (
     Session,
     decision,
     git_branch_with_change,
+    next_turn,
     owed,
     owed_names,
     parse,
@@ -988,6 +989,7 @@ class DesignHoldTests(AdapterTestCase):
         self.assertEqual(owed_names(landed), {"coding.md"})
         self.assertIn("`software-design-principles/references/coding.md` (edits a test file)", owed(landed))
         s.read(REFERENCES + "coding.md")
+        next_turn(s)  # So the edit would owe it again, were the read not to count.
         again = s.call("Edit", edit("tests/test_export.py", TEST_CODE))
         self.assertEqual((decision(again), owed(again)), ("pass", ""))
 
@@ -1010,11 +1012,7 @@ class DesignReferenceReadTests(AdapterTestCase):
         return s
 
     def next_turn(self, s: Session) -> None:
-        """A new turn of the same task, so a write's notice names every
-        reference it still owes, not only those new to the turn."""
-
-        s.prompt("Go on.")
-        s.say("goated-route: continue")
+        next_turn(s)
 
     def test_an_unread_required_reference_is_owed_naming_it(self) -> None:
         s = self.designing()
@@ -1179,7 +1177,9 @@ class DesignReferenceReadTests(AdapterTestCase):
         self.assertIn("`software-design-principles/references/errors.md` (adds error handling", owed(landed))
         self.assertIn("\"export.py\"", owed(landed))
         s.read(REFERENCES + "errors.md")
-        # One tripping only read references, or none, owes nothing.
+        # One tripping only read references, or none, owes nothing, even in
+        # a new turn, where an unread one would be owed again.
+        next_turn(s)
         for text in ("try:\n    rate = 1", "except ValueError:", "rate = 2"):
             quiet = s.call("Edit", edit("src/export.py", text))
             self.assertEqual((decision(quiet), owed(quiet)), ("pass", ""))
@@ -1209,6 +1209,7 @@ class DesignReferenceReadTests(AdapterTestCase):
         self.assertEqual(decision(landed), "pass")
         self.assertEqual(owed_names(landed), {"errors.md"})
         s.read(REFERENCES + "errors.md")
+        next_turn(s)
         quiet = s.call("Edit", edit("src/b.py", "try:\n    x = 1"))
         self.assertEqual((decision(quiet), owed(quiet)), ("pass", ""))
 

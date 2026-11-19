@@ -562,6 +562,16 @@ def owed_references(output: dict) -> set[str]:
     return set(re.findall(r"`([^`\s]+\.md)`", owed(output)))
 
 
+def next_turn(s: Session, prompt: str = "Go on.") -> None:
+    """Open the next turn of the same task. Within one turn a write's
+    `reads_owed` notice names only what the turn does not owe yet, so a
+    test that shows a read counts makes its write after the read here,
+    where an unread reference would be owed and named again."""
+
+    s.prompt(prompt)
+    s.say("goated-route: continue")
+
+
 def owed_names(output: dict) -> set[str]:
     """The file names of the references a call's `reads_owed` notice names
     (`errors.md`), for a test that names design references by file."""
