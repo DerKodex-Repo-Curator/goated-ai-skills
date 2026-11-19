@@ -27,6 +27,24 @@ do this in four phases; each phase lands green.
     it one.
   - A hold on a file edit says that other calls of the same message may
     have landed, and to read the file before sending the edit again.
+  - **Where a line may ride (the maintainer, 2026-11-19, from Ticket
+    119's probe).** The probe found that the harness judges the write
+    calls of one message in order, each seeing the calls before it, while
+    read-only calls are judged all at once. So "a call in the same message
+    is not seen yet" is wrong for writes. Every hold text, the contract's
+    Lines section, the adapter README and the router skill's output
+    contract say instead that a route or skip line may ride on a shell
+    call earlier in the same message when the held call is a write, or in
+    an earlier message. This is a wording change, not a rule change. The
+    adapter test that simulates the old belief (`SameMessageCallTests`) is
+    replaced by one that matches the finding.
+  - **Follow-ups from wave 20's review (the lead, 2026-11-19).**
+    - The commit gate's change-read text says that owed references are
+      read first and the changed file after them, so a read of the file
+      made before the references is not wasted.
+    - `skills/README.md` and step 2 of `software-design-principles` still
+      say only a large edit may be read after; both say instead that a
+      file edit lands and owes its reads (Ticket 118).
 - **Phase 2, temp paths are outside (R12).** A script write whose path is
   built from the system temp folder (such as Python's `tempfile`, or an
   environment temp variable) counts as outside the project, so

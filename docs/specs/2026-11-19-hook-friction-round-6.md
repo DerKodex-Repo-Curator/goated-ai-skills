@@ -193,9 +193,11 @@ no probe was run.
   after its last code change and a change read follows that doc change.
 - **R8, a conflict's commit asks for less** (decision X2). A commit that
   ends a conflict, in a session with `resolving-merge-conflicts` loaded,
-  asks for the change read and Proof. Docs, Design and Security are not
-  asked at that commit. Without the load, the commit gets the full
-  closeout.
+  asks for the change read and Proof, and for the items about what the
+  resolution itself did: Reads, Unfinished and Setup. Docs, Design,
+  Security, Review and Verification are not asked at that commit (the
+  maintainer, 2026-11-19, at Ticket 120's review). Without the load, the
+  commit gets the full closeout.
 - **R9, test files are not security-sensitive** (decision X3). A test path
   does not match the security path patterns.
 - **R10, the carrier probe** (decision W). An investigation establishes
@@ -211,6 +213,10 @@ no probe was run.
     it one.
   - A hold on a file edit says that other calls of the same message may
     have landed, and to read the file before sending the edit again.
+  - Hold text says a route or skip line may ride on a shell call earlier
+    in the same message when the held call is a write (the maintainer,
+    2026-11-19, from the carrier probe's
+    finding that one message's writes are judged in order).
 - **R12, temp paths are outside** (decision Z). A script write whose path
   is built from the system temp folder counts as outside the project.
 - **R13, project context pointer** (decision Y1). When the project has a
@@ -248,7 +254,8 @@ no probe was run.
   change meets Docs with no load. With the doc changed before the code, it
   does not.
 - **AC9** (R8). With `resolving-merge-conflicts` loaded, a commit ending
-  a conflict asks for the change read and Proof only. The same commit
+  a conflict asks for no Docs, Design, Security, Review or Verification
+  item. The same commit
   without the load, and the next ordinary commit, ask for the full
   closeout.
 - **AC10** (R9). An edit to `tests/test_session_x.py` meets no security
@@ -362,6 +369,15 @@ All chosen by the maintainer on 2026-11-19.
   signals.** Both need a project-side registry and a view on trusting
   project configuration.
 - **Reading a background check's result when it arrives** (round 5's O2).
+- **A compaction between an edit and the turn's end.** It starts a new
+  turn, so the closeout asks for nothing the earlier part of the turn
+  owed, owed reads included. This predates round 6; R1 makes it matter
+  more often (found at Ticket 118's review).
+- **The conformance runner as a check.** A foreground run of
+  `scripts/run_conformance.py` did not meet the Proof item at a commit
+  (seen by the lead while merging wave 20). Whether a project can name
+  its own check commands belongs with the project-declared proof step
+  above.
 
 ## Open Questions
 
