@@ -1,4 +1,4 @@
-event_model: 4
+event_model: 5
 scenarios:
   - name: a write before routing meets router-first and route-line in one hold
     covers:
@@ -73,18 +73,19 @@ scenarios:
           starts_session: true
           text: "## Goal\n\nFix the export limit.\n\ngoated-route: direct\n"
       - call: *limit
-      - prompt: {type: prompt, author: person, text: Now change it once more.}
+      # A person's prompt ends the brief's route; a new task then needs the router.
+      - prompt: {type: prompt, author: person, text: Now redesign the importer.}
+      - reply: "goated-route: standard | requires: tdd"
       - call: *limit
         expect:
           decision: hold
-          holds:
-            - {gate: router-first, kind: strict}
-            - {gate: route-line, kind: strict}
+          holds: [{gate: router-first, kind: strict}]
 
-  - name: in the brief's task a person's prompt then a continue line meets router-first
+  - name: in the brief's task a person's prompt runs as continue and brings back no orientation
     covers:
-      - {gate: router-first, case: holds}
-      - {gate: router-first, case: clears, way: brief-route}
+      - {gate: router-first, case: near-miss}
+      - {gate: route-line, case: near-miss}
+      - {gate: pipeline, case: near-miss}
     setup: {installed_skills: [session-start-progressive-disclosure]}
     steps:
       - session_start: new
@@ -96,14 +97,95 @@ scenarios:
       - call: {kind: skill_load, skill: tdd}
       - call: {kind: shell_command, shell: posix, command: uv run pytest}
       - prompt: {type: prompt, author: person, text: Also cover the empty file.}
+        expect: {decision: allow, notices: [route_continued]}
       - call: {kind: shell_command, shell: posix, command: uv run pytest}
+      # The person's prompt ended briefed-session orientation; continuing keeps it ended.
+      - call: *limit
+
+  - name: a person's prompt in a routed task runs as continue, with a notice
+    covers:
+      - {gate: router-first, case: clears, way: task-route}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+        expect: {decision: allow, notices: []}
+      - call: *limit
+        expect:
+          decision: hold
+          holds:
+            - {gate: router-first, kind: strict}
+            - {gate: route-line, kind: strict}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *limit
+      # The task's route survives a compaction; the router's load does not.
+      - compaction: true
+      - prompt: {type: prompt, author: person, text: The import limit is off by one too.}
+        expect: {decision: allow, notices: [route_continued]}
+      - call: *limit
+      - call: {kind: shell_command, shell: posix, command: uv run pytest}
+
+  - name: after a compaction a person's prompt in a routed task asks again for the route's skills
+    covers:
+      - {gate: pipeline, case: holds}
+      - {gate: pipeline, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit test first.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: standard | requires: tdd"
+      - call: {kind: skill_load, skill: tdd}
+      - call: *limit
+      - compaction: true
+      - prompt: {type: prompt, author: person, text: Now the import limit.}
+        expect: {decision: allow, notices: [route_continued]}
+      - call: &import_limit
+          kind: file_write
+          path: src/import.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+        expect:
+          decision: hold
+          holds: [{gate: pipeline, kind: strict}]
+      - call: {kind: skill_load, skill: tdd}
+      - call: *import_limit
+
+  - name: a route line written after a person's prompt in a routed task replaces the carried route
+    covers:
+      - {gate: router-first, case: holds}
+      - {gate: route-line, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *limit
+      - compaction: true
+      - prompt: {type: prompt, author: person, text: Now redesign the importer.}
+        expect: {decision: allow, notices: [route_continued]}
+      # A new task needs the router again.
+      - reply: "goated-route: standard | requires: tdd"
+      - call: *import_limit
         expect:
           decision: hold
           holds: [{gate: router-first, kind: strict}]
-      - reply: "goated-route: continue"
-      - call: {kind: shell_command, shell: posix, command: uv run pytest}
-      # The person's prompt ended briefed-session orientation; continue keeps it ended.
+      - prompt: {type: prompt, author: person, text: Then the exporter.}
+        expect: {decision: allow, notices: [route_continued]}
+      # A route-like line that fails the grammar ends the carried route.
+      - reply: "goated-route: continue please"
       - call: *limit
+        expect:
+          decision: hold
+          holds:
+            - {gate: router-first, kind: strict}
+            - {gate: route-line, kind: strict}
+
+  - name: a person's prompt in a session with no task carries no route and no notice
+    covers:
+      - {gate: route-line, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Look at the export.}
+        expect: {decision: allow, notices: []}
+      - call: {kind: shell_command, shell: posix, command: git status}
+      - prompt: {type: prompt, author: person, text: Now look at the import.}
+        expect: {decision: allow, notices: []}
+      - call: {kind: file_read, path: src/import.py, whole: true}
 
   - name: in the brief's task a person's prompt passes plain reads, then its continue line passes writes
     covers:
@@ -209,7 +291,7 @@ scenarios:
           decision: hold
           holds: [{gate: pipeline, kind: strict}]
       - prompt: {type: prompt, author: person, text: Skip tdd and fix the export limit.}
-        expect: {decision: allow, notices: [override_recorded]}
+        expect: {decision: allow, notices: [override_recorded, route_continued]}
       - reply: "goated-route: continue"
       - call: *limit
 
@@ -223,7 +305,7 @@ scenarios:
       - call: {kind: spawn, brief: Find where the export limit is set., starts_now: true, read_only: true}
         result: {ok: true, output: It is set in the export module.}
 
-  - name: a briefed session orients by whole reads of three files, never partial ones
+  - name: a briefed session orients by whole reads of three files, or reads of five
     covers:
       - {gate: pipeline, case: holds}
       - {gate: pipeline, case: clears, way: proof}
@@ -252,7 +334,7 @@ scenarios:
       - call: {kind: file_read, path: docs/export.md, whole: true}
       - call: *limit
 
-  - name: a briefed session orients by whole prints of three files, never partial ones
+  - name: a briefed session orients by reads of five distinct project files, whole or in part
     covers:
       - {gate: pipeline, case: holds}
       - {gate: pipeline, case: clears, way: proof}
@@ -265,7 +347,97 @@ scenarios:
           starts_session: true
           text: "## Goal\n\nFix the export limit.\n\ngoated-route: standard | requires: tdd\n"
       - call: {kind: skill_load, skill: tdd}
-      # Prints that orient nothing: a partial printer, a pipe, a range, a failed, a background and an unchecked print.
+      - call: {kind: file_read, path: src/export.py, whole: false}
+      - call: {kind: file_read, path: src/limits.py, whole: false}
+      - call: {kind: file_read, path: docs/export.md, whole: false}
+      # One file read twice, and a file outside the project, add nothing.
+      - call: {kind: file_read, path: ./src/export.py, whole: false}
+      - call: {kind: file_read, path: "{outside}/skills/tdd/SKILL.md", whole: false}
+      - call: {kind: file_read, path: src/import.py, whole: false}
+      - call: *limit
+        expect:
+          decision: hold
+          holds: [{gate: pipeline, kind: strict}]
+      - call: {kind: file_read, path: tests/test_export.py, whole: false}
+      - call: *limit
+
+  - name: a briefed session orients by ranged prints of five distinct files, never by searches
+    covers:
+      - {gate: pipeline, case: holds}
+      - {gate: pipeline, case: clears, way: proof}
+    setup: {installed_skills: [session-start-progressive-disclosure]}
+    steps:
+      - session_start: new
+      - prompt:
+          type: prompt
+          author: session
+          starts_session: true
+          text: "## Goal\n\nFix the export limit.\n\ngoated-route: standard | requires: tdd\n"
+      - call: {kind: skill_load, skill: tdd}
+      # Searches print matching lines, so they orient nothing.
+      - call: {kind: shell_command, shell: posix, command: grep -n limit src/export.py}
+      - call: {kind: shell_command, shell: posix, command: rg limit src/limits.py}
+      - call: {kind: shell_command, shell: posix, command: grep -rn limit docs/export.md}
+      - call: {kind: shell_command, shell: powershell, command: Select-String -Path src/import.py -Pattern limit}
+      - call: {kind: shell_command, shell: posix, command: grep limit tests/test_export.py}
+      - call: *limit
+        expect:
+          decision: hold
+          holds: [{gate: pipeline, kind: strict}]
+      # Ranged prints of four files, one of them twice; a piped print shows no file.
+      - call: {kind: shell_command, shell: posix, command: "sed -n 1,40p src/export.py"}
+      - call: {kind: shell_command, shell: posix, command: "sed -n '/limit/,+5p' src/limits.py"}
+      - call: {kind: shell_command, shell: posix, command: "sed -n 1,40p docs/export.md && sed -n 40,80p docs/export.md"}
+      - call: {kind: shell_command, shell: posix, command: "sed -n 1,40p src/import.py"}
+      - call: {kind: shell_command, shell: posix, command: "sed -n 1,40p tests/test_export.py | head"}
+      - call: *limit
+        expect:
+          decision: hold
+          holds: [{gate: pipeline, kind: strict}]
+      - call: {kind: shell_command, shell: posix, command: "sed -n 1,40p tests/test_export.py"}
+      - call: *limit
+
+  - name: head, tail and a ranged Get-Content each print a file toward five
+    covers:
+      - {gate: pipeline, case: holds}
+      - {gate: pipeline, case: clears, way: proof}
+    setup: {installed_skills: [session-start-progressive-disclosure]}
+    steps:
+      - session_start: new
+      - prompt:
+          type: prompt
+          author: session
+          starts_session: true
+          text: "## Goal\n\nFix the export limit.\n\ngoated-route: standard | requires: tdd\n"
+      - call: {kind: skill_load, skill: tdd}
+      - call: {kind: shell_command, shell: posix, command: head -n 20 src/export.py src/limits.py}
+      - call: {kind: shell_command, shell: posix, command: tail -n 20 docs/export.md}
+      - call: {kind: shell_command, shell: powershell, command: Get-Content src/import.py -TotalCount 30}
+      # A failed print shows nothing.
+      - call: {kind: shell_command, shell: powershell, command: gc tests/test_export.py -Tail 5}
+        result: {ok: false, output: "Cannot find path"}
+      - call: *limit
+        expect:
+          decision: hold
+          holds: [{gate: pipeline, kind: strict}]
+      - call: {kind: shell_command, shell: powershell, command: gc tests/test_export.py -Tail 5}
+      - call: *limit
+
+  - name: a briefed session orients by whole prints of three files
+    covers:
+      - {gate: pipeline, case: holds}
+      - {gate: pipeline, case: clears, way: proof}
+    setup: {installed_skills: [session-start-progressive-disclosure]}
+    steps:
+      - session_start: new
+      - prompt:
+          type: prompt
+          author: session
+          starts_session: true
+          text: "## Goal\n\nFix the export limit.\n\ngoated-route: standard | requires: tdd\n"
+      - call: {kind: skill_load, skill: tdd}
+      # Prints that print no file whole: a partial printer, a pipe, a range, a failed, a
+      # background and an unchecked print. Two files seen in part are short of five.
       - call: {kind: shell_command, shell: posix, command: head src/limits.py}
       - call: {kind: shell_command, shell: posix, command: "sed -n 1,50p src/limits.py"}
       - call: {kind: shell_command, shell: posix, command: grep limit src/limits.py}
@@ -403,20 +575,6 @@ scenarios:
         expect:
           decision: hold
           holds: [{gate: pipeline, kind: strict}]
-
-  - name: a person's prompt after a task still needs a route line
-    covers:
-      - {gate: route-line, case: holds}
-    steps:
-      - prompt: {type: prompt, author: person, text: Fix the export limit.}
-      - call: {kind: skill_load, skill: using-goated-ai-skills}
-      - reply: "goated-route: direct"
-      - call: *limit
-      - prompt: {type: prompt, author: person, text: Now fix the import limit.}
-      - call: *limit
-        expect:
-          decision: hold
-          holds: [{gate: route-line, kind: strict}]
 
   - name: another session's message in a session with no task is held as a person's is
     covers:

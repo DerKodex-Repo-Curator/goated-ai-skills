@@ -41,9 +41,11 @@ A test fails when a gate an adapter can return is missing from the
 The event model's names are used throughout: call kinds, turns, entries,
 prompts and their authors, and the project.
 
-The event model is at version 4. Every change to it bumps the version
-(ADR 0004), so a request of version 1, 2, or 3 is refused. Version 4
-(Ticket 114) added the `reads_owed` notice kind, and version 3 (Ticket
+The event model is at version 5. Every change to it bumps the version
+(ADR 0004), so a request of version 1, 2, 3, or 4 is refused. Version 5
+(Ticket 119) added the `route_continued` notice kind and the project's
+`context_docs`, version 4
+(Ticket 114) the `reads_owed` notice kind, and version 3 (Ticket
 101) the `skip_carried` notice kind (see [Notices](#notices)). Version 2 (Ticket 080) added
 what the rules read and version 1 could not carry: a pull request's `base`,
 `head`, and `repository`, for its size; an edit's `removed` or `added` text
@@ -93,6 +95,9 @@ other than a hold, which no check counts.
   [Whole Prints](#whole-prints) reads it. Only orientation, in the
   `pipeline` row, counts one as a whole read of that file; every other rule
   that asks for a whole read asks for a `file_read`.
+- **File print**: the same, for a command that prints a file whole or in
+  part, as [File Prints](#file-prints) reads it. Only orientation's five
+  distinct files count one.
 - **Change read**: a finished call after the last change a step covers that
   puts the change in front of the agent: a command that prints the diff's
   content, or a read of a file the turn changed. A listing of names or
@@ -209,17 +214,19 @@ Clear ways: `proof` is the gate's own proof of use, in the Clears column;
 `skip-line` is a skip line naming the gate's skill; `override` is a person's
 override (see [Overrides](#overrides)); `route-line` is a route line in the
 turn, or a corrected one that drops the requirement; `brief-route` is a
-route line in the brief that started the session, or, in the task it
-started, a `goated-route: continue` line; `lasting-skip` is a skip
+route line in the brief that started the session; `task-route` is, in a
+turn a person's prompt opened in a task an earlier turn started, the
+turn's route being `goated-route: continue`, by its line or by having
+none; `lasting-skip` is a skip
 line from an earlier turn of the task that cleared the same gate (the two
 design gates count as one) for the same references on the same kind of
 file (see [Holds](#holds)).
 
 | Gate | Kind | Holds | Clears | Clear ways | Enforces |
 | --- | --- | --- | --- | --- | --- |
-| `router-first` | strict | A write, spawn, or command while the router does not count as loaded; a command made only of plain reads passes | The router counts as loaded; or, until a person's prompt opens a turn, the session's first prompt is a brief with a route line; or, in the task that brief's turn started and with no compaction since, the turn's route line is `goated-route: continue` (see [Prompts, Turns, And Tasks](#prompts-turns-and-tasks)) | `proof`, `brief-route`, `override` | The router's "use at the start of each new task before the first edit or command" |
-| `route-line` | strict | The first write or spawn after each prompt until the turn has a valid route line, except in a turn another session's prompt opened in a session with a task, which runs as `continue` (see [Prompts, Turns, And Tasks](#prompts-turns-and-tasks)); also `goated-route: continue` when no task is known | A valid route line in the turn | `route-line`, `override` | The router's output contract |
-| `pipeline` | strict | A write or spawn while a `requires:` skill of the task does not count as loaded; in a session routed by its brief on a `standard` or `full` route, also while orientation is unmet and the orientation skill is installed. A spawn of a read-only agent passes | Each listed skill counts as loaded; orientation by its skill's load or whole reads or whole prints of three distinct files, one file read and printed under two spellings counting once; partial reads never count | `proof`, `route-line`, `override` | The router's route line ("must load before the first write") and the shared policy's corrected route line |
+| `router-first` | strict | A write, spawn, or command while the router does not count as loaded; a command made only of plain reads passes | The router counts as loaded; or, until a person's prompt opens a turn, the session's first prompt is a brief with a route line; or, in a turn a person's prompt opened in a task an earlier turn started, compacted or not, the turn's route is `goated-route: continue`, by a line or by having no route line (see [Prompts, Turns, And Tasks](#prompts-turns-and-tasks)) | `proof`, `brief-route`, `task-route`, `override` | The router's "use at the start of each new task before the first edit or command" |
+| `route-line` | strict | The first write or spawn after each prompt until the turn has a valid route line, except in a turn a person's or another session's prompt opened in a session with a task, which runs as `continue` (see [Prompts, Turns, And Tasks](#prompts-turns-and-tasks)); also `goated-route: continue` when no task is known | A valid route line in the turn | `route-line`, `override` | The router's output contract |
+| `pipeline` | strict | A write or spawn while a `requires:` skill of the task does not count as loaded; in a session routed by its brief on a `standard` or `full` route, also while orientation is unmet and the orientation skill is installed; that hold names the project's context documents that exist (see [Calling The Core](#calling-the-core)). A spawn of a read-only agent passes | Each listed skill counts as loaded; orientation by its skill's load, by whole reads or whole prints of three distinct files, or by reads or prints, whole or in part, of five distinct project files, one file read and printed under two spellings counting once; a search that prints matching lines never counts (see [File Prints](#file-prints)) | `proof`, `route-line`, `override` | The router's route line ("must load before the first write") and the shared policy's corrected route line |
 | `commit` | strict | A commit, by a git command (not a dry run) or a `commit` call | `commit-message` counts as loaded, an inline message passes the content check, and a change read follows the last change to any project file | `proof`, `override` | `commit-message` ("use before any Git commit") |
 | `pull-request` | strict | Opening a pull or merge request, by a `gh` or `glab` command or a `pull_request` call | `pr-description` counts as loaded, and a change read follows the last change to any project file | `proof`, `override` | `pr-description` |
 | `pr-review` | justified-skip | Opening a pull or merge request that changes 400 or more lines of non-test code against its base. It is judged together with `pull-request`, so both may hold the same call | `standards-and-spec-review` counts as loaded, and a change read follows the last change | `proof`, `skip-line`, `override` | `standards-and-spec-review`'s rule to review a branch of 400 or more changed lines in code outside test paths (`skills/engineering/standards-and-spec-review/SKILL.md`) |
@@ -322,14 +329,24 @@ A recorded override brings an `override_recorded` notice.
 
 - A prompt with `author: person` opens a turn and may carry overrides. A
   prompt from another session (`author: session`) opens a turn with no
-  override. In a session with a task, that turn's route is `continue` until
-  a route line in it says otherwise, so `route-line` does not hold it; its
-  skip lines, checks, and change reads still start empty. A route-like line
-  in that turn that fails the grammar ends the carried route: `route-line`
-  holds, quoting it, until a valid line. In a session with no task, or as
-  the brief that starts a session, it meets `route-line` as a person's
-  prompt does, and so does every prompt with `author: host` or `unknown`
-  that opens a turn. A prompt the
+  override. In a session with a task, the turn either prompt opens runs as
+  `continue` until a route line in it says otherwise, so `route-line` does
+  not hold it; its skip lines, checks, and change reads still start empty.
+  A route-like line in that turn that fails the grammar ends the carried
+  route: `route-line` holds, quoting it, until a valid line. A route line
+  that starts a new task replaces the carried route, and its skills load
+  through `pipeline`. In a session with no task, or as the brief that
+  starts a session, either prompt meets `route-line` and `router-first` as
+  today, and so does every prompt with `author: host` or `unknown` that
+  opens a turn.
+- **A person's follow-up** (decision T1 of round 6). In a turn a person's
+  prompt opened, a route of `continue`, by a line or by having none, in a
+  task an earlier turn started also meets `router-first` without a router
+  load (`task-route`), compaction or not. The task's required skills are
+  still asked for again after a compaction, by `pipeline`. The prompt gets
+  a `route_continued` notice, once, saying that new work needs a new route
+  line. Another session's message meets `router-first` only as before.
+- A prompt the
   harness wrote, or a report from an agent this session spawned, continues
   the current turn as an entry: the turn's lines, overrides, checks, and
   change reads stand.
@@ -343,12 +360,9 @@ A recorded override brings an `override_recorded` notice.
   for good: it meets no Review item.
 - **The brief's task** is the task its turn started. A person's prompt ends
   the brief's route, and with it briefed-session orientation in `pipeline`,
-  but not that task: while it runs, with no compaction since, a turn whose
-  route line is `goated-route: continue` meets `router-first` without a
-  router load, and brings back no orientation. Before that turn has a route
-  line, a command that is not a plain read is held as before, and the hold
-  names the `continue` line. A route line that starts a new task ends the
-  brief's task, so it and every later turn need the router.
+  but not that task: a person's follow-up continues it as above, and
+  brings back no orientation. A route line that starts a new task ends the
+  brief's task, so it needs the router.
 
 ## Subagents
 
@@ -376,7 +390,9 @@ A notice never holds.
 - `closeout_note`: after the main agent's first finished file write of a
   turn that changes code inside the project, the closeout items the turn
   will meet, each short, judged as if the turn ended there, Reads
-  included. Once per turn; none in a turn the closeout already held.
+  included, then the project's own context documents that exist (see
+  [Calling The Core](#calling-the-core)), and none when none does. Once per
+  turn; none in a turn the closeout already held.
 - `session_notice`: at a session start, when the shared policy or the router
   is missing, or project agent files the onboarding skills write are
   missing; and at the next person's prompt after a session's third declined
@@ -391,6 +407,11 @@ A notice never holds.
   land before its reads (see [Holds](#holds)), one per gate. It names each reference
   and its skip line, and says the Reads item will ask for the reads and a
   change read. An adapter shows it to the agent.
+- `route_continued`: at a person's prompt in a session with a task, which
+  then runs as `goated-route: continue` (see
+  [Prompts, Turns, And Tasks](#prompts-turns-and-tasks)), once per prompt.
+  It says that new work needs a new route line. An adapter shows it to the
+  agent.
 
 ## Failing Open
 
@@ -439,6 +460,13 @@ the same request and give the same decision.
   in words that name no harness: where a line can go is said in the model's
   terms (reply text or a call's `line_text`). An adapter adds its own words
   only around them, never inside.
+- **The adapter reports the project's context documents.** A request's
+  `project.context_docs` lists which of `CONTEXT.md`,
+  `docs/agents/context-matrix.md`, and `docs/agents/project-standards.md`
+  (`gates.CONTEXT_DOCS`) exist at the project's root; the core reads no
+  file for them (round 6's R13). The `pipeline` hold for orientation and
+  the `closeout_note` name those listed, and name none when the list is
+  absent or empty.
 
 ## Detection Detail
 
@@ -1212,6 +1240,29 @@ folder, so `cat src/a.py` and a `file_read` of the same file's absolute path
 are one file. A failed command, or one still running or run in the
 background, prints nothing. The core reads it as `whole_prints` in
 `shell.py`.
+
+#### File Prints
+
+A simple command prints each file it names, whole or in part (a file
+print, toward orientation's five distinct files only; round 6's R3), on
+the same terms as a whole print, when it is a whole print, or:
+
+- `head` or `tail`, in either shell, with any options;
+- `sed` with `-n`, `--quiet`, or `--silent`, alone or in a cluster such as
+  `-ne`, and no `-i`, naming its files after its script, or after each
+  `-e` or `-f` value when it has one (`sed -n 1,40p a.py`,
+  `sed -n -e 1p a b`); `sed` without `-n` prints every line, edited, and
+  does not count;
+- in a `powershell` command, `Get-Content`, `gc`, `type`, or `cat` with a
+  range parameter (`Get-Content a -TotalCount 30`, `gc a -Tail 5`).
+
+Each command part counts its own files, so
+`sed -n 1,40p a && sed -n 40,80p b` prints two. A search that prints
+matching lines (`grep`, `rg`, `Select-String`, and every command not named
+here) prints no file. A file printed or read by the `file_read` call, with
+or without a range, counts toward the five only inside the project; the
+three whole reads count any file, as before. The core reads it as
+`file_prints` in `shell.py`.
 
 ### Package Installs And Setup Files
 

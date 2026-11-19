@@ -62,7 +62,7 @@ class SessionState:
         "router_loaded", "last_turn", "task", "task_unknown", "overrides", "policy_notice_shown",
         "reference_reads", "brief_routed", "brief_task", "briefed", "loads", "template_reads",
         "skill_reference_reads", "spawn_templates", "open_holds", "held_gates", "friction",
-        "retrospective_notice_shown", "files_read", "shell", "lasting_skips", "owed_reads",
+        "retrospective_notice_shown", "files_read", "files_seen", "shell", "lasting_skips", "owed_reads",
     )
 
     def __init__(self) -> None:
@@ -105,6 +105,10 @@ class SessionState:
         # compaction, up to `gates.ORIENTATION_READS`: enough of them orient a
         # session routed by its brief. A digest keeps file names out of state.
         self.files_read: list[str] = []
+        # Digests of the first distinct project files read or printed, whole
+        # or in part, since the last compaction, up to `gates.ORIENTATION_FILES`:
+        # enough of them orient such a session too (round 6's R3).
+        self.files_seen: list[str] = []
         # The current task's lasting skips since the last compaction (spec R4):
         # {"gate", "skill", "kind", "reference", "turn"}, the turn being the one
         # whose skip line cleared the hold (`record_lasting_skips`).
@@ -145,6 +149,7 @@ class SessionState:
         self.skill_reference_reads = []
         self.template_reads = []
         self.files_read = []
+        self.files_seen = []
         self.end_lasting_skips(boundary_turn)
 
     def end_lasting_skips(self, boundary_turn: str | None = None) -> None:
@@ -208,6 +213,7 @@ class SessionState:
             "skill_reference_reads": self.skill_reference_reads,
             "template_reads": self.template_reads,
             "files_read": self.files_read,
+            "files_seen": self.files_seen,
             "spawn_templates": self.spawn_templates,
             "open_holds": self.open_holds,
             "held_gates": self.held_gates,
@@ -237,6 +243,7 @@ class SessionState:
         state.skill_reference_reads = _string_list(data.get("skill_reference_reads", []))
         state.template_reads = _string_list(data.get("template_reads", []))
         state.files_read = _string_list(data.get("files_read", []))
+        state.files_seen = _string_list(data.get("files_seen", []))
         state.spawn_templates = _valid_calls(data.get("spawn_templates", {}))
         state.open_holds = [_valid_open_hold(h) for h in _expect(data.get("open_holds", []), list)]
         state.held_gates = _valid_held_gates(data.get("held_gates", {}))

@@ -260,7 +260,7 @@ class CoreLogTests(unittest.TestCase):
         self.assertNotIn("router-first", other.stdout)
 
     def test_the_command_logs_where_the_caller_says(self) -> None:
-        request = {"event_model": 4, "session": {"id": "s1", "agent": {"role": "main"}},
+        request = {"event_model": 5, "session": {"id": "s1", "agent": {"role": "main"}},
                    "project": {"folders": [str(self.root)], "working_folder": str(self.root),
                                "home": str(self.root)},
                    "turns": [{"key": "t1", "entries": [], "opener": {

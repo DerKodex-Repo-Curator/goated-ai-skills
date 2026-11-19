@@ -13,6 +13,8 @@ import os
 from pathlib import Path
 from typing import NamedTuple
 
+from goated_core.gates import CONTEXT_DOCS
+
 
 class AgentFile(NamedTuple):
     """One agent file a project should have: what it is, the root-relative
@@ -51,6 +53,16 @@ def missing_files(root: Path) -> list[AgentFile]:
     """The agent files `root` has none of the paths for, in `AGENT_FILES` order."""
 
     return [f for f in AGENT_FILES if not any((root / path).is_file() for path in f.paths)]
+
+
+def context_docs(root: Path | None) -> list[str]:
+    """The project's own context documents at `root` (`gates.CONTEXT_DOCS`)
+    that exist as files, in that order, for the core to name; none without a
+    root."""
+
+    if root is None:
+        return []
+    return [doc for doc in CONTEXT_DOCS if (root / doc).is_file()]
 
 
 def project_key(root: Path) -> str:

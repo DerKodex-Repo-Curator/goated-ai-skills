@@ -97,16 +97,25 @@ class RouteLineTests(AdapterTestCase):
 
         self.assertEqual(decision(s.call("Bash")), "pass")
 
-    def test_each_new_prompt_needs_its_own_route_line_and_continue_passes(self) -> None:
+    def test_a_typed_prompt_in_a_task_continues_it_with_a_notice(self) -> None:
+        # Ticket 119: a typed follow-up runs as `goated-route: continue`.
         s = self.routed_session()
         s.say("goated-route: direct")
         self.assertEqual(decision(s.call("Write")), "pass")
 
-        s.prompt("Also rename its test.")
-        self.assertEqual(decision(s.call("Write")), "deny")
-
-        s.say("goated-route: continue")
+        notice = json.loads(s.prompt("Also rename its test."))
+        self.assertIn("runs as `goated-route: continue`",
+                      notice["hookSpecificOutput"]["additionalContext"])
         self.assertEqual(decision(s.call("Write")), "pass")
+
+    def test_a_route_line_after_a_typed_prompt_replaces_the_carried_route(self) -> None:
+        s = self.routed_session()
+        s.say("goated-route: direct")
+        self.assertEqual(decision(s.call("Write")), "pass")
+
+        s.prompt("Now redesign the importer.")
+        s.say("goated-route: standard | requires: tdd")
+        self.assertIn("goated-hold: pipeline | strict", reason(s.call("Write")))
 
     def test_continue_in_a_session_with_no_task_starts_one_without_required_skills(
         self,
@@ -1035,8 +1044,9 @@ class MachinePromptTests(AdapterTestCase):
         s.peer("Patch the README too.")
 
         self.assertEqual(decision(s.call("Edit")), "pass")
+        # A typed prompt in the task continues it too (Ticket 119).
         s.prompt("Now the importer.")
-        self.assertIn("goated-hold: route-line | strict", reason(s.call("Edit")))
+        self.assertEqual(decision(s.call("Edit")), "pass")
 
     def test_other_prompts_nobody_typed_still_need_a_route_line_in_a_task(self) -> None:
         # Ticket 102 widens nothing past another session's message: each of
@@ -1385,10 +1395,11 @@ class FailOpenTests(AdapterTestCase):
                 s._tool_result(tool_use_id, "x" * 3000)
 
             s.prompt("Now change it.")
+            s.say("goated-route: standard | requires: tdd")
             third = s.call("Edit")
             self.assertEqual(decision(third), "deny")
             self.assertNotIn("systemMessage", third)
-            s.say("goated-route: continue")
+            s.load("tdd")
             self.assertEqual(decision(s.call("Edit")), "pass")
         finally:
             transcript.MAX_BYTES, transcript.BLOCK_SIZE = limits

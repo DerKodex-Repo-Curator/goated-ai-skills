@@ -114,6 +114,8 @@ guess:
 - It cannot tell who wrote a prompt: send `author: unknown`. No override
   counts from it.
 - It cannot list the installed skills: send `installed_skills: null`.
+- It cannot check the project's context documents: leave out
+  `context_docs`. The orientation hold and closeout note then name none.
 - It cannot report a spawned agent's own work: send the spawn's result
   without `agent.entries`. The core judges without it and adds a `warning`
   notice where it needed them.
@@ -224,9 +226,10 @@ A decision is `allow` or `hold`, with its `holds` and `notices`.
 - **Show notices as the core wrote them,** a hold or not. `fail_open` and
   `warning` in particular must reach the person or agent, and
   `skip_carried`, on a call a lasting skip let through, and `reads_owed`, on
-  a large write a read gate let through before its reads, must reach the
-  agent. Requests carry the event model's version, now 4; the core refuses
-  any other.
+  a large write a read gate let through before its reads, and
+  `route_continued`, at a person's prompt in a task, must reach the agent.
+  Requests carry the event model's version, now 5; the core refuses any
+  other.
 - **Add only what your harness alone can say:** where a route or skip line
   goes so the harness keeps it, and which call can carry it. Never reword or
   drop the core's text; it already names no harness.

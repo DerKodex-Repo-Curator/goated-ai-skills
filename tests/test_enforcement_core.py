@@ -33,7 +33,7 @@ WRITE = {"type": "pending_call", "call": {
 
 def _request(session_id: str = "s1", **changes) -> dict:
     request = {
-        "event_model": 4,
+        "event_model": 5,
         "session": {"id": session_id, "agent": {"role": "main"}},
         "project": {"folders": ["/work/app"], "working_folder": "/work/app",
                     "home": "/home/u", "installed_skills": []},
@@ -80,13 +80,13 @@ class FailOpenTests(CoreTestCase):
         self.assert_allowed_with_reason(decision, "could not read the request")
 
     def test_a_request_the_core_cannot_read_is_allowed_with_a_reason(self) -> None:
-        for broken in (["a list"], {"event_model": 4}, _request(turns="none"),
+        for broken in (["a list"], {"event_model": 5}, _request(turns="none"),
                        _request(event={"type": "pending_call", "call": {"kind": "file_write"}})):
             with self.subTest(request=broken):
                 self.assert_allowed_with_reason(self.decide(broken), "could not read the request")
 
     def test_a_request_of_an_unknown_version_is_allowed_with_a_reason(self) -> None:
-        for version in (1, 2, 3, 5, "4", None):
+        for version in (1, 2, 3, 4, 6, "5", None):
             with self.subTest(version=version):
                 decision = self.decide(_request(event_model=version))
                 self.assert_allowed_with_reason(decision, "event model version")
@@ -98,7 +98,7 @@ class FailOpenTests(CoreTestCase):
     def test_the_command_answers_json_python_cannot_parse_with_a_reason(self) -> None:
         # An integer longer than Python's digit limit, and nesting deeper
         # than its recursion limit, both stop the parser itself.
-        for text in ('{"event_model": 4, "n": ' + "1" * 5000 + "}",
+        for text in ('{"event_model": 5, "n": ' + "1" * 5000 + "}",
                      "[" * 100_000 + "]" * 100_000):
             with self.subTest(text=text[:20]):
                 self.assert_allowed_with_reason(_command(text, self.state_dir),
@@ -114,8 +114,8 @@ class FailOpenTests(CoreTestCase):
         self.assert_allowed_with_reason(self.decide(request), "could not read the request")
 
     def test_the_command_answers_an_unknown_version_the_same_way(self) -> None:
-        decision = _command(json.dumps(_request(event_model=5)), self.state_dir)
-        self.assert_allowed_with_reason(decision, "event model version 5")
+        decision = _command(json.dumps(_request(event_model=6)), self.state_dir)
+        self.assert_allowed_with_reason(decision, "event model version 6")
 
     def test_a_readable_request_of_the_known_version_is_judged(self) -> None:
         # The near miss: the same write, well formed, meets router-first.
@@ -315,6 +315,65 @@ class LargeWriteTests(unittest.TestCase):
         broken = {**state.to_json(), "owed_reads": {"turn": "t1", "edits": {"w1": [{"gate": 1}]}}}
         with self.assertRaises(ValueError):
             SessionState.from_json(broken)
+
+
+class ContextDocTests(CoreTestCase):
+    """Ticket 119, phase 3: the orientation hold and the closeout note name
+    the project's own context documents the adapter reports, and none when
+    it reports none."""
+
+    DOCS = ["CONTEXT.md", "docs/agents/project-standards.md"]
+
+    def briefed_write(self, docs: list[str] | None, session_id: str) -> dict:
+        project = {"folders": ["/work/app"], "working_folder": "/work/app", "home": "/home/u",
+                   "installed_skills": ["session-start-progressive-disclosure"]}
+        if docs is not None:
+            project["context_docs"] = docs
+        load = {"type": "call", "call": {"kind": "skill_load", "id": "l1", "skill": "tdd"},
+                "result": {"ok": True}}
+        return _request(session_id, project=project, turns=[{
+            "key": "t1", "entries": [load],
+            "opener": {"type": "prompt", "author": "session", "starts_session": True,
+                       "text": "Fix it.\n\ngoated-route: standard | requires: tdd\n"}}])
+
+    def routed_turn(self, docs: list[str] | None, event: dict) -> dict:
+        project = {"folders": ["/work/app"], "working_folder": "/work/app", "home": "/home/u",
+                   "installed_skills": []}
+        if docs is not None:
+            project["context_docs"] = docs
+        load = {"type": "call", "call": {"kind": "skill_load", "id": "l1",
+                                         "skill": "using-goated-ai-skills"},
+                "result": {"ok": True}}
+        return _request(project=project, event=event, turns=[{
+            "key": "t1", "entries": [load, {"type": "reply_text", "text": "goated-route: direct"}],
+            "opener": {"type": "prompt", "author": "person", "text": "Change the app."}}])
+
+    def test_the_orientation_hold_names_the_context_docs_that_exist(self) -> None:
+        held = self.decide(self.briefed_write(self.DOCS, "s1"))
+        text = " ".join(hold["text"] for hold in held["holds"] if hold["gate"] == "pipeline")
+        self.assertIn("`CONTEXT.md`", text)
+        self.assertIn("`docs/agents/project-standards.md`", text)
+        self.assertNotIn("context-matrix", text)
+
+    def test_the_orientation_hold_names_none_when_none_exists(self) -> None:
+        for docs in (None, []):
+            with self.subTest(docs=docs):
+                held = self.decide(self.briefed_write(docs, f"s-{docs}"))
+                text = " ".join(h["text"] for h in held["holds"] if h["gate"] == "pipeline")
+                self.assertTrue(text)
+                self.assertNotIn("CONTEXT.md", text)
+                self.assertNotIn("context documents", text)
+
+    def test_the_first_code_change_notice_names_the_context_docs(self) -> None:
+        for docs, named in ((self.DOCS, True), (None, False)):
+            with self.subTest(docs=docs):
+                self.settings = core_request.Settings(self.state_dir / str(named))
+                self.assertEqual(self.decide(self.routed_turn(docs, WRITE))["decision"], "allow")
+                finished = {"type": "finished_call", "call": WRITE["call"], "result": {"ok": True}}
+                notes = [n["text"] for n in self.decide(self.routed_turn(docs, finished))["notices"]
+                         if n["kind"] == "closeout_note"]
+                self.assertEqual(len(notes), 1)
+                self.assertEqual("`CONTEXT.md`" in notes[0], named)
 
 
 def _neutral_paths(decision: dict) -> dict:

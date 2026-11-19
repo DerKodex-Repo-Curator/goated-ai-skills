@@ -274,7 +274,11 @@ class ShellCommand:
     pipe nor into a file, not run as a background job (`&`), outside any
     compound command, group or substitution, in the command's trailing `&&`
     chain (see `_sets_status`); a file named by a word the shell expands,
-    or from a folder the command left unknown, is left out.
+    or from a folder the command left unknown, is left out. `file_prints`
+    are the files it shows the agent whole or in part, on the same terms
+    (round 6's R3): those, and the files of a posix `head`, `tail`, or
+    `sed -n` (never `sed -i`), and of a ranged `Get-Content`. A search that
+    prints matching lines (`grep`, `rg`, `Select-String`) prints no file.
     `script_targets` are the write targets that code given to an interpreter
     inline names (`python -c`, `node -e`, a heredoc on `python -`; see
     `_inline_script`), and `script_unknown_writes` says such code writes a
@@ -320,7 +324,7 @@ class ShellCommand:
         "non_check_writes", "unchecked_targets", "unchecked_unknown_writes", "prints_changes",
         "installs_globally", "install_folders", "read_only", "only_reads_and_writes_files",
         "script_targets", "script_unknown_writes", "text_writes", "redirects_into_nul",
-        "shown_files", "whole_prints", "shows_git_diff",
+        "shown_files", "whole_prints", "file_prints", "shows_git_diff",
     )
 
     def __init__(self) -> None:
@@ -346,6 +350,7 @@ class ShellCommand:
         self.redirects_into_nul = False
         self.shown_files: list[str] = []
         self.whole_prints: list[str] = []
+        self.file_prints: list[str] = []
         self.shows_git_diff = False
 
     @property
@@ -534,11 +539,16 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
             prints = True
         if sub == "diff":
             result.shows_git_diff = True
-    elif name in FILE_PRINTERS:
-        result.shown_files += [_from_directory(directory, f) for f in _printed_files(name, args)]
+    elif name in FILE_PRINTERS or name == "sed":
+        if name in FILE_PRINTERS:
+            result.shown_files += [_from_directory(directory, f)
+                                   for f in _printed_files(name, args)]
         if directory is not None and sets_status:
-            result.whole_prints += [_from_directory(directory, f)
-                                    for f in _printed_whole(name, args, segment, shell)]
+            printed, whole = _printed(name, args, segment, shell)
+            placed = [_from_directory(directory, f) for f in printed]
+            result.file_prints += placed
+            if whole:
+                result.whole_prints += placed
     elif name in FORGE_DIFFS:
         rest = _skip_options(args, {"-R", "--repo"})
         noun = FORGE_DIFFS[name]
@@ -1374,22 +1384,33 @@ def _sets_status(segments: list["_Segment"], index: int) -> bool:
         later.after in (*AND_THEN, "|") for later in segments[index + 1:])
 
 
-def _printed_whole(name: str, args: list[str], segment: "_Segment", shell: str) -> list[str]:
-    """The files the file printer `name`, run in `shell`, shows the agent
-    whole, as `ShellCommand.whole_prints` says, as written. The caller
+def _printed(name: str, args: list[str], segment: "_Segment",
+             shell: str) -> tuple[list[str], bool]:
+    """The files the printer `name` (a `FILE_PRINTERS` name or `sed`), run
+    in `shell`, shows the agent, as written, and whether it shows them
+    whole, as `ShellCommand.file_prints` and `whole_prints` say. The caller
     checks that the command's exit status is the print's."""
 
     if segment.nested or segment.after in ("|", "&") or segment.out_redirects:
-        return []
-    if shell == POSIX:
-        printed = _printed_files(name, args) if name == "cat" else []
-    elif any(_is_range_param(arg) for arg in args):
-        return []
+        return [], False
+    if name == "sed":
+        # Only `-n` prints just the lines its script asks for; `-i` writes.
+        quiet = not _edits_in_place(args) and any(
+            arg in ("--quiet", "--silent") or (arg[:1] == "-" and arg[1:2] != "-" and "n" in arg)
+            for arg in args)
+        printed, whole = (_in_place_files(name, args) if quiet else []), False
+    elif name in ("head", "tail"):
+        # A program of its own in either shell: no PowerShell command has these names.
+        printed, whole = _printed_files(name, args), False
+    elif shell == POSIX:
+        # A posix `type` describes commands; only `cat` prints there.
+        printed, whole = (_printed_files(name, args) if name == "cat" else []), True
     else:
         # PowerShell's `cat` is an alias of Get-Content, so it takes the same parameters.
         printed = _printed_files("get-content", args)
+        whole = not any(_is_range_param(arg) for arg in args)
     # A word the shell expands may name no file, or several.
-    return [path for path in printed if _plain(path) and not path.startswith("~")]
+    return [path for path in printed if _plain(path) and not path.startswith("~")], whole
 
 
 def _is_range_param(arg: str) -> bool:

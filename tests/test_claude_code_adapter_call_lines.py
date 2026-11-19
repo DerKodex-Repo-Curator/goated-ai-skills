@@ -127,6 +127,9 @@ class RouteLineFromCallTests(CallLineTestCase):
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
         s.prompt("Now rename the writer too.")
+        # Had the earlier call's line counted here, it would route this turn
+        # past the line that fails the grammar.
+        s.say("goated-route: continue please")
         self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: route-line | strict")
 
     def test_a_call_line_in_a_peer_turn_routes_that_turn(self) -> None:

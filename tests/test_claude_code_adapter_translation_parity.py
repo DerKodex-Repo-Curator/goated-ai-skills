@@ -158,6 +158,9 @@ class FrictionTellsSpawnToolsApart(Case):
             s.prompt(f"Hand the audit off, take {take}.")
             s.load(ROUTER)
             s.brief_with_handoff()
+            # A line that fails the grammar holds the spawn in every take, since a
+            # typed prompt in the task would otherwise continue it (Ticket 119).
+            s.say("goated-route: continue please")
             self.assertEqual(decision(s.spawn(f"a{take}aaaaaaaaaaaaaa", BRIEF)), "deny")
             s.call("Bash", {"command": "ls", "description": "list\ngoated-route: direct"})
             s.call("mcp__ccd_session__start_session", {"prompt": BRIEF})

@@ -7,7 +7,7 @@
   "$defs": {
     "version": {
       "description": "The event model's version: a whole number every change bumps. A request or decision of any other version is refused, not guessed at.",
-      "const": 4
+      "const": 5
     },
     "request": {
       "type": "object",
@@ -77,6 +77,11 @@
           "description": "Skill names the harness can find. Null when the adapter cannot tell.",
           "type": ["array", "null"],
           "items": {"$ref": "#/$defs/skill_name"}
+        },
+        "context_docs": {
+          "description": "The project's own context documents that exist, as paths from the project's root: of `CONTEXT.md`, `docs/agents/context-matrix.md`, and `docs/agents/project-standards.md`, the ones the adapter found. The orientation hold and the closeout note name them. Absent or empty: none.",
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
         }
       }
     },
@@ -628,8 +633,8 @@
       "required": ["kind", "text"],
       "properties": {
         "kind": {
-          "description": "fail_open: the core could not judge and allowed the event. warning: it judged, but something it reads was missing. override_recorded: a person's override for the turn. closeout_note: the turn's closeout items, early. session_notice: a session-start or friction notice. skip_carried: a read gate let a call through on a skip line that lasts the task. reads_owed: a read gate let a large write through before its references were read, which the closeout's Reads item then asks for.",
-          "enum": ["fail_open", "warning", "override_recorded", "closeout_note", "session_notice", "skip_carried", "reads_owed"]
+          "description": "fail_open: the core could not judge and allowed the event. warning: it judged, but something it reads was missing. override_recorded: a person's override for the turn. closeout_note: the turn's closeout items, early. session_notice: a session-start or friction notice. skip_carried: a read gate let a call through on a skip line that lasts the task. reads_owed: a read gate let a large write through before its references were read, which the closeout's Reads item then asks for. route_continued: a person's prompt in a session with a task runs as `goated-route: continue`, and says that new work needs a new route line.",
+          "enum": ["fail_open", "warning", "override_recorded", "closeout_note", "session_notice", "skip_carried", "reads_owed", "route_continued"]
         },
         "text": {"type": "string", "minLength": 1}
       }

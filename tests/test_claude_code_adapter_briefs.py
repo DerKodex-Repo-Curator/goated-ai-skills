@@ -383,7 +383,10 @@ class HostRetryTests(BriefTestCase):
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
     def test_a_typed_try_again_opens_a_turn(self) -> None:
-        s = self.brief("goated-route: direct")
+        # The override covers only the turn its prompt opened, and with no
+        # route line there is no task to continue.
+        s = self.session
+        s.prompt("Skip routing and fix the typo.")
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
         self.api_error()
         s.prompt("Try again")
@@ -461,20 +464,21 @@ class AttachmentTests(BriefTestCase):
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
     def test_a_typed_prompt_after_the_attachment_does_open_a_turn(self) -> None:
+        # The first turn's override and lack of a task show the new turn: had
+        # the prompt continued it, the override would still stand.
         s = self.session
-        s.prompt("Add the CSV exporter.")
-        s.load(ROUTER)
-        s.say("goated-route: direct")
+        s.prompt("Skip routing and add the CSV exporter.")
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
         self.attachment("silent_turn_reminder", "The user hasn't heard from you in a while.")
         s.prompt("Now add the importer.")
 
-        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: route-line | strict")
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: router-first | strict")
 
 
 class TypedContinueTests(BriefTestCase):
-    """In a briefed task, a person's prompt then `goated-route: continue` meets
-    router-first without a router load (Ticket 117, spec R8, decision P).
+    """In a briefed task, a person's prompt runs as `goated-route: continue`,
+    with that line or none, and meets router-first without a router load
+    (Tickets 117 and 119).
 
     Each brief turn makes a call, as a briefed session does: the brief's turn
     reaches saved state only when a call in it is judged or its Stop is."""
@@ -493,16 +497,22 @@ class TypedContinueTests(BriefTestCase):
         self.assertEqual(decision(s.call("Bash", STATUS)), "pass")
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
-    def test_before_the_route_line_a_command_is_held_as_today(self) -> None:
+    def test_with_no_route_line_the_prompt_continues_the_briefs_task(self) -> None:
         s = self.briefed("goated-route: direct")
         s.prompt("Also cover the empty file.")
+
+        self.assertEqual(decision(s.call("Bash", STATUS)), "pass")
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_a_malformed_route_line_still_needs_the_router(self) -> None:
+        s = self.briefed("goated-route: direct")
+        s.prompt("Also cover the empty file.")
+        s.say("goated-route: continue please")
 
         held = s.call("Bash", STATUS)
         self.assertEqual(hold_line(held), "goated-hold: router-first | strict")
         # The hold says the line that clears it in the brief's task.
         self.assertIn("`goated-route: continue`", reason(held))
-        s.say("goated-route: continue")
-        self.assertEqual(decision(s.call("Bash", STATUS)), "pass")
 
     def test_a_new_route_line_after_the_prompt_still_needs_the_router(self) -> None:
         s = self.briefed("goated-route: direct")
@@ -513,7 +523,7 @@ class TypedContinueTests(BriefTestCase):
 
         self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: router-first | strict")
 
-    def test_a_continue_of_a_later_task_needs_the_router(self) -> None:
+    def test_a_later_task_continues_too(self) -> None:
         s = self.briefed("goated-route: direct")
         s.prompt("Skip routing and redesign the importer.")
         s.say("goated-route: direct")
@@ -521,17 +531,16 @@ class TypedContinueTests(BriefTestCase):
         s.prompt("Also cover the empty file.")
         s.say("goated-route: continue")
 
-        held = s.call("Bash", STATUS)
-        self.assertEqual(hold_line(held), "goated-hold: router-first | strict")
-        self.assertNotIn("`goated-route: continue`", reason(held))
+        self.assertEqual(decision(s.call("Bash", STATUS)), "pass")
 
-    def test_a_compaction_ends_the_briefs_exemption_for_continue_too(self) -> None:
-        s = self.briefed("goated-route: direct")
+    def test_after_a_compaction_the_task_continues_and_asks_for_its_skills(self) -> None:
+        s = self.briefed("goated-route: standard | requires: tdd")
+        s.load("tdd")
         s.compact()
         s.prompt("Also cover the empty file.")
-        s.say("goated-route: continue")
 
-        self.assertEqual(hold_line(s.call("Bash", STATUS)), "goated-hold: router-first | strict")
+        self.assertEqual(decision(s.call("Bash", STATUS)), "pass")
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), "goated-hold: pipeline | strict")
 
     def test_a_session_not_started_from_a_brief_is_unchanged(self) -> None:
         s = self.session

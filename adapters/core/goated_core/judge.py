@@ -39,6 +39,7 @@ CLOSEOUT_NOTE_KIND = "closeout_note"
 SESSION_NOTICE = "session_notice"
 SKIP_CARRIED = "skip_carried"
 READS_OWED = "reads_owed"
+ROUTE_CONTINUED = "route_continued"
 
 # Session start sources, as the event model's `session_start` names them.
 NEW = "new"
@@ -103,14 +104,19 @@ class Situation:
     the ids whose turns could not be read; by default, none.
     `project_folder` is the project's folder as the harness names it, whose
     key the usage log records (never the path itself), or None.
+    `context_docs()` gives the project's own context documents that exist,
+    as paths from its root (`gates.CONTEXT_DOCS`), which the caller checks;
+    the core reads no file for them. It is called only when a text names
+    them; by default, none.
     """
 
     __slots__ = ("session_id", "agent_id", "project", "agent_folders", "installed_skills",
-                 "subagents", "project_folder")
+                 "context_docs", "subagents", "project_folder")
 
     def __init__(self, session_id: str, *, agent_id: str | None = None,
                  project: actions.Project | None = None, agent_folders: list[str] = (),
                  installed_skills: Callable[[], frozenset[str] | None] = lambda: None,
+                 context_docs: Callable[[], list[str]] = lambda: [],
                  subagents: Callable[[Turn], tuple[dict, list[str]]] = lambda turn: ({}, []),
                  project_folder: str | None = None) -> None:
         self.session_id = session_id
@@ -118,6 +124,7 @@ class Situation:
         self.project = project
         self.agent_folders = list(agent_folders)
         self.installed_skills = installed_skills
+        self.context_docs = context_docs
         self.subagents = subagents
         self.project_folder = project_folder
 
@@ -125,7 +132,8 @@ class Situation:
 class Notice(NamedTuple):
     """Something to tell the agent or the user that holds nothing: its kind
     (`FAIL_OPEN`, `WARNING`, `OVERRIDE_RECORDED`, `CLOSEOUT_NOTE_KIND`,
-    `SESSION_NOTICE`, `SKIP_CARRIED`) and its text."""
+    `SESSION_NOTICE`, `SKIP_CARRIED`, `READS_OWED`, `ROUTE_CONTINUED`) and
+    its text."""
 
     kind: str
     text: str
@@ -208,6 +216,7 @@ def judge_call(settings: Settings, situation: Situation, call: Call,
             situation.installed_skills() or ()),
         writes_scratch=lambda: actions.writes_only_scratch(
             call, situation.project, situation.agent_folders),
+        context_docs=situation.context_docs,
     )
     # Every gate judges the call, so one decision carries every hold (Ticket 095).
     holds = routing + actions.check_action(
@@ -334,7 +343,9 @@ def note_finished_call(settings: Settings, situation: Situation, call: Call,
 
     `call` is the finished call, with its result. A subagent has no
     closeout, so gets no note; nor does a turn the closeout already held,
-    which has seen its items. The note's claim on the turn marker has its
+    which has seen its items. The note ends by naming the project's context
+    documents, when `situation.context_docs()` gives any
+    (`gates.context_pointer`). The note's claim on the turn marker has its
     own purpose, and a claim that fails or cannot be made adds no note. The
     saved state is only read: the events that judge calls own it.
     """
@@ -360,6 +371,9 @@ def note_finished_call(settings: Settings, situation: Situation, call: Call,
         _owed_reads(state, current.key), actions.TaskSkips(state.lasting_skip_keys()))
     if not text:
         return Decision()
+    pointer = gates.context_pointer(situation.context_docs())
+    if pointer:
+        text += "\n" + pointer
     try:
         claimed = store.claim_turn(situation.session_id, current.key, CLOSEOUT_NOTE)
     except (OSError, StateUnsafe):
@@ -382,7 +396,8 @@ def record_prompt(settings: Settings, situation: Situation, typed_text: str | No
     left open are unanswered unless what followed them, which no event may
     have shown, or this prompt's overrides settle them. A prompt that
     continues a turn is not recorded at all. A subagent's prompts carry no
-    override.
+    override. A person's prompt in a session with a task also gets the
+    `ROUTE_CONTINUED` notice (`gates.continued_route_notice`).
     """
 
     if situation.agent_id is not None:
@@ -417,6 +432,9 @@ def record_prompt(settings: Settings, situation: Situation, typed_text: str | No
     if found["phrases"]:
         typed = ", ".join(f'"{phrase}"' for phrase in found["phrases"])
         notices.append(Notice(OVERRIDE_RECORDED, f"recorded your override for this prompt: {typed}"))
+    continued = gates.continued_route_notice(state) if typed_text is not None else None
+    if continued:
+        notices.append(Notice(ROUTE_CONTINUED, continued))
     if typed_text is not None and friction.claim_retrospective_notice(state):
         notices.append(Notice(SESSION_NOTICE, RETROSPECTIVE_NOTICE.format(count=state.friction)))
     notices += _warnings(state_warning, _save(store, situation.session_id, state),
@@ -473,10 +491,12 @@ def _fold(state: SessionState, turns: list[Turn], settings: Settings,
 
 def _fold_turns(state: SessionState, turns: list[Turn], settings: Settings,
                 situation: Situation) -> None:
-    """`gates.fold_turns`, relative paths taken from the session's folder."""
+    """`gates.fold_turns`, relative paths taken from the session's folder and
+    files judged the project's as `actions.in_project` judges them."""
 
     gates.fold_turns(state, turns, settings.skill_namespaces,
-                     situation.project.cwd if situation.project else None)
+                     situation.project.cwd if situation.project else None,
+                     lambda path: actions.in_project(path, situation.project))
 
 
 def _settle(state: SessionState, turns: list[Turn],

@@ -1,4 +1,4 @@
-event_model: 4
+event_model: 5
 scenarios:
   - name: a code change brings the closeout note, and the turn's end waits for proof and docs
     covers:
@@ -78,7 +78,7 @@ scenarios:
           type: prompt
           author: person
           text: Skip verification-before-completion, skip doc-sync, and fix it once more.
-        expect: {decision: allow, notices: [override_recorded]}
+        expect: {decision: allow, notices: [override_recorded, route_continued]}
       - reply: "goated-route: continue"
       - call: *limit
       - turn_end: true

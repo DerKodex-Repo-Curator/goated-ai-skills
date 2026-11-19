@@ -2603,6 +2603,13 @@ def _in_project(path: str, project: Project | None, placed: bool = True) -> bool
     return _under_any(_resolved(readings), _resolved(project.roots))
 
 
+def in_project(path: str, project: Project | None) -> bool:
+    """True unless `path`, as a call wrote it, is certainly outside `project`:
+    `_in_project`'s answer for a path whose folder is known."""
+
+    return _in_project(path, project)
+
+
 def writes_only_scratch(call: Call, project: Project | None, agent_folders: list[str]) -> bool:
     """True for a write that touches only scratch files, so the routing gates
     let it through: every file it writes is outside the project (see

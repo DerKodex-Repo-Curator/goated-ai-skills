@@ -186,6 +186,13 @@ class Call:
             return None
         return self.path or None
 
+    def read_path(self) -> str | None:
+        """The path a finished file read read, whole or in part, else None."""
+
+        if self.kind != FILE_READ or not self.ok:
+            return None
+        return self.path or None
+
 
 class Prompt(NamedTuple):
     """A prompt, as a turn's opener or as an entry that continues the turn.

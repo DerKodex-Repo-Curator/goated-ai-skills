@@ -31,7 +31,7 @@ from .events import (
 from .judge import Settings
 from .state import default_root
 
-EVENT_MODEL = 4
+EVENT_MODEL = 5
 STATE_DIR_ENV = "GOATED_CORE_STATE_DIR"
 NAMESPACES_ENV = "GOATED_CORE_SKILL_NAMESPACES"
 REGISTRY_ENV = "GOATED_CORE_REGISTRY"
@@ -149,6 +149,8 @@ class _Reading:
         skills = project.get("installed_skills")
         self.installed = (None if skills is None else frozenset(
             _text(s, "project.installed_skills") for s in _list(skills, "installed_skills")))
+        self.context_docs = [_text(d, "project.context_docs")
+                             for d in _list(project.get("context_docs", []), "context_docs")]
         self.event = _object(request["event"], "event")
         self.call = (_call(_object(self.event["call"], "event.call"))
                      if self.event.get("type") in ("pending_call", "finished_call") else None)
@@ -171,6 +173,7 @@ class _Reading:
                                          homes=(self.home,)),
             agent_folders=self.agent_folders,
             installed_skills=lambda: self.installed,
+            context_docs=lambda: self.context_docs,
             subagents=self._subagents,
             project_folder=self.folders[0] if self.folders else self.working_folder,
         )
