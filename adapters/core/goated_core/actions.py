@@ -2603,11 +2603,18 @@ def _in_project(path: str, project: Project | None, placed: bool = True) -> bool
     return _under_any(_resolved(readings), _resolved(project.roots))
 
 
-def in_project(path: str, project: Project | None) -> bool:
-    """True unless `path`, as a call wrote it, is certainly outside `project`:
-    `_in_project`'s answer for a path whose folder is known."""
+def reads_as_in_project(path: str, project: Project | None) -> bool:
+    """True when `path`, as a call wrote it, reads as under one of
+    `project`'s roots by its text alone, a relative path taken from the
+    session's folder, or when no project is known. Unlike `_in_project` it
+    resolves no link and expands no `~` or Git Bash mount, so a path only
+    those would place inside reads as outside; it reads the disk only to
+    expand a Windows short name (`PROGRA~1`), as the roots are."""
 
-    return _in_project(path, project)
+    if project is None:
+        return True
+    full = path if os.path.isabs(path) else os.path.join(project.cwd, path)
+    return _under_any([_comparable(full)], project.roots)
 
 
 def writes_only_scratch(call: Call, project: Project | None, agent_folders: list[str]) -> bool:

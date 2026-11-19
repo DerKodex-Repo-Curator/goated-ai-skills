@@ -309,9 +309,14 @@ def fold_turns(
             state.end_lasting_skips(turn.key)  # A new task ends them (spec R4).
         elif turn.route is not None and state.task is None and not state.task_unknown:
             # Only `continue` lines, in a session with no task, such as one
-            # started from another session: they start a task with no skills.
-            state.task = Task(route={"form": "continue"}, started_turn=turn.key)
+            # started from another session: they start a task with no skills,
+            # routed only by a brief or once its turn meets router-first
+            # (`note_task_routed`).
+            state.task = Task(route={"form": "continue"}, started_turn=turn.key,
+                              routed=turn.brief_route is not None)
             state.brief_task = turn.brief_route is not None
+        if state.router_loaded and state.task is not None and state.task.started_turn == turn.key:
+            state.task.routed = True  # Its turn met router-first by the router's load.
         state.loads = _unique([*state.loads, *loads])
         state.reference_reads = _unique(
             [*state.reference_reads, *design_reads.reads_in(turn.calls)]
@@ -325,10 +330,12 @@ def fold_turns(
         state.files_read = _unique(
             [*state.files_read, *_files_read(turn.calls, folder, whole=True)]
         )[:ORIENTATION_READS]
-        state.files_seen = _unique(
-            [*state.files_seen, *_files_read(turn.calls, folder, whole=False,
-                                             in_project=in_project)]
-        )[:ORIENTATION_FILES]
+        if len(state.files_seen) < ORIENTATION_FILES:
+            state.files_seen = _unique(
+                [*state.files_seen, *_files_read(turn.calls, folder, whole=False,
+                                                 in_project=in_project,
+                                                 counted=state.files_seen)]
+            )[:ORIENTATION_FILES]
         state.shell = last_shell([turn]) or state.shell
         state.last_turn = turn.key
 
@@ -342,14 +349,17 @@ def last_shell(turns: list[Turn]) -> str | None:
 
 
 def _files_read(calls, folder: str | None, whole: bool,
-                in_project: Callable[[str], bool] = lambda path: True) -> list[str]:
+                in_project: Callable[[str], bool] = lambda path: True,
+                counted: list[str] = ()) -> list[str]:
     """A digest of each file among `calls` that a finished file read read,
     or a finished, successful shell command printed
     (`shell.ShellCommand.file_prints`), in order: when `whole`, only those
     read or printed whole (`whole_prints`). Only orientation counts a shell
     print (Ticket 110): every other read a hold asks for is a file read.
     `in_project(path)` says whether a path, as the call wrote it, is the
-    project's; a file it is not is left out.
+    project's; a file it is not is left out. It is not asked of a file whose
+    digest is in `counted`, already found the project's, so a turn folded
+    again asks it only of files not yet counted.
 
     A relative path is taken from `folder`, the session's folder, when known,
     and two spellings of one path (`./`, `..`, and case and separators on
@@ -365,11 +375,12 @@ def _files_read(calls, folder: str | None, whole: bool,
         path = call.whole_read_path() if whole else call.read_path()
         return [path] if path else []
 
-    return [
-        hashlib.sha256(os.path.normcase(os.path.normpath(
+    def digest(path: str) -> str:
+        return hashlib.sha256(os.path.normcase(os.path.normpath(
             os.path.join(folder, path) if folder else path)).encode("utf-8")).hexdigest()[:16]
-        for call in calls for path in paths(call) if in_project(path)
-    ]
+
+    return [key for call in calls for path in paths(call)
+            for key in [digest(path)] if key in counted or in_project(path)]
 
 
 def _task_route_in(turn: Turn) -> dict | None:
@@ -406,9 +417,25 @@ def _turn_route(state: SessionState, turn: Turn) -> dict | None:
             or task is None):
         return None
     if opener.author == events.SESSION or (
-            opener.author == events.PERSON and task.started_turn != turn.key):
+            opener.author == events.PERSON and task.routed and task.started_turn != turn.key):
         return {"form": "continue"}
     return None
+
+
+def note_task_routed(state: SessionState, turn: Turn, overrides: dict) -> None:
+    """Mark the task `turn` started as routed when a person's override for
+    the turn stands down routing, as folding the turn already does when the
+    router loaded in it (`fold_turns`) and as a task a route line other than
+    `continue` or a brief started already is. Only a routed task carries a
+    person's later prompt as `continue` (`_turn_route`), so a bare
+    `continue` line written without the router does not exempt the turns
+    after it. `turn` is the current turn, already folded into `state`;
+    `overrides` are the ones a person typed for it."""
+
+    task = state.task
+    if (task is not None and not task.routed and task.started_turn == turn.key
+            and (overrides.get("routing") or ROUTER_SKILL in (overrides.get("skills") or ()))):
+        task.routed = True
 
 
 def writes_like_an_edit(call: Call) -> bool:
@@ -611,24 +638,31 @@ def _router_first_hold(state: SessionState) -> Hold:
 
 
 def _continues_task(state: SessionState, turn: Turn) -> bool:
-    """True when a person's prompt opened `turn` and it runs as
-    `goated-route: continue`, by its own line or none (`_turn_route`), in a
-    task an earlier turn started: the router would only say `continue`, so
-    router-first is met without it (round 5's R8, round 6's R2). The task
-    survives a compaction, so this does too; its required skills are still
-    asked for again by `pipeline`.
+    """True when `turn` continues a task the router would only say
+    `continue` to, so router-first is met without it. That is either:
+
+    - a turn a person's prompt opened that runs as `goated-route: continue`,
+      by its own line or none (`_turn_route`), in a routed task an earlier
+      turn started (round 6's R2). The task survives a compaction, so this
+      does too; its required skills are still asked for again by
+      `pipeline`. A task started by a bare `continue` line with no router is
+      not routed (`note_task_routed`), so it carries no later turn; or
+    - a turn of any author whose own route line is `goated-route: continue`
+      while the brief's task runs with no compaction since (round 5's R8,
+      Ticket 117), which another session's message meets too.
 
     A turn whose route line starts a new task, or with no valid route line
-    but one that fails the grammar, is not one, nor is a `continue` line
-    that started the task itself. Another session's message keeps round 4's rule: it meets
-    `route-line` as `continue`, and router-first only as before. Only
-    router-first reads this; briefed-session orientation stays with
-    `brief_routed`, so continuing does not bring it back.
+    but one that fails the grammar, is neither, nor is a `continue` line
+    that started the task itself. Only router-first reads this;
+    briefed-session orientation stays with `brief_routed`, so continuing
+    does not bring it back.
     """
 
-    route = _turn_route(state, turn)
+    if state.brief_task and turn.route is not None and turn.route["form"] == "continue":
+        return True
+    route, task = _turn_route(state, turn), state.task
     return (turn.typed and route is not None and route["form"] == "continue"
-            and state.task is not None and state.task.started_turn != turn.key)
+            and task is not None and task.routed and task.started_turn != turn.key)
 
 
 # A project's own context documents, as paths from its root, which the
@@ -658,12 +692,14 @@ CONTINUED_ROUTE_NOTICE = (
 
 def continued_route_notice(state: SessionState) -> str | None:
     """The notice for a person's prompt about to open a turn in `state`'s
-    session: `CONTINUED_ROUTE_NOTICE` when the session has a task, so the
-    turn will run as `continue` until a route line says otherwise
+    session: `CONTINUED_ROUTE_NOTICE` when the session has a routed task, so
+    the turn will run as `continue` until a route line says otherwise
     (`_turn_route`), else None. Saved state that was missing or reset knows
-    no task, so it gives none."""
+    no task, so it gives none. The caller brings `state` up to date with the
+    turns before the prompt first."""
 
-    return CONTINUED_ROUTE_NOTICE if state.task is not None else None
+    task = state.task
+    return CONTINUED_ROUTE_NOTICE if task is not None and task.routed else None
 
 
 def _brief_orientation(state: SessionState, task: Task) -> bool:

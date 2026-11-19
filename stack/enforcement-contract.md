@@ -214,9 +214,11 @@ Clear ways: `proof` is the gate's own proof of use, in the Clears column;
 `skip-line` is a skip line naming the gate's skill; `override` is a person's
 override (see [Overrides](#overrides)); `route-line` is a route line in the
 turn, or a corrected one that drops the requirement; `brief-route` is a
-route line in the brief that started the session; `task-route` is, in a
-turn a person's prompt opened in a task an earlier turn started, the
-turn's route being `goated-route: continue`, by its line or by having
+route line in the brief that started the session, or, in the task it
+started and with no compaction since, a `goated-route: continue` line;
+`task-route` is, in a turn a person's prompt opened in a routed task an
+earlier turn started (see [Prompts, Turns, And Tasks](#prompts-turns-and-tasks)),
+the turn's route being `goated-route: continue`, by its line or by having
 none; `lasting-skip` is a skip
 line from an earlier turn of the task that cleared the same gate (the two
 design gates count as one) for the same references on the same kind of
@@ -224,7 +226,7 @@ file (see [Holds](#holds)).
 
 | Gate | Kind | Holds | Clears | Clear ways | Enforces |
 | --- | --- | --- | --- | --- | --- |
-| `router-first` | strict | A write, spawn, or command while the router does not count as loaded; a command made only of plain reads passes | The router counts as loaded; or, until a person's prompt opens a turn, the session's first prompt is a brief with a route line; or, in a turn a person's prompt opened in a task an earlier turn started, compacted or not, the turn's route is `goated-route: continue`, by a line or by having no route line (see [Prompts, Turns, And Tasks](#prompts-turns-and-tasks)) | `proof`, `brief-route`, `task-route`, `override` | The router's "use at the start of each new task before the first edit or command" |
+| `router-first` | strict | A write, spawn, or command while the router does not count as loaded; a command made only of plain reads passes | The router counts as loaded; or, until a person's prompt opens a turn, the session's first prompt is a brief with a route line; or, in the task that brief's turn started and with no compaction since, the turn's route line is `goated-route: continue`, whoever's prompt opened it; or, in a turn a person's prompt opened in a routed task an earlier turn started, compacted or not, the turn's route is `goated-route: continue`, by a line or by having no route line (see [Prompts, Turns, And Tasks](#prompts-turns-and-tasks)) | `proof`, `brief-route`, `task-route`, `override` | The router's "use at the start of each new task before the first edit or command" |
 | `route-line` | strict | The first write or spawn after each prompt until the turn has a valid route line, except in a turn a person's or another session's prompt opened in a session with a task, which runs as `continue` (see [Prompts, Turns, And Tasks](#prompts-turns-and-tasks)); also `goated-route: continue` when no task is known | A valid route line in the turn | `route-line`, `override` | The router's output contract |
 | `pipeline` | strict | A write or spawn while a `requires:` skill of the task does not count as loaded; in a session routed by its brief on a `standard` or `full` route, also while orientation is unmet and the orientation skill is installed; that hold names the project's context documents that exist (see [Calling The Core](#calling-the-core)). A spawn of a read-only agent passes | Each listed skill counts as loaded; orientation by its skill's load, by whole reads or whole prints of three distinct files, or by reads or prints, whole or in part, of five distinct project files, one file read and printed under two spellings counting once; a search that prints matching lines never counts (see [File Prints](#file-prints)) | `proof`, `route-line`, `override` | The router's route line ("must load before the first write") and the shared policy's corrected route line |
 | `commit` | strict | A commit, by a git command (not a dry run) or a `commit` call | `commit-message` counts as loaded, an inline message passes the content check, and a change read follows the last change to any project file | `proof`, `override` | `commit-message` ("use before any Git commit") |
@@ -339,19 +341,31 @@ A recorded override brings an `override_recorded` notice.
   starts a session, either prompt meets `route-line` and `router-first` as
   today, and so does every prompt with `author: host` or `unknown` that
   opens a turn.
-- **A person's follow-up** (decision T1 of round 6). In a turn a person's
-  prompt opened, a route of `continue`, by a line or by having none, in a
-  task an earlier turn started also meets `router-first` without a router
-  load (`task-route`), compaction or not. The task's required skills are
-  still asked for again after a compaction, by `pipeline`. The prompt gets
-  a `route_continued` notice, once, saying that new work needs a new route
-  line. Another session's message meets `router-first` only as before.
+- **A person's follow-up** (decision T1 of round 6). A task is **routed**
+  when a route line other than bare `continue` or a brief's route line
+  started it, or when the turn whose bare `continue` line started it met
+  `router-first` by the router's load or a person's override. In a turn a
+  person's prompt opened, a route of `continue`, by a line or by having
+  none, in a routed task an earlier turn started meets `route-line` and
+  `router-first` without a router load (`task-route`), compaction or not.
+  A bare `continue` line written without the router starts a task that
+  carries no later prompt, so the next one is held as in a session with no
+  task. The task's required skills are still asked for again after a
+  compaction, by `pipeline`. The prompt gets a `route_continued` notice,
+  once, saying that new work needs a new route line; the core judges it
+  after folding the turns since the last one it saw, as the next judged
+  call does, so a route line written after a turn's last judged call
+  counts for both. Another session's message meets
+  `router-first` as before: by the router, or, in the brief's task with no
+  compaction since, by its own `goated-route: continue` line.
 - A prompt the
   harness wrote, or a report from an agent this session spawned, continues
   the current turn as an entry: the turn's lines, overrides, checks, and
   change reads stand.
 - A compaction opens a turn of its own and clears loads and reads. The route
-  carries over, so `goated-route: continue` keeps the task.
+  carries over, so `goated-route: continue` keeps the task. A clear
+  (`session_start` from `cleared`) clears them too and ends the task, so
+  the next prompt is routed afresh.
 - **A task** starts at a route line that is not `continue` and runs through
   later `continue` turns. In a session with no task yet, a turn whose only
   route lines are `continue` starts a task that requires no skills.
@@ -407,7 +421,7 @@ A notice never holds.
   land before its reads (see [Holds](#holds)), one per gate. It names each reference
   and its skip line, and says the Reads item will ask for the reads and a
   change read. An adapter shows it to the agent.
-- `route_continued`: at a person's prompt in a session with a task, which
+- `route_continued`: at a person's prompt in a session with a routed task, which
   then runs as `goated-route: continue` (see
   [Prompts, Turns, And Tasks](#prompts-turns-and-tasks)), once per prompt.
   It says that new work needs a new route line. An adapter shows it to the
@@ -1250,9 +1264,11 @@ the same terms as a whole print, when it is a whole print, or:
 - `head` or `tail`, in either shell, with any options;
 - `sed` with `-n`, `--quiet`, or `--silent`, alone or in a cluster such as
   `-ne`, and no `-i`, naming its files after its script, or after each
-  `-e` or `-f` value when it has one (`sed -n 1,40p a.py`,
-  `sed -n -e 1p a b`); `sed` without `-n` prints every line, edited, and
-  does not count;
+  `-e` value when it has one (`sed -n 1,40p a.py`, `sed -n -e 1p a b`).
+  `sed` without `-n` prints every line, edited, and does not count, nor
+  does a script that may write a file: one with a `w` or `W` command or
+  flag followed by a space or its end (`sed -n '1w out' a`,
+  `sed -n 's/a/b/w out' a`), or one read from a file (`-f`);
 - in a `powershell` command, `Get-Content`, `gc`, `type`, or `cat` with a
   range parameter (`Get-Content a -TotalCount 30`, `gc a -Tail 5`).
 
@@ -1260,8 +1276,11 @@ Each command part counts its own files, so
 `sed -n 1,40p a && sed -n 40,80p b` prints two. A search that prints
 matching lines (`grep`, `rg`, `Select-String`, and every command not named
 here) prints no file. A file printed or read by the `file_read` call, with
-or without a range, counts toward the five only inside the project; the
-three whole reads count any file, as before. The core reads it as
+or without a range, counts toward the five only when its path, as written,
+reads as under a project folder: no link is resolved and no `~` or Git
+Bash mount expanded for it, and only a Windows short name is (see
+`actions.reads_as_in_project`). The three whole reads count any file, as
+before. The core reads it as
 `file_prints` in `shell.py`.
 
 ### Package Installs And Setup Files

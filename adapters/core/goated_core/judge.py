@@ -199,6 +199,7 @@ def judge_call(settings: Settings, situation: Situation, call: Call,
     settled = _fold(state, turns, settings, situation)
     current = turns[-1]
     overrides = overrides_for(state, current, prompt_key)
+    gates.note_task_routed(state, current, overrides)
     unread: list[str] = []
 
     def spawned() -> dict:
@@ -300,8 +301,10 @@ def judge_turn_end(settings: Settings, situation: Situation, read: TurnReader,
     current = turns[-1]
     subagents, unread = situation.subagents(current)
     task_skips = actions.TaskSkips(state.lasting_skip_keys())
+    overrides = overrides_for(state, current, prompt_key)
+    gates.note_task_routed(state, current, overrides)
     hold = actions.check_closeout(
-        current, overrides_for(state, current, prompt_key), settings.skill_namespaces,
+        current, overrides, settings.skill_namespaces,
         final_text, subagents, situation.project,
         earlier=_since_compaction(state),
         spawn_templates=state.spawn_templates_of(current.key),
@@ -396,8 +399,10 @@ def record_prompt(settings: Settings, situation: Situation, typed_text: str | No
     left open are unanswered unless what followed them, which no event may
     have shown, or this prompt's overrides settle them. A prompt that
     continues a turn is not recorded at all. A subagent's prompts carry no
-    override. A person's prompt in a session with a task also gets the
-    `ROUTE_CONTINUED` notice (`gates.continued_route_notice`).
+    override. A person's prompt in a session with a routed task also gets
+    the `ROUTE_CONTINUED` notice (`gates.continued_route_notice`), judged
+    after the unseen turns are folded in, so a route line written after the
+    last judged call counts for the notice as it does for the gates.
     """
 
     if situation.agent_id is not None:
@@ -432,7 +437,17 @@ def record_prompt(settings: Settings, situation: Situation, typed_text: str | No
     if found["phrases"]:
         typed = ", ".join(f'"{phrase}"' for phrase in found["phrases"])
         notices.append(Notice(OVERRIDE_RECORDED, f"recorded your override for this prompt: {typed}"))
-    continued = gates.continued_route_notice(state) if typed_text is not None else None
+    continued = None
+    if typed_text is not None:
+        # Only from a turn already seen, as the next judged call folds: with
+        # none (after a clear, a reset, or a compaction's start), what a
+        # reader returns may come from before that boundary, which the gates
+        # do not fold either, so the notice and the gates agree.
+        if state.last_turn is not None:
+            before = turns if turns is not None else unseen(state.last_turn)
+            if before:
+                _fold_turns(state, before, settings, situation)
+        continued = gates.continued_route_notice(state)
     if continued:
         notices.append(Notice(ROUTE_CONTINUED, continued))
     if typed_text is not None and friction.claim_retrospective_notice(state):
@@ -449,7 +464,9 @@ def start_session(settings: Settings, situation: Situation, source: str,
 
     After a compaction or a clear every skill must load again, and the
     design references and spawn-brief templates be read again, because their
-    text was summarized away; the route itself carries over (spec R5). Turns
+    text was summarized away. After a compaction the route itself carries
+    over (spec R5); a clear ends the task, so the next prompt is routed
+    afresh (round 6's R2: the route survives a compaction only). Turns
     from before the boundary are never folded back in. A new session has no
     task yet, so `continue` may start one. `first_notices()` gives the
     harness's own session notices, asked for once per session; they are
@@ -467,6 +484,9 @@ def start_session(settings: Settings, situation: Situation, source: str,
         friction.forget_open(state)
         state.last_turn = None
         store.clear_turn_markers(situation.session_id)
+    if source == CLEARED:
+        # No task is known to run: the next route line starts one afresh.
+        state.task, state.task_unknown = None, False
     notices = []
     if not state.policy_notice_shown:
         state.policy_notice_shown = True
@@ -492,11 +512,11 @@ def _fold(state: SessionState, turns: list[Turn], settings: Settings,
 def _fold_turns(state: SessionState, turns: list[Turn], settings: Settings,
                 situation: Situation) -> None:
     """`gates.fold_turns`, relative paths taken from the session's folder and
-    files judged the project's as `actions.in_project` judges them."""
+    files judged the project's as `actions.reads_as_in_project` reads them."""
 
     gates.fold_turns(state, turns, settings.skill_namespaces,
                      situation.project.cwd if situation.project else None,
-                     lambda path: actions.in_project(path, situation.project))
+                     lambda path: actions.reads_as_in_project(path, situation.project))
 
 
 def _settle(state: SessionState, turns: list[Turn],

@@ -443,8 +443,9 @@ def _user_prompt_submit(payload: dict, config: Config) -> str:
         except TranscriptUnreadable:
             return None
 
+    # With the project, as the prompt folds the turns before it (Ticket 119).
     decision = judge.record_prompt(
-        config.settings(), _situation(payload, config, session_id, with_project=False),
+        config.settings(), _situation(payload, config, session_id),
         typed_prompt(prompt).text if kind == TYPED else None,
         payload.get("prompt_id"), unseen)
     notices = decision.texts(judge.OVERRIDE_RECORDED, judge.ROUTE_CONTINUED, judge.SESSION_NOTICE)

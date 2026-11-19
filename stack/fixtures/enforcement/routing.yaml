@@ -178,14 +178,125 @@ scenarios:
 
   - name: a person's prompt in a session with no task carries no route and no notice
     covers:
-      - {gate: route-line, case: near-miss}
+      - {gate: router-first, case: holds}
+      - {gate: route-line, case: holds}
     steps:
       - prompt: {type: prompt, author: person, text: Look at the export.}
         expect: {decision: allow, notices: []}
       - call: {kind: shell_command, shell: posix, command: git status}
-      - prompt: {type: prompt, author: person, text: Now look at the import.}
+      - prompt: {type: prompt, author: person, text: Now fix the import.}
         expect: {decision: allow, notices: []}
       - call: {kind: file_read, path: src/import.py, whole: true}
+      - call: *import_limit
+        expect:
+          decision: hold
+          holds:
+            - {gate: router-first, kind: strict}
+            - {gate: route-line, kind: strict}
+
+  - name: a bare continue line written without the router routes no later prompt
+    covers:
+      - {gate: router-first, case: holds}
+      - {gate: route-line, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - reply: "goated-route: continue"
+      - call: *limit
+        expect:
+          decision: hold
+          holds: [{gate: router-first, kind: strict}]
+      - prompt: {type: prompt, author: person, text: Now the import limit.}
+        expect: {decision: allow, notices: []}
+      - call: *import_limit
+        expect:
+          decision: hold
+          holds:
+            - {gate: router-first, kind: strict}
+            - {gate: route-line, kind: strict}
+
+  - name: a bare continue line routes its task when the router loaded or a person skipped routing
+    covers:
+      - {gate: route-line, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: continue"
+      - call: *limit
+      - compaction: true
+      - prompt: {type: prompt, author: person, text: Now the import limit.}
+        expect: {decision: allow, notices: [route_continued]}
+      - call: *import_limit
+
+  - name: a person's skip of routing routes the task a bare continue line starts
+    covers:
+      - {gate: route-line, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Skip routing and fix the export limit.}
+        expect: {decision: allow, notices: [override_recorded]}
+      - reply: "goated-route: continue"
+      - call: *limit
+      - prompt: {type: prompt, author: person, text: Now the import limit.}
+        expect: {decision: allow, notices: [route_continued]}
+      - call: *import_limit
+
+  - name: a route line after a turn's last judged call still carries the next prompt, with its notice
+    covers:
+      - {gate: route-line, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Plan the export.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - call: {kind: shell_command, shell: posix, command: git status}
+      - reply: "goated-route: direct"
+      - prompt: {type: prompt, author: person, text: Now do it.}
+        expect: {decision: allow, notices: [route_continued]}
+      - call: *limit
+
+  - name: a clear ends the task, so the next prompt is routed afresh
+    covers:
+      - {gate: router-first, case: holds}
+      - {gate: route-line, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *limit
+      - compaction: true
+      - session_start: cleared
+      - prompt: {type: prompt, author: person, text: Something new entirely.}
+        expect: {decision: allow, notices: []}
+      - call: *limit
+        expect:
+          decision: hold
+          holds:
+            - {gate: router-first, kind: strict}
+            - {gate: route-line, kind: strict}
+
+  - name: in the brief's task another session's message then a continue line meets router-first
+    covers:
+      - {gate: router-first, case: holds}
+      - {gate: router-first, case: clears, way: brief-route}
+    steps:
+      - session_start: new
+      - prompt:
+          type: prompt
+          author: session
+          starts_session: true
+          text: "## Goal
+
+Fix the export limit.
+
+goated-route: direct
+"
+      - call: *limit
+      - prompt: {type: prompt, author: person, text: Also this.}
+      - call: *limit
+      - prompt: {type: prompt, author: session, text: Message from another session.}
+      - call: *limit
+        expect:
+          decision: hold
+          holds: [{gate: router-first, kind: strict}]
+      - reply: "goated-route: continue"
+      - call: *limit
 
   - name: in the brief's task a person's prompt passes plain reads, then its continue line passes writes
     covers:

@@ -78,8 +78,10 @@ class WholePrintTests(unittest.TestCase):
         self.assertEqual(printed("Get-Content a.md -TotalCount 5", POWERSHELL), ["a.md"])
         self.assertEqual(printed("sed -n 1p a.md && sed -n 2p b.md"), ["a.md", "b.md"])
         # A search, `sed` printing every line, an in-place edit, and a pipe print no file.
+        # So do sed scripts that may write a file instead of printing.
         for command in ("grep x a.md", "rg x a.md", "sed s/x/y/ a.md", "sed -i -n 1p a.md",
-                        "sed -n 1p a.md | head"):
+                        "sed -n 1p a.md | head", "sed -n '1w out.txt' a.md",
+                        "sed -n 's/a/b/w out' a.md", "sed -n -e 1W a.md", "sed -n -f p.sed a.md"):
             with self.subTest(command=command):
                 self.assertEqual(printed(command), [])
         self.assertEqual(printed("Select-String -Path a.md -Pattern x", POWERSHELL), [])

@@ -1398,7 +1398,8 @@ def _printed(name: str, args: list[str], segment: "_Segment",
         quiet = not _edits_in_place(args) and any(
             arg in ("--quiet", "--silent") or (arg[:1] == "-" and arg[1:2] != "-" and "n" in arg)
             for arg in args)
-        printed, whole = (_in_place_files(name, args) if quiet else []), False
+        printed = _in_place_files(name, args) if quiet and not _sed_may_write(args) else []
+        whole = False
     elif name in ("head", "tail"):
         # A program of its own in either shell: no PowerShell command has these names.
         printed, whole = _printed_files(name, args), False
@@ -1411,6 +1412,37 @@ def _printed(name: str, args: list[str], segment: "_Segment",
         whole = not any(_is_range_param(arg) for arg in args)
     # A word the shell expands may name no file, or several.
     return [path for path in printed if _plain(path) and not path.startswith("~")], whole
+
+
+# A `w` or `W` command, or an `s` command's `w` flag, followed by its file name
+# or the script's end: such a script writes a file, and may print nothing.
+SED_WRITE_RE = re.compile(r"[wW](\s|$)")
+
+
+def _sed_may_write(args: list[str]) -> bool:
+    """True when `sed`'s script, as `args` give it, may write a file: it has a
+    `w` or `W` command or flag (`SED_WRITE_RE`), or comes from a file (`-f`)
+    the command does not show. A `w` inside a pattern may match too, which
+    only leaves a print uncounted."""
+
+    scripts, given, i = [], False, 0
+    while i < len(args):
+        arg = args[i]
+        if arg in ("-f", "--file") or arg.startswith("--file=") or (
+                arg[:1] == "-" and arg[1:2] != "-" and arg.endswith("f")):
+            return True
+        if arg in ("-e", "--expression") or (arg[:1] == "-" and arg[1:2] != "-"
+                                             and arg.endswith("e")):
+            scripts.append(args[i + 1] if i + 1 < len(args) else "")
+            given, i = True, i + 2
+            continue
+        if arg.startswith("--expression="):
+            scripts.append(arg.partition("=")[2])
+            given = True
+        i += 1
+    if not given:
+        scripts = _positional(args)[:1]
+    return any(SED_WRITE_RE.search(script) for script in scripts)
 
 
 def _is_range_param(arg: str) -> bool:

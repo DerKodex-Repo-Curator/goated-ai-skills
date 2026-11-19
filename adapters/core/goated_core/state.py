@@ -43,16 +43,21 @@ ONBOARDING_DIR = "onboarding-notices"
 
 
 class Task:
-    """The current task: its route, and the turn whose route line started it."""
+    """The current task: its route, the turn whose route line started it, and
+    whether it was routed: by a route line other than bare `continue`, by the
+    brief that started the session, or in a turn that met router-first by the
+    router's load or a person's override (`gates.note_task_routed`). Only a
+    routed task carries a person's follow-up as `continue` (Ticket 119)."""
 
-    __slots__ = ("route", "started_turn")
+    __slots__ = ("route", "started_turn", "routed")
 
-    def __init__(self, route: dict, started_turn: str) -> None:
+    def __init__(self, route: dict, started_turn: str, routed: bool | None = None) -> None:
         self.route = route
         self.started_turn = started_turn
+        self.routed = route.get("form") != "continue" if routed is None else routed
 
     def to_json(self) -> dict:
-        return {"route": self.route, "started_turn": self.started_turn}
+        return {"route": self.route, "started_turn": self.started_turn, "routed": self.routed}
 
 
 class SessionState:
@@ -259,6 +264,7 @@ class SessionState:
             state.task = Task(
                 route=_valid_route(task.get("route")),
                 started_turn=_expect(task.get("started_turn"), str),
+                routed=_expect(task.get("routed"), (bool, type(None))),
             )
         overrides = _expect(data.get("overrides", {}), dict)
         if overrides:
