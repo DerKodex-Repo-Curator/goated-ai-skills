@@ -128,6 +128,27 @@ class ReadsOwedTests(unittest.TestCase):
         self.assertTrue(owed_names(outputs[0]))
         self.assertEqual([context(output) for output in outputs[1:]], ["", "", ""])
 
+    def test_edits_judged_at_once_each_keep_what_they_owe_and_share_one_notice(self) -> None:
+        # Review of Ticket 118: hooks of one message run at the same moment, and
+        # each saves the session state, so without a lock the last save drops
+        # what the other edit owed.
+        guarded = {"file_path": "src/other.py", "old_string": "def rows():\n", "new_string": (
+            'def load():\n    """Load the rows."""\n    try:\n        return rows()\n'
+            "    except OSError:\n        return []\ndef rows():\n")}
+        for trial in range(3):
+            with self.subTest(trial=trial):
+                self.setUp()
+                (self.session.project / "src" / "other.py").write_text(EXISTING, encoding="utf-8")
+                outputs = self.session.parallel([("Edit", PUBLIC_FUNCTION), ("Edit", guarded)],
+                                                concurrently=True)
+                self.assertEqual([decision(o) for o in outputs], ["pass", "pass"])
+                # Both public definitions select the same three; only one names them.
+                listed = [owed_names(o) & {"process.md", "readability.md"} for o in outputs]
+                self.assertEqual(sorted(map(bool, listed)), [False, True], listed)
+                reads = self.stop()["reason"].split("- Reads:", 1)[1].split("\n- ", 1)[0]
+                for name in ("process.md", "errors.md"):
+                    self.assertIn(name, reads)
+
     def test_the_next_turn_names_its_references_again(self) -> None:
         # Owed reads end with their turn, so the next turn's notice names them afresh.
         self.session.call("Edit", PUBLIC_FUNCTION)

@@ -316,6 +316,33 @@ class LargeWriteTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             SessionState.from_json(broken)
 
+    def test_the_state_lock_is_one_holder_at_a_time_and_never_hangs(self) -> None:
+        # Review of Ticket 118: hooks judged at once take turns at the state.
+        import os
+        import time
+        from unittest import mock
+        from goated_core import state as state_module
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = state_module.StateStore(Path(tmp) / "state")
+            with store.locked("s1") as first:
+                self.assertTrue(first)
+                # Near miss: a hook that cannot have the lock in time goes on without it.
+                with mock.patch.object(state_module, "LOCK_WAIT_SECONDS", 0.05):
+                    with store.locked("s1") as second:
+                        self.assertFalse(second)
+                # Another session's lock is its own.
+                with store.locked("s2") as other:
+                    self.assertTrue(other)
+            # Released, and a lock a dead hook left long ago is broken.
+            lock = Path(tmp) / "state" / state_module.LOCKS_DIR / "s1.lock"
+            self.assertFalse(lock.exists())
+            lock.write_text("", encoding="utf-8")
+            old = time.time() - state_module.LOCK_STALE_SECONDS - 1
+            os.utime(lock, (old, old))
+            with store.locked("s1") as broken_in:
+                self.assertTrue(broken_in)
+
 
 def _neutral_paths(decision: dict) -> dict:
     """`decision` with the run's own folder names, which differ between the

@@ -9,19 +9,21 @@ task's lasting skips (`actions.LastingSkip`), the reads the current turn's
 landed writes owe (`actions.OwedRead`), which
 template each of the current turn's spawns' briefs followed, the last turn
 seen, the latest user overrides, and the friction count (`friction.py`). Beside it,
-markers name what the current turn's holds already gave in full, and a
-record per project names what its onboarding notice last named. Apart from
+markers name what the current turn's holds already gave in full, a
+record per project names what its onboarding notice last named, and a lock
+file is held while a hook changes the session's state. Apart from
 the short override phrases a user typed, it holds no prompt or reply text.
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 UNSAFE_NAME_CHARS = re.compile(r"[^a-z0-9_-]")
@@ -40,6 +42,15 @@ AGENT_SEPARATOR = "~"
 # Beside the state files: per project, which onboarding skills its notice
 # last named.
 ONBOARDING_DIR = "onboarding-notices"
+# Beside the state files: one lock file per session while a hook loads,
+# changes, and saves its state (`StateStore.locked`).
+LOCKS_DIR = "locks"
+# How long a hook waits for another hook's lock before it goes on without
+# it, and how old a lock is before it counts as left by a hook that died. A
+# judgement takes well under a second; a hook must never hang.
+LOCK_WAIT_SECONDS = 5.0
+LOCK_STALE_SECONDS = 30.0
+LOCK_RETRY_SECONDS = 0.01
 
 
 class Task:
@@ -456,6 +467,55 @@ class StateStore:
         self._ensure_private_directory()
         _write_json(self._path(session_id), state.to_json())
 
+    @contextlib.contextmanager
+    def locked(self, session_id: str) -> Iterator[bool]:
+        """Hold the session's lock while the caller loads, changes, and saves
+        its state, so of hooks judging at once each sees what the one before
+        it saved: two edits of one message are judged at the same moment,
+        and without it the last save drops what the other recorded (review
+        of Ticket 118). Yields whether the lock is held.
+
+        The lock is one exclusive file create. A lock older than
+        `LOCK_STALE_SECONDS` was left by a hook that died, and is broken; a
+        known limit is that two hooks breaking one stale lock at once may
+        both take it, or a judgement slower than that may lose it.
+        After `LOCK_WAIT_SECONDS`, or when the lock file cannot be made at
+        all, the caller goes on without it, as before the lock, since a hook
+        must not hang; that risks only the old race."""
+
+        folder = self.directory / LOCKS_DIR
+        path = folder / f"{_safe_name(session_id)}.lock"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        deadline = time.monotonic() + LOCK_WAIT_SECONDS
+        try:
+            self._ensure_private_directory(folder)
+            usable = True
+        except (OSError, StateUnsafe):
+            usable = False  # The caller's own load meets the same folder and says so.
+        held = False
+        while usable and not held:
+            try:
+                os.close(os.open(path, flags, 0o600))
+                held = True
+            except FileExistsError:
+                if _age_seconds(path) > LOCK_STALE_SECONDS:
+                    with contextlib.suppress(OSError):  # Another waiter broke it first.
+                        path.unlink(missing_ok=True)
+                elif time.monotonic() >= deadline:
+                    break
+                else:
+                    time.sleep(LOCK_RETRY_SECONDS)
+            except OSError:
+                break
+        try:
+            yield held
+        finally:
+            if held:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass  # A lock left behind is broken once it is stale.
+
     def onboarding_shown(self, project_key: str) -> list[str] | None:
         """The skills the onboarding notice last named for the project
         `project_key`, or None when it was never shown or its record is unreadable."""
@@ -589,6 +649,16 @@ def _write_json(path: Path, data) -> None:
     except BaseException:
         temp.unlink(missing_ok=True)
         raise
+
+
+def _age_seconds(path: Path) -> float:
+    """How long ago `path` was last written; 0 when it cannot be seen, as
+    when the hook holding it has just let it go."""
+
+    try:
+        return time.time() - path.stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 def _replace(source: Path, target: Path) -> None:
