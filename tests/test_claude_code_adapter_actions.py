@@ -4146,6 +4146,35 @@ class ReviewRegressionTests(AdapterTestCase):
         self.assertNotIn("Proof", held["reason"])
         self.assertIn("doc-sync", held["reason"])
 
+    def test_a_subagents_background_write_and_check_proves_nothing(self) -> None:
+        # Ticket 116: a background call is no check, in a later call or the same one.
+        s = self.routed()
+        s.brief_with_handoff()
+        agent = s.subagent("b3")
+        agent.prompt("Implement it.", hook=False)
+        agent.call("Bash", {"command": "cp a.py src/app.py && pytest -q", "run_in_background": True},
+                   agent_id="b3", agent_type="general-purpose")
+        s.spawn("b3", BRIEF)
+
+        self.assertIn("- Proof:", stop(s)["reason"])
+
+    def test_a_subagents_comment_only_edit_after_its_check_keeps_the_proof(self) -> None:
+        s = self.routed()
+        s.brief_with_handoff()
+        agent = s.subagent("b4")
+        agent.prompt("Implement it.", hook=False)
+        agent.call("Edit", {"file_path": "src/app.py", "old_string": "a", "new_string": "b"},
+                   agent_id="b4", agent_type="general-purpose")
+        agent.run("pytest -q")
+        agent.call("Edit", {"file_path": "src/app.py", "old_string": "# old note",
+                            "new_string": "# new note"},
+                   agent_id="b4", agent_type="general-purpose")
+        s.spawn("b4", BRIEF)
+
+        held = stop(s)
+        self.assertNotIn("Proof", held["reason"])
+        self.assertIn("doc-sync", held["reason"])
+
     # Item 12: the older spawn tool name and MCP commit tools.
     def test_the_task_spawn_tool_is_held(self) -> None:
         s = self.routed()
@@ -4461,7 +4490,8 @@ class ChangeReadOrderTests(AdapterTestCase):
 
 
 class CommentOnlyEditTests(AdapterTestCase):
-    """A comment-only edit does not reopen the Design item; Proof and Docs still count it (Ticket 059)."""
+    """A comment-only edit does not reopen the Design item (Ticket 059) and keeps the proof
+    (Ticket 116); Docs still counts it."""
 
     def designed(self) -> Session:
         """A turn that met every closeout item, the Design item's red flags and change read included."""
@@ -4554,15 +4584,108 @@ class CommentOnlyEditTests(AdapterTestCase):
 
         self.assertIn("- Design:", stop(s)["reason"])
 
-    def test_proof_still_needs_a_check_after_a_comment_only_edit(self) -> None:
+    def checked(self) -> Session:
+        """A turn that changed a code line and passed a check, with Docs and Design skipped."""
+
+        s = self.routed()
+        s.say(DESIGN_SKIP)
+        s.say(DOC_SKIP)
+        s.call("Edit", edit("src/export.py", PLAIN))
+        s.run("pytest -q")
+        self.assertEqual(stop(s), {})
+        return s
+
+    def test_a_comment_only_edit_after_a_passing_check_keeps_the_proof(self) -> None:
+        # Ticket 116 (N1): comments do not run, so a comment-only edit of any size is proved.
+        long_docstring = ('    """Return the export total.\n\n'
+                          + lines_of("    Line {n} of the explanation.", 30) + '\n    """')
+        changes = (*COMMENT_EDITS, {"file_path": "src/export.py",
+                                    "old_string": '    """Old doc."""\n    return total',
+                                    "new_string": long_docstring + "\n    return total"})
+        for change in changes:
+            with self.subTest(change=change):
+                self.session = self.fresh()
+                s = self.checked()
+                s.call("Edit", change)
+                self.assertEqual(stop(s), {})
+
+    def test_a_comment_only_edit_with_no_check_in_the_turn_needs_no_proof(self) -> None:
         s = self.routed()
         s.say(DESIGN_SKIP)
         s.say(DOC_SKIP)
         s.call("Edit", COMMENT_EDITS[0])
 
-        self.assertIn("- Proof:", stop(s)["reason"])
-        s.run("pytest -q")
         self.assertEqual(stop(s), {})
+
+    def test_near_miss_an_edit_changing_one_code_line_after_the_check_needs_proof(self) -> None:
+        s = self.checked()
+        s.call("Edit", {"file_path": "src/export.py", "old_string": "total_0 = 0",
+                        "new_string": "total_0 = 1  # the first"})
+
+        self.assertIn("- Proof:", stop(s)["reason"])
+
+    def test_near_miss_an_edit_that_opens_or_closes_a_block_needs_proof(self) -> None:
+        # The code after a fragment that leaves a block open is commented out, and the reverse.
+        changes = (
+            ("src/export.ts", "/* note */", "/* note"),
+            ("src/export.ts", "/* note", "/* note */"),
+            ("src/export.py", "# a", '"""a'),
+            ("src/export.py", '"""a', "# a"),
+        )
+        for path, old, new in changes:
+            with self.subTest(old=old, new=new):
+                self.session = self.fresh()
+                s = self.checked()
+                s.call("Edit", {"file_path": path, "old_string": old, "new_string": new})
+                self.assertIn("- Proof:", stop(s)["reason"])
+
+    def test_a_docstring_left_open_on_both_sides_keeps_the_proof(self) -> None:
+        s = self.checked()
+        s.call("Edit", {"file_path": "src/export.py", "old_string": '    """Return x.',
+                        "new_string": '    """Return x, capped.'})
+
+        self.assertEqual(stop(s), {})
+
+    def test_near_miss_an_edit_of_a_directive_comment_needs_proof(self) -> None:
+        # Comments that change what a tool does are code (DIRECTIVE_PREFIXES).
+        changes = (
+            ("src/export.py", "# a note", "# type: ignore"),
+            ("src/export.py", "total_0 = 0", "total_0 = 0  # noqa: E501"),
+            ("src/export.py", "# a note", "# pragma: no cover"),
+            ("src/export.py", "# a note", "# pylint: disable=unused-import"),
+            ("src/export.py", "# a note", "#!/usr/bin/env python3"),
+            ("src/export.py", '    """Return x."""', '    """Return x.\n\n    >>> total()\n    3\n    """'),
+            ("src/export.ts", "// a note", "// @ts-ignore"),
+            ("src/export.ts", "/* a note */", "/* eslint-disable */"),
+            ("src/export.ts", "// a note", '/// <reference path="types.d.ts" />'),
+            ("src/export.go", "// a note", "//go:generate stringer"),
+            ("src/export.go", "// a note", "// +build linux"),
+        )
+        for path, old, new in changes:
+            with self.subTest(new=new):
+                self.session = self.fresh()
+                s = self.checked()
+                s.call("Edit", {"file_path": path, "old_string": old, "new_string": new})
+                self.assertIn("- Proof:", stop(s)["reason"])
+
+    def test_near_miss_a_comment_edit_of_a_file_without_known_comments_needs_proof(self) -> None:
+        s = self.checked()
+        s.call("Edit", {"file_path": "src/export.lua", "old_string": "-- old",
+                        "new_string": "-- new"})
+
+        self.assertIn("- Proof:", stop(s)["reason"])
+
+    def test_a_failed_check_before_a_comment_only_edit_still_asks_for_a_handoff(self) -> None:
+        s = self.routed()
+        s.say(DESIGN_SKIP)
+        s.say(DOC_SKIP)
+        s.call("Edit", edit("src/export.py", PLAIN))
+        s.run("pytest -q", success=False)
+        s.call("Edit", COMMENT_EDITS[0])
+
+        held = stop(s)["reason"]
+        self.assertIn("- Unfinished:", held)
+        self.assertNotIn("- Proof:", held)
 
     def test_docs_still_needs_a_change_read_after_a_comment_only_edit(self) -> None:
         s = self.routed()
@@ -4576,6 +4699,94 @@ class CommentOnlyEditTests(AdapterTestCase):
         self.assertIn("- Docs:", stop(s)["reason"])
         s.run(DIFF)
         self.assertEqual(stop(s), {})
+
+
+class BackgroundCheckTests(AdapterTestCase):
+    """A check launched in the background is not a check (Ticket 116, O1)."""
+
+    def changed(self) -> Session:
+        """A turn that changed code, with Docs and Design skipped: only Proof is left."""
+
+        s = self.routed()
+        s.say(DESIGN_SKIP)
+        s.say(DOC_SKIP)
+        s.call("Write", write("src/export.py"))
+        return s
+
+    def background(self, s: Session, command: str = "pytest -q") -> None:
+        s.call("Bash", {"command": command, "run_in_background": True})
+
+    def test_a_background_check_does_not_meet_proof_at_the_turns_end(self) -> None:
+        s = self.changed()
+        self.background(s)
+
+        self.assertIn("- Proof:", stop(s)["reason"])
+
+    def test_a_background_check_does_not_meet_proof_at_a_commit(self) -> None:
+        s = self.changed()
+        s.load("commit-message")
+        s.run(DIFF)
+        self.background(s)
+
+        held = s.call("Bash", commit("Add CSV export"))
+        self.assertEqual(hold_line(held), CLOSEOUT_HOLD)
+        self.assertIn("- Proof:", reason(held))
+
+    def test_near_miss_the_same_check_in_the_foreground_meets_proof(self) -> None:
+        s = self.changed()
+        s.load("commit-message")
+        s.run(DIFF)
+        s.run("pytest -q")
+
+        self.assertEqual(decision(s.call("Bash", commit("Add CSV export"))), "pass")
+        self.assertEqual(stop(s), {})
+
+    def test_a_check_sent_to_the_background_inside_its_command_still_does_not(self) -> None:
+        s = self.changed()
+        s.run("cp a.py src/export.py && pytest -q &")
+
+        self.assertIn("- Proof:", stop(s)["reason"])
+
+    def test_a_check_sent_to_the_background_as_its_own_call_does_not_meet_proof(self) -> None:
+        s = self.changed()
+        s.run("pytest -q &")
+
+        self.assertIn("- Proof:", stop(s)["reason"])
+
+    def test_a_background_call_that_writes_and_checks_does_not_prove_itself(self) -> None:
+        s = self.routed()
+        s.say(DESIGN_SKIP)
+        s.say(DOC_SKIP)
+        s.call("Bash", {"command": "cp a.py src/export.py && pytest -q",
+                        "run_in_background": True})
+
+        self.assertIn("- Proof:", stop(s)["reason"])
+
+    def test_a_failed_background_check_is_not_read(self) -> None:
+        s = self.changed()
+        s.call("Bash", {"command": "pytest -q", "run_in_background": True},
+               result="Exit code 1\nfailed", failed=True)
+
+        held = stop(s)["reason"]
+        self.assertIn("- Proof:", held)
+        self.assertNotIn("- Unfinished:", held)
+
+    def test_the_wait_skip_line_clears_proof_while_a_background_check_runs(self) -> None:
+        s = self.changed()
+        self.background(s)
+        s.say("goated-skip: verification-before-completion: the background pytest run")
+
+        self.assertEqual(stop(s), {})
+
+    def test_the_proof_text_names_waiting_on_the_user_and_on_a_background_check(self) -> None:
+        s = self.changed()
+
+        held = stop(s)["reason"]
+        proof = next(line for line in held.splitlines() if line.startswith("- Proof:"))
+        self.assertIn("on the user", proof)
+        self.assertIn("on a check running in the background", proof)
+        self.assertIn("in the foreground", proof)
+        self.assertIn("`goated-skip: verification-before-completion: <what it waits for>`", proof)
 
 
 class CloseoutAtCommitTests(AdapterTestCase):

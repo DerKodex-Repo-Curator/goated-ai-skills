@@ -248,7 +248,9 @@ class ShellCommand:
     `PullRequest` for each `gh pr create|new` and `glab mr create|new` in it,
     in order, each read from its own simple command's options alone (spec
     R14); `opens_pr` says there is one. `is_check` says it runs a
-    test, lint, build, or check; `non_check_writes` says some simple command
+    test, lint, build, or check, not sent to the background (`pytest &` is
+    a launch, whose result the command does not wait for, so it is no
+    check); `non_check_writes` says some simple command
     in it writes and is not itself a check (`sed -i … && pytest`, but not
     `pytest > out.txt`). `unchecked_targets` are the write targets no check
     certainly ran after, and `unchecked_unknown_writes` says some unnamed
@@ -559,7 +561,7 @@ def _add_segment(result: ShellCommand, segment: "_Segment", directory: str | Non
     # Output redirected into a file never reached the agent; a stderr redirect leaves it.
     if prints and not [t for t in segment.out_redirects if t.lower() not in null_targets]:
         result.prints_changes = True
-    is_check = _is_check(name, original, args)
+    is_check = segment.after != "&" and _is_check(name, original, args)
     if is_check:
         result.is_check = True
     wrappers = segment.words[: len(segment.words) - len(args) - 1]
