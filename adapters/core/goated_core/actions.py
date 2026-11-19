@@ -186,6 +186,10 @@ DIFF_ONLY_READ = (
 # alone is also a heading underline, so it is not one.
 CONFLICT_SKILL = "resolving-merge-conflicts"
 CONFLICT_MARKER_RE = re.compile(r"^(?:[ \t]*\d+(?:\t|→))?(?:<{7}|>{7})(?: |\r?$)", re.MULTILINE)
+# A whole conflict block, in order, as an edit resolving one removes it
+# (`_resolves_conflict`), and any marker line, which its added text must not hold.
+CONFLICT_BLOCK_RE = re.compile(r"^<{7} .*?^={7}[ \t]*\r?$.*?^>{7} ", re.MULTILINE | re.DOTALL)
+CONFLICT_LINE_RE = re.compile(r"^(?:<{7}|>{7})(?: |\r?$)|^={7}[ \t]*\r?$", re.MULTILINE)
 # In `git diff` output (spec R10): the line opening a file's section, which
 # names the file for a combined diff (`--cc`), its new name in a `+++` line
 # before the first hunk, and a marker the diff adds, after the one or two
@@ -1325,27 +1329,40 @@ def _conflict_hold(paths: list[str], call: Call, proof: _Proof) -> Hold | None:
 class _Conflict(NamedTuple):
     """A turn's conflict state, as `_open_conflict` reads it: whether a git
     conflict is still `git_open`, the `marked_files` shown with markers, and
-    whether a finished edit `removed_markers`, each since the last conflict
-    ended."""
+    whether a finished edit resolved a conflict (`resolved_by_edit`,
+    `_resolves_conflict`), each since the last conflict ended."""
 
     git_open: bool
     marked_files: list[str]
-    removed_markers: bool
+    resolved_by_edit: bool
 
     @property
     def being_resolved(self) -> bool:
         """Whether a commit now ends a conflict (round 6, R8): a git conflict is
-        open, or an edit removed markers, as one opened in an earlier turn
-        shows itself. Markers only shown, as a doc about conflicts shows
-        them, are not a conflict to end."""
+        open, or an edit resolved one, as a conflict opened in an earlier turn
+        shows itself. Markers only shown, or removed from a doc or one line
+        at a time, are not a conflict to end."""
 
-        return self.git_open or self.removed_markers
+        return self.git_open or self.resolved_by_edit
 
 
-def _open_conflict(turn: Turn) -> _Conflict:
+def _resolves_conflict(write: Call, project: Project | None) -> bool:
+    """Whether a file edit resolves a conflict (round 6, R8, the lead's narrow
+    rule): the file is no doc (`is_doc`), one edit's removed text holds a
+    whole conflict block in order (`CONFLICT_BLOCK_RE`), and that edit's
+    added text holds no marker line. A doc's marker example, or one marker
+    line removed alone, resolves nothing."""
+
+    return not is_doc(write.path, project) and any(
+        old is not None and new is not None and CONFLICT_BLOCK_RE.search(old)
+        and not CONFLICT_LINE_RE.search(new)
+        for old, new in write.edits)
+
+
+def _open_conflict(turn: Turn, project: Project | None = None) -> _Conflict:
     """Read the turn's calls in order and return whether a git conflict is still
-    open, the files shown with markers, and whether an edit removed markers,
-    each since the last conflict ended.
+    open, the files shown with markers, and whether an edit resolved a
+    conflict, each since the last conflict ended.
 
     A git merge, rebase, cherry-pick, revert, or pull whose result reports a
     conflict opens one (a conflicting stash pop or apply prints none of git's
@@ -1357,7 +1374,8 @@ def _open_conflict(turn: Turn) -> _Conflict:
     by a finished command whose output has one and that runs a file printer
     naming the file (spec R10, so `cat a b` shows both), or by a finished
     `git diff` whose section for the file adds one. Markers are removed by a
-    finished file edit whose removed text has one.
+    finished edit that resolves a conflict (`_resolves_conflict`); `project`
+    tells a doc, whose edits never do, from code.
     """
 
     git_open, marked_files, removed = False, [], False
@@ -1366,8 +1384,7 @@ def _open_conflict(turn: Turn) -> _Conflict:
             if call.ok and CONFLICT_MARKER_RE.search(call.output):
                 marked_files.append(call.path)
         elif call.kind == events.FILE_WRITE:
-            removed = removed or (call.ok and any(
-                old is not None and CONFLICT_MARKER_RE.search(old) for old, _ in call.edits))
+            removed = removed or (call.ok and _resolves_conflict(call, project))
         elif call.kind == events.COMMIT:
             if call.ok:
                 git_open, marked_files, removed = False, [], False
@@ -2017,7 +2034,8 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
         changes, proof, subagents or {}, spawn_templates or {}, intensity, briefed,
         branch_size, owed_reads)
     # A commit that ends a conflict the skill resolved asks for less (round 6, R8).
-    if at_commit and CONFLICT_SKILL in proof.loads and _open_conflict(turn).being_resolved:
+    if (at_commit and CONFLICT_SKILL in proof.loads
+            and _open_conflict(turn, project).being_resolved):
         items = [item for item in items if item.label not in CONFLICT_COMMIT_SPARED]
     if not items:
         return None

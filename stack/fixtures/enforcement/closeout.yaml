@@ -323,6 +323,81 @@ scenarios:
       - call: *conflict_check
       - call: *merge_commit
 
+  - name: removing a marker example from a doc ends no conflict, so the commit gets the full closeout
+    covers:
+      - {gate: closeout, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: "Tidy the conflict doc, raise the limit, and commit."}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: resolving-merge-conflicts}
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: {kind: file_write, path: docs/conflicts.md, edits: [{removed: "Example:\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n", added: "See git's manual.\n"}]}
+      - call: *limit
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *conflict_check
+      - call: *conflict_diff
+      - call: &limit_commit {kind: shell_command, shell: posix, command: "git commit -am \"Raise the export limit\""}
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Docs, Design]}]
+
+  - name: removing one marker line from code ends no conflict, so the commit gets the full closeout
+    covers:
+      - {gate: closeout, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Drop the stray marker and commit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: resolving-merge-conflicts}
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: {kind: file_write, path: src/export.py, edits: [{removed: "<<<<<<< HEAD\nlimit = 2", added: "limit = 2"}]}
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *conflict_check
+      - call: *conflict_diff
+      - call: *limit_commit
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Docs, Design]}]
+
+  - name: a whole conflict block removed from code ends a conflict, with the skill, and asks for less
+    covers:
+      - {gate: closeout, case: holds}
+      - {gate: closeout, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Resolve the conflict and commit it.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: resolving-merge-conflicts}
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *resolve_conflict
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *conflict_diff
+      - call: *merge_commit
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Proof]}]
+      - call: *conflict_check
+      - call: *merge_commit
+
+  - name: the same block removed without the skill gets the full closeout
+    covers:
+      - {gate: closeout, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Resolve the conflict and commit it.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - reply: "goated-skip: resolving-merge-conflicts: one constant, the feature side wins"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *resolve_conflict
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *conflict_diff
+      - call: *conflict_check
+      - call: *merge_commit
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Docs, Design]}]
+
   - name: a golden output file under a test path does not meet Docs
     covers:
       - {gate: closeout, case: holds}

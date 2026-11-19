@@ -266,8 +266,8 @@ Proof needed, nor does a turn whose code changes are all comment-only; a
 failed check before it still makes Unfinished needed. The same holds for a
 subagent's comment-only edit after its own check.
 A commit that ends a merge conflict, one made while a git conflict is open
-in the turn or after an edit in the turn removed a conflict marker (see
-[Conflicts](#conflicts)), in a session where `resolving-merge-conflicts`
+in the turn or after an edit in the turn resolved one, as
+[Conflicts](#conflicts) defines it, in a session where `resolving-merge-conflicts`
 counts as loaded (a person's skip of it does not count), is not asked for
 Docs, Design, Security, Review, or Verification. It still needs its change
 read and the items about what the resolution itself did: Reads, Proof,
@@ -723,10 +723,20 @@ only by markers the turn shows: an edit whose removed text spans only
 `=======` and one side, in a file not shown this turn, is not held, because
 `=======` alone is also a heading underline. A conflicting stash pop or
 apply is not held. A commit ends a conflict when a git conflict is open in
-the turn, or when a finished edit in the turn removed a marker, which shows
-a conflict opened in an earlier turn; markers a read or a printer only
-showed, as a doc about conflicts shows them, are no conflict to end. Such a
-commit, with `resolving-merge-conflicts` loaded, is not asked for the Docs, Design,
+the turn, or when a finished edit in the turn resolved one, which shows a
+conflict opened in an earlier turn (`_resolves_conflict` in `actions.py`,
+the lead's narrow rule, 2026-11-19). An edit resolves a conflict only when
+all of these hold:
+
+- one edit's removed text holds a whole block in order: a line starting
+  `<<<<<<< `, then a `=======` line, then a line starting `>>>>>>> `;
+- that edit's added text holds no marker line (`<<<<<<<`, `=======`, or
+  `>>>>>>>`);
+- the file is not a [doc](#closeout-items), as the Docs item tells one.
+
+So removing a marker example from a doc, or one marker line from code,
+ends no conflict, and neither do markers a read or a printer only showed.
+Such a commit, with `resolving-merge-conflicts` loaded, is not asked for the Docs, Design,
 Security, Review, or Verification items; it still needs its change read and
 Reads, Proof, Unfinished, and Setup (see [Closeout Items](#closeout-items)); `git merge --continue` ends the conflict
 but is not a commit, so it meets no closeout.

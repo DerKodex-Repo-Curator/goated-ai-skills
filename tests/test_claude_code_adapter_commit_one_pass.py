@@ -314,6 +314,45 @@ class ConflictCommitTests(SessionCase):
         s.run(DIFF)
         self.assertEqual(decision(s.call("Bash", MERGE_COMMIT)), "pass")
 
+    def edited_markers(self, path: str, removed: str, added: str, loaded: bool = True) -> list[str]:
+        """The closeout items of a commit after an edit of `path` removing
+        `removed`, then a code change, a check and a diff; the conflict skill
+        `loaded`, or skipped."""
+
+        s = self.session("Tidy and commit.")
+        if loaded:
+            s.load("resolving-merge-conflicts")
+        else:
+            s.say("goated-skip: resolving-merge-conflicts: one constant, the feature side wins")
+        s.load("commit-message")
+        s.load("software-design-principles")
+        s.call("Edit", edit(path, added, removed))
+        if path != "src/export.py":
+            self.code_change(s)
+        s.run("pytest -q")
+        s.run(DIFF)
+        return self.closeout_items(s.call("Bash", COMMIT))
+
+    def test_removing_a_marker_example_from_a_doc_resolves_no_conflict(self) -> None:
+        items = self.edited_markers("docs/conflicts.md", "Example:\n" + MARKED + "\n",
+                                    "See git's manual.\n")
+        self.assertIn("Docs", items)
+        self.assertIn("Design", items)
+
+    def test_removing_one_marker_line_from_code_resolves_no_conflict(self) -> None:
+        items = self.edited_markers("src/export.py", "<<<<<<< HEAD\nLIMIT = 10", "LIMIT = 10")
+        self.assertIn("Docs", items)
+
+    def test_removing_a_full_block_from_code_resolves_a_conflict_with_the_skill(self) -> None:
+        self.assertEqual(self.edited_markers("src/export.py", MARKED, "LIMIT = 20"), [])
+        # Near miss: the same edit without the skill gets the full closeout.
+        self.assertIn("Docs", self.edited_markers("src/export.py", MARKED, "LIMIT = 20",
+                                                  loaded=False))
+
+    def test_an_edit_that_keeps_a_marker_resolves_no_conflict(self) -> None:
+        items = self.edited_markers("src/export.py", MARKED, "<<<<<<< HEAD\nLIMIT = 20")
+        self.assertIn("Docs", items)
+
     def test_without_the_load_the_commit_gets_the_full_closeout(self) -> None:
         s = self.resolved(loaded=False)
         s.run("pytest -q")
