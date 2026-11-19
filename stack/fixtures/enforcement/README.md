@@ -49,5 +49,5 @@ translation, with the conformance runner `scripts/run_conformance.py`, as
 | --- | --- |
 | [`routing.yaml`](routing.yaml) | `router-first`, `route-line`, `pipeline` (with a briefed session's orientation), a joint hold |
 | [`handing-on.yaml`](handing-on.yaml) | `commit`, `pull-request`, `pr-review` (with `pull-request` in one hold), `spawn` |
-| [`writes.yaml`](writes.yaml) | `design` and `design-reads` (by file edit tools and shell writes), `reference-reads`, `review-intake`, `security`, `scripted-edit`, `conflict-resolution`, `repeated-failure` |
+| [`writes.yaml`](writes.yaml) | `design` and `design-reads` (by file edit tools and shell writes), `reference-reads`, `review-intake`, `security`, `scripted-edit`, `conflict-resolution`, `repeated-failure`, and a joint message of three holds lines can clear |
 | [`closeout.yaml`](closeout.yaml) | `closeout`, at a commit (a subagent's too) and at the turn's end, every item label, and the closeout note |

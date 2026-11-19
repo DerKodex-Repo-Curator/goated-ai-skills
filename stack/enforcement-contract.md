@@ -241,7 +241,13 @@ goated-hold: <gate> | <kind>
   its line. Measurement tools parse it, so it never changes.
 - When a decision carries several holds, one message carries them all in
   firing order: the first as it would be alone, then, after a blank line,
-  each further hold with its own hold line and text.
+  each further hold with its own hold line and text. When two or more of
+  them can be cleared by a route or skip line, each keeps the line it asks
+  for and every skill, reference and line it names, but drops its own
+  advice on where the line goes; the last hold's text ends, on a line of
+  its own, with one clearing section that says where a line goes and lists
+  each hold's typed override once. A message with one such hold keeps that
+  advice in the hold.
 - The text is guidance and may change between releases. It backticks each
   skill it asks for by its bare name, and no other bare word; a file is
   quoted by its path. In the `spawn` hold the two skills are alternatives;
@@ -1469,7 +1475,9 @@ The [Hold Messages](#hold-messages) rules, as the core's text meets them
 - A hold that a route or skip line can clear says the line may be put where
   the harness keeps it, and that the person can type the matching override.
   The full advice is given on one such hold per turn and agent; every other
-  gives one sentence.
+  gives one sentence. A message with several such holds gives it once, in
+  its closing clearing section: in full when the turn has not had it, else
+  in one sentence (`gates.shown_holds`, `wording.clearing_section`).
 - A paragraph several holds or closeout items share appears once in a
   message: the change-read explanation (a later copy says to print the diff
   or read a changed file), the sentence about rerunning steps chained before

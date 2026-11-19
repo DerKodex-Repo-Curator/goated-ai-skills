@@ -35,6 +35,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import os
+import re
 from typing import Callable, NamedTuple
 
 from . import contracts, design_reads, events, reference_reads, shell, wording
@@ -184,33 +185,58 @@ def shown_holds(holds: list[Hold], claim: Callable[[str], bool], call: bool = Fa
     True when it cannot claim, so the full text is then given. Each hold
     chooses its full or short text (`Hold.text`): an ask's first hold in the
     turn is full, its later ones short. The
-    unseen-line advice (purpose `ADVICE`) is given in full on one hold per
-    turn; every other hold that carries it gets one sentence that keeps its
-    typed override. Every other shared paragraph is given once per message:
-    in the first hold that holds it, its later copies shortened.
+    unseen-line advice (purpose `ADVICE`) is given in full once per turn;
+    elsewhere it is one sentence that keeps the typed override. When one
+    hold carries the advice, it stays in that hold. When several do
+    (Ticket 111), each drops its own and the last hold's text ends with one
+    clearing section (`wording.clearing_section`) for every line they ask for
+    and every typed override, once each. Every other shared paragraph is
+    given once per message: in the first hold that holds it, its later
+    copies shortened.
 
     `call`: the holds are a call's. When a hold a line can clear holds it,
-    the last hold's text ends with the carrier slot, where the harness names
-    a call that can carry the line if this call has no field for one.
+    the last hold's text ends with the carrier slot, after any clearing
+    section, where the harness names a call that can carry the line if this
+    call has no field for one.
     """
 
-    advice_given = line_clears = False
-    texts = []
-    for hold in holds:
-        line_clears = line_clears or _full_advice(hold.instruction) is not None
-        text = hold.text(claim)
-        found = _full_advice(text)
-        if found is not None:
-            if advice_given or not claim(ADVICE):
-                short = short_advice(found[2], found[3])
-                text = text[:found.start()] + short + text[found.end():]
-            advice_given = True
-        texts.append(text)
+    line_clears = any(_full_advice(hold.instruction) for hold in holds)
+    texts = [hold.text(claim) for hold in holds]
+    advised = [i for i, text in enumerate(texts) if wording.ADVICE_RE.search(text)]
+    if len(advised) > 1:
+        texts = _with_clearing_section(texts, claim)
+    else:
+        for i in advised:
+            found = _full_advice(texts[i])
+            if found is not None and not claim(ADVICE):
+                texts[i] = (texts[i][:found.start()] + short_advice(found[2], found[3])
+                            + texts[i][found.end():])
     for full, again in _SHARED_TEXTS:
         texts = _once(texts, full, again)
     if line_clears and call and texts:
         texts[-1] += f"\n{wording.CARRIER}"
     return [Shown(hold.gate, hold.kind, text) for hold, text in zip(holds, texts)]
+
+
+# A line-advice slot with the space before it, as a hold's sentence leads into it.
+_ADVICE_IN_TEXT = re.compile(f" ?{wording.ADVICE_RE.pattern}")
+
+
+def _with_clearing_section(texts: list[str], claim: Callable[[str], bool]) -> list[str]:
+    """`texts` with every line-advice slot taken out, and the last ending, on
+    a line of its own, with one clearing section for the lines and overrides
+    they named: full when this claims the turn's advice, else short."""
+
+    lines, way_outs = [], []
+
+    def take(found: re.Match) -> str:
+        lines.append(found[2])
+        way_outs.append(found[3])
+        return ""
+
+    texts = [_ADVICE_IN_TEXT.sub(take, text) for text in texts]
+    texts[-1] += "\n" + wording.clearing_section(lines, way_outs, full=claim(ADVICE))
+    return texts
 
 
 def _full_advice(text: str):
