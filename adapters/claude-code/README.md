@@ -174,7 +174,10 @@ before its first write by reading the sources its brief names or by loading
 that skill. Either meets it: the skill loads, or Read calls of three
 distinct files finish, anywhere, each a [whole read](#whole-reads), since
 the session started or the last compaction; reads count across turns as
-loads do, and a failed or partial Read does not count (Ticket 098). The
+loads do, and a failed or partial Read does not count (Ticket 098). A
+finished shell command that prints a file whole, a `cat` or a PowerShell
+`Get-Content` with no range and no pipe, counts as a read of that file
+here, and only here (Ticket 110). The
 route line never names the skill, so leaving it out of a corrected line
 does not drop it; only a corrected
 `goated-route: direct` line or a `lightweight` route line does. A typed prompt
@@ -787,7 +790,7 @@ task, whether the session's first prompt was a brief, whether the router loaded,
 references, skill references, and spawn-brief templates were read since the
 last compaction
 (see [Loads](#loads)), digests of the first three distinct files the Read
-tool read since then, which orient a session routed by its brief, which brief templates each spawn
+tool read or a shell command printed whole since then, which orient a session routed by its brief, which brief templates each spawn
 of the latest turn followed when the `spawn` gate let it through (see
 [Reviewer subagents](#reviewer-subagents)), the last turn seen, the
 latest typed overrides, and the friction count behind the retrospective
@@ -1001,10 +1004,12 @@ of the call's prompt, which is normally already there.
   nudges such as "The user hasn't heard from you in a while" are recorded as
   `attachment` entries and never open a turn.
 - A briefed session's orientation counts any three distinct files read whole
-  with the Read tool, whatever they are; the adapter cannot tell whether they are
-  the sources the brief names. A file printed by a shell command (`cat`)
-  does not count, and two spellings of one path count once only when they
-  differ by case or separators on Windows.
+  with the Read tool or printed whole by a shell command, whatever they are;
+  the adapter cannot tell whether they are the sources the brief names, nor
+  whether Claude Code cut a long print short. Two spellings of one path count
+  once when they differ by `./`, `..`, or, on Windows, case or separators;
+  a relative printed path is taken from the session's folder, not from one a
+  `cd` in an earlier command left the shell in.
 
 - Shell analysis is lexical, not a shell. These forms are not seen, so a
   write in them meets only `router-first` and a commit or pull request in
