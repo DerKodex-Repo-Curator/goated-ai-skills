@@ -243,37 +243,42 @@ def render(text: str, tool_name: str | None = None, session_shell: str | None = 
             return _carrier(shell_tool(session_shell) or "Bash") if carries else ""
         if slot[0] in PHRASES:
             return PHRASES[slot[0]]
+        if clearing := wording.clearing_of(slot[0]):
+            return _advice(clearing.full, clearing.line, "each",
+                           wording.typed(clearing.way_outs))
         advice = wording.ADVICE_RE.fullmatch(slot[0])
         if advice is None:
             raise ValueError(f"no Claude Code wording for the slot {slot[1]!r}")
-        return _advice(advice)
+        name, line, way_out = advice.groups()
+        return _advice(name == wording.FULL_ADVICE, line, "the", wording.typed((way_out,)))
 
     return wording.SLOT_RE.sub(fill, text)
 
 
-def _advice(match: re.Match) -> str:
-    """A line-advice slot's text. A line in reply text may never be seen
-    (README "Known Limits"), so the advice points to the fields of a call
-    `LINE_FIELDS` names, then to the user's way out. It names those fields
-    without backticks, since the skill-usage mod reads every backticked bare
-    word in a hold as a skill."""
+def _advice(full: bool, line: str, which: str, overrides: str) -> str:
+    """A line-advice slot's text, or a clearing section's, full or short, for
+    `line` ("skip line", "route or skip line"), put as `which` ("the" for one
+    hold's line, "each" for a section's), and the typed `overrides`. A line in
+    reply text may never be seen (README "Known Limits"), so the advice
+    points to the fields of a call `LINE_FIELDS` names, then to the user's
+    way out. It names those fields without backticks, since the skill-usage
+    mod reads every backticked bare word in a hold as a skill."""
 
-    slot, line, way_out = match.groups()
-    if slot == wording.SHORT_ADVICE:
+    if not full:
         return (
-            f"Put the {line} on its own line in a shell or agent call's description or a "
+            f"Put {which} {line} on its own line in a shell or agent call's description or a "
             "Skill call's args, as this turn's first such hold explained, or tell the user "
-            f"they can type `{way_out}` in their prompt."
+            f"they can type {overrides} in their prompt."
         )
     return (
         f"A {line} in reply text may not be seen: Claude Code records a message only "
         "after this check, and can store the text of a message that makes a tool call "
         "as a summary that drops the line. A line in the description field of a shell "
         "or agent call, or in a Skill call's args, is read as written and counts from "
-        f"that call on. Put the {line} on its own line there, in this call's description "
+        f"that call on. Put {which} {line} on its own line there, in this call's description "
         "if it has one or else in a call made in an earlier message of this turn (a call "
         "in the same message is not seen yet), and make the call again. If that is held "
-        f"again, tell the user they can type `{way_out}` in their prompt."
+        f"again, tell the user they can type {overrides} in their prompt."
     )
 
 

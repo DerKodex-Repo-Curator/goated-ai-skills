@@ -492,6 +492,10 @@ Claude Code can say:
   such hold gives the full advice. The next turn's first such hold gives it
   in full again. A subagent's turns claim their own marker, so each
   subagent gives the full advice once per turn, apart from its parent.
+- A message with two or more such holds gives the advice once, after the
+  last hold's own text: each hold keeps its skip or route line, and one
+  closing section says to put each line in those fields and names every
+  hold's override once. It is full or one sentence by the same claim.
 - Such a hold on a call with no field a line can go in, such as an `Edit`
   or `Write`, ends its message by naming a carrier in the session's shell:
   a Bash call with the command true, or, in a session whose last shell call

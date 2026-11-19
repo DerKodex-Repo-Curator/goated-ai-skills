@@ -190,6 +190,9 @@ class EverySlotHasClaudeCodeWording(unittest.TestCase):
         "carrier": wording.CARRIER,
         "line-advice": wording.unseen_line_advice("route line", "skip routing"),
         "line-advice-short": wording.short_advice("route line", "skip routing"),
+        "clearing": wording.clearing_section(["skip line"], ["skip tdd", "skip diagnose"], True),
+        "clearing-short": wording.clearing_section(["route line", "skip line"],
+                                                   ["skip routing", "skip tdd"], False),
     }
 
     def test_every_slot_is_filled_for_every_kind_of_held_event(self) -> None:

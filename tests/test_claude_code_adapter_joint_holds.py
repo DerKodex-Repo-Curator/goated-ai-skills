@@ -211,6 +211,90 @@ class SharedTextTests(SessionCase):
         self.assertEqual(text.count(CHANGE_READ), 1, text)
 
 
+SKIPPED = ("software-design-principles", "tdd", "diagnose")
+SHORT_PLACEMENT = "as this turn's first such hold explained"
+CARRIER = "This call has no field for a line"
+
+
+def bodies(text: str) -> dict[str, str]:
+    """Each hold's text in a message, by gate."""
+
+    parts = HOLD_LINE.split(text)
+    return {parts[i]: parts[i + 2].strip("\n") for i in range(1, len(parts), 3)}
+
+
+class ClearingSectionTests(SessionCase):
+    """Ticket 111: several holds a line can clear share one closing clearing section."""
+
+    def test_three_line_clearable_holds_end_in_one_clearing_section(self) -> None:
+        text = reason(self.three_gate_session().call("Edit", mocking_edit()))
+        held = bodies(text)
+        self.assertEqual(list(held), ["design-reads", "reference-reads", "repeated-failure"])
+        for skill in SKIPPED:
+            # Each hold keeps the line it asks for; the section names each override once.
+            self.assertEqual(text.count(f"`goated-skip: {skill}: <reason>`"), 1, text)
+            self.assertEqual(text.count(f"`skip {skill}`"), 1, text)
+            self.assertIn(f"`skip {skill}`", held["repeated-failure"])
+        for gate in ("design-reads", "reference-reads"):
+            self.assertNotIn("Put the skip line", held[gate])
+            self.assertNotIn("`skip ", held[gate])
+        last = held["repeated-failure"]
+        self.assertEqual(last.count(FULL_ADVICE), 1, last)
+        self.assertNotIn(SHORT_PLACEMENT, text)
+        # The section comes after the hold's own text, and the carrier stays last.
+        self.assertLess(last.index("not applied"), last.index(FULL_ADVICE))
+        self.assertTrue(last.splitlines()[-1].startswith(CARRIER), last)
+
+    def test_a_later_joint_message_gives_the_placement_in_one_sentence(self) -> None:
+        s = self.three_gate_session()
+        s.call("Edit", mocking_edit())
+        text = reason(s.call("Edit", mocking_edit()))
+        self.assertNotIn(FULL_ADVICE, text)
+        self.assertEqual(text.count(SHORT_PLACEMENT), 1, text)
+        for skill in SKIPPED:
+            self.assertEqual(text.count(f"`skip {skill}`"), 1, text)
+            self.assertEqual(text.count(f"`goated-skip: {skill}: <reason>`"), 1, text)
+
+    def test_a_joint_message_after_a_single_hold_gives_the_placement_in_one_sentence(self) -> None:
+        # The turn had the full advice on a hold alone, so the section is one sentence.
+        s = self.three_gate_session()
+        s.call("Write", {"file_path": "src/auth.py", "content": "key = 1\nsecret = 2\n"})
+        text = reason(s.call("Edit", mocking_edit()))
+        self.assertNotIn(FULL_ADVICE, text)
+        self.assertEqual(text.count(SHORT_PLACEMENT), 1, text)
+
+    def test_a_single_line_clearable_hold_keeps_its_own_advice(self) -> None:
+        # Near miss: one such hold alone is unchanged.
+        held = self.session("single").call("Write", {"file_path": "src/auth.py",
+                                                       "content": "key = 1\nsecret = 2\n"})
+        self.assertEqual(gates_of(held), ["security"])
+        text = reason(held)
+        self.assertIn("Put the skip line on its own line there", text)
+        self.assertEqual(text.count("`skip code-security-review`"), 1, text)
+        self.assertNotIn("Put each", text)
+
+    def test_a_strict_hold_beside_one_line_clearable_hold_is_unchanged(self) -> None:
+        folder = self.root / "strict"
+        folder.mkdir()
+        s = Session(folder)
+        s.prompt("Add CSV export.")
+        held = s.call("Edit", {"file_path": "notes.md", "old_string": "a", "new_string": "b"})
+        text = bodies(reason(held))
+        self.assertEqual(list(text), ["router-first", "route-line"])
+        self.assertIn("Put the route line on its own line there", text["route-line"])
+        self.assertNotIn("Put each", reason(held))
+
+    def test_a_route_line_hold_and_a_skip_line_hold_share_one_section(self) -> None:
+        s = self.session("both-lines", "goated-route: standard | requires: tdd")
+        held = s.call("Write", {"file_path": "src/auth.py", "content": "key = 1\nsecret = 2\n"})
+        text = reason(held)
+        self.assertEqual(gates_of(held), ["pipeline", "security"])
+        self.assertEqual(text.count(FULL_ADVICE), 1, text)
+        self.assertIn("route or skip line", bodies(text)["security"])
+        for way_out in ("skip routing", "skip code-security-review"):
+            self.assertEqual(text.count(f"`{way_out}`"), 1, text)
+
+
 def stop_reason(s: Session) -> str:
     return parse(s.hook("Stop", stop_hook_active=False, last_assistant_message="")).get("reason", "")
 

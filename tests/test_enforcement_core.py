@@ -168,6 +168,57 @@ class WordingTests(CoreTestCase):
                 self.assertNotIn(wording.CLOSE, text)
 
 
+class ClearingSectionTests(unittest.TestCase):
+    """Ticket 111: the core's message for several holds a line can clear."""
+
+    PLACE = "on its own line in reply text or in a call's line text; it counts from there on. " \
+            "Then make the call again. If that is held again, tell the user they can type"
+
+    @staticmethod
+    def claimer():
+        claimed: set[str] = set()
+
+        def claim(purpose: str) -> bool:
+            first = purpose not in claimed
+            claimed.add(purpose)
+            return first
+        return claim
+
+    @staticmethod
+    def shown(holds, claim) -> str:
+        from goated_core import gates, wording
+        return wording.neutral(gates.message(gates.shown_holds(holds, claim, call=True)))
+
+    @staticmethod
+    def holds():
+        from goated_core import gates, wording
+        return [
+            gates.Hold("a", "justified-skip", "Do a. " + wording.unseen_line_advice("skip line", "skip x")),
+            gates.Hold("b", "strict", "Do b."),
+            gates.Hold("c", "justified-skip",
+                       "Do c. " + wording.unseen_line_advice("route line", "skip routing") + " Quoted."),
+        ]
+
+    def test_several_line_clearable_holds_end_in_one_section(self) -> None:
+        claim = self.claimer()
+        self.assertEqual(self.shown(self.holds(), claim), (
+            "goated-hold: a | justified-skip\nDo a.\n\n"
+            "goated-hold: b | strict\nDo b.\n\n"
+            "goated-hold: c | justified-skip\nDo c. Quoted.\n"
+            f"Put each skip or route line {self.PLACE} `skip x` or `skip routing` in their prompt."))
+        # A later message of the turn gives the section in one sentence.
+        self.assertTrue(self.shown(self.holds(), claim).endswith(
+            "Do c. Quoted.\nPut each skip or route line on its own line, as this turn's first such "
+            "hold explained, or tell the user they can type `skip x` or `skip routing` in their prompt."))
+
+    def test_one_line_clearable_hold_keeps_its_own_advice(self) -> None:
+        strict, = (hold for hold in self.holds() if hold.gate == "b")
+        single = [self.holds()[0], strict]
+        self.assertEqual(self.shown(single, self.claimer()), (
+            f"goated-hold: a | justified-skip\nDo a. Put the skip line {self.PLACE} `skip x` in "
+            "their prompt.\n\ngoated-hold: b | strict\nDo b."))
+
+
 def _scenarios() -> list[tuple[str, dict]]:
     return [(f"{path.stem}: {scenario['name']}", scenario)
             for path, document in scenario_files().items()

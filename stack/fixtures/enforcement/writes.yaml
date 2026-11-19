@@ -1474,6 +1474,42 @@ scenarios:
         result: *failed
       - call: *patch
 
+  # Ticket 111: three holds lines can clear come in one message, which ends in
+  # one clearing section; once two are cleared, the third is a single hold.
+  - name: three holds lines can clear share one message, and lines clear them in one retry
+    covers:
+      - {gate: design-reads, case: holds}
+      - {gate: reference-reads, case: holds}
+      - {gate: repeated-failure, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Isolate the export test from the client.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: {kind: skill_load, skill: tdd}
+      - call: *check
+        result: *failed
+      - call: *check
+        result: *failed
+      - call: &mocked_test
+          kind: file_write
+          path: tests/test_app.py
+          edits: [{removed: "pass", added: "m = MagicMock()\nassert m.total_1 is not None\nassert m.total_2 is not None\nassert m.total_3 is not None\nassert m.total_4 is not None\nassert m.total_5 is not None\nassert m.total_6 is not None\nassert m.total_7 is not None\nassert m.total_8 is not None\nassert m.total_9 is not None\nassert m.total_10 is not None\nassert m.total_11 is not None\nassert m.total_12 is not None\nassert m.total_13 is not None\nassert m.total_14 is not None\nassert m.total_15 is not None\nassert m.total_16 is not None\nassert m.total_17 is not None\nassert m.total_18 is not None\nassert m.total_19 is not None\nassert m.total_20 is not None\nassert m.total_21 is not None\nassert m.total_22 is not None\nassert m.total_23 is not None\nassert m.total_24 is not None"}]
+        expect:
+          decision: hold
+          holds:
+            - {gate: design-reads, kind: justified-skip}
+            - {gate: reference-reads, kind: justified-skip}
+            - {gate: repeated-failure, kind: justified-skip}
+      - reply: "goated-skip: software-design-principles: the asserts only check one mock"
+      - reply: "goated-skip: tdd: the test follows the existing mock setup"
+      - call: *mocked_test
+        expect:
+          decision: hold
+          holds: [{gate: repeated-failure, kind: justified-skip}]
+      - reply: "goated-skip: diagnose: the failure names the missing mock directly"
+      - call: *mocked_test
+
   - name: a second run with fewer failures is progress, not a repeat
     covers:
       - {gate: repeated-failure, case: near-miss}
