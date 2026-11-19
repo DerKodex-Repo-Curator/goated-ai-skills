@@ -20,6 +20,8 @@ from claude_code_adapter_support import (
     ROUTER,
     Session,
     decision,
+    owed,
+    owed_names,
     git_branch_with_change,
     parse,
     reason,
@@ -35,6 +37,14 @@ MOCKING = "/opt/goated/skills/tdd/references/mocking-and-seams.md"
 # A test edit the registry's mock-or-patch pattern selects `MOCKING` for.
 MOCK_EDIT = {"file_path": "tests/test_export.py", "old_string": "pass",
              "new_string": "client = MagicMock()"}
+SPEC_TEMPLATE = "/opt/goated/skills/write-a-spec/references/spec-template.md"
+# A shell write the registry's spec path selects `SPEC_TEMPLATE` for: a file
+# edit lands owing its reads (Ticket 118), and a short shell write still holds.
+SPEC_COPY = {"command": "cp a.md docs/specs/export.md"}
+DECOUPLING = REFERENCES + "decoupling.md"
+# A shell write to a configuration file that shows no text: it selects
+# `decoupling.md` and, unable to land, still meets the design-reads hold.
+SETTINGS_WRITE = {"command": "generate-settings > config/export.json"}
 SPAWN_BRIEF = "D:\\goated\\skills\\handoff\\references\\spawn-brief.md"
 IMPLEMENTER = "D:\\goated\\skills\\subagent-driven-development\\references\\implementer-prompt.md"
 REVIEWER = "D:\\goated\\skills\\subagent-driven-development\\references\\reviewer-prompt.md"
@@ -113,52 +123,77 @@ class DesignReferenceTests(WholeReadTestCase):
         s.read(REFERENCES + "complexity-and-modules.md")
         return s
 
-    def test_a_read_with_a_limit_leaves_the_hold_and_a_whole_read_clears_it(self) -> None:
+    def test_a_read_with_a_limit_leaves_the_reference_owed_and_a_whole_read_clears_it(self) -> None:
         s = self.designing()
         s.read(REFERENCES + "readability.md", limit=20)
 
-        held = s.call("Edit", edit("src/export.py", DEFINITION))
-        self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
-        self.assertIn("references/readability.md", reason(held))
-        self.assertIn(WHOLE, reason(held))
+        landed = s.call("Edit", edit("src/export.py", DEFINITION))
+        self.assertEqual(decision(landed), "pass")
+        self.assertEqual(owed_names(landed), {"readability.md"})
+        self.assertIn(WHOLE, owed(landed))
         s.read(REFERENCES + "readability.md")
-        self.assertEqual(decision(s.call("Edit", edit("src/export.py", DEFINITION))), "pass")
+        self.assertEqual(owed(s.call("Edit", edit("src/export.py", DEFINITION))), "")
+
+    def test_a_read_with_a_limit_leaves_the_hold_on_a_write_that_cannot_land(self) -> None:
+        s = self.routed()
+        s.load(DESIGN)
+        s.read(DECOUPLING, limit=20)
+
+        held = s.call("Bash", SETTINGS_WRITE)
+        self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
+        self.assertIn("references/decoupling.md", reason(held))
+        self.assertIn(WHOLE, reason(held))
+        s.read(DECOUPLING)
+        self.assertEqual(decision(s.call("Bash", SETTINGS_WRITE)), "pass")
 
     def test_a_read_with_an_offset_alone_is_partial(self) -> None:
         s = self.designing()
         s.read(REFERENCES + "readability.md", offset=10)
 
-        self.assertEqual(hold_line(s.call("Edit", edit("src/export.py", DEFINITION))),
-                         "goated-hold: design | justified-skip")
+        self.assertEqual(owed_names(s.call("Edit", edit("src/export.py", DEFINITION))),
+                         {"readability.md"})
 
     def test_a_whole_read_in_an_earlier_turn_counts_and_a_partial_one_does_not(self) -> None:
         s = self.designing()
         s.read(REFERENCES + "readability.md")
         self.later_turn(s)
-        self.assertEqual(decision(s.call("Edit", edit("src/export.py", DEFINITION))), "pass")
+        quiet = s.call("Edit", edit("src/export.py", DEFINITION))
+        self.assertEqual((decision(quiet), owed(quiet)), ("pass", ""))
 
         # The near miss: the partial read of an earlier turn was not recorded as read.
         s = self.designing()
         s.read(REFERENCES + "readability.md", limit=20)
         self.later_turn(s)
-        held = s.call("Edit", edit("src/export.py", DEFINITION))
-        self.assertIn("references/readability.md", reason(held))
+        landed = s.call("Edit", edit("src/export.py", DEFINITION))
+        self.assertEqual(owed_names(landed), {"readability.md"})
 
 
 class RegistryReferenceTests(WholeReadTestCase):
     def test_a_read_with_a_limit_or_offset_leaves_the_hold_and_a_whole_read_clears_it(self) -> None:
         s = self.routed()
+        s.load("write-a-spec")
+        s.read(SPEC_TEMPLATE, limit=20)
+
+        held = s.call("Bash", SPEC_COPY)
+        self.assertEqual(hold_line(held), "goated-hold: reference-reads | justified-skip")
+        self.assertIn(WHOLE, reason(held))
+        s.read(SPEC_TEMPLATE, offset=5)
+        self.assertEqual(hold_line(s.call("Bash", SPEC_COPY)),
+                         "goated-hold: reference-reads | justified-skip")
+        s.read(SPEC_TEMPLATE)
+        self.assertEqual(decision(s.call("Bash", SPEC_COPY)), "pass")
+
+    def test_a_file_edit_owes_the_reference_after_a_partial_read(self) -> None:
+        s = self.routed()
         s.load("tdd")
         s.read(MOCKING, limit=20)
 
-        held = s.call("Edit", MOCK_EDIT)
-        self.assertEqual(hold_line(held), "goated-hold: reference-reads | justified-skip")
-        self.assertIn(WHOLE, reason(held))
-        s.read(MOCKING, offset=5)
-        self.assertEqual(hold_line(s.call("Edit", MOCK_EDIT)),
-                         "goated-hold: reference-reads | justified-skip")
+        landed = s.call("Edit", MOCK_EDIT)
+        self.assertEqual(decision(landed), "pass")
+        self.assertIn("tdd/references/mocking-and-seams.md", owed(landed))
+        self.assertIn(WHOLE, owed(landed))
         s.read(MOCKING)
-        self.assertEqual(decision(s.call("Edit", MOCK_EDIT)), "pass")
+        self.assertEqual(owed(s.call("Edit", MOCK_EDIT)), "")
 
 
 class SpawnTemplateTests(WholeReadTestCase):

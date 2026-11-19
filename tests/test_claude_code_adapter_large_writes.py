@@ -70,10 +70,25 @@ class LargeWriteTests(unittest.TestCase):
         self.session.read(SETTINGS)
         self.assertNotIn("decision", self.stop())
 
-    def test_a_write_of_twenty_nine_lines_is_still_held(self) -> None:
-        held = self.session.call("Write", settings(29))
-        self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
-        self.assertEqual(context(held), "")
+    def test_a_file_write_of_twenty_nine_lines_lands_too(self) -> None:
+        # Ticket 118: a file edit lands at any size, owing its reads.
+        landed = self.session.call("Write", settings(29))
+        self.assertEqual(decision(landed), "pass", reason(landed))
+        self.assertIn(f"`{DESIGN}/references/decoupling.md`", context(landed))
+
+    def test_a_shell_write_keeps_the_thirty_line_floor(self) -> None:
+        # Shell writes are out of Ticket 118's scope: one under thirty counted
+        # lines is still held, and one of thirty or more lands owing its reads.
+        for lines, held in ((29, True), (30, False)):
+            with self.subTest(lines=lines):
+                body = settings(lines + 1)["content"].rstrip("\n")
+                output = self.session.call("Bash", {
+                    "command": f"cat > {SETTINGS} <<'EOF'\n{body}\nEOF"})
+                if held:
+                    self.assertEqual(hold_line(output), "goated-hold: design-reads | justified-skip")
+                else:
+                    self.assertEqual(decision(output), "pass", reason(output))
+                    self.assertIn("Reads item", context(output))
 
     def test_a_subagents_large_write_is_still_held(self) -> None:
         # Only the main agent keeps what a write owes, so a subagent's write cannot land.

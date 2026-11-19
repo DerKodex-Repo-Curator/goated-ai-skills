@@ -18,6 +18,8 @@ from claude_code_adapter_support import (
     SPAWN_BRIEF_PATH,
     Session,
     decision,
+    owed,
+    owed_names,
     parse,
     reason,
 )
@@ -114,11 +116,15 @@ class FileWritesCountAsBefore(Case):
                 s = self.routed()
                 s.load(DESIGN)
                 out = s.call(tool, {"file_path": str(s.project / "src" / "new.py"), **fields})
-                self.assertEqual(decision(out), "pass", reason(out))
-        # Near miss: a plain Edit with empty old text creates the file.
+                self.assertEqual((decision(out), owed(out)), ("pass", ""), reason(out))
+        # Near miss: a plain Edit with empty old text creates the file, so it
+        # lands owing the new-file references (Ticket 118).
         s = self.routed()
         s.load(DESIGN)
-        self.assertIn("goated-hold: design-reads", reason(self.edit(s, "src/new.py", "", "x = 1")))
+        landed = self.edit(s, "src/new.py", "", "x = 1")
+        self.assertEqual(decision(landed), "pass")
+        self.assertEqual(owed_names(landed),
+                         {"process.md", "complexity-and-modules.md", "readability.md"})
 
     def test_an_empty_edits_list_is_a_small_edit(self) -> None:
         s = self.routed()

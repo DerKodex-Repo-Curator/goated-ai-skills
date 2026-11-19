@@ -164,20 +164,25 @@ def _adapter_texts() -> dict[str, str]:
         texts["design"] = reason(routed("design").call("Write", _write("src/export.py")))
         # Once the skill loads: the design hold asks for the references the edit requires
         # and no design-reads line (Ticket 089), then the design-reads hold for a later
-        # edit's references.
-        designed = routed("design-reads")
+        # edit's references. Since Ticket 118 the main agent's file edit lands owing
+        # those reads, so the holds come from a subagent's edits, which keep no owed reads.
+        designer = routed("design-reads")
+        designed = designer.subagent("d1")
+        designed.prompt("Add CSV export.", hook=False)
         designed.load("software-design-principles")
-        texts["designFirstReads"] = reason(designed.call("Write", _write("src/export.py")))
-        designed.call("Edit", _edit("src/export.py", PLAIN))
-        texts["designReads"] = reason(designed.call("Edit", _edit("src/export.py", "try:\n    rate = 1")))
-        # The references the registry declares for a loaded skill's edit signals (Ticket 067):
-        # one edit that fires a reference of each of two skills.
+        as_agent = {"agent_id": "d1", "agent_type": "general-purpose"}
+        texts["designFirstReads"] = reason(designed.call("Write", _write("src/export.py"), **as_agent))
+        designed.call("Edit", _edit("src/export.py", PLAIN), **as_agent)
+        texts["designReads"] = reason(designed.call(
+            "Edit", _edit("src/export.py", "try:\n    rate = 1"), **as_agent))
+        # The references the registry declares for a loaded skill's signals (Ticket 067): one
+        # short shell write, which still meets the hold, firing a reference of each of two skills.
         referenced = routed("reference-reads")
         referenced.config.registry_path = REPO_ROOT / "stack" / "goated-stack.yaml"
-        referenced.load("tdd")
-        referenced.load("diagnose")
+        referenced.load("write-a-spec")
+        referenced.load("spec-to-tickets")
         texts["referenceReads"] = reason(referenced.call(
-            "Edit", _edit("tests/test_export.py", "client = MagicMock()\ntime.sleep(1)")))
+            "Bash", {"command": "cp a.md docs/specs/export.md && cp b.md tickets/001-export.md"}))
         # A reviewer subagent's report holds the fixes until receiving-code-review loads (Ticket 070).
         intake = routed("review-intake")
         intake.load("subagent-driven-development")
@@ -202,17 +207,17 @@ def _adapter_texts() -> dict[str, str]:
             failing.call("Edit", {"file_path": "src/export.py", "old_string": "a", "new_string": "b"})
         )
 
-        # One test edit that meets three gates: one message carries the three holds (Ticket 095).
-        # It adds under thirty lines, since the read gates let one of thirty or more land (Ticket 114).
+        # One write that meets three gates: one message carries the three holds (Ticket 095).
+        # It is a short shell write, since the read gates let a file edit land (Ticket 118):
+        # a settings file selects a design reference, and a spec a registry one.
         joint = routed("joint")
         joint.config.registry_path = REPO_ROOT / "stack" / "goated-stack.yaml"
         joint.load("software-design-principles")
-        joint.load("tdd")
+        joint.load("write-a-spec")
         joint.run("pytest -q", success=False)
         joint.run("pytest -q", success=False)
-        texts["jointTestEdit"] = reason(joint.call("Edit", _edit(
-            "tests/test_export.py", "client = MagicMock()\n" + "\n".join(
-                f"assert total_{n} == {n}" for n in range(25)))))
+        texts["jointTestEdit"] = reason(joint.call("Bash", {
+            "command": "cp a.md docs/specs/export.md && generate-settings > config/export.json"}))
         # A gate's second hold in a turn is short (Ticket 095).
         repeated = routed("security-short")
         repeated.call("Write", _write("src/auth.py", lines=2))

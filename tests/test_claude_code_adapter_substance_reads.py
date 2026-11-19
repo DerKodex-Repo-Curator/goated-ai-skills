@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import unittest
 
-from claude_code_adapter_support import decision, reason
+from claude_code_adapter_support import decision, owed, owed_names, reason
 from test_claude_code_adapter_design_holds import DESIGN, DesignTestCase, edit, hold_line
 from test_claude_code_adapter_reference_reads import (
     CODING,
@@ -37,20 +37,25 @@ def code_and_comments(code: int, comments: int) -> str:
 class CommentOnAShortCodeEdit(DesignTestCase):
     """K1: the comment of a short code edit selects no `readability.md`."""
 
-    def held_for_readability(self, new: str, path: str = "src/export.py") -> bool:
+    def owed_for(self, new: str, path: str = "src/export.py") -> set[str]:
         s = self.routed()
         s.load(DESIGN)
         output = s.call("Edit", edit(path, new))
-        return decision(output) != "pass" and "references/readability.md" in reason(output)
+        # Since Ticket 118 the edit lands, and its notice names what it owes.
+        self.assertEqual(decision(output), "pass", reason(output))
+        return owed_names(output)
+
+    def owes_readability(self, new: str, path: str = "src/export.py") -> bool:
+        return "readability.md" in self.owed_for(new, path)
 
     def test_three_code_lines_and_a_two_line_comment_select_no_readability(self) -> None:
-        self.assertFalse(self.held_for_readability(code_and_comments(3, 2)))
+        self.assertEqual(self.owed_for(code_and_comments(3, 2)), set())
 
     def test_five_code_lines_and_a_comment_select_readability(self) -> None:
-        self.assertTrue(self.held_for_readability(code_and_comments(5, 1)))
+        self.assertTrue(self.owes_readability(code_and_comments(5, 1)))
 
     def test_three_code_lines_and_twenty_comment_lines_select_readability(self) -> None:
-        self.assertTrue(self.held_for_readability(code_and_comments(3, 20)))
+        self.assertTrue(self.owes_readability(code_and_comments(3, 20)))
 
     def test_a_comment_only_edit_is_counted_the_same_way(self) -> None:
         # Four unchanged code lines and sixteen comments: twenty lines, but
@@ -61,20 +66,20 @@ class CommentOnAShortCodeEdit(DesignTestCase):
         s = self.routed()
         s.load(DESIGN)
         output = s.call("Edit", edit("src/export.py", comments + "\n" + context, old=context))
-        self.assertNotIn("references/readability.md", reason(output))
+        self.assertEqual((decision(output), owed(output)), ("pass", ""))
         # The near miss: twenty comment lines select it.
-        self.assertTrue(self.held_for_readability(code_and_comments(0, 20) + "\npass"))
+        self.assertTrue(self.owes_readability(code_and_comments(0, 20) + "\npass"))
 
     def test_a_trailing_comment_leaves_its_line_a_code_line(self) -> None:
         new = "\n".join(f"fix_{n} = {n}  # why" for n in range(3))
-        self.assertFalse(self.held_for_readability(new + "\n# one\n# two"))
+        self.assertEqual(self.owed_for(new + "\n# one\n# two"), set())
 
     def test_a_new_public_definition_still_selects_readability(self) -> None:
-        self.assertTrue(self.held_for_readability(
+        self.assertTrue(self.owes_readability(
             "# Exports rows.\ndef export(rows):\n    return rows"))
 
     def test_a_file_whose_comment_syntax_is_unknown_is_judged_as_before(self) -> None:
-        self.assertTrue(self.held_for_readability(
+        self.assertTrue(self.owes_readability(
             "-- why\n-- more\nlocal a = 1\nlocal b = 2\nlocal c = 3", path="src/export.lua"))
 
     def test_the_same_edit_still_meets_the_design_gate_unloaded(self) -> None:

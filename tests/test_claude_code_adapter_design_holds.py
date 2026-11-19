@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from claude_code_adapter_support import ROUTER, Session, decision, parse, reason
+from claude_code_adapter_support import ROUTER, Session, decision, owed, owed_names, parse, reason
 
 DESIGN = "software-design-principles"
 REFERENCES = "/opt/goated/skills/software-design-principles/references/"
@@ -92,22 +92,24 @@ class DesignGateTests(DesignTestCase):
         self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
         self.assertIn(f"load `{DESIGN}`", reason(held))
 
-    def test_an_unread_reference_holds_asking_for_the_read_and_no_line(self) -> None:
+    def test_an_unread_reference_is_owed_asking_for_the_read_and_no_line(self) -> None:
         s = self.routed()
         s.load(DESIGN)
         s.read(REFERENCES + "process.md")
         s.read(REFERENCES + "complexity-and-modules.md")
 
-        held = s.call("Edit", edit("src/export.py", DEFINITION))
-        self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
-        self.assertIn("`software-design-principles/references/readability.md`", reason(held))
-        self.assertNotIn("references/process.md", reason(held))
-        self.assertNotIn("goated-design-reads", reason(held))
-        self.assertNotIn("design-reads line", reason(held))
+        # Since Ticket 118 the edit lands, and its notice asks for the read.
+        landed = s.call("Edit", edit("src/export.py", DEFINITION))
+        self.assertEqual(decision(landed), "pass")
+        self.assertIn("the design gate let this write", owed(landed))
+        self.assertEqual(owed_names(landed), {"readability.md"})
+        self.assertNotIn("goated-design-reads", owed(landed))
+        self.assertNotIn("design-reads line", owed(landed))
 
-        # The near miss: once read, the same edit passes, still with no line.
+        # The near miss: once read, the same edit owes nothing, still with no line.
         s.read(REFERENCES + "readability.md")
-        self.assertEqual(decision(s.call("Edit", edit("src/export.py", DEFINITION))), "pass")
+        again = s.call("Edit", edit("src/export.py", DEFINITION))
+        self.assertEqual((decision(again), owed(again)), ("pass", ""))
 
     def test_a_written_design_reads_line_changes_no_decision(self) -> None:
         def run(line: str | None) -> list[tuple[str, str]]:
@@ -120,11 +122,13 @@ class DesignGateTests(DesignTestCase):
             for name in DEFINITION_REFERENCES:
                 s.read(REFERENCES + name)
             outputs.append(s.call("Edit", edit("src/export.py", DEFINITION)))
-            return [(decision(o), reason(o)) for o in outputs]
+            return [(decision(o), reason(o), owed_names(o)) for o in outputs]
 
         without = run(None)
-        # The baseline: the plain edit passes, the definition is held until its reads.
-        self.assertEqual([d for d, _ in without], ["pass", "deny", "pass"])
+        # The baseline: every edit lands, and only the definition before its
+        # reads owes them (Ticket 118).
+        self.assertEqual(without, [("pass", "", set()), ("pass", "", set(DEFINITION_REFERENCES)),
+                                   ("pass", "", set())])
         for line in LINES:
             with self.subTest(line=line):
                 self.assertEqual(run(line), without)
@@ -295,12 +299,12 @@ class ShortCommentEditTests(DesignTestCase):
         # 20 comment lines ask for it (round 5, K1).
         s = self.routed()
         s.load(DESIGN)
-        self.assertEqual(decision(s.call("Edit", comment_edit(20))), "pass")
-        held = s.call("Edit", comment_edit(21))
-        self.assertEqual(hold_line(held), "goated-hold: design-reads | justified-skip")
-        self.assertIn("references/readability.md", reason(held))
+        self.assertEqual(owed(s.call("Edit", comment_edit(20))), "")
+        landed = s.call("Edit", comment_edit(21))
+        self.assertEqual(decision(landed), "pass")
+        self.assertEqual(owed_names(landed), {"readability.md"})
         s.read(REFERENCES + "readability.md")
-        self.assertEqual(decision(s.call("Edit", comment_edit(21))), "pass")
+        self.assertEqual(owed(s.call("Edit", comment_edit(21))), "")
         self.assertEqual(len(self.finish(s)), 1)
 
     def test_a_19_line_comment_edit_in_a_later_turn_meets_no_design_item(self) -> None:
