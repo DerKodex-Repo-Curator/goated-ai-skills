@@ -55,7 +55,9 @@ references each moment names for the reasoning.
    interface, error handling, or concurrency; being a test, a setting, a
    comment, or one more file of a change does not. A test edit calls for
    `coding.md` only when it creates the test file or adds twenty or more
-   lines, a changed line counting as added.
+   lines, a changed line counting as added. For a large edit already
+   written, the reads may follow it before reporting done; revise the edit
+   after them.
 3. Apply the rules for the current moment. Scale the effort to the change: a
    one-line fix needs a glance at the rules, not a design exercise.
 4. Before reporting the work as done, read [Red Flags](references/red-flags.md)

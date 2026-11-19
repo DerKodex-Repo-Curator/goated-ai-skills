@@ -203,6 +203,7 @@ def _adapter_texts() -> dict[str, str]:
         )
 
         # One test edit that meets three gates: one message carries the three holds (Ticket 095).
+        # It adds under thirty lines, since the read gates let one of thirty or more land (Ticket 114).
         joint = routed("joint")
         joint.config.registry_path = REPO_ROOT / "stack" / "goated-stack.yaml"
         joint.load("software-design-principles")
@@ -211,7 +212,7 @@ def _adapter_texts() -> dict[str, str]:
         joint.run("pytest -q", success=False)
         texts["jointTestEdit"] = reason(joint.call("Edit", _edit(
             "tests/test_export.py", "client = MagicMock()\n" + "\n".join(
-                f"assert total_{n} == {n}" for n in range(30)))))
+                f"assert total_{n} == {n}" for n in range(25)))))
         # A gate's second hold in a turn is short (Ticket 095).
         repeated = routed("security-short")
         repeated.call("Write", _write("src/auth.py", lines=2))

@@ -223,8 +223,9 @@ A decision is `allow` or `hold`, with its `holds` and `notices`.
   a stop, send the message as a request to continue, and document that.
 - **Show notices as the core wrote them,** a hold or not. `fail_open` and
   `warning` in particular must reach the person or agent, and
-  `skip_carried`, on a call a lasting skip let through, must reach the
-  agent. Requests carry the event model's version, now 3; the core refuses
+  `skip_carried`, on a call a lasting skip let through, and `reads_owed`, on
+  a large write a read gate let through before its reads, must reach the
+  agent. Requests carry the event model's version, now 4; the core refuses
   any other.
 - **Add only what your harness alone can say:** where a route or skip line
   goes so the harness keeps it, and which call can carry it. Never reword or

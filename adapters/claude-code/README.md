@@ -587,6 +587,13 @@ Holds). When such a skip lets a later call through and no gate holds it,
 the core's `skip_carried` notice goes to the agent as that call's
 `additionalContext`.
 
+A write adding thirty or more counted lines that `design-reads` or
+`reference-reads` would hold for reads alone, or `design` once
+`software-design-principles` is loaded, is applied instead. The core's
+`reads_owed` notice, naming each reference, goes to the agent as that
+call's `additionalContext`, and the closeout's Reads item asks for the
+reads and a change read after them (see the contract's Closeout Items).
+
 ## Subagents
 
 A hook call from inside a subagent carries `agent_id`. There:

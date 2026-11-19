@@ -274,11 +274,12 @@ def _pre_tool_use(payload: dict, config: Config) -> str:
                                     call, _reader(payload, config, transcript_path, call))
     text = translation.render(decision.message(), tool_name, decision.shell)
     output = _deny(text)
-    # A lasting skip let a read gate pass (spec R4): tell the agent which skip did.
-    carried = decision.texts(judge.SKIP_CARRIED)
-    if carried:
+    # A lasting skip let a read gate pass (spec R4), or a large write landed
+    # owing its reads (round 5, R5): tell the agent which.
+    passed = decision.texts(judge.SKIP_CARRIED, judge.READS_OWED)
+    if passed:
         specific = output.setdefault("hookSpecificOutput", {"hookEventName": "PreToolUse"})
-        specific["additionalContext"] = _sentence(translation.render(t) for t in carried)
+        specific["additionalContext"] = _sentence(translation.render(t) for t in passed)
     return _with_warnings(output, decision.texts(judge.WARNING))
 
 

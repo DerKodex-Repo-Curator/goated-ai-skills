@@ -31,6 +31,9 @@ HOLD_LINE = re.compile(r"^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified
 ADAPTER_NAME = "GOATED Claude Code adapter"
 FAIL_OPEN = "so this action was allowed without checks."
 OVERRIDE_RECORDED = "recorded your override"
+# The notices a pending call's additionalContext may carry, each told by words its text holds.
+PENDING_CALL_NOTICES = (("skip_carried", "through without a read of"),
+                        ("reads_owed", "land before a read of"))
 BRIEF_OPENING = "Background (from the session that started this one):"
 SESSION_SOURCES = {"new": "startup", "resumed": "resume", "after_compaction": "compact",
                    "cleared": "clear"}
@@ -397,7 +400,7 @@ class _Run:
         with `expect`; with no `expect`, the step is not checked."""
 
         self.requests.append({
-            "event_model": 3,
+            "event_model": 4,
             "session": {"id": self.s.session_id, "agent": self.agent},
             "project": {"folders": [self.s.project.as_posix()],
                         "working_folder": self.s.cwd.as_posix(),
@@ -432,7 +435,8 @@ def _decision(output: dict, shape: str) -> dict:
         if specific.get("hookEventName") == "PostToolUse":
             notices.append("closeout_note")
         elif specific.get("hookEventName") == "PreToolUse":
-            notices.append("skip_carried")
+            # A pending call carries one notice per read gate, of either kind.
+            notices += [kind for kind, mark in PENDING_CALL_NOTICES if mark in context]
         elif OVERRIDE_RECORDED in context:
             notices.append("override_recorded")
         else:

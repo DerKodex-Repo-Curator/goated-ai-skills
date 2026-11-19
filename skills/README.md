@@ -97,7 +97,10 @@ The registry, `stack/goated-stack.yaml`, declares every file under each
 skill's `references/` folder in that skill's `references` list. Each entry has
 either a `signal`, which makes its read enforced by an adapter, or `advisory`
 with a short reason no signal kind fits the skill's "read when" sentence.
-`stack/fixtures/reference-reads/README.md` lists the signal kinds.
+`stack/fixtures/reference-reads/README.md` lists the signal kinds. A signal
+asks for the read before the edit, but for a large edit already written the
+read may follow it, before the work is reported done, and the edit is
+revised after it.
 
 Adding, renaming, or removing a reference file updates its registry entry in
 the same change. `SKILL.md` keeps the "read when" sentence and stays the owner

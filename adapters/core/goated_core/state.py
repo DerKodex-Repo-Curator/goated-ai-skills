@@ -5,7 +5,8 @@ the current task's route, whether missing or reset state lost the task, what
 counts until the next compaction (whether the router loaded, which GOATED
 skills loaded, which design references, skill references, and spawn-brief
 templates were read, and digests of the first distinct files read), the
-task's lasting skips (`actions.LastingSkip`), which
+task's lasting skips (`actions.LastingSkip`), the reads the current turn's
+landed writes owe (`actions.OwedRead`), which
 template each of the current turn's spawns' briefs followed, the last turn
 seen, the latest user overrides, and the friction count (`friction.py`). Beside it,
 markers name what the current turn's holds already gave in full, and a
@@ -61,7 +62,7 @@ class SessionState:
         "router_loaded", "last_turn", "task", "task_unknown", "overrides", "policy_notice_shown",
         "reference_reads", "brief_routed", "briefed", "loads", "template_reads",
         "skill_reference_reads", "spawn_templates", "open_holds", "held_gates", "friction",
-        "retrospective_notice_shown", "files_read", "shell", "lasting_skips",
+        "retrospective_notice_shown", "files_read", "shell", "lasting_skips", "owed_reads",
     )
 
     def __init__(self) -> None:
@@ -102,6 +103,10 @@ class SessionState:
         # {"gate", "skill", "kind", "reference", "turn"}, the turn being the one
         # whose skip line cleared the hold (`record_lasting_skips`).
         self.lasting_skips: list[dict] = []
+        # The reads each write of one turn owes, which a read gate let land
+        # (round 5, R5): {"turn": <turn key>, "edits": {<call_id>: [<owed read>]}},
+        # each owed read {"gate", "skill", "kind", "reference", "path"}.
+        self.owed_reads: dict = {}
         # The brief templates (`contracts.BriefTemplate.reference`) each spawn of
         # one turn followed when the spawn gate let it through:
         # {"turn": <turn key>, "edits": {<call_id>: [<template>]}}.
@@ -167,6 +172,19 @@ class SessionState:
 
         return _calls_of(self.spawn_templates, turn)
 
+    def record_owed_reads(self, turn: str, call_id: str, owed) -> None:
+        """Keep the reads (`actions.OwedRead`) a write of `turn` owes, which a
+        read gate let land, for the turn's Reads item; an earlier turn's are
+        dropped, as the closeout judges only its own turn."""
+
+        self.owed_reads = _with_call(self.owed_reads, turn, call_id,
+                                     [read._asdict() for read in owed])
+
+    def owed_reads_of(self, turn: str) -> dict[str, list[dict]]:
+        """What `record_owed_reads` kept for `turn`'s writes, by call_id."""
+
+        return _calls_of(self.owed_reads, turn)
+
     def to_json(self) -> dict:
         return {
             "router_loaded": self.router_loaded,
@@ -189,6 +207,7 @@ class SessionState:
             "retrospective_notice_shown": self.retrospective_notice_shown,
             "shell": self.shell,
             "lasting_skips": self.lasting_skips,
+            "owed_reads": self.owed_reads,
         }
 
     @classmethod
@@ -218,6 +237,7 @@ class SessionState:
         state.shell = _expect(data.get("shell"), (str, type(None)))
         state.lasting_skips = [_valid_lasting_skip(s)
                                for s in _expect(data.get("lasting_skips", []), list)]
+        state.owed_reads = _valid_owed_reads(data.get("owed_reads", {}))
         task = _expect(data.get("task"), (dict, type(None)))
         if task is not None:
             state.task = Task(
@@ -289,6 +309,22 @@ def _valid_lasting_skip(data) -> dict:
     entry = _expect(data, dict)
     return {key: _expect(entry.get(key), str)
             for key in ("gate", "skill", "kind", "reference", "turn")}
+
+
+def _valid_owed_reads(data) -> dict:
+    """The owed reads as `record_owed_reads` saved them; ValueError on any other shape."""
+
+    record = _expect(data, dict)
+    if not record:
+        return {}
+    calls = _expect(record.get("edits"), dict)
+    return {
+        "turn": _expect(record.get("turn"), str),
+        "edits": {_expect(call_id, str): [
+            {key: _expect(_expect(read, dict).get(key), str)
+             for key in ("gate", "skill", "kind", "reference", "path")}
+            for read in _expect(reads, list)] for call_id, reads in calls.items()},
+    }
 
 
 def _valid_held_gates(data) -> dict:

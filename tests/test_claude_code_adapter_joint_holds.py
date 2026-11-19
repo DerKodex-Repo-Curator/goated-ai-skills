@@ -44,7 +44,9 @@ def gates_of(output: dict) -> list[str]:
 
 
 def mocking_edit(*extra: str) -> dict:
-    lines = ["client = MagicMock()", *extra, *(f"assert total_{n} == {n}" for n in range(30))]
+    # Twenty or more lines meet the test signals; under thirty keeps the read
+    # gates holding, since a write of thirty lands and reads after (Ticket 114).
+    lines = ["client = MagicMock()", *extra, *(f"assert total_{n} == {n}" for n in range(25))]
     return {"file_path": TEST_FILE, "old_string": "pass", "new_string": "\n".join(lines)}
 
 

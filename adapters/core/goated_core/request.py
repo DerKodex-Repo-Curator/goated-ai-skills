@@ -31,7 +31,7 @@ from .events import (
 from .judge import Settings
 from .state import default_root
 
-EVENT_MODEL = 3
+EVENT_MODEL = 4
 STATE_DIR_ENV = "GOATED_CORE_STATE_DIR"
 NAMESPACES_ENV = "GOATED_CORE_SKILL_NAMESPACES"
 REGISTRY_ENV = "GOATED_CORE_REGISTRY"

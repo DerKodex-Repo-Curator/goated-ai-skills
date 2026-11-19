@@ -26,7 +26,7 @@ Rules for every scenario:
   comes in a later turn, since it covers only the turn its prompt opens. A
   near miss never holds by its gate. Tests fail when a gate lacks a
   scenario that holds, one for each clear way, or a near miss, and when
-  any of the eight closeout labels is pinned by no scenario.
+  any of the nine closeout labels is pinned by no scenario.
 - **Placeholders.** `{outside}` is a folder outside the project and any
   checkout, as a scratch file's or an installed skill's folder is.
 - **Setup** describes the project, not the harness: skills installed, a
