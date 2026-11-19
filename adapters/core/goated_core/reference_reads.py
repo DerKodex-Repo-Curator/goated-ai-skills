@@ -9,7 +9,8 @@ observed at one write (Tickets 067 and 068):
 - `edit-adds-pattern`: the code an edit adds matches a pattern the registry
   names (`PATTERNS`), in a file of the given kind if one is given;
 - `edit-of-file-kind`: an edit of a file of that kind adds at least
-  `min_added_lines` lines, or, with `new_file: true`, creates the file. The
+  `min_added_lines` lines, case-data lines in a file it does not create
+  left out (`_is_case_data`), or, with `new_file: true`, creates the file. The
   design gate judges a test edit for `coding.md` by the same signal
   (`file_kind_signal`), so the registry owns one rule for both (Ticket 090);
 - `write-under-path`: the file written is under that folder of the project;
@@ -265,10 +266,43 @@ def _edit_fires(signal: dict, edit: Edit) -> str | None:
         return None
     if signal.get("new_file") is True and edit.new_file:
         return f"a new {file_kind} file"
-    least, added = signal.get("min_added_lines", 1), len(edit.added_code)
+    # New cases in an existing test are data, not test design (round 5, K2).
+    least, added = signal.get("min_added_lines", 1), len(
+        edit.added_code if edit.new_file
+        else [code for code in edit.added_code if not _is_case_data(code)])
     if added < least:
         return None
     return f"an edit of a {file_kind} file adding {added} lines, {least} or more"
+
+
+# One piece of a case-data line (`_is_case_data`): a string literal (with a
+# Python prefix such as `r` or `b`), a number, a constant, a bracket, comma
+# or colon, a keyword argument's `name=` before a literal (written without
+# spaces, so `expected = 5` is an assignment, not one), or a case wrapper.
+_LITERAL = (r"""[rRbBuU]{0,2}(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')"""
+            r"|[-+]?(?:0[xXoObB][0-9a-fA-F_]+|(?:\d[\d_]*(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?j?)(?![\w.])"
+            r"|\b(?:True|False|None|true|false|null|nil)\b")
+CASE_DATA_PIECE_RE = re.compile(
+    rf"\s+|(?:{_LITERAL})|[()\[\]{{}},:]|[A-Za-z_]\w*=(?={_LITERAL})|(?:pytest\.)?param\(")
+# What makes a line of literals a row of cases rather than a statement.
+CASE_ROW_MARK_RE = re.compile(r"[()\[\]{},]")
+
+
+def _is_case_data(code: str) -> bool:
+    """Whether a line's code, comments already left out, holds only case
+    data: string and number literals, constants, brackets, commas, colons,
+    keyword arguments of literals, and case wrappers (`pytest.param(`), with
+    at least one bracket or comma, as a row inside a list or call has. So a
+    statement such as `flag=True`, and an empty line such as a comment line,
+    are not: they count as before."""
+
+    at, code = 0, code.strip()
+    while at < len(code):
+        match = CASE_DATA_PIECE_RE.match(code, at)
+        if match is None or match.end() == at:
+            return False
+        at = match.end()
+    return bool(CASE_ROW_MARK_RE.search(code))
 
 
 def _word_at(code: str, match: re.Match) -> str:

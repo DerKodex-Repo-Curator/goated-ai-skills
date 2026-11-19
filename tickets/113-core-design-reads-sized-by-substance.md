@@ -59,19 +59,19 @@ is not read for signals, so this ticket does not touch `shell.py` at all.
 
 ## Acceptance Criteria
 
-- [ ] K1: in a Python file, an edit adding three code lines and a
+- [x] K1: in a Python file, an edit adding three code lines and a
       two-line comment selects no `readability.md`; one adding five code
       lines and a comment does; one adding three code lines and twenty
       comment lines does.
-- [ ] K1: the same three-plus-two edit still meets the `design` gate when
+- [x] K1: the same three-plus-two edit still meets the `design` gate when
       the skill is not loaded, as today.
-- [ ] K2: 24 added case-data lines (tuples of literals, `pytest.param(`
+- [x] K2: 24 added case-data lines (tuples of literals, `pytest.param(`
       rows) in an existing test file select no `coding.md` or
       `test-design.md`; 24 lines of a new test function in that file do;
       a new test file does.
-- [ ] The contract states both rules, and a conformance scenario covers a
+- [x] The contract states both rules, and a conformance scenario covers a
       hold and the near miss of each.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 
