@@ -176,13 +176,18 @@ def _adapter_texts() -> dict[str, str]:
         texts["designReads"] = reason(designed.call(
             "Edit", _edit("src/export.py", "try:\n    rate = 1"), **as_agent))
         # The references the registry declares for a loaded skill's signals (Ticket 067): one
-        # short shell write, which still meets the hold, firing a reference of each of two skills.
+        # write firing a reference of each of two skills. Since Ticket 118 a file edit lands
+        # owing its reads, so the hold real sessions meet is a short shell write's: here a
+        # ticket copied in after a check failed twice, which fires spec-to-tickets' path
+        # signal and diagnose's signal for that gate.
         referenced = routed("reference-reads")
         referenced.config.registry_path = REPO_ROOT / "stack" / "goated-stack.yaml"
-        referenced.load("write-a-spec")
         referenced.load("spec-to-tickets")
+        referenced.load("diagnose")
+        referenced.run("pytest -q", success=False)
+        referenced.run("pytest -q", success=False)
         texts["referenceReads"] = reason(referenced.call(
-            "Bash", {"command": "cp a.md docs/specs/export.md && cp b.md tickets/001-export.md"}))
+            "Bash", {"command": "cp draft.md tickets/001-export.md"}))
         # A reviewer subagent's report holds the fixes until receiving-code-review loads (Ticket 070).
         intake = routed("review-intake")
         intake.load("subagent-driven-development")

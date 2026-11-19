@@ -545,49 +545,52 @@ const SKILL_REFERENCES = '/skills/'
 
 test('the reference-reads hold names each skill only as a skip line, with the references it asks for', async () => {
   expect(hookName('reference-reads')).toBe('reference-reads hold')
-  expect(preHold('Edit', ADAPTER_TEXTS.referenceReads, 1)).toEqual([{
-    kind: 'nudge', t: 1, hook: 'reference-reads', named: ['diagnose', 'tdd'], holdKind: 'justified-skip',
-    skipOnly: ['diagnose', 'tdd'], refs: ['diagnose/references/condition-based-waiting.md', 'tdd/references/mocking-and-seams.md'],
+  // Since Ticket 118 the hold comes from a short shell write (a ticket copied in after a check failed twice).
+  expect(preHold('Bash', ADAPTER_TEXTS.referenceReads, 1)).toEqual([{
+    kind: 'nudge', t: 1, hook: 'reference-reads', named: ['diagnose', 'spec-to-tickets'], holdKind: 'justified-skip',
+    skipOnly: ['diagnose', 'spec-to-tickets'], refs: ['diagnose/references/root-cause-tracing.md', 'spec-to-tickets/references/ticket-slicing-templates.md'],
   }])
 })
 
 test('the reference-reads hold counts as read files only by a Read of each skill\'s own reference', async () => {
-  const held = preHold('Edit', ADAPTER_TEXTS.referenceReads, 2)
-  const mocking = readTool(`${SKILL_REFERENCES}tdd/references/mocking-and-seams.md`, 3)
-  const waiting = readTool(`${SKILL_REFERENCES}diagnose/references/condition-based-waiting.md`, 4)
-  expect(summarize([prompt(), ...held, ...mocking, ...waiting, turnEnd(5)]).nudges).toEqual({ 'reference-reads': { 'read files': 2 } })
-  expect(summarize([prompt(), ...held, ...mocking, turnEnd(5)]).nudges).toEqual({ 'reference-reads': { 'read files': 1, unanswered: 1 } })
+  const held = preHold('Bash', ADAPTER_TEXTS.referenceReads, 2)
+  const tracing = readTool(`${SKILL_REFERENCES}diagnose/references/root-cause-tracing.md`, 3)
+  const templates = readTool(`${SKILL_REFERENCES}spec-to-tickets/references/ticket-slicing-templates.md`, 4)
+  expect(summarize([prompt(), ...held, ...tracing, ...templates, turnEnd(5)]).nudges).toEqual({ 'reference-reads': { 'read files': 2 } })
+  expect(summarize([prompt(), ...held, ...tracing, turnEnd(5)]).nudges).toEqual({ 'reference-reads': { 'read files': 1, unanswered: 1 } })
   // A shell read, another skill's file of the same name, another reference, the skill's body, or a load is not the read.
   for (const other of [
-    shellRead(`${SKILL_REFERENCES}tdd/references/mocking-and-seams.md`, 3),
-    readTool(`${SKILL_REFERENCES}diagnose/references/mocking-and-seams.md`, 3),
-    readTool(`${SKILL_REFERENCES}tdd/references/test-design.md`, 3),
-    readTool(`${SKILL_REFERENCES}tdd/SKILL.md`, 3),
-    [load('tdd', 3)],
+    shellRead(`${SKILL_REFERENCES}diagnose/references/root-cause-tracing.md`, 3),
+    readTool(`${SKILL_REFERENCES}spec-to-tickets/references/root-cause-tracing.md`, 3),
+    readTool(`${SKILL_REFERENCES}diagnose/references/condition-based-waiting.md`, 3),
+    readTool(`${SKILL_REFERENCES}diagnose/SKILL.md`, 3),
+    [load('diagnose', 3)],
   ]) {
     expect(summarize([prompt(), ...held, ...other, turnEnd(5)]).nudges?.['reference-reads']?.['read files']).toBeUndefined()
   }
 })
 
 test('a skip line naming one skill declines only that skill\'s ask', async () => {
-  const held = preHold('Edit', ADAPTER_TEXTS.referenceReads, 2)
-  const reason = 'the mock is an existing shared fixture'
-  const s = summarize([prompt(), ...held, ...markerEvents(`goated-skip: tdd: ${reason}`, 3), turnEnd(4)])
+  const held = preHold('Bash', ADAPTER_TEXTS.referenceReads, 2)
+  const reason = 'the failure names the wrong constant directly'
+  const s = summarize([prompt(), ...held, ...markerEvents(`goated-skip: diagnose: ${reason}`, 3), turnEnd(4)])
   expect(s.nudges).toEqual({ 'reference-reads': { declined: 1, unanswered: 1 } })
-  expect(s.skipReasons?.tdd?.['reference-reads']).toBeDefined()
+  expect(s.skipReasons?.diagnose?.['reference-reads']).toBeDefined()
 })
 
 // ---------- joint holds: one message, every hold counted (Ticket 095) ----------------------------------
 
 test('a message joining three holds counts each, as if shown alone', async () => {
-  const held = preHold('Edit', ADAPTER_TEXTS.jointTestEdit, 2)
+  // Since Ticket 118 a short shell write meets the three: a settings file and a spec after a check failed twice.
+  const held = preHold('Bash', ADAPTER_TEXTS.jointTestEdit, 2)
   expect(held.map(e => e.kind === 'nudge' && e.hook)).toEqual(['design-reads', 'reference-reads', 'repeated-failure'])
-  const reason = 'the new test only asserts constant values'
+  const reason = 'the settings only copy the defaults'
   const s = summarize([
     prompt(), ...held,
     ...markerEvents(`goated-skip: software-design-principles: ${reason}`, 3),
-    ...readTool(`${SKILL_REFERENCES}tdd/references/test-design.md`, 4),
-    ...readTool(`${SKILL_REFERENCES}tdd/references/mocking-and-seams.md`, 5),
+    // A reference the hold did not name is not its read; the one it named is.
+    ...readTool(`${SKILL_REFERENCES}spec-to-tickets/references/ticket-slicing-templates.md`, 4),
+    ...readTool(`${SKILL_REFERENCES}write-a-spec/references/spec-template.md`, 5),
     load('diagnose', 6),
     turnEnd(7),
   ])
