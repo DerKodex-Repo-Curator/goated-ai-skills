@@ -121,7 +121,8 @@ def applies(path: str, *, is_code: bool, is_test_data: bool) -> bool:
 
 def required(path: str, edit: Call | None, *, is_code: bool, is_test: bool, small: bool,
              written_before: bool, other_code_files: int,
-             cwd: str | None, test_edit: str | None = None) -> dict[str, str]:
+             cwd: str | None, test_edit: str | None = None,
+             comment_on_little_code: bool = False) -> dict[str, str]:
     """The references a file write's signals select, each with why, in the
     skill's order. `edit` is the write, a `file_write` call, or None for a
     write whose text is unknown.
@@ -129,7 +130,9 @@ def required(path: str, edit: Call | None, *, is_code: bool, is_test: bool, smal
     `small`: the edit is too small for the `design` gate, adding too few
     lines or few enough comment-only ones (`actions._small_edit`), so no signal
     selects a reference by the kind of file or text it touches (see
-    `_signals`). `written_before`: the turn already
+    `_signals`). `comment_on_little_code`: the edit adds too few code
+    lines, and too few comment lines, for its comment to select `readability.md`
+    (`actions._comment_on_little_code`). `written_before`: the turn already
     wrote this file. `other_code_files`: how many other non-test code files
     the turn has edited. A whole-file write is compared with the file on
     disk, a relative path taken from `cwd`, so only what it adds counts.
@@ -141,7 +144,8 @@ def required(path: str, edit: Call | None, *, is_code: bool, is_test: bool, smal
     found = _signals(
         path, _Added(edit, path, cwd),
         new_file=is_code and creates_file(path, edit, written_before=written_before, cwd=cwd),
-        is_code=is_code, is_test=is_test, small=small, test_edit=test_edit,
+        is_code=is_code, is_test=is_test, small=small,
+        comment_on_little_code=comment_on_little_code, test_edit=test_edit,
         code_files=other_code_files + 1 if is_code and not is_test else 0,
     )
     return {name: found[name] for name in REFERENCES if name in found}
@@ -306,6 +310,35 @@ def comment_only(path: str, edit: Call) -> bool:
     )
 
 
+class LineCounts(NamedTuple):
+    """The non-blank lines a file write's added text holds, split as
+    `comment_only` reads them: `code` lines (one with a trailing comment
+    among them) and `comments`, comment and docstring lines."""
+
+    code: int
+    comments: int
+
+
+def written_line_counts(path: str, edit: Call) -> LineCounts | None:
+    """How many code and comment lines the text a file write of `path` writes
+    holds, every line of each edit's added text counted, as a small edit's
+    lines are (`actions.countable_lines`). None when it cannot say: a file
+    of a language `COMMENT_SYNTAX` does not give, an edit whose text is not
+    shown, or text `_code_lines` cannot read for certain."""
+
+    syntax = COMMENT_SYNTAX.get(os.path.splitext(path)[1].lstrip(".").lower())
+    if syntax is None:
+        return None
+    code = comments = 0
+    for _, added in edit.edits:
+        lines = None if added is None else _code_lines(added, syntax)
+        if lines is None:
+            return None
+        written = sum(1 for line in added.split("\n") if line.strip())
+        code, comments = code + len(lines), comments + written - len(lines)
+    return LineCounts(code, comments)
+
+
 def _code_lines(text: str, syntax: _CommentSyntax) -> list[str] | None:
     """The code lines of `text`, comments, docstrings, and blank lines left out
     and trailing space removed; None when it cannot be read for certain.
@@ -355,7 +388,8 @@ def _code_lines(text: str, syntax: _CommentSyntax) -> list[str] | None:
 
 
 def _signals(path: str, added: _Added, *, new_file: bool, is_code: bool, is_test: bool,
-             small: bool, test_edit: str | None, code_files: int) -> dict[str, str]:
+             small: bool, comment_on_little_code: bool, test_edit: str | None,
+             code_files: int) -> dict[str, str]:
     """The references an edit's signals select, each with why. Only a code
     file (`is_code`) adds a public definition: a configuration key such as
     YAML's `class: foo` defines nothing.
@@ -363,7 +397,8 @@ def _signals(path: str, added: _Added, *, new_file: bool, is_code: bool, is_test
     A test file selects `coding.md` only when the edit designs a test
     (`test_edit`, the registry's rule). Otherwise a small edit selects none
     by the kind of file or text it touches: a configuration file, the third
-    code file, or an added comment (the skill's small-edit rule). Signals
+    code file, or an added comment (the skill's small-edit rule); nor does
+    the comment of an edit marked `comment_on_little_code` (round 5, K1). Signals
     read from the added code apply at any size: a new code file or public
     definition, error handling, and concurrency.
     """
@@ -378,7 +413,7 @@ def _signals(path: str, added: _Added, *, new_file: bool, is_code: bool, is_test
         why = "a new code file" if new_file else f'adds a public top-level definition ("{public}")'
         for name in ("process.md", "complexity-and-modules.md", "readability.md"):
             found[name] = why
-    elif added.comment and not small:
+    elif added.comment and not small and not comment_on_little_code:
         found["readability.md"] = "adds a comment or docstring"
     if not small and is_config(path):
         found["decoupling.md"] = "edits a configuration file"

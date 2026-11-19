@@ -1045,17 +1045,18 @@ class DesignReferenceReadTests(AdapterTestCase):
              edit("tests/test_a.py",
                   "def test_load():\n    try:\n        load()  # the cache\n    finally:\n        reset()"),
              {"coding.md"}, "Edit", edit("tests/fixtures/rows.json", '{"rate": 1}')),
+            # Five code lines, so the comment selects `readability.md` (round 5, K1).
             ("comment words are not code", "Edit",
              edit("src/a.py", "# try the cache first, then raise\n# Lock the row\n# then catch it\n"
-                  "# with open\nrows = load()  # Lock it"),
+                  "# with open\nrows = load()  # Lock it\n" + lines_of("x_{n} = {n}", 4)),
              {"readability.md"}, "Edit", edit("src/a.py", "rows = load()")),
             ("docstring words are not code", "Edit",
              edit("src/a.py", '    """Raise when a Lock is held,\n    then try again,\n    catch it,\n'
-                  '    and throw it.\n    """'),
+                  '    and throw it.\n    """\n' + lines_of("    x_{n} = {n}", 5)),
              {"readability.md"}, "Edit", edit("src/a.py", "    rows = []")),
             ("comment", "Edit", edit("src/a.py", "rate = 1  # per second\n" + lines_of("x_{n} = {n}", 4)),
              {"readability.md"}, "Edit", edit("src/a.py", "rate = a // b")),
-            ("docstring", "Edit", edit("src/a.py", '    """Return the rate."""\n' + lines_of("    x_{n} = {n}", 4)),
+            ("docstring", "Edit", edit("src/a.py", '    """Return the rate."""\n' + lines_of("    x_{n} = {n}", 5)),
              {"readability.md"}, "Edit", edit("src/a.py", '    name = "rate"')),
             ("error handling", "Edit", edit("src/a.py", "try:\n    rate = 1"),
              {"errors.md"}, "Edit", edit("src/a.py", "retry = 1")),
@@ -1371,7 +1372,10 @@ class SmallEditTests(AdapterTestCase):
                                      expected)
 
     def test_a_small_added_comment_requires_no_reference(self) -> None:
-        for count, expected in ((1, set()), (4, set()), (5, {"readability.md"})):
+        # With no code lines, a comment selects `readability.md` only at
+        # twenty comment lines (round 5, K1).
+        for count, expected in ((1, set()), (4, set()), (5, set()), (19, set()),
+                                (20, {"readability.md"})):
             with self.subTest(lines=count):
                 s = self.designing()
                 self.assert_requires(s.call("Edit", edit("src/a.py", lines_of("# note {n} on the rate", count))),

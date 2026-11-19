@@ -1023,15 +1023,12 @@ scenarios:
         expect:
           decision: hold
           holds: [{gate: design, kind: justified-skip}]
+      # Its nineteen comment lines are too few to select `readability.md`
+      # (round 5, K1), so the load alone clears it.
       - call: {kind: skill_load, skill: software-design-principles}
       - call: *twenty_comment_lines
-        expect:
-          decision: hold
-          holds: [{gate: design, kind: justified-skip}]
-      - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/readability.md", whole: true}
-      - call: *twenty_comment_lines
 
-  - name: a later comment-only edit of twenty lines waits for the readability reference
+  - name: a later comment-only edit of twenty comment lines waits for the readability reference
     covers:
       - {gate: design-reads, case: holds}
     steps:
@@ -1042,9 +1039,79 @@ scenarios:
       - call: *totals
       - call: *nineteen_comment_lines
       - call: *twenty_comment_lines
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "pass", added: "# n0\n# n1\n# n2\n# n3\n# n4\n# n5\n# n6\n# n7\n# n8\n# n9\n# n10\n# n11\n# n12\n# n13\n# n14\n# n15\n# n16\n# n17\n# n18\n# n19\npass"}]
         expect:
           decision: hold
           holds: [{gate: design-reads, kind: justified-skip}]
+
+  - name: a comment on five added code lines waits for the readability reference
+    covers:
+      - {gate: design-reads, case: holds}
+      - {gate: design-reads, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export totals and explain them.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *totals
+      - call: &five_code_lines_and_a_comment
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "pass", added: "# Rounded totals.\nfix_0 = 0\nfix_1 = 1\nfix_2 = 2\nfix_3 = 3\nfix_4 = 4"}]
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
+      - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/readability.md", whole: true}
+      - call: *five_code_lines_and_a_comment
+
+  - name: a comment on three added code lines selects no readability reference
+    covers:
+      - {gate: design-reads, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export totals and explain them.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: *totals
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "pass", added: "# Rounded totals,\n# kept apart.\nfix_0 = 0\nfix_1 = 1\nfix_2 = 2"}]
+
+  - name: a new test function in an existing test waits for the test reference
+    covers:
+      - {gate: reference-reads, case: holds}
+      - {gate: reference-reads, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Test the export totals.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: standard | requires: tdd"
+      - call: {kind: skill_load, skill: tdd}
+      - call: &new_test_function
+          kind: file_write
+          path: tests/test_export.py
+          edits: [{removed: "pass", added: "def test_totals():\n    assert total(0) == 0\n    assert total(1) == 1\n    assert total(2) == 2\n    assert total(3) == 3\n    assert total(4) == 4\n    assert total(5) == 5\n    assert total(6) == 6\n    assert total(7) == 7\n    assert total(8) == 8\n    assert total(9) == 9\n    assert total(10) == 10\n    assert total(11) == 11\n    assert total(12) == 12\n    assert total(13) == 13\n    assert total(14) == 14\n    assert total(15) == 15\n    assert total(16) == 16\n    assert total(17) == 17\n    assert total(18) == 18\n    assert total(19) == 19\n    assert total(20) == 20\n    assert total(21) == 21\n    assert total(22) == 22"}]
+        expect:
+          decision: hold
+          holds: [{gate: reference-reads, kind: justified-skip}]
+      - call: {kind: file_read, path: "{outside}/skills/tdd/references/test-design.md", whole: true}
+      - call: *new_test_function
+
+  - name: new case-data rows in an existing test select no test reference
+    covers:
+      - {gate: reference-reads, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add cases to the export test.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: standard | requires: tdd"
+      - call: {kind: skill_load, skill: tdd}
+      - call:
+          kind: file_write
+          path: tests/test_export.py
+          edits: [{removed: "CASES = [", added: "CASES = [\n    (0, \"zero\", True),\n    (1, \"one\", False),\n    (2, 'two', None),\n    pytest.param(3, \"three\", id=\"three\"),\n    (4, \"four\", True),\n    (5, \"five\", False),\n    (6, 'six', None),\n    pytest.param(7, \"seven\", id=\"seven\"),\n    (8, \"eight\", True),\n    (9, \"nine\", False),\n    (10, 'ten', None),\n    pytest.param(11, \"eleven\", id=\"eleven\"),\n    (12, \"twelve\", True),\n    (13, \"thirteen\", False),\n    (14, 'fourteen', None),\n    pytest.param(15, \"fifteen\", id=\"fifteen\"),\n    (16, \"sixteen\", True),\n    (17, \"seventeen\", False),\n    (18, 'eighteen', None),\n    pytest.param(19, \"nineteen\", id=\"nineteen\"),\n    (20, \"twenty\", True),\n    (21, \"twenty-one\", False),\n    (22, 'twenty-two', None),\n    pytest.param(23, \"twenty-three\", id=\"twenty-three\"),"}]
 
   - name: a code change after a reviewer reports waits for review intake
     covers:
