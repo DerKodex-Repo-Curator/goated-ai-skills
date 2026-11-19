@@ -2402,13 +2402,15 @@ def _setup_changes(calls, project: Project | None) -> str:
 
 
 class _Change:
-    """A finished call that changed files: where in the turn, which project
-    files, which of them are code, whether it is already proved: by a check
-    later in the same command, by a subagent's own check, or by changing
-    only comments, whether it is an edit that changed only comments and docstrings
-    (`design_reads.comment_only`), whether a spawned subagent made it, and
-    how many lines an edit tool call added (`countable_lines`), None when
-    unknown."""
+    """A finished call that changed files: where in the turn (`index`), which
+    project files (`paths`), and which of them are code (`code_paths`).
+
+    `proven` says it is already proved: by a check later in the same
+    command, by a subagent's own check, or by changing only comments.
+    `comment_only` says it is an edit that changed only comments and
+    docstrings (`design_reads.comment_only`). `by_subagent` says a spawned
+    subagent made it. `added_lines` is how many lines an edit tool call
+    added (`countable_lines`), None when unknown."""
 
     __slots__ = ("index", "paths", "code_paths", "proven", "comment_only", "by_subagent",
                  "added_lines")
@@ -2491,9 +2493,13 @@ def _changes(turn: Turn, subagents: dict, project: Project | None):
             changed = [_changed_paths(c, project) for c in calls]
             if any(changed):
                 code = [i for i, paths in enumerate(changed) if any(map(_is_code_change, paths))]
+                # As for the main agent, a comment-only edit needs no check after it.
+                unproven = [i for i in code if not (
+                    calls[i].kind == events.FILE_WRITE
+                    and design_reads.comment_only(calls[i].path, calls[i]))]
                 proven = bool(code) and (
-                    _proves_itself(calls[code[-1]], project)
-                    or bool(_checks(calls[code[-1] + 1 :]))
+                    not unproven or _proves_itself(calls[unproven[-1]], project)
+                    or bool(_checks(calls[unproven[-1] + 1 :]))
                 )
                 yield _Change(index, [p for paths in changed for p in paths], proven,
                               by_subagent=True)
@@ -2833,10 +2839,11 @@ def _proves_itself(call, project: Project | None) -> bool:
     The call's result stands for the whole command, so a check that failed
     still counts when the command hid its status (`pytest || true`,
     `pytest; echo done`, `pytest | tail`); the Unfinished item then cannot
-    see the failure either.
+    see the failure either. A call run in the background proves nothing
+    (`_checks`).
     """
 
-    if call.kind != events.SHELL_COMMAND:
+    if call.kind != events.SHELL_COMMAND or call.background:
         return False
     command = shell.analyze(call.command, call.shell)
     return not command.unchecked_unknown_writes and not any(

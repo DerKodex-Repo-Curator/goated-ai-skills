@@ -279,6 +279,13 @@ COMMENT_SYNTAX = {
 # could look like comments, so `comment_only` cannot read the text after it.
 MULTILINE_STRING_MARKS = ('"""', "'''", "`")
 QUOTE_MARKS = ('"', "'", "`")
+# Comments that change what a tool does: a build or compile directive, a type
+# checker's or linter's switch, an interpreter line, or a doctest. `comment_only`
+# reads a comment whose text opens with one, its markers left out, as code.
+DIRECTIVE_PREFIXES = ("//go:", "// +build", "@ts-", "eslint-", "# type:", "noqa", "pragma",
+                      "pylint:", "#!", "/// <reference", ">>>")
+_COMMENT_MARKS = "#/*\"' \t"
+_DIRECTIVE_STARTS = tuple(prefix.lstrip(_COMMENT_MARKS) for prefix in DIRECTIVE_PREFIXES)
 
 
 def comment_only(path: str, edit: Call) -> bool:
@@ -290,9 +297,12 @@ def comment_only(path: str, edit: Call) -> bool:
     It errs toward "a change": a file of another language, a whole-file
     write or an edit whose replaced text is unknown (they replace text this
     cannot see), a write with no edits, and any text it cannot read for
-    certain (`_code_lines`) is not comment-only. These rules are stricter
-    than `_Added`'s, which lean toward selecting a reference rather than
-    toward finding no change.
+    certain (`_code_lines`) is not comment-only, nor is a text that ends with
+    a block comment or docstring open where the text it replaces did not, or
+    the reverse (`_open_block`): it comments out, or back in, the code after
+    it. A directive comment (`DIRECTIVE_PREFIXES`) is code. These rules are
+    stricter than `_Added`'s, which lean toward selecting a reference rather
+    than toward finding no change.
     """
 
     syntax = COMMENT_SYNTAX.get(os.path.splitext(path)[1].lstrip(".").lower())
@@ -302,8 +312,42 @@ def comment_only(path: str, edit: Call) -> bool:
         removed is not None and added is not None
         and (code := _code_lines(removed, syntax)) is not None
         and code == _code_lines(added, syntax)
+        and _open_block(removed, syntax) == _open_block(added, syntax)
         for removed, added in edit.edits
     )
+
+
+def _open_block(text: str, syntax: _CommentSyntax) -> str | None:
+    """The mark that would end a block comment or docstring `text` leaves
+    open at its end, or None when it leaves none open. Meant for text
+    `_code_lines` reads for certain."""
+
+    closer = None
+    for body in (line.strip() for line in text.split("\n")):
+        if closer is not None:
+            if closer in body:
+                closer = None
+        elif (close := _block_close(body, syntax)) is not None and close not in body[len(close):]:
+            closer = close
+    return closer
+
+
+def _block_close(body: str, syntax: _CommentSyntax) -> str | None:
+    """The mark that ends the block comment or docstring a stripped line
+    `body` opens with, or None when it opens none."""
+
+    if syntax.blocks and body.startswith("/*"):
+        return "*/"
+    if syntax.docstrings and body.startswith(DOCSTRING_QUOTES):
+        return body[:3]
+    return None
+
+
+def _directive(comment: str) -> bool:
+    """Whether a comment's text, its markers and leading space left out,
+    opens with a directive (`DIRECTIVE_PREFIXES`)."""
+
+    return comment.lstrip(_COMMENT_MARKS).startswith(_DIRECTIVE_STARTS)
 
 
 def _code_lines(text: str, syntax: _CommentSyntax) -> list[str] | None:
@@ -317,7 +361,8 @@ def _code_lines(text: str, syntax: _CommentSyntax) -> list[str] | None:
     with no quote before it. Uncertain: a block or docstring with code after
     its close, a lone three-quote line (opening or closing, a fragment cannot
     say), and code holding a quote before a trailing comment or a mark of a
-    string that may span lines (`MULTILINE_STRING_MARKS`).
+    string that may span lines (`MULTILINE_STRING_MARKS`). A comment line, or
+    a trailing comment, that is a directive (`_directive`) is code, kept whole.
     """
 
     lines: list[str] = []
@@ -329,20 +374,24 @@ def _code_lines(text: str, syntax: _CommentSyntax) -> list[str] | None:
                 if not body.endswith(closer) or body.count(closer) > 1:
                     return None
                 closer = None
+            if _directive(body):
+                lines.append(line.rstrip())
             continue
-        opener = ("/*" if syntax.blocks and body.startswith("/*") else
-                  body[:3] if syntax.docstrings and body.startswith(DOCSTRING_QUOTES) else None)
-        if opener is not None:
-            close = "*/" if opener == "/*" else opener
-            rest = body[len(opener):]
-            if not rest and opener != "/*":
+        close = _block_close(body, syntax)
+        if close is not None:
+            rest = body[len(close):]
+            if not rest and close != "*/":
                 return None
             if close not in rest:
                 closer = close
             elif not rest.endswith(close) or rest.count(close) > 1:
                 return None
+            if _directive(body):
+                lines.append(line.rstrip())
             continue
         if not body or body.startswith(syntax.line):
+            if _directive(body):
+                lines.append(line.rstrip())
             continue
         trailing = syntax.trailing.search(line)
         code = line[: trailing.start() + 1] if trailing else line
@@ -350,6 +399,8 @@ def _code_lines(text: str, syntax: _CommentSyntax) -> list[str] | None:
             return None
         if any(mark in code for mark in MULTILINE_STRING_MARKS):
             return None
+        if trailing and _directive(line[trailing.end() - len(syntax.line):]):
+            code = line
         lines.append(code.rstrip())
     return lines
 

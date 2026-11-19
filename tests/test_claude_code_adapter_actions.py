@@ -4142,6 +4142,35 @@ class ReviewRegressionTests(AdapterTestCase):
         self.assertNotIn("Proof", held["reason"])
         self.assertIn("doc-sync", held["reason"])
 
+    def test_a_subagents_background_write_and_check_proves_nothing(self) -> None:
+        # Ticket 116: a background call is no check, in a later call or the same one.
+        s = self.routed()
+        s.brief_with_handoff()
+        agent = s.subagent("b3")
+        agent.prompt("Implement it.", hook=False)
+        agent.call("Bash", {"command": "cp a.py src/app.py && pytest -q", "run_in_background": True},
+                   agent_id="b3", agent_type="general-purpose")
+        s.spawn("b3", BRIEF)
+
+        self.assertIn("- Proof:", stop(s)["reason"])
+
+    def test_a_subagents_comment_only_edit_after_its_check_keeps_the_proof(self) -> None:
+        s = self.routed()
+        s.brief_with_handoff()
+        agent = s.subagent("b4")
+        agent.prompt("Implement it.", hook=False)
+        agent.call("Edit", {"file_path": "src/app.py", "old_string": "a", "new_string": "b"},
+                   agent_id="b4", agent_type="general-purpose")
+        agent.run("pytest -q")
+        agent.call("Edit", {"file_path": "src/app.py", "old_string": "# old note",
+                            "new_string": "# new note"},
+                   agent_id="b4", agent_type="general-purpose")
+        s.spawn("b4", BRIEF)
+
+        held = stop(s)
+        self.assertNotIn("Proof", held["reason"])
+        self.assertIn("doc-sync", held["reason"])
+
     # Item 12: the older spawn tool name and MCP commit tools.
     def test_the_task_spawn_tool_is_held(self) -> None:
         s = self.routed()
@@ -4591,6 +4620,50 @@ class CommentOnlyEditTests(AdapterTestCase):
 
         self.assertIn("- Proof:", stop(s)["reason"])
 
+    def test_near_miss_an_edit_that_opens_or_closes_a_block_needs_proof(self) -> None:
+        # The code after a fragment that leaves a block open is commented out, and the reverse.
+        changes = (
+            ("src/export.ts", "/* note */", "/* note"),
+            ("src/export.ts", "/* note", "/* note */"),
+            ("src/export.py", "# a", '"""a'),
+            ("src/export.py", '"""a', "# a"),
+        )
+        for path, old, new in changes:
+            with self.subTest(old=old, new=new):
+                self.session = self.fresh()
+                s = self.checked()
+                s.call("Edit", {"file_path": path, "old_string": old, "new_string": new})
+                self.assertIn("- Proof:", stop(s)["reason"])
+
+    def test_a_docstring_left_open_on_both_sides_keeps_the_proof(self) -> None:
+        s = self.checked()
+        s.call("Edit", {"file_path": "src/export.py", "old_string": '    """Return x.',
+                        "new_string": '    """Return x, capped.'})
+
+        self.assertEqual(stop(s), {})
+
+    def test_near_miss_an_edit_of_a_directive_comment_needs_proof(self) -> None:
+        # Comments that change what a tool does are code (DIRECTIVE_PREFIXES).
+        changes = (
+            ("src/export.py", "# a note", "# type: ignore"),
+            ("src/export.py", "total_0 = 0", "total_0 = 0  # noqa: E501"),
+            ("src/export.py", "# a note", "# pragma: no cover"),
+            ("src/export.py", "# a note", "# pylint: disable=unused-import"),
+            ("src/export.py", "# a note", "#!/usr/bin/env python3"),
+            ("src/export.py", '    """Return x."""', '    """Return x.\n\n    >>> total()\n    3\n    """'),
+            ("src/export.ts", "// a note", "// @ts-ignore"),
+            ("src/export.ts", "/* a note */", "/* eslint-disable */"),
+            ("src/export.ts", "// a note", '/// <reference path="types.d.ts" />'),
+            ("src/export.go", "// a note", "//go:generate stringer"),
+            ("src/export.go", "// a note", "// +build linux"),
+        )
+        for path, old, new in changes:
+            with self.subTest(new=new):
+                self.session = self.fresh()
+                s = self.checked()
+                s.call("Edit", {"file_path": path, "old_string": old, "new_string": new})
+                self.assertIn("- Proof:", stop(s)["reason"])
+
     def test_near_miss_a_comment_edit_of_a_file_without_known_comments_needs_proof(self) -> None:
         s = self.checked()
         s.call("Edit", {"file_path": "src/export.lua", "old_string": "-- old",
@@ -4667,6 +4740,21 @@ class BackgroundCheckTests(AdapterTestCase):
     def test_a_check_sent_to_the_background_inside_its_command_still_does_not(self) -> None:
         s = self.changed()
         s.run("cp a.py src/export.py && pytest -q &")
+
+        self.assertIn("- Proof:", stop(s)["reason"])
+
+    def test_a_check_sent_to_the_background_as_its_own_call_does_not_meet_proof(self) -> None:
+        s = self.changed()
+        s.run("pytest -q &")
+
+        self.assertIn("- Proof:", stop(s)["reason"])
+
+    def test_a_background_call_that_writes_and_checks_does_not_prove_itself(self) -> None:
+        s = self.routed()
+        s.say(DESIGN_SKIP)
+        s.say(DOC_SKIP)
+        s.call("Bash", {"command": "cp a.py src/export.py && pytest -q",
+                        "run_in_background": True})
 
         self.assertIn("- Proof:", stop(s)["reason"])
 

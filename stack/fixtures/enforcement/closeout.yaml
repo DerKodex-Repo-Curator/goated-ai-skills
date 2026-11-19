@@ -430,10 +430,54 @@ scenarios:
         expect:
           decision: hold
           holds: [{gate: closeout, kind: justified-skip, items: [Proof]}]
+
+  - name: the same check run in the foreground meets Proof at a commit and at the turn's end
+    covers:
+      - {gate: closeout, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit and commit it.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - reply: "goated-skip: doc-sync: no document names the limit"
+      - call: *limit
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *diff
+        result: {ok: true, output: "-limit = 1\n+limit = 2"}
       - call: *passing
         result: {ok: true, output: "4 passed in 0.10s"}
       - call: *commit
       - turn_end: true
+
+  - name: a background call that writes the change and checks it does not prove itself
+    covers:
+      - {gate: closeout, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - reply: "goated-skip: doc-sync: no document names the limit"
+      - call: {kind: shell_command, shell: posix, command: "cp build/export.py src/export.py && pytest -q", background: true}
+        result: {ok: true, output: Running in the background.}
+      - turn_end: true
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Proof]}]
+
+  - name: a check sent to the background with & as its own call does not meet Proof
+    covers:
+      - {gate: closeout, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - reply: "goated-skip: doc-sync: no document names the limit"
+      - call: *limit
+      - call: {kind: shell_command, shell: posix, command: "pytest -q &"}
+        result: {ok: true, output: "[1] 4242"}
+      - turn_end: true
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Proof]}]
 
   - name: a check sent to the background inside its own command does not meet Proof
     covers:
@@ -500,6 +544,66 @@ scenarios:
           kind: file_write
           path: src/export.py
           edits: [{removed: "limit = 2", added: "limit = 3  # small enough to mail"}]
+      - turn_end: true
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Proof]}]
+
+  - name: a comment edit of a file whose comment syntax is unknown asks for a new check
+    covers:
+      - {gate: closeout, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit and explain it.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - reply: "goated-skip: doc-sync: no document names the limit"
+      - call: *limit
+      - call: *passing
+        result: {ok: true, output: "4 passed in 0.10s"}
+      - call:
+          kind: file_write
+          path: src/export.lua
+          edits: [{removed: "-- the limit", added: "-- the mailed limit"}]
+      - turn_end: true
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Proof]}]
+
+  - name: a comment edit that leaves a block open, commenting out the code after it, asks for a new check
+    covers:
+      - {gate: closeout, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit and explain it.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - reply: "goated-skip: doc-sync: no document names the limit"
+      - call: *limit
+      - call: *passing
+        result: {ok: true, output: "4 passed in 0.10s"}
+      - call:
+          kind: file_write
+          path: src/export.ts
+          edits: [{removed: "/* the limit */", added: "/* the limit"}]
+      - turn_end: true
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Proof]}]
+
+  - name: an edit of a directive comment asks for a new check
+    covers:
+      - {gate: closeout, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the export limit and quiet the checker.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - reply: "goated-skip: doc-sync: no document names the limit"
+      - call: *limit
+      - call: *passing
+        result: {ok: true, output: "4 passed in 0.10s"}
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "# the limit", added: "# type: ignore"}]
       - turn_end: true
         expect:
           decision: hold
