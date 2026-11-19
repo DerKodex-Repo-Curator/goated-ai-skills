@@ -116,9 +116,12 @@ scenarios:
       - call: {kind: shell_command, shell: powershell, command: "Set-Content -Path src/export.py 'total = 1'"}
       - call: {kind: shell_command, shell: powershell, command: "'total = 1' | Out-File src/export.py"}
 
+  # Ticket 118: a file edit the read gates would hold for reads alone lands
+  # at any size and owes them, so scenarios that show what a file edit
+  # selects expect a `reads_owed` notice where they once expected a hold.
   - name: a shell write is the turn's first substantial change and counts toward the third code file
     covers:
-      - {gate: design-reads, case: holds}
+      - {gate: design-reads, case: near-miss}
     steps:
       - prompt: {type: prompt, author: person, text: Split the export totals.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
@@ -130,9 +133,7 @@ scenarios:
           kind: file_write
           path: src/c.py
           edits: [{removed: "pass", added: "total_0 = 0\ntotal_1 = 1\ntotal_2 = 2\ntotal_3 = 3\ntotal_4 = 4\ntotal_5 = 5"}]
-        expect:
-          decision: hold
-          holds: [{gate: design-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
 
   - name: a shell write to a test file, or a copy of configuration, selects no design reference
     covers:
@@ -174,10 +175,9 @@ scenarios:
       - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/decoupling.md", whole: true}
       - call: *shell_settings
 
-  - name: a configuration change waits for the reference it selects
+  - name: a configuration change lands owing the reference it selects, and owes nothing once it is read
     covers:
-      - {gate: design-reads, case: holds}
-      - {gate: design-reads, case: clears, way: proof}
+      - {gate: design-reads, case: near-miss}
     steps:
       - prompt: {type: prompt, author: person, text: Add the export settings.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
@@ -188,11 +188,10 @@ scenarios:
           path: config/export.json
           whole_file: true
           edits: [{removed: null, added: "{\n  \"limit\": 2,\n  \"format\": \"csv\",\n  \"header\": true,\n  \"quote\": \"minimal\"\n}\n"}]
-        expect:
-          decision: hold
-          holds: [{gate: design-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
       - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/decoupling.md", whole: true}
       - call: *settings
+        expect: {decision: allow, notices: []}
 
   - name: a configuration write of forty lines lands past design-reads and owes its read
     covers:
@@ -223,9 +222,9 @@ scenarios:
       - call: {kind: file_read, path: config/export.json, whole: true}
       - turn_end: true
 
-  - name: a configuration write of twenty-nine counted lines, twenty-eight and a final line break, is still held for its read
+  - name: a configuration write of twenty-nine counted lines lands owing its read as a long one does
     covers:
-      - {gate: design-reads, case: holds}
+      - {gate: design-reads, case: near-miss}
     steps:
       - prompt: {type: prompt, author: person, text: Add the export settings.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
@@ -236,9 +235,7 @@ scenarios:
           path: config/export.json
           whole_file: true
           edits: [{removed: null, added: "{\n  \"key_00\": 0,\n  \"key_01\": 1,\n  \"key_02\": 2,\n  \"key_03\": 3,\n  \"key_04\": 4,\n  \"key_05\": 5,\n  \"key_06\": 6,\n  \"key_07\": 7,\n  \"key_08\": 8,\n  \"key_09\": 9,\n  \"key_10\": 10,\n  \"key_11\": 11,\n  \"key_12\": 12,\n  \"key_13\": 13,\n  \"key_14\": 14,\n  \"key_15\": 15,\n  \"key_16\": 16,\n  \"key_17\": 17,\n  \"key_18\": 18,\n  \"key_19\": 19,\n  \"key_20\": 20,\n  \"key_21\": 21,\n  \"key_22\": 22,\n  \"key_23\": 23,\n  \"key_24\": 24,\n  \"key_25\": 25\n}\n"}]
-        expect:
-          decision: hold
-          holds: [{gate: design-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
 
   - name: a long shell write lands only when the command shows its text
     covers:
@@ -311,7 +308,7 @@ scenarios:
 
   - name: configuration outside a fixtures folder, and code inside one, are still judged
     covers:
-      - {gate: design-reads, case: holds}
+      - {gate: design-reads, case: near-miss}
     steps:
       - prompt: {type: prompt, author: person, text: Add the export settings and fixture builder.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
@@ -321,20 +318,16 @@ scenarios:
           kind: file_write
           path: config/export.yaml
           edits: [{removed: "limit: 1", added: "limit: 2\nformat: csv\nheader: true\nquote: minimal\nrows: 3"}]
-        expect:
-          decision: hold
-          holds: [{gate: design-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
       - call:
           kind: file_write
           path: fixtures/build.py
           edits: [{removed: "pass", added: "def build_rows():\n    return []"}]
-        expect:
-          decision: hold
-          holds: [{gate: design-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
 
-  - name: a public definition in a code file waits for the references it selects
+  - name: a public definition in a code file lands owing the references it selects
     covers:
-      - {gate: design-reads, case: holds}
+      - {gate: design-reads, case: near-miss}
     steps:
       - prompt: {type: prompt, author: person, text: Add the export entry point.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
@@ -344,9 +337,7 @@ scenarios:
           kind: file_write
           path: src/lib.rs
           edits: [{removed: "", added: "pub fn run() {}"}]
-        expect:
-          decision: hold
-          holds: [{gate: design-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
 
   - name: a re-export, an async arrow function, and a configuration key define nothing
     covers:
@@ -377,12 +368,12 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: {kind: skill_load, skill: software-design-principles}
-      - call: *settings
+      - call: *shell_settings
         expect:
           decision: hold
           holds: [{gate: design-reads, kind: justified-skip}]
       - reply: "goated-skip: software-design-principles: one setting with no design in it"
-      - call: *settings
+      - call: *shell_settings
 
   - name: a person's skip clears the design-reads hold
     covers:
@@ -392,14 +383,14 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: {kind: skill_load, skill: software-design-principles}
-      - call: *settings
+      - call: *shell_settings
         expect:
           decision: hold
           holds: [{gate: design-reads, kind: justified-skip}]
       - prompt: {type: prompt, author: person, text: Skip software-design-principles and add the export settings.}
         expect: {decision: allow, notices: [override_recorded]}
       - reply: "goated-route: continue"
-      - call: *settings
+      - call: *shell_settings
 
   - name: a skip line that clears a design-reads hold lasts the task for its references on the same kind of file
     covers:
@@ -409,12 +400,12 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: {kind: skill_load, skill: software-design-principles}
-      - call: *settings
+      - call: *shell_settings
         expect:
           decision: hold
           holds: [{gate: design-reads, kind: justified-skip}]
       - reply: "goated-skip: software-design-principles: one setting with no design in it"
-      - call: *settings
+      - call: *shell_settings
       - prompt: {type: prompt, author: person, text: Add the import settings too.}
       - reply: "goated-route: continue"
       - call: &import_settings
@@ -432,7 +423,7 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: {kind: skill_load, skill: software-design-principles}
-      - call: *settings
+      - call: *shell_settings
         expect:
           decision: hold
           holds: [{gate: design-reads, kind: justified-skip}]
@@ -440,11 +431,9 @@ scenarios:
           kind: file_write
           path: src/read.py
           edits: [{removed: "pass", added: "try:\n    load()\nexcept OSError:\n    pass"}]
-        expect:
-          decision: hold
-          holds: [{gate: design-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
       - reply: "goated-skip: software-design-principles: one setting and one guard with no design in them"
-      - call: *settings
+      - call: *shell_settings
       - call: *guarded_read
       - prompt: {type: prompt, author: person, text: Split the export totals.}
       - reply: "goated-route: continue"
@@ -454,16 +443,12 @@ scenarios:
           kind: file_write
           path: src/c.py
           edits: [{removed: "pass", added: "total_0 = 0\ntotal_1 = 1\ntotal_2 = 2\ntotal_3 = 3\ntotal_4 = 4\ntotal_5 = 5"}]
-        expect:
-          decision: hold
-          holds: [{gate: design-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
       - call:
           kind: file_write
           path: src/d.py
           edits: [{removed: "pass", added: "with threading.Lock():\n    pass"}]
-        expect:
-          decision: hold
-          holds: [{gate: design-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
       - call:
           kind: file_write
           path: src/e.py
@@ -478,18 +463,16 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: {kind: skill_load, skill: software-design-principles}
-      - call: *settings
+      - call: *shell_settings
         expect:
           decision: hold
           holds: [{gate: design-reads, kind: justified-skip}]
       - reply: "goated-skip: software-design-principles: one setting with no design in it"
-      - call: *settings
+      - call: *shell_settings
       - prompt: {type: prompt, author: person, text: Now add the import settings.}
       - reply: "goated-route: direct"
       - call: *import_settings
-        expect:
-          decision: hold
-          holds: [{gate: design-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
 
   - name: a compaction ends a lasting design-reads skip
     covers:
@@ -499,33 +482,29 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: {kind: skill_load, skill: software-design-principles}
-      - call: *settings
+      - call: *shell_settings
         expect:
           decision: hold
           holds: [{gate: design-reads, kind: justified-skip}]
       - reply: "goated-skip: software-design-principles: one setting with no design in it"
-      - call: *settings
+      - call: *shell_settings
       - compaction: true
       - reply: "goated-route: continue"
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - call: {kind: skill_load, skill: software-design-principles}
       - call: *import_settings
-        expect:
-          decision: hold
-          holds: [{gate: design-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
 
   - name: a lasting skip covers the reads of the next turn's first code change
     covers:
-      - {gate: design-reads, case: clears, way: lasting-skip}
+      - {gate: design-reads, case: near-miss}
     steps:
       - prompt: {type: prompt, author: person, text: Guard the export read.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: {kind: skill_load, skill: software-design-principles}
       - call: *guarded_read
-        expect:
-          decision: hold
-          holds: [{gate: design-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
       - reply: "goated-skip: software-design-principles: one guard with no design in it"
       - call: *guarded_read
       - prompt: {type: prompt, author: person, text: Guard the export write too.}
@@ -540,22 +519,28 @@ scenarios:
     covers:
       - {gate: design, case: clears, way: lasting-skip}
     steps:
-      - prompt: {type: prompt, author: person, text: Guard the export write.}
+      - prompt: {type: prompt, author: person, text: Split the export writer.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: {kind: skill_load, skill: software-design-principles}
-      - call: &guarded_write
-          kind: file_write
-          path: src/write.py
-          edits: [{removed: "pass", added: "try:\n    save()\nexcept OSError:\n    pass\nfinally:\n    close()"}]
+      # A file edit lands owing its reads, so the gate's own hold is shown on
+      # a shell write that shows no text: the turn's first substantial change,
+      # to its third code file, which selects the decoupling reference.
+      - call: &small_a {kind: file_write, path: src/a.py, edits: [{removed: "pass", added: "x = 1"}]}
+        expect: {decision: allow, notices: []}
+      - call: &small_b {kind: file_write, path: src/b.py, edits: [{removed: "pass", added: "y = 1"}]}
+        expect: {decision: allow, notices: []}
+      - call: &generated_writer {kind: shell_command, shell: posix, command: "generate-writer > src/write.py"}
         expect:
           decision: hold
           holds: [{gate: design, kind: justified-skip}]
-      - reply: "goated-skip: software-design-principles: one guard with no design in it"
-      - call: *guarded_write
-      - prompt: {type: prompt, author: person, text: Guard it once more.}
+      - reply: "goated-skip: software-design-principles: the generated writer follows the old one"
+      - call: *generated_writer
+      - prompt: {type: prompt, author: person, text: Split the import writer the same way.}
       - reply: "goated-route: continue"
-      - call: *guarded_write
+      - call: *small_a
+      - call: *small_b
+      - call: *generated_writer
         expect: {decision: allow, notices: [skip_carried]}
 
   - name: a lasting skip gives no notice on a call another gate holds
@@ -566,12 +551,12 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: {kind: skill_load, skill: software-design-principles}
-      - call: *settings
+      - call: *shell_settings
         expect:
           decision: hold
           holds: [{gate: design-reads, kind: justified-skip}]
       - reply: "goated-skip: software-design-principles: one setting with no design in it"
-      - call: *settings
+      - call: *shell_settings
       - prompt: {type: prompt, author: person, text: Add the login settings too.}
       - reply: "goated-route: continue"
       - call:
@@ -592,12 +577,12 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: {kind: skill_load, skill: software-design-principles}
-      - call: *settings
+      - call: *shell_settings
         expect:
           decision: hold
           holds: [{gate: design-reads, kind: justified-skip}]
       - reply: "goated-skip: software-design-principles: one setting with no design in it"
-      - call: *settings
+      - call: *shell_settings
       - prompt: {type: prompt, author: person, text: Test the export settings.}
       - reply: "goated-route: continue"
       - call:
@@ -605,9 +590,7 @@ scenarios:
           path: tests/test_settings.py
           whole_file: true
           edits: [{removed: null, added: "def test_limit():\n    assert load()[\"limit\"] == 2\n"}]
-        expect:
-          decision: hold
-          holds: [{gate: design-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
 
   - name: a skip line that clears the design hold lasts one turn
     covers:
@@ -646,10 +629,9 @@ scenarios:
           whole_file: true
           edits: [{removed: null, added: "# Export\n\nThe limit is two.\n"}]
 
-  - name: an edit that makes a missing code file waits for the new-file references
+  - name: an edit that makes a missing code file owes the new-file references until they are read
     covers:
-      - {gate: design-reads, case: holds}
-      - {gate: design-reads, case: clears, way: proof}
+      - {gate: design-reads, case: near-miss}
     steps:
       - prompt: {type: prompt, author: person, text: Add the export limit module.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
@@ -660,13 +642,12 @@ scenarios:
           path: src/export_limit.py
           creates: true
           edits: [{removed: "", added: "LIMIT = 2\n"}]
-        expect:
-          decision: hold
-          holds: [{gate: design-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
       - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/process.md", whole: true}
       - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/complexity-and-modules.md", whole: true}
       - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/readability.md", whole: true}
       - call: *make_module
+        expect: {decision: allow, notices: []}
 
   - name: an edit that removes nothing but makes no file selects no new-file reference
     covers:
@@ -680,11 +661,11 @@ scenarios:
           kind: file_write
           path: src/export_limit.py
           edits: [{removed: "", added: "LIMIT = 2\n"}]
+        expect: {decision: allow, notices: []}
 
-  - name: a new test file waits for the test reference the registry declares
+  - name: a new test file owes the test reference the registry declares until it is read
     covers:
-      - {gate: reference-reads, case: holds}
-      - {gate: reference-reads, case: clears, way: proof}
+      - {gate: reference-reads, case: near-miss}
     steps:
       - prompt: {type: prompt, author: person, text: Add the export test first.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
@@ -695,58 +676,122 @@ scenarios:
           path: tests/test_export.py
           whole_file: true
           edits: [{removed: null, added: "def test_limit():\n    assert 2 == 2\n"}]
+        expect: {decision: allow, notices: [reads_owed]}
+      - call: {kind: file_read, path: "{outside}/skills/tdd/references/test-design.md", whole: true}
+      - call: *new_test
+        expect: {decision: allow, notices: []}
+
+  # A file edit lands owing its reads, so the gate's own hold is shown on a
+  # shell write under thirty lines, which still meets it (Ticket 118): after a
+  # check fails twice, the registry's gate signal asks for diagnose's tracing
+  # reference.
+  - name: a short shell write after a repeated failure waits for the tracing reference
+    covers:
+      - {gate: reference-reads, case: holds}
+      - {gate: reference-reads, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Make the export tests pass.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: diagnose}
+      - call: &pytest {kind: shell_command, shell: posix, command: pytest -q}
+        result: &pytest_failed {ok: false, output: "F\n1 failed in 0.10s"}
+      - call: *pytest
+        result: *pytest_failed
+      - call: &shell_patch {kind: shell_command, shell: posix, command: "cat > src/export.py <<'EOF'\nlimit = 2\nEOF"}
         expect:
           decision: hold
           holds: [{gate: reference-reads, kind: justified-skip}]
-      - call: {kind: file_read, path: "{outside}/skills/tdd/references/test-design.md", whole: true}
-      - call: *new_test
+      - call: {kind: file_read, path: "{outside}/skills/diagnose/references/root-cause-tracing.md", whole: true}
+      - call: *shell_patch
+        expect: {decision: allow, notices: []}
 
   - name: a skip line clears the reference-reads hold
     covers:
       - {gate: reference-reads, case: clears, way: skip-line}
     steps:
-      - prompt: {type: prompt, author: person, text: Add the export test first.}
+      - prompt: {type: prompt, author: person, text: Make the export tests pass.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
-      - reply: "goated-route: standard | requires: tdd"
-      - call: {kind: skill_load, skill: tdd}
-      - call: *new_test
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: diagnose}
+      - call: *pytest
+        result: *pytest_failed
+      - call: *pytest
+        result: *pytest_failed
+      - call: *shell_patch
         expect:
           decision: hold
           holds: [{gate: reference-reads, kind: justified-skip}]
-      - reply: "goated-skip: tdd: the test only copies an existing one"
-      - call: *new_test
+      - reply: "goated-skip: diagnose: the failure names the wrong constant directly"
+      - call: *shell_patch
 
   - name: a person's skip clears the reference-reads hold
     covers:
       - {gate: reference-reads, case: clears, way: override}
     steps:
-      - prompt: {type: prompt, author: person, text: Add the export test first.}
+      - prompt: {type: prompt, author: person, text: Make the export tests pass.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
-      - reply: "goated-route: standard | requires: tdd"
-      - call: {kind: skill_load, skill: tdd}
-      - call: *new_test
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: diagnose}
+      - call: *pytest
+        result: *pytest_failed
+      - call: *pytest
+        result: *pytest_failed
+      - call: *shell_patch
         expect:
           decision: hold
           holds: [{gate: reference-reads, kind: justified-skip}]
-      - prompt: {type: prompt, author: person, text: Skip tdd and add the export test.}
+      - prompt: {type: prompt, author: person, text: Skip diagnose and make the export tests pass.}
         expect: {decision: allow, notices: [override_recorded]}
       - reply: "goated-route: continue"
-      - call: *new_test
+      - call: *pytest
+        result: *pytest_failed
+      - call: *pytest
+        result: *pytest_failed
+      - call: *shell_patch
 
   - name: a skip line that clears a reference-reads hold lasts the task for its references on the same kind of file
     covers:
       - {gate: reference-reads, case: clears, way: lasting-skip}
+    steps:
+      - prompt: {type: prompt, author: person, text: Make the export tests pass.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: diagnose}
+      - call: *pytest
+        result: *pytest_failed
+      - call: *pytest
+        result: *pytest_failed
+      - call: *shell_patch
+        expect:
+          decision: hold
+          holds: [{gate: reference-reads, kind: justified-skip}]
+      - reply: "goated-skip: diagnose: the failure names the wrong constant directly"
+      - call: *shell_patch
+      - prompt: {type: prompt, author: person, text: Make the import tests pass too.}
+      - reply: "goated-route: continue"
+      - call: *pytest
+        result: *pytest_failed
+      - call: *pytest
+        result: *pytest_failed
+      - call: {kind: shell_command, shell: posix, command: "cat > src/import.py <<'EOF'\nlimit = 3\nEOF"}
+        expect: {decision: allow, notices: [skip_carried]}
+
+  - name: a skip line that meets a test file's owed reads lasts the task for them on test files
+    covers:
+      - {gate: reference-reads, case: near-miss}
     steps:
       - prompt: {type: prompt, author: person, text: Add the export test first.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: standard | requires: tdd"
       - call: {kind: skill_load, skill: tdd}
       - call: *new_test
+        expect: {decision: allow, notices: [reads_owed]}
+      - reply: "goated-skip: tdd: the test only copies an existing one"
+      - turn_end: true
         expect:
           decision: hold
-          holds: [{gate: reference-reads, kind: justified-skip}]
-      - reply: "goated-skip: tdd: the test only copies an existing one"
-      - call: *new_test
+          holds: [{gate: closeout, kind: justified-skip, items: [Proof]}]
       - prompt: {type: prompt, author: person, text: Add the import test too.}
       - reply: "goated-route: continue"
       - call: &new_import_test
@@ -759,34 +804,31 @@ scenarios:
           kind: file_write
           path: tests/test_import.py
           edits: [{removed: "pass", added: "@patch(\"export.client\")"}]
-        expect:
-          decision: hold
-          holds: [{gate: reference-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
 
   - name: a new task ends a lasting reference-reads skip
     covers:
-      - {gate: reference-reads, case: holds}
+      - {gate: reference-reads, case: near-miss}
     steps:
       - prompt: {type: prompt, author: person, text: Add the export test first.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: standard | requires: tdd"
       - call: {kind: skill_load, skill: tdd}
       - call: *new_test
+        expect: {decision: allow, notices: [reads_owed]}
+      - reply: "goated-skip: tdd: the test only copies an existing one"
+      - turn_end: true
         expect:
           decision: hold
-          holds: [{gate: reference-reads, kind: justified-skip}]
-      - reply: "goated-skip: tdd: the test only copies an existing one"
-      - call: *new_test
+          holds: [{gate: closeout, kind: justified-skip, items: [Proof]}]
       - prompt: {type: prompt, author: person, text: Now add the import test.}
       - reply: "goated-route: standard | requires: tdd"
       - call: *new_import_test
-        expect:
-          decision: hold
-          holds: [{gate: reference-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
 
   - name: a lasting reference-reads skip on a test file does not cover a code file
     covers:
-      - {gate: reference-reads, case: holds}
+      - {gate: reference-reads, case: near-miss}
     steps:
       - prompt: {type: prompt, author: person, text: Wait for the export in its test.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
@@ -796,9 +838,7 @@ scenarios:
           kind: file_write
           path: tests/test_poll.py
           edits: [{removed: "pass", added: "time.sleep(1)"}]
-        expect:
-          decision: hold
-          holds: [{gate: reference-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
       - reply: "goated-skip: diagnose: the pause stands in for a slow fixture"
       - call: *test_sleep
       - prompt: {type: prompt, author: person, text: Wait for the export in the poller.}
@@ -807,32 +847,29 @@ scenarios:
           kind: file_write
           path: src/poll.py
           edits: [{removed: "pass", added: "time.sleep(1)"}]
-        expect:
-          decision: hold
-          holds: [{gate: reference-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
 
   - name: a compaction ends a lasting reference-reads skip
     covers:
-      - {gate: reference-reads, case: holds}
+      - {gate: reference-reads, case: near-miss}
     steps:
       - prompt: {type: prompt, author: person, text: Add the export test first.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: standard | requires: tdd"
       - call: {kind: skill_load, skill: tdd}
       - call: *new_test
+        expect: {decision: allow, notices: [reads_owed]}
+      - reply: "goated-skip: tdd: the test only copies an existing one"
+      - turn_end: true
         expect:
           decision: hold
-          holds: [{gate: reference-reads, kind: justified-skip}]
-      - reply: "goated-skip: tdd: the test only copies an existing one"
-      - call: *new_test
+          holds: [{gate: closeout, kind: justified-skip, items: [Proof]}]
       - compaction: true
       - reply: "goated-route: continue"
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - call: {kind: skill_load, skill: tdd}
       - call: *new_import_test
-        expect:
-          decision: hold
-          holds: [{gate: reference-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
 
   - name: a test file of forty lines lands past reference-reads and owes its read
     covers:
@@ -858,9 +895,9 @@ scenarios:
       - reply: "goated-skip: tdd: these tests copy the shape of the import tests"
       - turn_end: true
 
-  - name: a test file of twenty-nine counted lines, twenty-eight and a final line break, is still held for its read
+  - name: a test file of twenty-nine counted lines lands owing its read as a long one does
     covers:
-      - {gate: reference-reads, case: holds}
+      - {gate: reference-reads, case: near-miss}
     steps:
       - prompt: {type: prompt, author: person, text: Add the export tests first.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
@@ -871,9 +908,7 @@ scenarios:
           path: tests/test_export.py
           whole_file: true
           edits: [{removed: null, added: "def test_limit_0():\n    assert 0 == 0\ndef test_limit_1():\n    assert 1 == 1\ndef test_limit_2():\n    assert 2 == 2\ndef test_limit_3():\n    assert 3 == 3\ndef test_limit_4():\n    assert 4 == 4\ndef test_limit_5():\n    assert 5 == 5\ndef test_limit_6():\n    assert 6 == 6\ndef test_limit_7():\n    assert 7 == 7\ndef test_limit_8():\n    assert 8 == 8\ndef test_limit_9():\n    assert 9 == 9\ndef test_limit_10():\n    assert 10 == 10\ndef test_limit_11():\n    assert 11 == 11\ndef test_limit_12():\n    assert 12 == 12\ndef test_limit_13():\n    assert 13 == 13\n"}]
-        expect:
-          decision: hold
-          holds: [{gate: reference-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
 
   - name: a small edit to an existing test selects no reference
     covers:
@@ -888,10 +923,11 @@ scenarios:
           path: tests/test_export.py
           edits: [{removed: "assert 2 == 3", added: "assert 2 == 2"}]
 
-  - name: a patch call or decorator in a test waits for the mocking reference
+  # Each of these edits names the same mocking reference, so each runs in its
+  # own turn: a later edit's notice names only the references it adds.
+  - name: a patch call or decorator in a test owes the mocking reference until it is read
     covers:
-      - {gate: reference-reads, case: holds}
-      - {gate: reference-reads, case: clears, way: proof}
+      - {gate: reference-reads, case: near-miss}
     steps:
       - prompt: {type: prompt, author: person, text: Isolate the export test from the client.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
@@ -901,25 +937,24 @@ scenarios:
           kind: file_write
           path: tests/test_export.py
           edits: [{removed: "pass", added: "@patch(\"export.client\")"}]
-        expect:
-          decision: hold
-          holds: [{gate: reference-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
+      - prompt: {type: prompt, author: person, text: Patch the client object instead.}
+      - reply: "goated-route: continue"
       - call:
           kind: file_write
           path: tests/test_export.py
           edits: [{removed: "pass", added: "patch.object(export, \"client\")"}]
-        expect:
-          decision: hold
-          holds: [{gate: reference-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
+      - prompt: {type: prompt, author: person, text: Note the mock in the test.}
+      - reply: "goated-route: continue"
       - call:
           kind: file_write
           path: tests/test_export.py
           edits: [{removed: "pass", added: "doc = \"\"\"uses MagicMock\"\"\""}]
-        expect:
-          decision: hold
-          holds: [{gate: reference-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
       - call: {kind: file_read, path: "{outside}/skills/tdd/references/mocking-and-seams.md", whole: true}
       - call: *patch_decorator
+        expect: {decision: allow, notices: []}
 
   - name: a bare patch, or a mock named inside a string, selects no mocking reference
     covers:
@@ -942,9 +977,9 @@ scenarios:
           path: tests/test_export.py
           edits: [{removed: "pass", added: "patch = load_diff()"}]
 
-  - name: a monkeypatch of code, or a fake in a string the edit does not show opening, waits for the mocking reference
+  - name: a monkeypatch of code, or a fake in a string the edit does not show opening, owes the mocking reference
     covers:
-      - {gate: reference-reads, case: holds}
+      - {gate: reference-reads, case: near-miss}
     steps:
       - prompt: {type: prompt, author: person, text: Isolate the export test from the client.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
@@ -954,23 +989,21 @@ scenarios:
           kind: file_write
           path: tests/test_export.py
           edits: [{removed: "pass", added: "monkeypatch.setattr(export, \"client\", stub)"}]
-        expect:
-          decision: hold
-          holds: [{gate: reference-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
+      - prompt: {type: prompt, author: person, text: Scope the patch to a context.}
+      - reply: "goated-route: continue"
       - call:
           kind: file_write
           path: tests/test_export.py
           edits: [{removed: "pass", added: "with monkeypatch.context() as m:"}]
-        expect:
-          decision: hold
-          holds: [{gate: reference-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
+      - prompt: {type: prompt, author: person, text: Add the fake provider.}
+      - reply: "goated-route: continue"
       - call:
           kind: file_write
           path: tests/test_export.py
           edits: [{removed: "pass", added: "[providers.fake]\n\"\"\""}]
-        expect:
-          decision: hold
-          holds: [{gate: reference-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
 
   - name: a patched environment, or a fake inside a multi-line string, selects no mocking reference
     covers:
@@ -1028,9 +1061,9 @@ scenarios:
       - call: {kind: skill_load, skill: software-design-principles}
       - call: *twenty_comment_lines
 
-  - name: a later comment-only edit of twenty comment lines waits for the readability reference
+  - name: a later comment-only edit of twenty comment lines owes the readability reference
     covers:
-      - {gate: design-reads, case: holds}
+      - {gate: design-reads, case: near-miss}
     steps:
       - prompt: {type: prompt, author: person, text: Add the export totals and explain them.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
@@ -1043,14 +1076,11 @@ scenarios:
           kind: file_write
           path: src/export.py
           edits: [{removed: "pass", added: "# n0\n# n1\n# n2\n# n3\n# n4\n# n5\n# n6\n# n7\n# n8\n# n9\n# n10\n# n11\n# n12\n# n13\n# n14\n# n15\n# n16\n# n17\n# n18\n# n19\npass"}]
-        expect:
-          decision: hold
-          holds: [{gate: design-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
 
-  - name: a comment on five added code lines waits for the readability reference
+  - name: a comment on five added code lines owes the readability reference until it is read
     covers:
-      - {gate: design-reads, case: holds}
-      - {gate: design-reads, case: clears, way: proof}
+      - {gate: design-reads, case: near-miss}
     steps:
       - prompt: {type: prompt, author: person, text: Add the export totals and explain them.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
@@ -1061,11 +1091,10 @@ scenarios:
           kind: file_write
           path: src/export.py
           edits: [{removed: "pass", added: "# Rounded totals.\nfix_0 = 0\nfix_1 = 1\nfix_2 = 2\nfix_3 = 3\nfix_4 = 4"}]
-        expect:
-          decision: hold
-          holds: [{gate: design-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
       - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/readability.md", whole: true}
       - call: *five_code_lines_and_a_comment
+        expect: {decision: allow, notices: []}
 
   - name: a comment on three added code lines selects no readability reference
     covers:
@@ -1081,10 +1110,9 @@ scenarios:
           path: src/export.py
           edits: [{removed: "pass", added: "# Rounded totals,\n# kept apart.\nfix_0 = 0\nfix_1 = 1\nfix_2 = 2"}]
 
-  - name: a new test function in an existing test waits for the test reference
+  - name: a new test function in an existing test owes the test reference until it is read
     covers:
-      - {gate: reference-reads, case: holds}
-      - {gate: reference-reads, case: clears, way: proof}
+      - {gate: reference-reads, case: near-miss}
     steps:
       - prompt: {type: prompt, author: person, text: Test the export totals.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
@@ -1094,11 +1122,10 @@ scenarios:
           kind: file_write
           path: tests/test_export.py
           edits: [{removed: "pass", added: "def test_totals():\n    assert total(0) == 0\n    assert total(1) == 1\n    assert total(2) == 2\n    assert total(3) == 3\n    assert total(4) == 4\n    assert total(5) == 5\n    assert total(6) == 6\n    assert total(7) == 7\n    assert total(8) == 8\n    assert total(9) == 9\n    assert total(10) == 10\n    assert total(11) == 11\n    assert total(12) == 12\n    assert total(13) == 13\n    assert total(14) == 14\n    assert total(15) == 15\n    assert total(16) == 16\n    assert total(17) == 17\n    assert total(18) == 18\n    assert total(19) == 19\n    assert total(20) == 20\n    assert total(21) == 21\n    assert total(22) == 22"}]
-        expect:
-          decision: hold
-          holds: [{gate: reference-reads, kind: justified-skip}]
+        expect: {decision: allow, notices: [reads_owed]}
       - call: {kind: file_read, path: "{outside}/skills/tdd/references/test-design.md", whole: true}
       - call: *new_test_function
+        expect: {decision: allow, notices: []}
 
   - name: new case-data rows in an existing test select no test reference
     covers:
@@ -1542,13 +1569,9 @@ scenarios:
           holds: [{gate: repeated-failure, kind: justified-skip}]
       - call: {kind: skill_load, skill: diagnose}
       # Once diagnose counts as loaded, the registry's signal for this gate
-      # asks for its tracing reference.
+      # selects its tracing reference, which the file edit lands owing.
       - call: *patch
-        expect:
-          decision: hold
-          holds: [{gate: reference-reads, kind: justified-skip}]
-      - call: {kind: file_read, path: "{outside}/skills/diagnose/references/root-cause-tracing.md", whole: true}
-      - call: *patch
+        expect: {decision: allow, notices: [reads_owed]}
 
   - name: a skip line clears the repeated-failure hold
     covers:
@@ -1592,41 +1615,37 @@ scenarios:
         result: *failed
       - call: *patch
 
-  # Ticket 111: three holds lines can clear come in one message, which ends in
-  # one clearing section; once two are cleared, the third is a single hold.
-  - name: three holds lines can clear share one message, and lines clear them in one retry
+  # Ticket 111: holds lines can clear come in one message, which ends in one
+  # clearing section; once one is cleared, the other is a single hold. Since
+  # Ticket 118 a file edit lands owing its reads, so the read gate's hold is
+  # met by a short shell write, whose text selects no registry reference: two
+  # such holds share the message, not three.
+  - name: holds lines can clear share one message, and lines clear them in one retry
     covers:
       - {gate: design-reads, case: holds}
-      - {gate: reference-reads, case: holds}
       - {gate: repeated-failure, case: holds}
     steps:
-      - prompt: {type: prompt, author: person, text: Isolate the export test from the client.}
+      - prompt: {type: prompt, author: person, text: Isolate the export settings from the client.}
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - reply: "goated-route: direct"
       - call: {kind: skill_load, skill: software-design-principles}
-      - call: {kind: skill_load, skill: tdd}
       - call: *check
         result: *failed
       - call: *check
         result: *failed
-      - call: &mocked_test
-          kind: file_write
-          path: tests/test_app.py
-          edits: [{removed: "pass", added: "m = MagicMock()\nassert m.total_1 is not None\nassert m.total_2 is not None\nassert m.total_3 is not None\nassert m.total_4 is not None\nassert m.total_5 is not None\nassert m.total_6 is not None\nassert m.total_7 is not None\nassert m.total_8 is not None\nassert m.total_9 is not None\nassert m.total_10 is not None\nassert m.total_11 is not None\nassert m.total_12 is not None\nassert m.total_13 is not None\nassert m.total_14 is not None\nassert m.total_15 is not None\nassert m.total_16 is not None\nassert m.total_17 is not None\nassert m.total_18 is not None\nassert m.total_19 is not None\nassert m.total_20 is not None\nassert m.total_21 is not None\nassert m.total_22 is not None\nassert m.total_23 is not None\nassert m.total_24 is not None"}]
+      - call: &shell_app_settings {kind: shell_command, shell: posix, command: "generate-settings > config/app.json"}
         expect:
           decision: hold
           holds:
             - {gate: design-reads, kind: justified-skip}
-            - {gate: reference-reads, kind: justified-skip}
             - {gate: repeated-failure, kind: justified-skip}
-      - reply: "goated-skip: software-design-principles: the asserts only check one mock"
-      - reply: "goated-skip: tdd: the test follows the existing mock setup"
-      - call: *mocked_test
+      - reply: "goated-skip: software-design-principles: one setting with no design in it"
+      - call: *shell_app_settings
         expect:
           decision: hold
           holds: [{gate: repeated-failure, kind: justified-skip}]
-      - reply: "goated-skip: diagnose: the failure names the missing mock directly"
-      - call: *mocked_test
+      - reply: "goated-skip: diagnose: the failure names the missing client directly"
+      - call: *shell_app_settings
 
   - name: a second run with fewer failures is progress, not a repeat
     covers:

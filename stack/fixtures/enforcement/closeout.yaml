@@ -151,6 +151,37 @@ scenarios:
           decision: hold
           holds: [{gate: closeout, kind: justified-skip, items: [Proof, Docs]}]
 
+  # Ticket 118: a file edit lands at any size owing its reads, so a short one
+  # meets the Reads item as a long one does.
+  - name: a short edit lands owing its read, and the Reads item holds a commit until it is read
+    covers:
+      - {gate: design-reads, case: near-miss}
+      - {gate: closeout, case: holds}
+      - {gate: closeout, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export setting and commit it.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call:
+          kind: file_write
+          path: config/export.json
+          whole_file: true
+          edits: [{removed: null, added: "{\n  \"limit\": 2,\n  \"format\": \"csv\",\n  \"header\": true,\n  \"quote\": \"minimal\"\n}\n"}]
+        expect: {decision: allow, notices: [reads_owed]}
+      - call: {kind: skill_load, skill: commit-message}
+      - call: {kind: shell_command, shell: posix, command: git diff}
+        result: {ok: true, output: "-  \"limit\": 1\n+  \"limit\": 2"}
+      - call: &commit_setting {kind: shell_command, shell: posix, command: "git commit -am \"Raise the export limit\""}
+        expect:
+          decision: hold
+          holds: [{gate: closeout, kind: justified-skip, items: [Reads]}]
+      - call: {kind: file_read, path: "{outside}/skills/software-design-principles/references/decoupling.md", whole: true}
+      - call: {kind: shell_command, shell: posix, command: git diff}
+        result: {ok: true, output: "-  \"limit\": 1\n+  \"limit\": 2"}
+      - call: *commit_setting
+        result: {ok: true, output: "[main 1a2b3c4] Raise the export limit"}
+
   - name: a landed write's Reads item holds a commit until its read, then a change read
     covers:
       - {gate: closeout, case: holds}
