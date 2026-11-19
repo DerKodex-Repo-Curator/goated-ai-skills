@@ -1388,6 +1388,34 @@ scenarios:
           path: tests/test_session_x.py
           edits: [{removed: "assert ttl == 10", added: "assert ttl == 20"}]
 
+  - name: a test path that is not test code, or matches by its kind, is still security-sensitive
+    covers:
+      - {gate: security, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Change the test setup.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: file_write, path: tests/.env, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: &security_held {decision: hold, holds: [{gate: security, kind: justified-skip}]}
+      - call: {kind: file_write, path: tests/requirements.txt, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: *security_held
+      - call: {kind: file_write, path: requirements_test.txt, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: *security_held
+      - call: {kind: file_write, path: .github/workflows/run_test.yml, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: *security_held
+      - call: {kind: file_write, path: docker-compose.test.yml, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: *security_held
+      - call: {kind: file_write, path: test/fixtures/server.key, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: *security_held
+      - call: {kind: file_write, path: tests/secrets.json, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: *security_held
+      - call: {kind: file_write, path: migrations/0001_test.sql, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: *security_held
+      - call: {kind: file_write, path: src/testing/auth.py, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: *security_held
+      - call: {kind: file_write, path: src/contest/auth.py, edits: [{removed: "a = 1", added: "a = 2"}]}
+        expect: *security_held
+
   - name: session code is security-sensitive
     covers:
       - {gate: security, case: holds}

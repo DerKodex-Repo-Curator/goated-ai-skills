@@ -4847,13 +4847,28 @@ class CloseoutAtCommitTests(AdapterTestCase):
         self.assertEqual(decision(s.call("mcp__github__push_files", tool_input)), "pass")
 
     def test_an_unmet_commit_hold_comes_first_with_the_closeout_beside_it(self) -> None:
-        # One held commit names everything it needs (Ticket 120, R4).
+        # One held commit names everything it needs (Ticket 120, R4), and the
+        # closeout beside it leaves the commit hold's text word for word as it
+        # is when the closeout is met.
+        bare = self.fresh()
+        bare.prompt("Do the task.")
+        bare.load(ROUTER)
+        bare.say("goated-route: direct")
+        bare.say(DESIGN_SKIP)
+        bare.call("Write", write("src/export.py"))
+        bare.say(PROOF_SKIP)
+        bare.say(DOC_SKIP)
+        expected = reason(bare.call("Bash", commit("Add CSV export")))
+        self.assertTrue(expected.startswith("goated-hold: commit | strict\n"))
+        self.assertNotIn(CLOSEOUT_HOLD, expected)
+
         s = self.routed()
         s.say(DESIGN_SKIP)
         s.call("Write", write("src/export.py"))
         held = reason(s.call("Bash", commit("Add CSV export")))
-        self.assertTrue(held.startswith("goated-hold: commit | strict\n"))
-        self.assertIn(f"\n\n{CLOSEOUT_HOLD}\n", held)
+        commit_part, closeout = held.split(f"\n\n{CLOSEOUT_HOLD}\n", 1)
+        self.assertEqual(commit_part, expected)
+        self.assertIn("- Proof:", closeout)
         s.load("commit-message")
         s.run(DIFF)
         self.assertEqual(hold_line(s.call("Bash", commit("Add CSV export"))), CLOSEOUT_HOLD)

@@ -250,6 +250,8 @@ CODE_EXTENSIONS = frozenset(
     ".zig .r .jl .ipynb".split()
 )
 DOC_EXTENSIONS = (".md", ".mdx", ".rst", ".adoc", ".txt")
+# `.txt` files that build the project rather than document it (`is_doc`).
+TXT_BUILD_FILES = frozenset({"cmakelists.txt"})
 # Security-sensitive surfaces, by path. The first matching category is named.
 # Paths are lowercased with camelCase humps split by `_` first, and words must
 # stand alone between `/`, `.`, `_`, or `-`, so `tokenizer.py` and `author.py`
@@ -273,6 +275,10 @@ SECURITY_CATEGORIES = (
 )
 # Only dependency manifests among docs-like files (`requirements.txt`) are sensitive.
 ALWAYS_CHECKED_CATEGORIES = frozenset({"dependencies"})
+# The categories a word in a file's name selects, which test code does not meet
+# (round 6, R9); dependencies, persistence and deploy-and-ci match by a file's
+# kind or folder, so test code still meets them.
+TEST_CODE_SPARED = frozenset({"auth", "secrets"})
 # Env and settings files whose change is setup (spec G3): `.env` and `.env.*`,
 # and `settings*.json` under `.claude/` or `.vscode/`. They count only inside
 # the project (spec R9), so a scratch folder's or `~/.claude`'s settings do not.
@@ -1301,7 +1307,7 @@ def _conflict_hold(paths: list[str], call: Call, proof: _Proof) -> Hold | None:
         return None
     edits_markers = any(removed is not None and CONFLICT_MARKER_RE.search(removed)
                         for removed, _ in call.edits)
-    git_open, marked_files = _open_conflict(proof.turn)
+    git_open, marked_files, _ = _open_conflict(proof.turn)
     writes_marked = any(_same_file(marked, path) for marked in marked_files for path in paths)
     if not (edits_markers or git_open or writes_marked):
         return None
@@ -1316,9 +1322,30 @@ def _conflict_hold(paths: list[str], call: Call, proof: _Proof) -> Hold | None:
     )
 
 
-def _open_conflict(turn: Turn) -> tuple[bool, list[str]]:
+class _Conflict(NamedTuple):
+    """A turn's conflict state, as `_open_conflict` reads it: whether a git
+    conflict is still `git_open`, the `marked_files` shown with markers, and
+    whether a finished edit `removed_markers`, each since the last conflict
+    ended."""
+
+    git_open: bool
+    marked_files: list[str]
+    removed_markers: bool
+
+    @property
+    def being_resolved(self) -> bool:
+        """Whether a commit now ends a conflict (round 6, R8): a git conflict is
+        open, or an edit removed markers, as one opened in an earlier turn
+        shows itself. Markers only shown, as a doc about conflicts shows
+        them, are not a conflict to end."""
+
+        return self.git_open or self.removed_markers
+
+
+def _open_conflict(turn: Turn) -> _Conflict:
     """Read the turn's calls in order and return whether a git conflict is still
-    open, and the files shown with markers since the last conflict ended.
+    open, the files shown with markers, and whether an edit removed markers,
+    each since the last conflict ended.
 
     A git merge, rebase, cherry-pick, revert, or pull whose result reports a
     conflict opens one (a conflicting stash pop or apply prints none of git's
@@ -1329,17 +1356,21 @@ def _open_conflict(turn: Turn) -> tuple[bool, list[str]]:
     A file is shown with markers by a finished file read whose text has one,
     by a finished command whose output has one and that runs a file printer
     naming the file (spec R10, so `cat a b` shows both), or by a finished
-    `git diff` whose section for the file adds one.
+    `git diff` whose section for the file adds one. Markers are removed by a
+    finished file edit whose removed text has one.
     """
 
-    git_open, marked_files = False, []
+    git_open, marked_files, removed = False, [], False
     for call in turn.calls:
         if call.kind == events.FILE_READ:
             if call.ok and CONFLICT_MARKER_RE.search(call.output):
                 marked_files.append(call.path)
+        elif call.kind == events.FILE_WRITE:
+            removed = removed or (call.ok and any(
+                old is not None and CONFLICT_MARKER_RE.search(old) for old, _ in call.edits))
         elif call.kind == events.COMMIT:
             if call.ok:
-                git_open, marked_files = False, []
+                git_open, marked_files, removed = False, [], False
         elif call.kind == events.SHELL_COMMAND:
             command = call.command
             if GIT_CONFLICT_COMMAND_RE.search(command) and GIT_CONFLICT_RESULT_RE.search(call.output):
@@ -1349,13 +1380,13 @@ def _open_conflict(turn: Turn) -> tuple[bool, list[str]]:
                 continue
             analysis = shell.analyze(command, call.shell)
             if GIT_CONFLICT_END_RE.search(command) or analysis.commit:
-                git_open, marked_files = False, []
+                git_open, marked_files, removed = False, [], False
                 continue
             if CONFLICT_MARKER_RE.search(call.output):
                 marked_files += analysis.shown_files
             if analysis.shows_git_diff:
                 marked_files += _diff_files_adding_markers(call.output)
-    return git_open, marked_files
+    return _Conflict(git_open, marked_files, removed)
 
 
 def _diff_files_adding_markers(output: str) -> list[str]:
@@ -1967,8 +1998,8 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     A `briefed` session, one whose first prompt was a brief from the session
     that started it, meets no Review item: that session reviews the work
     (spec R10). A doc changed after the last code change, with a change read
-    after it, meets Docs with no load (round 6, R7). A commit made while a
-    conflict is open in the turn (`_open_conflict`), with
+    after it, meets Docs with no load (round 6, R7). A commit that ends a
+    conflict (`_Conflict.being_resolved`), with
     `resolving-merge-conflicts` loaded, is not asked for Docs, Design,
     Security, Review or Verification (`CONFLICT_COMMIT_SPARED`, round 6, R8).
 
@@ -1986,7 +2017,7 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
         changes, proof, subagents or {}, spawn_templates or {}, intensity, briefed,
         branch_size, owed_reads)
     # A commit that ends a conflict the skill resolved asks for less (round 6, R8).
-    if at_commit and CONFLICT_SKILL in proof.loads and any(_open_conflict(turn)):
+    if at_commit and CONFLICT_SKILL in proof.loads and _open_conflict(turn).being_resolved:
         items = [item for item in items if item.label not in CONFLICT_COMMIT_SPARED]
     if not items:
         return None
@@ -2363,10 +2394,11 @@ def _red_flags_read(proof: _Proof, designed: list["_Change"]) -> int | None:
     first read after the last of them, or else the turn's last read before
     it when the changes after that read add fewer than `DESIGN_MIN_LINES`
     lines in total and those before it add at least that many, so the read
-    scanned a designed change (spec R8). Lines are counted as `new_lines`
-    counts them, so unchanged context lines sent with an edit do not count
-    (round 6, R6). A change whose added lines are unknown, a shell write or a
-    subagent's, counts as large."""
+    scanned a designed change (spec R8). The changes after the read are
+    counted as `new_lines` counts them, so unchanged context sent with a
+    follow-up does not count (round 6, R6); those it scanned keep
+    `added_lines`, context included. A change whose added lines are
+    unknown, a shell write or a subagent's, counts as large."""
 
     last = max((c.index for c in designed), default=-1)
     after = proof.read_index(RED_FLAGS_REFERENCE, after=last)
@@ -2375,7 +2407,7 @@ def _red_flags_read(proof: _Proof, designed: list["_Change"]) -> int | None:
     before = proof.last_read_index(RED_FLAGS_REFERENCE, before=last)
     if before is None:
         return None
-    scanned = [c.new_lines for c in designed if c.index < before]
+    scanned = [c.added_lines for c in designed if c.index < before]
     since = [c.new_lines for c in designed if c.index > before]
     if not _large(scanned) or _large(since):
         return None
@@ -2502,8 +2534,8 @@ class _Changes:
     to a security-sensitive file as (call index, category), in order;
     `last_change` is the call index of the last change to any project file,
     or -1; `last_material` that of the last change to code that is not a
-    comment-only edit, or -1, which a commit's change read must follow
-    (spec R5); `docs` the call indexes of changes to a documentation file
+    comment-only edit, or to a security-sensitive file, or -1, which a
+    commit's change read must follow (spec R5); `docs` the call indexes of changes to a documentation file
     (`is_doc`), in order; `paths` are the changed files a Read can name. Changes a spawned
     subagent made count as made at its spawn.
     """
@@ -2518,8 +2550,10 @@ class _Changes:
             if (category := sensitive_category(path, project)) is not None
         ]
         self.last_change = changes[-1].index if changes else -1
-        self.last_material = max((c.index for c in self.code if not c.comment_only), default=-1)
-        self.docs = [c.index for c in changes if any(map(is_doc, c.paths))]
+        self.last_material = max(
+            [c.index for c in self.code if not c.comment_only]
+            + [index for index, _ in self.sensitive], default=-1)
+        self.docs = [c.index for c in changes if any(is_doc(p, project) for p in c.paths)]
         self.paths = [p for c in changes for p in c.paths if p != UNNAMED_FILES]
 
     def read_after(self, after: int, path: str | None = None) -> bool:
@@ -2938,12 +2972,18 @@ def is_code(path: str) -> bool:
     return dot > path.rfind("/") and path[dot:].lower() in CODE_EXTENSIONS
 
 
-def is_doc(path: str) -> bool:
+def is_doc(path: str, project: Project | None) -> bool:
     """Whether `path` is a documentation file, by its extension
-    (`DOC_EXTENSIONS`); a dependency manifest such as `requirements.txt`,
-    which is security-sensitive, is not one."""
+    (`DOC_EXTENSIONS`). A dependency manifest such as `requirements.txt`,
+    which is security-sensitive, is not one; nor is a `.txt` file under a
+    test path, such as a golden output file, or a build file
+    (`TXT_BUILD_FILES`)."""
 
-    return path.lower().endswith(DOC_EXTENSIONS) and security_category(path) is None
+    lowered = _norm(path).lower()
+    if not lowered.endswith(DOC_EXTENSIONS) or security_category(path) is not None:
+        return False
+    return not lowered.endswith(".txt") or not (
+        _file_name(lowered) in TXT_BUILD_FILES or is_test(path, project))
 
 
 def security_category(path: str) -> str | None:
@@ -2959,11 +2999,18 @@ def security_category(path: str) -> str | None:
 
 def sensitive_category(path: str, project: Project | None) -> str | None:
     """The security category of a project file at `path` (`security_category`),
-    or None for a test file (`is_test`), which is never security-sensitive
-    (round 6, R9): the `security` gate, the Security closeout item and the
-    `sensitive-category-count` signal all judge files by it."""
+    or None for test code whose category comes from a word in its name
+    (round 6, R9): a code file that is a test file (`is_test`), matched as
+    `TEST_CODE_SPARED` says, as `tests/test_session_x.py` is by `session`.
+    A test file that is not code (`tests/.env`), and test code matched by
+    its kind (`migrations/0001_test.sql`), stay sensitive. The `security`
+    gate, the Security closeout item and the `sensitive-category-count`
+    signal all judge files by it."""
 
-    return None if is_test(path, project) else security_category(path)
+    category = security_category(path)
+    if category in TEST_CODE_SPARED and is_code(path) and is_test(path, project):
+        return None
+    return category
 
 
 def countable_lines(write: Call) -> int | None:

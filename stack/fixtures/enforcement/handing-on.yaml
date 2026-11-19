@@ -95,6 +95,30 @@ scenarios:
           edits: [{removed: "limit = 2", added: "limit = 2  # rows per page"}]
       - call: *commit_limit
 
+  - name: a security-sensitive change that is not code, after a change read, needs another
+    covers:
+      - {gate: commit, case: holds}
+      - {gate: commit, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: "Raise the export limit, pin the CI step, and commit it."}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: code-security-review}
+      - call: *limit
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *diff_limit
+      - reply: "goated-skip: verification-before-completion: no test suite covers this file\ngoated-skip: doc-sync: internal constant with no documented behavior\ngoated-skip: code-security-review: a pinned step in our own workflow only"
+      - call:
+          kind: file_write
+          path: .github/workflows/ci.yml
+          edits: [{removed: "run: a", added: "run: b"}]
+      - call: *commit_limit
+        expect:
+          decision: hold
+          holds: [{gate: commit, kind: strict}]
+      - call: *diff_limit
+      - call: *commit_limit
+
   - name: a code edit after a change read needs another, and a diff chained before the commit is not one
     covers:
       - {gate: commit, case: holds}

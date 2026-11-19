@@ -168,6 +168,24 @@ class DesignFollowUpTests(SessionCase):
         s.run(DIFF)
         self.assertEqual(stop(s), "")
 
+    def test_a_scanned_edit_is_measured_with_its_context_lines(self) -> None:
+        # Probe K10: the change the red flags scanned is counted as before, context
+        # included, so a 1-line fix after it needs only a change read.
+        s = self.session("Add the export totals.")
+        s.load("software-design-principles")
+        s.read(REFERENCES + "errors.md")
+        context = "\n".join(f"{name} = 0" for name in "abcdef")
+        s.call("Edit", edit("src/export.py",
+                            context + "\n" + "\n".join(f"t{n} = {n}" for n in range(1, 5)),
+                            context))
+        s.run("pytest -q")
+        s.say(DOC_SKIP)
+        s.read(RED_FLAGS)
+        s.call("Edit", edit("src/export.py", "t4 = 40", "t4 = 4"))
+        s.run("pytest -q")
+        s.run(DIFF)
+        self.assertEqual(stop(s), "")
+
     def test_a_five_line_addition_needs_the_red_flags_read_again(self) -> None:
         s = self.scanned()
         s.call("Edit", edit("src/export.py",
@@ -268,6 +286,34 @@ class ConflictCommitTests(SessionCase):
         self.assertIn("Review", items)
         self.assertIn("Verification", items)
 
+    def test_a_doc_showing_marker_lines_is_no_conflict_to_end(self) -> None:
+        # Probe K8: markers shown in a doc open no git conflict, so the commit is ordinary.
+        s = self.session("Change and commit.")
+        s.load("resolving-merge-conflicts")
+        s.load("commit-message")
+        s.load("software-design-principles")
+        s.read("docs/conflicts.md", content="Example:\n" + MARKED + "\n")
+        self.code_change(s)
+        s.run("pytest -q")
+        s.run(DIFF)
+        items = self.closeout_items(s.call("Bash", COMMIT))
+        self.assertIn("Docs", items)
+        self.assertIn("Design", items)
+
+    def test_a_conflict_from_an_earlier_turn_resolved_by_an_edit_now_asks_for_less(self) -> None:
+        # Probe K9: the markers the edit removes show the conflict this turn ends.
+        s = self.session("Merge the feature branch.")
+        s.call("Bash", {"command": "git merge feature"}, result=MERGE_FAILED, failed=True)
+        s.prompt("Resolve and commit.")
+        s.say("goated-route: continue")
+        s.load("resolving-merge-conflicts")
+        s.load("commit-message")
+        s.load("software-design-principles")
+        s.call("Edit", edit("src/export.py", "LIMIT = 20", MARKED))
+        s.run("pytest -q")
+        s.run(DIFF)
+        self.assertEqual(decision(s.call("Bash", MERGE_COMMIT)), "pass")
+
     def test_without_the_load_the_commit_gets_the_full_closeout(self) -> None:
         s = self.resolved(loaded=False)
         s.run("pytest -q")
@@ -289,6 +335,54 @@ class TestPathSecurityTests(SessionCase):
         s = self.session("Fix the session code.")
         held = s.call("Edit", edit("src/session.py", "TTL = 20", "TTL = 10"))
         self.assertEqual(gates_of(held), ["security"])
+
+    def test_test_paths_that_are_not_test_code_or_match_by_kind_still_hold(self) -> None:
+        # Only test code is spared, and only from what its name's words select.
+        for path in ("tests/.env", "tests/requirements.txt", "requirements_test.txt",
+                     ".github/workflows/run_test.yml", "docker-compose.test.yml",
+                     "test/fixtures/server.key", "tests/secrets.json",
+                     "migrations/0001_test.sql", "src/testing/auth.py", "src/contest/auth.py"):
+            with self.subTest(path=path):
+                s = self.session("Change the file.")
+                self.assertIn("security", gates_of(s.call("Edit", edit(path, "a = 2", "a = 1"))))
+
+
+class SensitiveChangeResetsReadTests(SessionCase):
+    """A sensitive change that is not code, after the read, resets the commit's read."""
+
+    def test_a_ci_workflow_change_after_the_read_needs_another(self) -> None:
+        s = self.session()
+        s.load("commit-message")
+        s.load("code-security-review")
+        self.code_change(s)
+        s.run(DIFF)
+        s.say(PROOF_SKIP)
+        s.say(DOC_SKIP)
+        s.say("goated-skip: code-security-review: a pinned step in our own workflow only")
+        s.call("Edit", edit(".github/workflows/ci.yml", "run: b", "run: a"))
+        self.assertIn("commit", gates_of(s.call("Bash", COMMIT)))
+
+
+class TextDocTests(SessionCase):
+    """A `.txt` under a test path or a build file is not a doc for Docs."""
+
+    def test_a_golden_output_or_build_file_does_not_meet_docs(self) -> None:
+        for path in ("tests/golden/export.txt", "CMakeLists.txt"):
+            with self.subTest(path=path):
+                s = self.session()
+                self.code_change(s)
+                s.run("pytest -q")
+                s.call("Edit", edit(path, "limit 20", "limit 10"))
+                s.read(path)
+                self.assertIn("- Docs:", stop(s))
+
+    def test_a_text_doc_still_meets_docs(self) -> None:
+        s = self.session()
+        self.code_change(s)
+        s.run("pytest -q")
+        s.call("Edit", edit("docs/limits.txt", "limit 20", "limit 10"))
+        s.read("docs/limits.txt")
+        self.assertEqual(stop(s), "")
 
 
 if __name__ == "__main__":

@@ -232,7 +232,7 @@ file (see [Holds](#holds)).
 | `design-reads` | justified-skip | A later file write to a code file, or to a configuration file that is not test data, inside the project, once `software-design-principles` counts as loaded, whose signals select a reference not read whole since the last compaction. A shell write counts as for `design`; its text is not read for signals, so only its path selects (a configuration file, the third code file), and a test file it writes selects nothing. A comment-only edit adding fewer than twenty lines is small, so its comment selects no `readability.md`. A write adding thirty or more counted lines [lands and reads after](#holds) | Each selected reference is read whole, or a lasting skip covers it | `proof`, `skip-line`, `lasting-skip`, `override` | `software-design-principles`'s Read now lists |
 | `reference-reads` | justified-skip | A write inside the project (or anywhere, for a `gate-fires` signal) that fires a signal the installed registry declares for a reference of a skill that counts as loaded. A named pattern matches as [Registry Reference Signals](#registry-reference-signals) states: `mock-or-patch` takes `patch` only as a call or decorator, `monkeypatch` only as a patch of code, and no word inside a quoted string the line shows for certain or a multi-line string the edit shows opening. A write adding thirty or more counted lines [lands and reads after](#holds) | Each named reference is read whole, or a lasting skip covers it | `proof`, `skip-line`, `lasting-skip`, `override` | The registry's `references` signals (`stack/goated-stack.yaml`, `skills/README.md`) |
 | `review-intake` | justified-skip | A write to a code file inside the project once a reviewer agent has reported in the turn: an agent started now by a spawn whose brief followed `subagent-driven-development`'s reviewer template, whose result arrived or, started in the background, whose completion did. Any other brief, and a held or failed spawn, trigger nothing | `receiving-code-review` counts as loaded | `proof`, `skip-line`, `override` | `receiving-code-review` |
-| `security` | justified-skip | A write to a security-sensitive path inside the project, never a test file: dependency manifests and lockfiles, env and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files | `code-security-review` counts as loaded | `proof`, `skip-line`, `override` | `code-security-review` |
+| `security` | justified-skip | A write to a security-sensitive path inside the project (test code meets no category a word in its name selects; see [Security-Sensitive Paths](#security-sensitive-paths)): dependency manifests and lockfiles, env and key files, files named for secrets, credentials, or tokens, auth, session, and permission code, migrations and schemas, CI, container, and deployment files | `code-security-review` counts as loaded | `proof`, `skip-line`, `override` | `code-security-review` |
 | `scripted-edit` | justified-skip | A shell command whose inline script writes a code file inside the project, or a file it names only at run time. It follows `security` and `review-intake` for the same file | A skip line naming `software-design-principles`; loading the skill does not clear it | `skip-line`, `override` | `software-design-principles`: change code with the file edit tools |
 | `conflict-resolution` | justified-skip | A write while a merge conflict is open in the turn: an edit whose removed text has a conflict marker at a line start, a write to a file a read, a file printer, or `git diff` showed with one, or any write after a merge, rebase, cherry-pick, revert, or pull reported a conflict, until it finishes or is aborted | `resolving-merge-conflicts` counts as loaded | `proof`, `skip-line`, `override` | `resolving-merge-conflicts` |
 | `repeated-failure` | justified-skip | A write once the same check has failed twice in a row in the turn. A run that only fails to load a missing module, the first run after a test file was written, a run with fewer failures than the one before, and a call that never ran (held, refused, or interrupted) neither add nor reset | `diagnose` counts as loaded | `proof`, `skip-line`, `override` | `diagnose` ("a check that keeps failing") |
@@ -250,8 +250,8 @@ that change is already proved.
 | `Reads` | A write of the turn [landed](#holds) past `design`, `design-reads`, or `reference-reads` before the references it needed were read. What a write owes ends with its turn, as the other items' evidence does | Each reference is read whole after the write, or a lasting skip or a person's skip covers it; then, for a write to a project file, a read of that file or a printed diff follows the last of those reads, and a read of another changed file does not count. It comes first, since revising the write may change what the other items judge | The skill whose references it asks for; the skip lasts as one clearing that gate would |
 | `Proof` | A change not already proved. A [comment-only edit](#comment-only-edits), of any size, is already proved | A check after the last code change, in a later call or later in the same shell command, joined by sequencing operators, not in the background: neither sent there with `&` (`pytest &`, as its own call or inside a longer command) nor a shell call the harness runs in the background (its `background`), even one that writes the change itself; such a run's result is not read | `verification-before-completion` |
 | `Unfinished` | The last check after the change failed | `handoff` counts as loaded | `handoff` |
-| `Docs` | A non-test code file changed | `doc-sync` counts as loaded, and a change read follows the last code change; or, with no load, a documentation file (`.md`, `.mdx`, `.rst`, `.adoc`, or `.txt`, a dependency manifest aside) changed after the last code change and a change read follows the last such doc change (the maintainer's choice X1, 2026-11-19). A doc changed only before the last code change does not meet it | `doc-sync` |
-| `Design` | `software-design-principles` loaded in the turn, or counts as loaded and the turn made an edit the `design` gate triggers on; in both, some code change in the turn is not a [comment-only edit](#comment-only-edits) adding fewer than twenty lines | `software-design-principles/references/red-flags.md` read whole after the last code change that is not comment-only, then a change read; later changes adding fewer than five lines in total need only the change read. A line counts only when it is not blank and its text, indentation aside, is not a line of the text the edit replaces, so unchanged context sent with an edit adds none (round 6, R6); an edit that only moves existing lines therefore adds none, a gap the maintainer accepted. The item repeats the question `red-flags.md` ends with; no answer is checked | `software-design-principles` |
+| `Docs` | A non-test code file changed | `doc-sync` counts as loaded, and a change read follows the last code change; or, with no load, a documentation file (`.md`, `.mdx`, `.rst`, `.adoc`, or `.txt`, a dependency manifest aside; a `.txt` file counts only outside a [test path](#code-and-test-files) and when it is no build file such as `CMakeLists.txt`, so a golden output file does not) changed after the last code change and a change read follows the last such doc change (the maintainer's choice X1, 2026-11-19). A doc changed only before the last code change does not meet it | `doc-sync` |
+| `Design` | `software-design-principles` loaded in the turn, or counts as loaded and the turn made an edit the `design` gate triggers on; in both, some code change in the turn is not a [comment-only edit](#comment-only-edits) adding fewer than twenty lines | `software-design-principles/references/red-flags.md` read whole after the last code change that is not comment-only, then a change read; later changes adding fewer than five lines in total need only the change read. Of those later changes, a line counts only when it is not blank and its text, indentation aside, is not a line of the text the edit replaces, so unchanged context sent with an edit adds none (round 6, R6); an edit that only moves existing lines therefore adds none, a gap the maintainer accepted. The changes the read scanned still count every line their edits add, context included, to reach five. The item repeats the question `red-flags.md` ends with; no answer is checked | `software-design-principles` |
 | `Review` | The turn changed code, the session was not started from a brief with a route line, and the branch's work is large: 400 or more changed lines of non-test code against its base | A reviewer agent that finished after the last code change; or `standards-and-spec-review` counts as loaded and a change read follows the last code change | `standards-and-spec-review` |
 | `Verification` | The turn changed code or a security-sensitive file, and the route is `full`, a spawned agent changed code, a security-sensitive file changed, or the branch's work is large | `verification-before-completion` counts as loaded | `verification-before-completion` |
 | `Security` | `code-security-review` counts as loaded and a security-sensitive file changed | A change read after the last sensitive change | `code-security-review` |
@@ -265,7 +265,8 @@ do not run, so a comment-only edit after the last check does not make
 Proof needed, nor does a turn whose code changes are all comment-only; a
 failed check before it still makes Unfinished needed. The same holds for a
 subagent's comment-only edit after its own check.
-A commit made while a merge conflict is open in the turn (see
+A commit that ends a merge conflict, one made while a git conflict is open
+in the turn or after an edit in the turn removed a conflict marker (see
 [Conflicts](#conflicts)), in a session where `resolving-merge-conflicts`
 counts as loaded (a person's skip of it does not count), is not asked for
 Docs, Design, Security, Review, or Verification. It still needs its change
@@ -572,9 +573,17 @@ The first matching category is named (`SECURITY_CATEGORIES` in
 | deploy-and-ci | `Dockerfile`, `docker-compose`, `.github/workflows/`, `.gitlab-ci`, a `terraform/` folder or `.tf` file, a `k8s/` or `helm/` folder, `serverless.yml` or `.yaml` |
 
 Of docs-like files, only dependency manifests (`requirements.txt`) are
-sensitive. A [test file](#code-and-test-files) is never sensitive, whatever
-its name, so `tests/test_session_x.py` meets no `security` hold while
-`src/session.py` does (the maintainer's choice X3, 2026-11-19). The Security closeout item and the `reference-reads` gate's
+sensitive. Test code, a code file that is also a
+[test file](#code-and-test-files), is not sensitive by a word in its name:
+it meets neither auth nor secrets, so `tests/test_session_x.py` meets no
+`security` hold while `src/session.py` does (the maintainer's choice X3,
+2026-11-19). It still meets the categories a file's kind or folder selects
+(`TEST_CODE_SPARED` in `actions.py`): `migrations/0001_test.sql` is
+persistence. A test file that is not code meets every category, as
+`tests/.env`, `tests/requirements.txt`, `docker-compose.test.yml`,
+`.github/workflows/run_test.yml`, `test/fixtures/server.key`, and
+`tests/secrets.json` do, and a folder such as `src/testing/` is no test
+path. The Security closeout item and the `reference-reads` gate's
 `sensitive-category-count` signal use the same categories.
 
 ### Checks
@@ -713,8 +722,11 @@ read, not the repository, so a conflict opened in an earlier turn is caught
 only by markers the turn shows: an edit whose removed text spans only
 `=======` and one side, in a file not shown this turn, is not held, because
 `=======` alone is also a heading underline. A conflicting stash pop or
-apply is not held. A commit made while a conflict is open, with
-`resolving-merge-conflicts` loaded, is not asked for the Docs, Design,
+apply is not held. A commit ends a conflict when a git conflict is open in
+the turn, or when a finished edit in the turn removed a marker, which shows
+a conflict opened in an earlier turn; markers a read or a printer only
+showed, as a doc about conflicts shows them, are no conflict to end. Such a
+commit, with `resolving-merge-conflicts` loaded, is not asked for the Docs, Design,
 Security, Review, or Verification items; it still needs its change read and
 Reads, Proof, Unfinished, and Setup (see [Closeout Items](#closeout-items)); `git merge --continue` ends the conflict
 but is not a commit, so it meets no closeout.
@@ -1516,7 +1528,7 @@ after its red-flags read.
 | Docs | The last code change |
 | Design | The red-flags read and the last code change that is not [comment-only](#comment-only-edits); after a red-flags read that follows five or more changed lines, later changes adding fewer than five lines in total need no second red-flags read, only this change read after them, counted as the Design item counts them, so an edit's unchanged context lines add none. A red-flags read before any such change covers no later change, and a change whose added lines are unknown, a shell write or a subagent's, counts as five or more |
 | Security | The last change to a security-sensitive file |
-| Commit | The last change to code that is not a [comment-only edit](#comment-only-edits), including code a subagent spawned in the turn changed; in a turn with no such change, any change read in the turn counts. So a change to a file that is not code, or a comment-only edit, made after a change read keeps it (the maintainer's choice V2, 2026-11-19), while a turn whose only change is a doc still needs one. A diff chained before the commit in the same command has not run, so it never counts |
+| Commit | The last change to code that is not a [comment-only edit](#comment-only-edits), or to a [security-sensitive file](#security-sensitive-paths) of any kind (a CI workflow, a manifest, a key or env file), including those a subagent spawned in the turn made; in a turn with no such change, any change read in the turn counts. So any other change to a file that is not code, or a comment-only edit, made after a change read keeps it (the maintainer's choice V2, 2026-11-19), while a turn whose only change is a doc still needs one. A diff chained before the commit in the same command has not run, so it never counts |
 | Pull request, pull-request review | The last change to any project file, code or not, including changes a subagent spawned in the turn made |
 | Review | The last code change |
 
