@@ -769,6 +769,8 @@ class TicketTemplates(ReferenceReadsTestCase):
                                             "content": "# T\n"}),
                            "spec-to-tickets/references/ticket-slicing-templates.md")
         # The session's folder is a project root too, so its own `tickets/` counts.
+        # A new turn, since a later write of the same turn names only what it adds.
+        self.later_turn(s)
         self.assertOwes(s.call("Write", {"file_path": "tickets/y.md", "content": "# T\n"}),
                            "spec-to-tickets/references/ticket-slicing-templates.md")
         self.assertPasses(s.call("Write", {"file_path": "docs/tickets/z.md", "content": "# T\n"}))

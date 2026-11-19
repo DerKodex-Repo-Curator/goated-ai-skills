@@ -54,21 +54,21 @@ must still cover a reference it covered before, now at the Reads item.
 
 ## Acceptance Criteria
 
-- [ ] A 3-line edit adding a public function lands with a notice naming
+- [x] A 3-line edit adding a public function lands with a notice naming
       its references and meets no hold.
-- [ ] A commit in that turn is held by the Reads item until the owed
+- [x] A commit in that turn is held by the Reads item until the owed
       references are read whole or declined with a skip line; the turn's
       end is held the same way.
-- [ ] A second edit selecting the same references adds no notice text; one
+- [x] A second edit selecting the same references adds no notice text; one
       selecting a new reference names only that one.
-- [ ] Four edits judged one after another, each selecting a reference, all
+- [x] Four edits judged one after another, each selecting a reference, all
       land.
-- [ ] A reference read whole earlier in the context window is not owed.
-- [ ] A lasting skip for a reference still clears it at the Reads item.
-- [ ] The `design` gate behaves as before.
-- [ ] The contract states the rule, and conformance scenarios cover the
+- [x] A reference read whole earlier in the context window is not owed.
+- [x] A lasting skip for a reference still clears it at the Reads item.
+- [x] The `design` gate behaves as before.
+- [x] The contract states the rule, and conformance scenarios cover the
       landed edit, the Reads hold, each way it clears, and a near miss.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 

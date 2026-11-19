@@ -339,6 +339,28 @@ scenarios:
           edits: [{removed: "", added: "pub fn run() {}"}]
         expect: {decision: allow, notices: [reads_owed]}
 
+  # Ticket 118, phase 2: the turn's first landed edit names what it owes; a
+  # later one names only references it adds, and carries no notice when it
+  # adds none. A new turn starts the list again.
+  - name: one notice per turn names the owed references, and a later edit only those it adds
+    covers:
+      - {gate: design-reads, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export entry points.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: &run_fn {kind: file_write, path: src/lib.rs, edits: [{removed: "", added: "pub fn run() {}"}]}
+        expect: {decision: allow, notices: [reads_owed]}
+      - call: {kind: file_write, path: src/lib.rs, edits: [{removed: "", added: "pub fn stop() {}"}]}
+        expect: {decision: allow, notices: []}
+      - call: {kind: file_write, path: src/save.py, edits: [{removed: "pass", added: "try:\n    save()\nexcept OSError:\n    raise"}]}
+        expect: {decision: allow, notices: [reads_owed]}
+      - prompt: {type: prompt, author: person, text: Add the export entry points to the importer too.}
+      - reply: "goated-route: continue"
+      - call: *run_fn
+        expect: {decision: allow, notices: [reads_owed]}
+
   - name: a re-export, an async arrow function, and a configuration key define nothing
     covers:
       - {gate: design-reads, case: near-miss}

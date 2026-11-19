@@ -192,9 +192,13 @@ Every hold follows these rules:
   do not count. A shell write whose lines cannot be counted (one that
   names no judged file, writes a file it does not name, writes text it
   does not show into a judged file, or changes one without new text, such
-  as a copy) counts as fewer and is held. When no other gate holds the
-  call, it carries a `reads_owed` notice naming each reference, and the
-  turn's [Reads](#closeout-items) item asks for them.
+  as a copy) counts as fewer and is held. The turn's
+  [Reads](#closeout-items) item asks for what a landed write owes. When no
+  other gate holds the call, it carries one `reads_owed` notice naming
+  each reference it owes that no earlier write of the turn already owes:
+  the turn's first such write names them all, a later one only those it
+  adds, and one that adds none carries no notice (round 6, R1). A
+  reference read whole since the last compaction is never owed.
   A `design` hold asking for the skill's load never lets a write land,
   and a subagent's write is held as before, since only the main agent
   keeps what a write owes. A call with no `id` is held too, since the
@@ -391,9 +395,11 @@ A notice never holds.
   to the agent.
 - `reads_owed`: on a pending call of the main agent that no gate holds,
   when `design`, `design-reads`, or `reference-reads` let a write
-  land before its reads (see [Holds](#holds)), one per gate. It names each reference
-  and its skip line, and says the Reads item will ask for the reads and a
-  change read. An adapter shows it to the agent.
+  land before its reads (see [Holds](#holds)), one per call, and only
+  when the call owes a reference no earlier write of the turn owes. It
+  names each such reference with the gate that selected it and its skip
+  line, and says the Reads item will ask for the reads and a change read.
+  An adapter shows it to the agent.
 
 ## Failing Open
 

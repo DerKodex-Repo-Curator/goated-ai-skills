@@ -12,12 +12,13 @@ saved state between hook calls.
 
 from __future__ import annotations
 
-import re
 import tempfile
 import unittest
 from pathlib import Path
 
-from claude_code_adapter_support import REPO_ROOT, ROUTER, Session, decision, parse, reason
+from claude_code_adapter_support import (
+    REPO_ROOT, ROUTER, Session, context, decision, owed_names, parse, reason,
+)
 
 DESIGN = "software-design-principles"
 REFERENCES = f"/opt/goated/skills/{DESIGN}/references"
@@ -29,17 +30,6 @@ PUBLIC_FUNCTION = {"file_path": SOURCE, "old_string": "def rows():\n",
                    "new_string": 'def total():\n    """Sum the rows."""\n    return 0\n'
                                  "def rows():\n"}
 SKIP_LINE = f"goated-skip: {DESIGN}: a one-line placeholder with no design in it"
-OWED_REFERENCE = re.compile(rf"`{DESIGN}/references/([a-z-]+\.md)`")
-
-
-def context(output: dict) -> str:
-    return output.get("hookSpecificOutput", {}).get("additionalContext", "")
-
-
-def owed(output: dict) -> set[str]:
-    """The design references a call's notice names."""
-
-    return set(OWED_REFERENCE.findall(context(output)))
 
 
 class ReadsOwedTests(unittest.TestCase):
@@ -62,11 +52,11 @@ class ReadsOwedTests(unittest.TestCase):
     def test_a_three_line_public_function_lands_with_a_notice_naming_its_references(self) -> None:
         landed = self.session.call("Edit", PUBLIC_FUNCTION)
         self.assertEqual(decision(landed), "pass", reason(landed))
-        self.assertTrue(owed(landed), context(landed))
+        self.assertTrue(owed_names(landed), context(landed))
         self.assertIn("Reads item", context(landed))
 
     def test_the_turn_end_is_held_by_the_reads_item_until_the_owed_references_are_read(self) -> None:
-        references = owed(self.session.call("Edit", PUBLIC_FUNCTION))
+        references = owed_names(self.session.call("Edit", PUBLIC_FUNCTION))
         held = self.stop()
         self.assertEqual(held.get("decision"), "block")
         self.assertIn("- Reads: a write landed", held["reason"])
@@ -96,8 +86,8 @@ class ReadsOwedTests(unittest.TestCase):
     def test_a_reference_read_earlier_in_the_context_window_is_not_owed(self) -> None:
         self.session.read(f"{REFERENCES}/process.md")
         landed = self.session.call("Edit", PUBLIC_FUNCTION)
-        self.assertTrue(owed(landed), context(landed))
-        self.assertNotIn("process.md", owed(landed))
+        self.assertTrue(owed_names(landed), context(landed))
+        self.assertNotIn("process.md", owed_names(landed))
 
     def test_a_lasting_skip_made_at_the_reads_item_clears_the_next_turns_reads(self) -> None:
         self.session.call("Edit", PUBLIC_FUNCTION)
@@ -111,6 +101,40 @@ class ReadsOwedTests(unittest.TestCase):
         self.assertIn("through without a read of", context(again))
         self.assertNotIn("land before a read of", context(again))
         self.assertNotIn("- Reads:", self.stop().get("reason", ""))
+
+    # Phase 2: one notice per turn.
+
+    def test_a_second_edit_selecting_the_same_references_adds_no_notice_text(self) -> None:
+        first = self.session.call("Edit", PUBLIC_FUNCTION)
+        self.assertTrue(owed_names(first))
+        second = self.session.call("Edit", {**PUBLIC_FUNCTION, "new_string": PUBLIC_FUNCTION[
+            "new_string"].replace("total", "average")})
+        self.assertEqual(decision(second), "pass", reason(second))
+        self.assertEqual(context(second), "")
+
+    def test_an_edit_selecting_a_new_reference_names_only_that_one(self) -> None:
+        self.session.call("Edit", PUBLIC_FUNCTION)
+        guarded = self.session.call("Edit", {**PUBLIC_FUNCTION, "new_string": (
+            'def load():\n    """Load the rows."""\n    try:\n        return rows()\n'
+            "    except OSError:\n        return []\ndef rows():\n")})
+        self.assertEqual(decision(guarded), "pass", reason(guarded))
+        self.assertEqual(owed_names(guarded), {"errors.md"}, context(guarded))
+
+    def test_parallel_edits_owing_the_same_references_carry_one_notice(self) -> None:
+        edits = [("Edit", {"file_path": SOURCE, "old_string": "def rows():\n",
+                           "new_string": f"def total_{n}():\n    return {n}\n\ndef rows():\n"})
+                 for n in range(4)]
+        outputs = self.session.parallel(edits)
+        self.assertTrue(owed_names(outputs[0]))
+        self.assertEqual([context(output) for output in outputs[1:]], ["", "", ""])
+
+    def test_the_next_turn_names_its_references_again(self) -> None:
+        # Owed reads end with their turn, so the next turn's notice names them afresh.
+        self.session.call("Edit", PUBLIC_FUNCTION)
+        self.session.prompt("Add the export average too.")
+        self.session.say("goated-route: continue")
+        again = self.session.call("Edit", PUBLIC_FUNCTION)
+        self.assertTrue(owed_names(again), context(again))
 
     def test_the_design_gate_still_holds_a_first_change_until_the_skill_loads(self) -> None:
         (Path(self._tmp.name) / "fresh").mkdir()

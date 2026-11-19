@@ -342,11 +342,13 @@ class TaskSkips:
     lasting skips this turn's skip lines make, and to `notices` one text for
     each gate a kept skip let the call through. A write that may land
     (`_lands`) and that a gate would hold for reads alone lands instead:
-    the gate adds its references to `owed` and a text to `owed_notices`.
-    The caller saves `cleared`, and `owed` when the call goes through, and
-    shows the notices. A caller that keeps no state, as for a subagent,
-    passes none: every skip line lasts its turn, and every write is held
-    for its reads, since nothing would keep what it owes."""
+    the gate adds its references to `owed`, and `check_action` gives
+    `owed_notices` the call's one notice naming those the turn did not
+    already owe (round 6, R1). The caller saves `cleared`, and `owed` when
+    the call goes through, and shows the notices. A caller that keeps no
+    state, as for a subagent, passes none: every skip line lasts its turn,
+    and every write is held for its reads, since nothing would keep what it
+    owes."""
 
     def __init__(self, kept=()) -> None:
         self.kept = frozenset(LastingSkip(*skip) for skip in kept)
@@ -354,6 +356,9 @@ class TaskSkips:
         self.notices: list[str] = []
         self.owed: list[OwedRead] = []
         self.owed_notices: list[str] = []
+        # Each gate that let this call land owing reads, in firing order:
+        # (gate, the name the notice gives it, its needs, how it labels each).
+        self.landings: list[tuple[str, str, list[_Need], Callable[[str, object], str]]] = []
 
 
 class _Need(NamedTuple):
@@ -439,25 +444,58 @@ def _lands(proof: "_Proof", gate: str, needs: list[_Need], landable: bool,
     """Whether a write `gate` would hold for `needs`, the reads it still
     lacks, lands instead: it is `landable` (`_may_land`) and the caller keeps
     the task's state. A landed write's needs are owed under `gate`, as its
-    lasting skips are keyed, for the Reads closeout item, with one notice
-    naming the gate as `named` (by default `gate`) and each reference by
-    `label(reference, detail)`."""
+    lasting skips are keyed, for the Reads closeout item, and the call's
+    notice (`_owed_notice`) names the gate as `named` (by default `gate`)
+    and each reference by `label(reference, detail)`."""
 
     if not (proof.keeps_task and landable):
         return False
     task = proof.task_skips
     task.owed += [OwedRead(gate, n.skill, n.kind or "", n.reference, n.path or "") for n in needs]
-    unique = lambda values: list(dict.fromkeys(values))
-    files = _listed(unique(f'"{_file_name(n.path)}"' for n in needs if n.path))
-    target = f" to {files}" if files else ""
-    references = ", ".join(unique(label(n.reference, n.detail) for n in needs))
-    skip_lines = " or ".join(unique(f"`goated-skip: {n.skill}: <reason>`" for n in needs))
-    task.owed_notices.append(
-        f"the {named or gate} gate let this write{target} land before a read of "
-        f"{references}. Read each {WHOLE_READ} before a commit or your final report, then "
-        "read the change itself and revise it against them; the closeout's Reads item asks "
-        f"for both. If one does not apply, write {skip_lines} on its own line instead")
+    task.landings.append((gate, named or gate, needs, label))
     return True
+
+
+def _owed_reference(gate: str, reference: str) -> str:
+    """A reference a read gate's landed write owes, as the Reads item and the
+    notice name it: a design reference by its path under the skill's folder,
+    a registry reference by its own path."""
+
+    return f"{design_reads.SKILL_REFERENCES}{reference}" if gate == "design-reads" else reference
+
+
+def _owed_notice(task: TaskSkips, owed_before: dict[str, list[OwedRead]]) -> list[str]:
+    """The one notice for a call the read gates let land owing reads (round
+    6, R1), or none: it names only references neither an earlier write of
+    the turn (`owed_before`, by call id) nor another gate of this call
+    already owes, so the turn's first such write lists them all and a later
+    one only what it adds. A reference already read is never owed."""
+
+    unique = lambda values: list(dict.fromkeys(values))
+    already_owed = {_owed_reference(read.gate, read.reference)
+                    for reads in owed_before.values() for read in reads}
+    clauses, skills = [], []
+    for gate, name, needs, label in task.landings:
+        fresh = []
+        for need in needs:
+            reference = _owed_reference(gate, need.reference)
+            if reference not in already_owed:
+                already_owed.add(reference)
+                fresh.append(need)
+        if not fresh:
+            continue
+        files = _listed(unique(f'"{_file_name(n.path)}"' for n in fresh if n.path))
+        target = f" to {files}" if files else ""
+        references = ", ".join(unique(label(n.reference, n.detail) for n in fresh))
+        clauses.append(f"the {name} gate let this write{target} land before a read of {references}")
+        skills += [n.skill for n in fresh]
+    if not clauses:
+        return []
+    skip_lines = " or ".join(unique(f"`goated-skip: {skill}: <reason>`" for skill in skills))
+    return [f"{'; '.join(clauses)}. Read each {WHOLE_READ} before a commit or your final "
+            "report, then read the change itself and revise it against them; the closeout's "
+            f"Reads item asks for both. If one does not apply, write {skip_lines} on its own "
+            "line instead"]
 
 
 class _Proof:
@@ -662,6 +700,8 @@ def check_action(call: Call, turn: Turn, overrides: dict,
             holds.add(lambda: _reference_reads_hold([None], None, proof, project, references,
                                                     changes, landable))
         holds.add(lambda: _repeated_failure_hold(proof, project))
+    if task_skips is not None:
+        task_skips.owed_notices = _owed_notice(task_skips, (closeout and closeout.owed_reads) or {})
     return holds.found
 
 
@@ -2107,8 +2147,7 @@ def _reads_item(owed_reads: dict[str, list[OwedRead]], changes: "_Changes",
                 continue
             if owed.skill in proof.user_skips or (owed.kind and skip in task.kept):
                 continue
-            reference = (f"{design_reads.SKILL_REFERENCES}{owed.reference}"
-                         if owed.gate == "design-reads" else owed.reference)
+            reference = _owed_reference(owed.gate, owed.reference)
             read = proof.read_index(reference, after=index)
             if read is None:
                 unread.setdefault(reference, owed.skill)
