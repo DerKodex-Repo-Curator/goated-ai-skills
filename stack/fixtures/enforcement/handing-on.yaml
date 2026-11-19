@@ -1,4 +1,4 @@
-event_model: 4
+event_model: 5
 scenarios:
   - name: a commit waits for its skill and a read of the change
     covers:
@@ -37,7 +37,7 @@ scenarios:
           type: prompt
           author: person
           text: "Commit with the message \"Fix the export note\"."
-        expect: {decision: allow, notices: [override_recorded]}
+        expect: {decision: allow, notices: [override_recorded, route_continued]}
       - reply: "goated-route: continue"
       - call: *commit
 
@@ -79,7 +79,7 @@ scenarios:
           decision: hold
           holds: [{gate: pull-request, kind: strict}]
       - prompt: {type: prompt, author: person, text: Skip pr-description and open the pull request.}
-        expect: {decision: allow, notices: [override_recorded]}
+        expect: {decision: allow, notices: [override_recorded, route_continued]}
       - reply: "goated-route: continue"
       - call: *open
 
@@ -151,7 +151,7 @@ scenarios:
           decision: hold
           holds: [{gate: pr-review, kind: justified-skip}]
       - prompt: {type: prompt, author: person, text: Skip standards-and-spec-review and open the pull request.}
-        expect: {decision: allow, notices: [override_recorded]}
+        expect: {decision: allow, notices: [override_recorded, route_continued]}
       - reply: "goated-route: continue"
       - call: *branch_diff
         result: {ok: true, output: "+line 1"}
@@ -202,7 +202,7 @@ scenarios:
           decision: hold
           holds: [{gate: spawn, kind: strict}]
       - prompt: {type: prompt, author: person, text: Skip handoff and have an agent audit the exporter.}
-        expect: {decision: allow, notices: [override_recorded]}
+        expect: {decision: allow, notices: [override_recorded, route_continued]}
       - reply: "goated-route: continue"
       - call: *audit
         result: {ok: true, output: No findings., agent: {id: auditor-1}}

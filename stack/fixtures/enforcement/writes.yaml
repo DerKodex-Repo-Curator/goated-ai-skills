@@ -1,4 +1,4 @@
-event_model: 4
+event_model: 5
 scenarios:
   - name: a substantial code change waits for design principles
     covers:
@@ -44,7 +44,7 @@ scenarios:
           decision: hold
           holds: [{gate: design, kind: justified-skip}]
       - prompt: {type: prompt, author: person, text: Skip software-design-principles and add the export totals.}
-        expect: {decision: allow, notices: [override_recorded]}
+        expect: {decision: allow, notices: [override_recorded, route_continued]}
       - reply: "goated-route: continue"
       - call: *totals
 
@@ -397,7 +397,7 @@ scenarios:
           decision: hold
           holds: [{gate: design-reads, kind: justified-skip}]
       - prompt: {type: prompt, author: person, text: Skip software-design-principles and add the export settings.}
-        expect: {decision: allow, notices: [override_recorded]}
+        expect: {decision: allow, notices: [override_recorded, route_continued]}
       - reply: "goated-route: continue"
       - call: *settings
 
@@ -729,7 +729,7 @@ scenarios:
           decision: hold
           holds: [{gate: reference-reads, kind: justified-skip}]
       - prompt: {type: prompt, author: person, text: Skip tdd and add the export test.}
-        expect: {decision: allow, notices: [override_recorded]}
+        expect: {decision: allow, notices: [override_recorded, route_continued]}
       - reply: "goated-route: continue"
       - call: *new_test
 
@@ -1172,7 +1172,7 @@ scenarios:
           decision: hold
           holds: [{gate: review-intake, kind: justified-skip}]
       - prompt: {type: prompt, author: person, text: "Skip receiving-code-review; review it again and fix it."}
-        expect: {decision: allow, notices: [override_recorded]}
+        expect: {decision: allow, notices: [override_recorded, route_continued]}
       - reply: "goated-route: continue"
       - call: *review
         result: {ok: true, output: "One finding.", agent: {id: reviewer-2}}
@@ -1271,7 +1271,7 @@ scenarios:
           decision: hold
           holds: [{gate: security, kind: justified-skip}]
       - prompt: {type: prompt, author: person, text: Skip code-security-review and pin the requests version.}
-        expect: {decision: allow, notices: [override_recorded]}
+        expect: {decision: allow, notices: [override_recorded, route_continued]}
       - reply: "goated-route: continue"
       - call: *manifest
 
@@ -1322,7 +1322,7 @@ scenarios:
           decision: hold
           holds: [{gate: scripted-edit, kind: justified-skip}]
       - prompt: {type: prompt, author: person, text: Skip software-design-principles and fix the export limit.}
-        expect: {decision: allow, notices: [override_recorded]}
+        expect: {decision: allow, notices: [override_recorded, route_continued]}
       - reply: "goated-route: continue"
       - call: *script
 
@@ -1426,7 +1426,7 @@ scenarios:
           decision: hold
           holds: [{gate: conflict-resolution, kind: justified-skip}]
       - prompt: {type: prompt, author: person, text: Skip resolving-merge-conflicts and merge the feature branch.}
-        expect: {decision: allow, notices: [override_recorded]}
+        expect: {decision: allow, notices: [override_recorded, route_continued]}
       - reply: "goated-route: continue"
       - call: *merge
         result: *conflicted
@@ -1584,7 +1584,7 @@ scenarios:
           decision: hold
           holds: [{gate: repeated-failure, kind: justified-skip}]
       - prompt: {type: prompt, author: person, text: Skip diagnose and make the export tests pass.}
-        expect: {decision: allow, notices: [override_recorded]}
+        expect: {decision: allow, notices: [override_recorded, route_continued]}
       - reply: "goated-route: continue"
       - call: *check
         result: *failed

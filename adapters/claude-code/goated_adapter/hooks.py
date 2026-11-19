@@ -185,6 +185,8 @@ def _situation(payload: dict, config: Config, session_id: str,
         # one in the configured home.
         agent_folders=["~/.claude", os.path.join(str(config.home), ".claude")],
         installed_skills=lambda: installed_skill_names(cwd, config.home),
+        context_docs=lambda: onboarding.context_docs(onboarding.project_root(
+            str(payload.get("cwd") or "") or None, config.project_dir)),
         subagents=lambda turn: _spawned_subagents(turn, transcript_path or ""),
         project_folder=config.project_dir or str(payload.get("cwd") or "") or None,
     )
@@ -441,11 +443,12 @@ def _user_prompt_submit(payload: dict, config: Config) -> str:
         except TranscriptUnreadable:
             return None
 
+    # With the project, as the prompt folds the turns before it (Ticket 119).
     decision = judge.record_prompt(
-        config.settings(), _situation(payload, config, session_id, with_project=False),
+        config.settings(), _situation(payload, config, session_id),
         typed_prompt(prompt).text if kind == TYPED else None,
         payload.get("prompt_id"), unseen)
-    notices = decision.texts(judge.OVERRIDE_RECORDED, judge.SESSION_NOTICE)
+    notices = decision.texts(judge.OVERRIDE_RECORDED, judge.ROUTE_CONTINUED, judge.SESSION_NOTICE)
     output: dict = {}
     if notices:
         # The notices above reach a mod with no text; hook context arrives with

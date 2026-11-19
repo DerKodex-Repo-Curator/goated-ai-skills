@@ -43,16 +43,21 @@ ONBOARDING_DIR = "onboarding-notices"
 
 
 class Task:
-    """The current task: its route, and the turn whose route line started it."""
+    """The current task: its route, the turn whose route line started it, and
+    whether it was routed: by a route line other than bare `continue`, by the
+    brief that started the session, or in a turn that met router-first by the
+    router's load or a person's override (`gates.note_task_routed`). Only a
+    routed task carries a person's follow-up as `continue` (Ticket 119)."""
 
-    __slots__ = ("route", "started_turn")
+    __slots__ = ("route", "started_turn", "routed")
 
-    def __init__(self, route: dict, started_turn: str) -> None:
+    def __init__(self, route: dict, started_turn: str, routed: bool | None = None) -> None:
         self.route = route
         self.started_turn = started_turn
+        self.routed = route.get("form") != "continue" if routed is None else routed
 
     def to_json(self) -> dict:
-        return {"route": self.route, "started_turn": self.started_turn}
+        return {"route": self.route, "started_turn": self.started_turn, "routed": self.routed}
 
 
 class SessionState:
@@ -62,7 +67,7 @@ class SessionState:
         "router_loaded", "last_turn", "task", "task_unknown", "overrides", "policy_notice_shown",
         "reference_reads", "brief_routed", "brief_task", "briefed", "loads", "template_reads",
         "skill_reference_reads", "spawn_templates", "open_holds", "held_gates", "friction",
-        "retrospective_notice_shown", "files_read", "shell", "lasting_skips", "owed_reads",
+        "retrospective_notice_shown", "files_read", "files_seen", "shell", "lasting_skips", "owed_reads",
     )
 
     def __init__(self) -> None:
@@ -105,6 +110,10 @@ class SessionState:
         # compaction, up to `gates.ORIENTATION_READS`: enough of them orient a
         # session routed by its brief. A digest keeps file names out of state.
         self.files_read: list[str] = []
+        # Digests of the first distinct project files read or printed, whole
+        # or in part, since the last compaction, up to `gates.ORIENTATION_FILES`:
+        # enough of them orient such a session too (round 6's R3).
+        self.files_seen: list[str] = []
         # The current task's lasting skips since the last compaction (spec R4):
         # {"gate", "skill", "kind", "reference", "turn"}, the turn being the one
         # whose skip line cleared the hold (`record_lasting_skips`).
@@ -145,6 +154,7 @@ class SessionState:
         self.skill_reference_reads = []
         self.template_reads = []
         self.files_read = []
+        self.files_seen = []
         self.end_lasting_skips(boundary_turn)
 
     def end_lasting_skips(self, boundary_turn: str | None = None) -> None:
@@ -208,6 +218,7 @@ class SessionState:
             "skill_reference_reads": self.skill_reference_reads,
             "template_reads": self.template_reads,
             "files_read": self.files_read,
+            "files_seen": self.files_seen,
             "spawn_templates": self.spawn_templates,
             "open_holds": self.open_holds,
             "held_gates": self.held_gates,
@@ -237,6 +248,7 @@ class SessionState:
         state.skill_reference_reads = _string_list(data.get("skill_reference_reads", []))
         state.template_reads = _string_list(data.get("template_reads", []))
         state.files_read = _string_list(data.get("files_read", []))
+        state.files_seen = _string_list(data.get("files_seen", []))
         state.spawn_templates = _valid_calls(data.get("spawn_templates", {}))
         state.open_holds = [_valid_open_hold(h) for h in _expect(data.get("open_holds", []), list)]
         state.held_gates = _valid_held_gates(data.get("held_gates", {}))
@@ -252,6 +264,7 @@ class SessionState:
             state.task = Task(
                 route=_valid_route(task.get("route")),
                 started_turn=_expect(task.get("started_turn"), str),
+                routed=_expect(task.get("routed"), (bool, type(None))),
             )
         overrides = _expect(data.get("overrides", {}), dict)
         if overrides:

@@ -66,6 +66,26 @@ class WholePrintTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(self.whole(command), [])
 
+    def test_a_partial_printer_prints_its_files_in_part(self) -> None:
+        # Ticket 119: `file_prints` holds whole and partial prints alike.
+        def printed(command: str, kind: str = POSIX) -> list[str]:
+            return shell.analyze(command, kind).file_prints
+
+        for command in ("head a.md", "tail -n 5 a.md", "sed -n 1,50p a.md", "sed -ne 1p a.md",
+                        "sed --quiet -e 1p a.md", "cat a.md"):
+            with self.subTest(command=command):
+                self.assertEqual(printed(command), ["a.md"])
+        self.assertEqual(printed("Get-Content a.md -TotalCount 5", POWERSHELL), ["a.md"])
+        self.assertEqual(printed("sed -n 1p a.md && sed -n 2p b.md"), ["a.md", "b.md"])
+        # A search, `sed` printing every line, an in-place edit, and a pipe print no file.
+        # So do sed scripts that may write a file instead of printing.
+        for command in ("grep x a.md", "rg x a.md", "sed s/x/y/ a.md", "sed -i -n 1p a.md",
+                        "sed -n 1p a.md | head", "sed -n '1w out.txt' a.md",
+                        "sed -n 's/a/b/w out' a.md", "sed -n -e 1W a.md", "sed -n -f p.sed a.md"):
+            with self.subTest(command=command):
+                self.assertEqual(printed(command), [])
+        self.assertEqual(printed("Select-String -Path a.md -Pattern x", POWERSHELL), [])
+
     def test_a_print_piped_on_or_redirected_is_not_shown_whole(self) -> None:
         self.assertEqual(self.whole("cat a.md | head"), [])
         self.assertEqual(self.whole("cat a.md > b.md"), [])
@@ -160,6 +180,28 @@ class ShellOrientationTests(OrientedTestCase):
         s.run("cat c.md")
         self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
 
+    def test_ranged_prints_of_five_distinct_files_orient(self) -> None:
+        # Ticket 119: five distinct project files, whole or in part; searches never.
+        s = self.full_brief()
+        for command in ("grep -n x a.md", "rg x b.md", "head a.md", "tail -n 5 b.md",
+                        "sed -n 1,40p c.md", "sed -n 1,40p c.md"):
+            s.run(command)
+        s.run("Get-Content d.md -TotalCount 5", tool="PowerShell")
+        self.assertEqual(hold_line(s.call("Edit", EDIT)), PIPELINE)
+
+        s.run("sed -n '/x/,+3p' e.md")
+        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+
+    def test_the_orientation_hold_names_the_project_context_docs(self) -> None:
+        s = self.full_brief()
+        (s.project / "docs" / "agents").mkdir(parents=True)
+        (s.project / "docs" / "agents" / "project-standards.md").write_text("# S\n",
+                                                                             encoding="utf-8")
+        held = s.call("Edit", EDIT)
+        self.assertEqual(hold_line(held), PIPELINE)
+        self.assertIn("`docs/agents/project-standards.md`", reason(held))
+        self.assertNotIn("`CONTEXT.md`", reason(held))
+
     def test_a_failed_command_does_not_count(self) -> None:
         s = self.full_brief()
         s.run("cat a.md b.md")
@@ -192,7 +234,8 @@ class ShellOrientationTests(OrientedTestCase):
 
         held = reason(s.call("Edit", EDIT))
         self.assertIn(f"loads `{ORIENTATION}`", held)
-        self.assertIn("shell command that prints a file whole", held)
+        self.assertIn("shell command that prints a file counts as a read of it", held)
+        self.assertIn("five distinct project files, whole or in part", held)
 
 
 class ShellPrintsMeetNoReferenceTests(DesignTestCase):

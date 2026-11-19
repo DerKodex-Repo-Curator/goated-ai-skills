@@ -128,6 +128,21 @@ class FirstCodeChangeTests(NoteCase):
         self.assertNotIn("permissionDecision", after["hookSpecificOutput"])
         self.assertNotIn("decision", after)
 
+    def test_the_note_names_the_project_context_docs_that_exist(self) -> None:
+        # Ticket 119: the adapter reports which exist; the note names only those.
+        s = self.session()
+        (s.project / "docs" / "agents").mkdir(parents=True)
+        (s.project / "CONTEXT.md").write_text("# Context\n", encoding="utf-8")
+        (s.project / "docs" / "agents" / "context-matrix.md").write_text("# M\n", encoding="utf-8")
+        _, after = change(s, "Edit", small_edit())
+        self.assertIn("context documents, for its terms, sources, and standards: "
+                      "`CONTEXT.md` and `docs/agents/context-matrix.md`.", note(after))
+
+    def test_the_note_names_no_context_docs_when_none_exists(self) -> None:
+        _, after = change(self.session(), "Edit", small_edit())
+        self.assertTrue(note(after))
+        self.assertNotIn("context documents", note(after))
+
     def test_a_test_edit_names_proof_alone(self) -> None:
         # Near miss: a test file is code, but changes no behavior docs describe.
         s = self.session()

@@ -34,7 +34,7 @@ try:
     from goated_core.usage_log import UsageLog
 except ImportError as exc:  # The core is not beside this adapter: fail open, visibly.
     decide = None
-    EVENT_MODEL = 4
+    EVENT_MODEL = 5
     MISSING_CORE = exc.name or str(exc)
 
 NAME = "GOATED example adapter"

@@ -47,8 +47,11 @@ from .wording import NO_RANGE, READ, SKILL_TOOL, short_advice, unseen_line_advic
 
 ROUTER_SKILL = "using-goated-ai-skills"
 ORIENTATION_SKILL = "session-start-progressive-disclosure"
-# How many distinct files a briefed session reads to orient without the skill.
+# How many distinct files a briefed session reads whole to orient without the skill.
 ORIENTATION_READS = 3
+# How many distinct project files it reads or prints, whole or in part, to orient
+# without the skill (round 6's R3, decision U1).
+ORIENTATION_FILES = 5
 # The call kinds the routing gates judge.
 ROUTED_KINDS = frozenset({events.FILE_WRITE, events.SHELL_COMMAND, events.SPAWN})
 
@@ -264,13 +267,17 @@ def goated_skill_name(raw: str, namespaces: tuple[str, ...]) -> str | None:
 def fold_turns(
     state: SessionState, turns: list[Turn], namespaces: tuple[str, ...] = (),
     folder: str | None = None,
+    in_project: Callable[[str], bool] = lambda path: True,
 ) -> None:
     """Bring `state` up to date with turns read from the transcript, oldest first.
 
     Re-folding a turn already seen is harmless, so callers pass the last seen
     turn again to pick up anything written after they last looked. `folder`
     is the session's folder, which relative paths start from, or None when
-    unknown.
+    unknown. `in_project(path)` says whether a file a call read, by its
+    path as written, is the project's, which only the count of distinct
+    files toward orientation asks (`ORIENTATION_FILES`); by default, every
+    file is.
     """
 
     if turns and turns[0].opens_session:
@@ -302,9 +309,14 @@ def fold_turns(
             state.end_lasting_skips(turn.key)  # A new task ends them (spec R4).
         elif turn.route is not None and state.task is None and not state.task_unknown:
             # Only `continue` lines, in a session with no task, such as one
-            # started from another session: they start a task with no skills.
-            state.task = Task(route={"form": "continue"}, started_turn=turn.key)
+            # started from another session: they start a task with no skills,
+            # routed only by a brief or once its turn meets router-first
+            # (`note_task_routed`).
+            state.task = Task(route={"form": "continue"}, started_turn=turn.key,
+                              routed=turn.brief_route is not None)
             state.brief_task = turn.brief_route is not None
+        if state.router_loaded and state.task is not None and state.task.started_turn == turn.key:
+            state.task.routed = True  # Its turn met router-first by the router's load.
         state.loads = _unique([*state.loads, *loads])
         state.reference_reads = _unique(
             [*state.reference_reads, *design_reads.reads_in(turn.calls)]
@@ -316,8 +328,14 @@ def fold_turns(
             [*state.template_reads, *contracts.templates_read(turn.calls)]
         )
         state.files_read = _unique(
-            [*state.files_read, *_files_read(turn.calls, folder)]
+            [*state.files_read, *_files_read(turn.calls, folder, whole=True)]
         )[:ORIENTATION_READS]
+        if len(state.files_seen) < ORIENTATION_FILES:
+            state.files_seen = _unique(
+                [*state.files_seen, *_files_read(turn.calls, folder, whole=False,
+                                                 in_project=in_project,
+                                                 counted=state.files_seen)]
+            )[:ORIENTATION_FILES]
         state.shell = last_shell([turn]) or state.shell
         state.last_turn = turn.key
 
@@ -330,12 +348,18 @@ def last_shell(turns: list[Turn]) -> str | None:
                  if call.kind == events.SHELL_COMMAND), None)
 
 
-def _files_read(calls, folder: str | None) -> list[str]:
-    """A digest of each file among `calls` that a finished file read read
-    whole, or a finished, successful shell command printed whole
-    (`shell.ShellCommand.whole_prints`), in order. Partial reads never count.
-    Only orientation counts a shell print (Ticket 110): every other read a
-    hold asks for is a file read.
+def _files_read(calls, folder: str | None, whole: bool,
+                in_project: Callable[[str], bool] = lambda path: True,
+                counted: list[str] = ()) -> list[str]:
+    """A digest of each file among `calls` that a finished file read read,
+    or a finished, successful shell command printed
+    (`shell.ShellCommand.file_prints`), in order: when `whole`, only those
+    read or printed whole (`whole_prints`). Only orientation counts a shell
+    print (Ticket 110): every other read a hold asks for is a file read.
+    `in_project(path)` says whether a path, as the call wrote it, is the
+    project's; a file it is not is left out. It is not asked of a file whose
+    digest is in `counted`, already found the project's, so a turn folded
+    again asks it only of files not yet counted.
 
     A relative path is taken from `folder`, the session's folder, when known,
     and two spellings of one path (`./`, `..`, and case and separators on
@@ -346,15 +370,17 @@ def _files_read(calls, folder: str | None) -> list[str]:
         if call.kind == events.SHELL_COMMAND:
             if not call.ok or call.background:  # A background command's result is no print.
                 return []
-            return shell.analyze(call.command, call.shell).whole_prints
-        path = call.whole_read_path()
+            found = shell.analyze(call.command, call.shell)
+            return found.whole_prints if whole else found.file_prints
+        path = call.whole_read_path() if whole else call.read_path()
         return [path] if path else []
 
-    return [
-        hashlib.sha256(os.path.normcase(os.path.normpath(
+    def digest(path: str) -> str:
+        return hashlib.sha256(os.path.normcase(os.path.normpath(
             os.path.join(folder, path) if folder else path)).encode("utf-8")).hexdigest()[:16]
-        for call in calls for path in paths(call)
-    ]
+
+    return [key for call in calls for path in paths(call)
+            for key in [digest(path)] if key in counted or in_project(path)]
 
 
 def _task_route_in(turn: Turn) -> dict | None:
@@ -370,23 +396,46 @@ def _task_route_in(turn: Turn) -> dict | None:
 def _turn_route(state: SessionState, turn: Turn) -> dict | None:
     """The route `turn` runs under, or None when it needs a route line.
 
-    That is the turn's winning route line; failing one, a message from
-    another session in a session with a task runs as `goated-route: continue`
-    (spec R5): nobody typed it, so it is not a new task the router must
-    judge. Only the route carries over; overrides come only from a person's
-    prompt, and skips, checks and change reads count within their turn. A
-    route-like line that fails the grammar meant to route the turn, so it
-    still needs a valid one and the hold quotes the bad line.
+    That is the turn's winning route line; failing one, a prompt from
+    another session, in a session with a task, runs as
+    `goated-route: continue`, since it is not a new task the router must
+    judge (round 4's R5), and so does a person's prompt in a task an earlier
+    turn started, since a follow-up mostly continues the task, as a notice
+    at the prompt says (round 6's R2, decision T1). A task this turn's own
+    judged call started, by a line the turns read do not show yet, is not
+    one: that would carry a line to its sibling calls, which the carrier
+    rule does not. Only the route carries over; overrides come only from a
+    person's prompt, and skips, checks and change reads count within their
+    turn. A route-like line that fails the grammar meant to route the turn,
+    so it still needs a valid one and the hold quotes the bad line.
     """
 
     if turn.route is not None:
         return turn.route
-    opener = turn.opener
-    if (not turn.malformed and isinstance(opener, events.Prompt)
-            and opener.author == events.SESSION
-            and not opener.starts_session and state.task is not None):
+    opener, task = turn.opener, state.task
+    if (turn.malformed or not isinstance(opener, events.Prompt) or opener.starts_session
+            or task is None):
+        return None
+    if opener.author == events.SESSION or (
+            opener.author == events.PERSON and task.routed and task.started_turn != turn.key):
         return {"form": "continue"}
     return None
+
+
+def note_task_routed(state: SessionState, turn: Turn, overrides: dict) -> None:
+    """Mark the task `turn` started as routed when a person's override for
+    the turn stands down routing, as folding the turn already does when the
+    router loaded in it (`fold_turns`) and as a task a route line other than
+    `continue` or a brief started already is. Only a routed task carries a
+    person's later prompt as `continue` (`_turn_route`), so a bare
+    `continue` line written without the router does not exempt the turns
+    after it. `turn` is the current turn, already folded into `state`;
+    `overrides` are the ones a person typed for it."""
+
+    task = state.task
+    if (task is not None and not task.routed and task.started_turn == turn.key
+            and (overrides.get("routing") or ROUTER_SKILL in (overrides.get("skills") or ()))):
+        task.routed = True
 
 
 def writes_like_an_edit(call: Call) -> bool:
@@ -416,13 +465,15 @@ def check_routing(
     overrides: dict,
     orientation_installed: Callable[[], bool],
     writes_scratch: Callable[[], bool],
+    context_docs: Callable[[], list[str]] = lambda: [],
 ) -> list[Hold]:
     """The routing holds that apply to this main-agent call, in order, as
     `_routing_holds` judges them. When the call is a posix command that
     redirects into nul (`shell.ShellCommand.redirects_into_nul`), the last
     hold's full and short texts end with `POSIX_NUL_NOTE`."""
 
-    holds = _routing_holds(state, call, turn, overrides, orientation_installed, writes_scratch)
+    holds = _routing_holds(state, call, turn, overrides, orientation_installed, writes_scratch,
+                           context_docs)
     if (holds and call.kind == events.SHELL_COMMAND
             and shell.analyze(call.command, call.shell).redirects_into_nul):
         holds[-1] = holds[-1].with_note(POSIX_NUL_NOTE)
@@ -436,6 +487,7 @@ def _routing_holds(
     overrides: dict,
     orientation_installed: Callable[[], bool],
     writes_scratch: Callable[[], bool],
+    context_docs: Callable[[], list[str]] = lambda: [],
 ) -> list[Hold]:
     """Return the routing holds that apply to this main-agent call, in order.
 
@@ -453,6 +505,8 @@ def _routing_holds(
     `writes_scratch` says whether the call is a write whose every file is
     scratch (`actions.writes_only_scratch`); such a write passes every routing gate,
     and it is asked only of a call one of them would otherwise hold.
+    `context_docs()` gives the project's context documents that exist
+    (`CONTEXT_DOCS`), which the orientation hold names; it is asked only then.
     """
 
     if (call.kind not in ROUTED_KINDS or overrides.get("routing")
@@ -460,7 +514,7 @@ def _routing_holds(
         return []
     user_skipped = set(overrides.get("skills") or ())
     routed = (state.router_loaded or state.brief_routed or ROUTER_SKILL in user_skipped
-              or _continues_brief_task(state, turn))
+              or _continues_task(state, turn))
     holds = []
     if not routed:
         if call.kind == events.SHELL_COMMAND and shell.analyze(call.command, call.shell).read_only:
@@ -496,6 +550,7 @@ def _routing_holds(
         _brief_orientation(state, task)
         and unmet(ORIENTATION_SKILL)
         and len(state.files_read) < ORIENTATION_READS
+        and len(state.files_seen) < ORIENTATION_FILES
         and orientation_installed()
     )
     route_skills = [
@@ -513,14 +568,21 @@ def _routing_holds(
             f"A session started from a brief loads `{ORIENTATION_SKILL}` before its "
             "first write or spawn when its route is standard or full, or orients by "
             f"finishing {READ} calls of three distinct files, each read whole {NO_RANGE}, "
-            "such as the sources its brief names. A finished shell command that prints a "
-            "file whole, cat or Get-Content with no range and no pipe, counts as a read of it."
+            "or reads of five distinct project files, whole or in part, such as the "
+            "sources its brief names. A finished shell command that prints a file counts "
+            "as a read of it: cat or Get-Content with no range and no pipe as a whole "
+            "one, head, tail, sed -n, or a ranged Get-Content as one in part. A search "
+            "such as grep never counts."
         )
+        pointer = context_pointer(context_docs())
+        if pointer:
+            parts.append(pointer)
         # A reader of hold texts takes this sentence's opening for the skill the
         # brief added.
         missing.append(f"A session started from a brief loads `{ORIENTATION_SKILL}` or "
-                       f"finishes {READ} calls of three distinct files, each whole, "
-                       "or shell commands that print them whole")
+                       f"finishes {READ} calls of three distinct files, each whole, or of "
+                       "five distinct project files, whole or in part, or shell commands "
+                       "that print them")
     parts.append(
         f"Load each with {SKILL_TOOL} and follow it. A load counts until the next "
         "compaction, in this turn or an earlier one"
@@ -550,7 +612,7 @@ def _routing_holds(
 
 def _router_first_hold(state: SessionState) -> Hold:
     """The router-first hold. In the task the brief started, it also says that
-    a `goated-route: continue` line meets it (`_continues_brief_task`), with
+    a `goated-route: continue` line meets it (`_continues_task`), with
     where that line can go so the check sees it."""
 
     text = (
@@ -575,17 +637,69 @@ def _router_first_hold(state: SessionState) -> Hold:
                 short_form(f"the `{ROUTER_SKILL}` skill has not loaded", short))
 
 
-def _continues_brief_task(state: SessionState, turn: Turn) -> bool:
-    """True when `turn`'s route line is `goated-route: continue` and the task
-    it continues is the one the brief started (spec R8, decision P): the
-    router would only say `continue`, so router-first is met without it.
+def _continues_task(state: SessionState, turn: Turn) -> bool:
+    """True when `turn` continues a task the router would only say
+    `continue` to, so router-first is met without it. That is either:
 
-    A turn with no route line yet, or whose route line starts a new task, is
-    not one. Only router-first reads this; briefed-session orientation stays
-    with `brief_routed`, so a typed `continue` does not bring it back.
+    - a turn a person's prompt opened that runs as `goated-route: continue`,
+      by its own line or none (`_turn_route`), in a routed task an earlier
+      turn started (round 6's R2). The task survives a compaction, so this
+      does too; its required skills are still asked for again by
+      `pipeline`. A task started by a bare `continue` line with no router is
+      not routed (`note_task_routed`), so it carries no later turn; or
+    - a turn of any author whose own route line is `goated-route: continue`
+      while the brief's task runs with no compaction since (round 5's R8,
+      Ticket 117), which another session's message meets too.
+
+    A turn whose route line starts a new task, or with no valid route line
+    but one that fails the grammar, is neither, nor is a `continue` line
+    that started the task itself. Only router-first reads this;
+    briefed-session orientation stays with `brief_routed`, so continuing
+    does not bring it back.
     """
 
-    return state.brief_task and turn.route is not None and turn.route["form"] == "continue"
+    if state.brief_task and turn.route is not None and turn.route["form"] == "continue":
+        return True
+    route, task = _turn_route(state, turn), state.task
+    return (turn.typed and route is not None and route["form"] == "continue"
+            and task is not None and task.routed and task.started_turn != turn.key)
+
+
+# A project's own context documents, as paths from its root, which the
+# onboarding skills write: the context file, the context matrix, and the
+# standards profile (round 6's R13). An adapter reports which exist.
+CONTEXT_DOCS = ("CONTEXT.md", "docs/agents/context-matrix.md", "docs/agents/project-standards.md")
+
+
+def context_pointer(docs: list[str]) -> str:
+    """The sentence naming the project's context documents that exist,
+    `docs`, for the orientation hold and the closeout note, or "" for none."""
+
+    if not docs:
+        return ""
+    names = [f"`{doc}`" for doc in docs]
+    listed = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+    return (f"This project's own context documents, for its terms, sources, and "
+            f"standards: {listed}.")
+
+
+CONTINUED_ROUTE_NOTICE = (
+    "this prompt runs as `goated-route: continue` in the current task, so it needs "
+    "no route line; if it asks for new work, write a new route line before the "
+    "first write. This is a notice; nothing is held."
+)
+
+
+def continued_route_notice(state: SessionState) -> str | None:
+    """The notice for a person's prompt about to open a turn in `state`'s
+    session: `CONTINUED_ROUTE_NOTICE` when the session has a routed task, so
+    the turn will run as `continue` until a route line says otherwise
+    (`_turn_route`), else None. Saved state that was missing or reset knows
+    no task, so it gives none. The caller brings `state` up to date with the
+    turns before the prompt first."""
+
+    task = state.task
+    return CONTINUED_ROUTE_NOTICE if task is not None and task.routed else None
 
 
 def _brief_orientation(state: SessionState, task: Task) -> bool:

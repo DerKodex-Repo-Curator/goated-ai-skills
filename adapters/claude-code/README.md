@@ -162,11 +162,10 @@ first prompt. A valid route line on its own line anywhere in that brief,
 outside fenced blocks and `<system-reminder>` blocks, is the first turn's
 route, as if the new session had written it first; when the brief has
 several, the last one wins. It meets `router-first`, as a subagent's parent
-brief does, until a prompt you type opens a turn: from then on the router
-must load, as in any session, except that while the task the brief's turn
-started runs, with no compaction since, a turn whose route line is
-`goated-route: continue` meets `router-first` without it and brings back no
-orientation (Ticket 117). The route's `requires:` skills must still load
+brief does, until a prompt you type opens a turn: from then on that turn
+continues the brief's task as any typed follow-up does (see below), and a
+route line that starts a new task needs the router; continuing brings back
+no orientation (Tickets 117 and 119). The route's `requires:` skills must still load
 in the new session before its first write (`pipeline`), and a later route
 line in the turn corrects it as usual. While the brief's route counts, a
 `standard` or `full` route also requires orientation
@@ -174,13 +173,18 @@ when Claude Code can find `session-start-progressive-disclosure` (a user,
 project, or plugin skill): the router selects orientation on such a route
 from a brief, and the spawn-brief template says the new session orients
 before its first write by reading the sources its brief names or by loading
-that skill. Either meets it: the skill loads, or Read calls of three
-distinct files finish, anywhere, each a [whole read](#whole-reads), since
-the session started or the last compaction; reads count across turns as
-loads do, and a failed or partial Read does not count (Ticket 098). A
-finished shell command that prints a file whole, a `cat` or a PowerShell
-`Get-Content` with no range and no pipe, counts as a read of that file
-here, and only here (Ticket 110). The
+that skill. Any of three meets it: the skill loads; Read calls of three
+distinct files finish, anywhere, each a [whole read](#whole-reads); or
+reads of five distinct project files finish, whole or in part (Ticket 119),
+since the session started or the last compaction. Reads count across turns
+as loads do, and a failed Read does not count (Ticket 098). A finished shell
+command that prints a file whole, a `cat` or a PowerShell `Get-Content` with
+no range and no pipe, counts as a whole read of that file here, and only
+here (Ticket 110); one that prints part of it, a `head`, `tail`, `sed -n`,
+or ranged `Get-Content`, counts toward the five. A search such as `grep`,
+`rg`, or `Select-String` never counts. The hold names the project's context
+documents that exist, as the [early closeout note](#early-closeout-note)
+does. The
 route line never names the skill, so leaving it out of a corrected line
 does not drop it; only a corrected
 `goated-route: direct` line or a `lightweight` route line does. A typed prompt
@@ -209,8 +213,8 @@ read.
 
 | Gate | Kind | Holds | Clears when |
 | --- | --- | --- | --- |
-| `router-first` | strict | An `Edit`, `Write`, `MultiEdit`, or `NotebookEdit`, a spawn, or a `Bash` or `PowerShell` command; a command made only of [plain reads](#plain-reads) passes, as Read and Grep do, and so does a write whose every file is a [scratch file](../../stack/enforcement-contract.md#project-folders-and-scratch-files) | A `Skill` load of `using-goated-ai-skills`; or the session's first prompt is a brief with a route line (see above), until a typed prompt opens a turn; or, in the brief's task, a `goated-route: continue` line in the turn |
-| `route-line` | strict | The first write or spawn after each typed prompt until the turn has a valid route line, in reply text or a call's line field (see above), and after each prompt from elsewhere except another session's message in a session with a task (see [User Overrides](#user-overrides)) | A valid route line appears in the turn |
+| `router-first` | strict | An `Edit`, `Write`, `MultiEdit`, or `NotebookEdit`, a spawn, or a `Bash` or `PowerShell` command; a command made only of [plain reads](#plain-reads) passes, as Read and Grep do, and so does a write whose every file is a [scratch file](../../stack/enforcement-contract.md#project-folders-and-scratch-files) | A `Skill` load of `using-goated-ai-skills`; or the session's first prompt is a brief with a route line (see above), until a typed prompt opens a turn; or, in the brief's task with no compaction since, a `goated-route: continue` line in the turn, whoever's prompt opened it; or, in a routed task an earlier turn started, a typed prompt's turn runs as `goated-route: continue`, by that line or by none, compaction or not (Ticket 119). A task is routed when a route line other than bare `continue`, or a brief, started it, or when its bare `continue` turn loaded the router or carried your `skip routing`; a clear (`/clear`) ends the task |
+| `route-line` | strict | The first write or spawn after each typed prompt in a session with no task until the turn has a valid route line, in reply text or a call's line field (see above), and after each prompt from elsewhere except another session's message in a session with a task (see [User Overrides](#user-overrides)). In a session with a routed task, a typed prompt's turn runs as `goated-route: continue`, and the prompt gets a notice that new work needs a new route line (Ticket 119) | A valid route line appears in the turn |
 | `pipeline` | strict | Writes and spawns while a `requires:` skill has not loaded, or a brief-routed session's orientation is unmet while Claude Code can find `session-start-progressive-disclosure`; a spawn of a [read-only subagent](#plain-reads) passes | Each listed skill loads by the Skill tool, or orientation by that skill or three [whole reads](#whole-reads) by the Read tool |
 | `commit` | strict | A `git commit` in a `Bash` or `PowerShell` command, or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit`; the tool's `message` is the commit message | `commit-message` [counts as loaded](#loads), the message passes the [content check](#content-checks), and a [change read](#change-reads) follows the last change; then the [closeout](#closeout-at-commit) |
 | `pull-request` | strict | `gh pr create` or `new`, `glab mr create` or `new` in a shell command, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` [counts as loaded](#loads), and a [change read](#change-reads) |
@@ -718,7 +722,11 @@ its short form, and saying they can be met before the final report. For
 example, a non-test code change brings Proof and Docs; a test file alone
 brings Proof; `software-design-principles` counted as loaded with a
 substantial change adds the Design red-flags item; a `full` route adds
-Verification. An item already met or skipped is left out.
+Verification. An item already met or skipped is left out. The note ends by
+naming the project's own context documents among `CONTEXT.md`,
+`docs/agents/context-matrix.md`, and `docs/agents/project-standards.md` at
+the project's root, the ones that exist, and names none when none does
+(Ticket 119). The orientation hold names them the same way.
 
 - The items are the closeout's own, judged as if the turn ended at that
   call, from the hook's payload (`tool_name`, `tool_input`,
@@ -797,7 +805,7 @@ task, whether the session's first prompt was a brief, whether the router loaded,
 references, skill references, and spawn-brief templates were read since the
 last compaction
 (see [Loads](#loads)), digests of the first three distinct files the Read
-tool read or a shell command printed whole since then, which orient a session routed by its brief, which brief templates each spawn
+tool read or a shell command printed whole since then, and of the first five distinct project files either read or printed whole or in part, which orient a session routed by its brief, which brief templates each spawn
 of the latest turn followed when the `spawn` gate let it through (see
 [Reviewer subagents](#reviewer-subagents)), the last turn seen, the
 latest typed overrides, and the friction count behind the retrospective
@@ -1007,16 +1015,17 @@ of the call's prompt, which is normally already there.
   a brief with `turnOrigin` `sdk`; such a brief, one passed to `claude -p`,
   or one in any other shape is a prompt like any other, so its session loads
   the router and writes its own route line. After a compaction
-  the brief is gone, so `router-first` needs the router again. The brief's
-  task, which lets a typed prompt's `goated-route: continue` meet
-  `router-first`, is known only once the hook has read the brief's turn:
-  at a call judged in it or at its Stop. A session that types its next
-  prompt before either happens is held as if not started from a brief, so
-  it loads the router. Harness
+  the brief is gone, but its task stays. A task, which lets a typed
+  prompt's turn run as `goated-route: continue`, is known only once the
+  hook has read the turn whose route line started it: at a call judged in
+  it or at its Stop. A session that types its next prompt before either
+  happens is held as if it had no task, so it loads the router and writes
+  a route line. Harness
   nudges such as "The user hasn't heard from you in a while" are recorded as
   `attachment` entries and never open a turn.
 - A briefed session's orientation counts any three distinct files read whole
-  with the Read tool or printed whole by a shell command, whatever they are;
+  with the Read tool or printed whole by a shell command, whatever they are,
+  or five distinct files inside the project read or printed whole or in part;
   the adapter cannot tell whether they are the sources the brief names, nor
   whether Claude Code cut a long print short. Two spellings of one path count
   once when they differ by `./`, `..`, or, on Windows, case or separators;

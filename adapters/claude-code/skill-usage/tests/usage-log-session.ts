@@ -309,7 +309,7 @@ export const USAGE_LOG_SESSION = {
           "content": [
             {
               "type": "text",
-              "text": "GOATED Claude Code adapter: recorded your override for this prompt: \"Skip routing\"."
+              "text": "GOATED Claude Code adapter: recorded your override for this prompt: \"Skip routing\"; this prompt runs as `goated-route: continue` in the current task, so it needs no route line; if it asks for new work, write a new route line before the first write. This is a notice; nothing is held."
             }
           ]
         }

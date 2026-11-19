@@ -31,6 +31,10 @@ HOLD_LINE = re.compile(r"^goated-hold: ([a-z]+(?:-[a-z]+)*) \| (strict|justified
 ADAPTER_NAME = "GOATED Claude Code adapter"
 FAIL_OPEN = "so this action was allowed without checks."
 OVERRIDE_RECORDED = "recorded your override"
+# The notices a prompt's additionalContext may carry besides session notices,
+# each told by words its text holds.
+PROMPT_NOTICES = (("override_recorded", OVERRIDE_RECORDED),
+                  ("route_continued", "runs as `goated-route: continue`"))
 # The notices a pending call's additionalContext may carry, each told by words its text holds.
 PENDING_CALL_NOTICES = (("skip_carried", "through without a read of"),
                         ("reads_owed", "land before a read of"))
@@ -400,7 +404,7 @@ class _Run:
         with `expect`; with no `expect`, the step is not checked."""
 
         self.requests.append({
-            "event_model": 4,
+            "event_model": 5,
             "session": {"id": self.s.session_id, "agent": self.agent},
             "project": {"folders": [self.s.project.as_posix()],
                         "working_folder": self.s.cwd.as_posix(),
@@ -437,8 +441,8 @@ def _decision(output: dict, shape: str) -> dict:
         elif specific.get("hookEventName") == "PreToolUse":
             # A pending call carries one notice per read gate, of either kind.
             notices += [kind for kind, mark in PENDING_CALL_NOTICES if mark in context]
-        elif OVERRIDE_RECORDED in context:
-            notices.append("override_recorded")
+        elif any(mark in context for _, mark in PROMPT_NOTICES):
+            notices += [kind for kind, mark in PROMPT_NOTICES if mark in context]
         else:
             notices.append("session_notice")
     notices += _warnings(output.get("systemMessage", ""), context)

@@ -75,25 +75,25 @@ phase 3, bumps the event model's version.
 
 ## Acceptance Criteria
 
-- [ ] In a session with a routed task, a typed prompt followed by an edit
+- [x] In a session with a routed task, a typed prompt followed by an edit
       meets no `router-first` or `route-line` hold, and the prompt carries
       the notice once.
-- [ ] The same prompt in a session with no task and no brief is held as
+- [x] The same prompt in a session with no task and no brief is held as
       today.
-- [ ] After a compaction, a typed prompt followed by an edit is held by
+- [x] After a compaction, a typed prompt followed by an edit is held by
       `pipeline` for the route's skills, not by `route-line`.
-- [ ] A route line the agent writes in that turn replaces the inferred
+- [x] A route line the agent writes in that turn replaces the inferred
       one.
-- [ ] Five ranged reads of five files orient, by the file tool and by
+- [x] Five ranged reads of five files orient, by the file tool and by
       `sed -n`; four do not; five searches do not; three whole reads
       still do.
-- [ ] The orientation hold and the first code-change notice name an
+- [x] The orientation hold and the first code-change notice name an
       existing context file, and name none when none exists.
-- [ ] A written finding answers phase 4's two questions with the commands
+- [x] A written finding answers phase 4's two questions with the commands
       used.
-- [ ] The contract states each rule, and conformance scenarios cover each
+- [x] The contract states each rule, and conformance scenarios cover each
       hold, each way it clears, and a near miss.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 
