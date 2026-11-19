@@ -82,7 +82,7 @@ a check uses the shell reading that already finds checks.
 
 ## Blocked By
 
-- `tickets/114-core-large-writes-land-and-read-after.md` (ordering: both
+- `tickets/archive/114-core-large-writes-land-and-read-after.md` (ordering: both
   change `_closeout_items` and the Closeout Items table).
 
 ## Scope Exclusions

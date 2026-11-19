@@ -54,21 +54,21 @@ change; 108 and 109 have merged, so read that code as it is now.
 
 ## Acceptance Criteria
 
-- [ ] Three finished `cat` commands of three distinct files, or one
+- [x] Three finished `cat` commands of three distinct files, or one
       `cat a b c`, clear orientation in a briefed `standard` session with
       the orientation skill installed and not loaded.
-- [ ] `head a`, `sed -n 1,50p a`, `grep x a`, `cat a | head`, and
+- [x] `head a`, `sed -n 1,50p a`, `grep x a`, `cat a | head`, and
       `Get-Content a -TotalCount 5` do not count; `Get-Content a` does.
-- [ ] A failed command, or one still running, does not count.
-- [ ] A shell print of a design reference still does not clear
+- [x] A failed command, or one still running, does not count.
+- [x] A shell print of a design reference still does not clear
       `design-reads`.
-- [ ] Two spellings of one path count as one file, as for file reads,
+- [x] Two spellings of one path count as one file, as for file reads,
       and `cat src/a.py` run from the project root and a file read of the
       same file's absolute path count once.
-- [ ] The orientation hold's text says a whole shell print counts.
-- [ ] The contract states the rule, and a conformance scenario covers the
+- [x] The orientation hold's text says a whole shell print counts.
+- [x] The contract states the rule, and a conformance scenario covers the
       hold and each near-miss kind.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 
@@ -94,3 +94,11 @@ change; 108 and 109 have merged, so read that code as it is now.
 - Counting reads of the files a brief names.
 - Partial reads toward orientation.
 - Shell prints for any rule but orientation.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-19.
+
+- Merged as `759b518` (`62087b0`, follow-up `cc109ff`).
+- Maintainer decision H1. Lead decisions at review: a print counts only when its exit status is the command's own (in the trailing `&&` chain), common PowerShell value parameters and range prefixes are read as options, and words holding `$`, `~` or a glob count as no file.
+- Exercised in later sessions; no separate live-check record.

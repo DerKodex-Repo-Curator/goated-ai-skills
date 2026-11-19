@@ -49,19 +49,19 @@ scenario, change with the code, as `AGENTS.md` requires.
 
 ## Acceptance Criteria
 
-- [ ] In a briefed session that never loaded the router, a person's
+- [x] In a briefed session that never loaded the router, a person's
       prompt and then `goated-route: continue` meet no `router-first`
       hold on the next write or command.
-- [ ] That turn brings back neither briefed-session orientation nor any
+- [x] That turn brings back neither briefed-session orientation nor any
       `pipeline` hold that the person's prompt had ended.
-- [ ] The same prompt with a new route line (`goated-route: standard ...`)
+- [x] The same prompt with a new route line (`goated-route: standard ...`)
       is held until the router loads.
-- [ ] Before any route line in that turn, a non-read command is held as
+- [x] Before any route line in that turn, a non-read command is held as
       today.
-- [ ] A session not started from a brief is unchanged.
-- [ ] The contract states the rule, and a conformance scenario covers the
+- [x] A session not started from a brief is unchanged.
+- [x] The contract states the rule, and a conformance scenario covers the
       hold and each near miss.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 
@@ -83,3 +83,11 @@ scenario, change with the code, as `AGENTS.md` requires.
 
 - The `route-line` gate, which still asks for the line.
 - Sessions not started from a brief.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-19.
+
+- Merged as `fd75528` (`49814b1`, follow-up `a534ea0`).
+- Maintainer decision P1. A brief turn in which no call was judged and no Stop ran leaves the brief unrecorded; this limit is documented in the adapter README.
+- Exercised in later sessions; no separate live-check record.

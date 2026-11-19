@@ -81,7 +81,7 @@ is not read for signals, so this ticket does not touch `shell.py` at all.
 
 ## Blocked By
 
-- `tickets/114-core-large-writes-land-and-read-after.md` (ordering: both
+- `tickets/archive/114-core-large-writes-land-and-read-after.md` (ordering: both
   change the `design-reads` and `reference-reads` contract rows; 114 is
   ranked first).
 

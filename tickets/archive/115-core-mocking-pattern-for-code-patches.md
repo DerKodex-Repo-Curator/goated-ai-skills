@@ -50,17 +50,17 @@ conformance scenario change with it, as `AGENTS.md` requires.
 
 ## Acceptance Criteria
 
-- [ ] In a test file with `tdd` loaded, `monkeypatch.setenv("X", "1")`
+- [x] In a test file with `tdd` loaded, `monkeypatch.setenv("X", "1")`
       and `def test_x(monkeypatch):` select no mocking reference;
       `monkeypatch.setattr(mod, "f", g)` and
       `with monkeypatch.context() as m:` do.
-- [ ] `[providers.fake]` inside a triple-quoted string the edit shows
+- [x] `[providers.fake]` inside a triple-quoted string the edit shows
       selects nothing; the same line as code, and `fake = Fake()`, still
       do.
-- [ ] The registry's pattern description stays true of the narrower match.
-- [ ] The contract states the rule, and a conformance scenario covers a
+- [x] The registry's pattern description stays true of the narrower match.
+- [x] The contract states the rule, and a conformance scenario covers a
       hold and each near miss.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 
@@ -81,3 +81,11 @@ conformance scenario change with it, as `AGENTS.md` requires.
 
 - The registry's other pattern (`sleep-retry-or-timeout`).
 - Non-Python and non-JavaScript multi-line string forms.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-19.
+
+- Merged as `d47f383` (`eb19af4`).
+- Maintainer decision M1.
+- Exercised in later sessions; no separate live-check record.

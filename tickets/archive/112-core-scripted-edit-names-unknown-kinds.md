@@ -36,12 +36,12 @@ checks the text changes with it.
 
 ## Acceptance Criteria
 
-- [ ] A script writing a file named only at run time is held with text
+- [x] A script writing a file named only at run time is held with text
       that does not call the file code, in its full and short forms.
-- [ ] A script writing a named `.py` file is still held with "the code
+- [x] A script writing a named `.py` file is still held with "the code
       file" and its name.
-- [ ] A command doing both names each in its own words.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] A command doing both names each in its own words.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 
@@ -62,3 +62,11 @@ checks the text changes with it.
 
 - Telling a run-time file's kind from its extension (option J2).
 - Which writes the gate holds.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-19.
+
+- Merged as `85926fa` (`eb01961`).
+- Maintainer decision J1 (wording only).
+- Exercised in later sessions; no separate live-check record.

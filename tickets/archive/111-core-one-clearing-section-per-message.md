@@ -48,7 +48,7 @@ the code, as `AGENTS.md` requires.
 
 ## Acceptance Criteria
 
-- [ ] A call meeting three holds that lines can clear shows each
+- [x] A call meeting three holds that lines can clear shows each
       hold's skip line once, in its hold, and one clearing section after
       the last hold that names each override once. Example: with
       `software-design-principles` and `tdd` loaded and `diagnose` not,
@@ -56,13 +56,13 @@ the code, as `AGENTS.md` requires.
       `tests/test_app.py` adding `m = MagicMock()` meets `design-reads`
       (`coding.md` unread), `reference-reads` (`tdd`'s
       `mocking-and-seams.md` unread) and `repeated-failure`.
-- [ ] The section carries the full placement advice on the turn's first
+- [x] The section carries the full placement advice on the turn's first
       such message and one sentence on later ones.
-- [ ] A call meeting one such hold shows today's text.
-- [ ] A strict hold that no line clears is unchanged.
-- [ ] The contract states the message shape, and a conformance scenario
+- [x] A call meeting one such hold shows today's text.
+- [x] A strict hold that no line clears is unchanged.
+- [x] The contract states the message shape, and a conformance scenario
       covers a joint message and a single hold.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 
@@ -85,3 +85,11 @@ the code, as `AGENTS.md` requires.
 - Changing what any hold asks for.
 - The carrier call itself (feedback item 12).
 - Closeout item texts.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-19.
+
+- Merged as `32b8351` (`b0de08d`).
+- Maintainer decision I1.
+- Exercised in later sessions; no separate live-check record.

@@ -20,9 +20,10 @@ This table replaces waves 5 to 10 of
 to 4 there are merged.
 
 Waves 5 to 13 are merged, and so are wave 14 but 084, 106 of wave 15, and
-waves 16 and 17. Their tickets were archived under `tickets/archive/` on
-2026-11-18: waves 5 to 9 (078, 079 and 086 to 097), and waves 10 to 17
-(098, 080 to 083, and 099 to 109). 084 waits for a go-ahead to start, and
+waves 16 to 18. Their tickets were archived under `tickets/archive/` on
+2026-11-18 and 2026-11-19: waves 5 to 9 (078, 079 and 086 to 097), and
+waves 10 to 18 (098, 080 to 083, 099 to 112, 114, 115 and 117). 113 and
+116 are ready (wave 19); 084 waits for a go-ahead to start, and
 085 for 084.
 
 | Wave | Ticket | Round | Area | Type | Blocked by |
@@ -59,14 +60,14 @@ waves 16 and 17. Their tickets were archived under `tickets/archive/` on
 | 15 | [085](085-opencode-adapter.md) | 2 | new adapter | HITL (build decision after research) | 084 |
 | 16 (merged) | [108](archive/108-core-pull-request-options-between-noun-and-verb.md) | 4 | core | AFK | 103 (merged) |
 | 17 (merged) | [109](archive/109-core-one-pull-request-per-simple-command.md) | 4 | core | AFK | 108 (same lines) |
-| 18 (ready) | [111](111-core-one-clearing-section-per-message.md) | 5 | core and adapter | AFK | None |
-| 18 (ready) | [112](112-core-scripted-edit-names-unknown-kinds.md) | 5 | core | AFK | None |
-| 18 (ready) | [115](115-core-mocking-pattern-for-code-patches.md) | 5 | core and registry | AFK | None |
-| 18 (ready) | [117](117-core-continue-meets-router-first-in-a-briefed-task.md) | 5 | core | AFK | None |
-| 18 (ready) | [110](110-core-whole-shell-prints-orient.md) | 5 | core | AFK | 108, 109 (merged; adjacent `shell.py` lines) |
-| 18 (ready) | [114](114-core-large-writes-land-and-read-after.md) | 5 | core, event model and skills | AFK | None |
-| 19 | [113](113-core-design-reads-sized-by-substance.md) | 5 | core | AFK | 114 (same rows) |
-| 19 | [116](116-core-proof-kept-while-nothing-material-changed.md) | 5 | core | AFK | 114 (same closeout items) |
+| 18 (merged) | [111](archive/111-core-one-clearing-section-per-message.md) | 5 | core and adapter | AFK | None |
+| 18 (merged) | [112](archive/112-core-scripted-edit-names-unknown-kinds.md) | 5 | core | AFK | None |
+| 18 (merged) | [115](archive/115-core-mocking-pattern-for-code-patches.md) | 5 | core and registry | AFK | None |
+| 18 (merged) | [117](archive/117-core-continue-meets-router-first-in-a-briefed-task.md) | 5 | core | AFK | None |
+| 18 (merged) | [110](archive/110-core-whole-shell-prints-orient.md) | 5 | core | AFK | 108, 109 (merged; adjacent `shell.py` lines) |
+| 18 (merged) | [114](archive/114-core-large-writes-land-and-read-after.md) | 5 | core, event model and skills | AFK | None |
+| 19 (ready now) | [113](113-core-design-reads-sized-by-substance.md) | 5 | core | AFK | 114 (same rows) |
+| 19 (ready now) | [116](116-core-proof-kept-while-nothing-material-changed.md) | 5 | core | AFK | 114 (same closeout items) |
 
 ## Decisions Recorded Here
 

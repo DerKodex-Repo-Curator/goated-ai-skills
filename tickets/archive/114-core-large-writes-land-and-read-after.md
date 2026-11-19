@@ -77,23 +77,23 @@ notice kinds follow the version bump.
 
 ## Acceptance Criteria
 
-- [ ] With `software-design-principles` loaded, a 40-line edit whose
+- [x] With `software-design-principles` loaded, a 40-line edit whose
       signals select an unread reference is applied, with a `reads_owed`
       notice naming the reference.
-- [ ] The turn's end and a commit then meet the `Reads` item until the
+- [x] The turn's end and a commit then meet the `Reads` item until the
       reference is read whole and a change read of the file follows; a
       skip line naming the skill clears it.
-- [ ] The same holds for a large write meeting `reference-reads` (a
+- [x] The same holds for a large write meeting `reference-reads` (a
       registry signal).
-- [ ] A 29-line edit, and a shell write whose text the command does not
+- [x] A 29-line edit, and a shell write whose text the command does not
       show, are held as today.
-- [ ] A large first edit with the skill not loaded still meets `design`;
+- [x] A large first edit with the skill not loaded still meets `design`;
       with the skill loaded it lands owing its reads.
-- [ ] The event model is at version 4 with `reads_owed`, and the contract
+- [x] The event model is at version 4 with `reads_owed`, and the contract
       states the rule, the item and the notice; conformance scenarios
       cover the hold, the landed write, each way the item clears, and the
       near misses.
-- [ ] The repo checks in `AGENTS.md` pass, including the context
+- [x] The repo checks in `AGENTS.md` pass, including the context
       comparison.
 
 ## Expected Proof
@@ -119,3 +119,11 @@ notice kinds follow the version bump.
 - The `design` gate's hold for the skill's load, and strict gates
   (`pipeline`, `commit`, `security`).
 - `scripted-edit`, whose script is short and steered to a file edit tool.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-19.
+
+- Merged as `c48a6dd` (`94ebbaf`, follow-up `becec98`).
+- Maintainer decision L1, narrowed at review; and (2026-11-19) a turn's first large code edit lands too once `software-design-principles` is loaded. Lead decisions at review: the Reads item needs a read of the landed file or a diff, only lines written to judged files count, and owed reads end with the turn.
+- Exercised in later sessions; no separate live-check record.
