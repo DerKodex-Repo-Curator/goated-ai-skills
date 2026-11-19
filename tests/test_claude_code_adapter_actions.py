@@ -3824,14 +3824,16 @@ class ChangeReadTests(AdapterTestCase):
                 s.read("src/export.py")
                 self.assertEqual(decision(s.call(tool, tool_input)), "pass")
 
-    def test_a_read_before_a_later_non_code_change_does_not_clear_a_commit(self) -> None:
+    def test_a_non_code_change_needs_a_read_but_one_after_a_read_keeps_it(self) -> None:
+        # A doc change after a change read keeps the commit's read (Ticket 120, R5);
+        # a turn whose only change is a doc still needs one.
         s = self.routed()
         s.load("commit-message")
-        s.read("README.md")
         s.call("Edit", {"file_path": "README.md", "old_string": "a", "new_string": "b"})
 
         self.assertEqual(decision(s.call("Bash", commit("Update the readme"))), "deny")
         s.read("README.md")
+        s.call("Edit", {"file_path": "README.md", "old_string": "b", "new_string": "c"})
         self.assertEqual(decision(s.call("Bash", commit("Update the readme"))), "pass")
 
     def test_the_security_item_counts_from_the_last_sensitive_change(self) -> None:
@@ -4443,16 +4445,18 @@ class ChangeReadOrderTests(AdapterTestCase):
 
     def test_a_change_after_the_read_still_needs_a_new_read_for_the_commit(self) -> None:
         s = self.routed()
-        s.call("Edit", {"file_path": "README.md", "old_string": "a", "new_string": "b"})
+        s.say(PROOF_SKIP)
+        s.say(DOC_SKIP)
+        s.call("Edit", {"file_path": "src/export.py", "old_string": "a = 1", "new_string": "a = 2"})
         s.run(DIFF)
         s.load("commit-message")
-        s.call("Edit", {"file_path": "README.md", "old_string": "b", "new_string": "c"})
+        s.call("Edit", {"file_path": "src/export.py", "old_string": "a = 2", "new_string": "a = 3"})
 
-        held = s.call("Bash", commit("Update the readme"))
+        held = s.call("Bash", commit("Update the export"))
         self.assertEqual(hold_line(held), "goated-hold: commit | strict")
         self.assertNotIn("after loading", reason(held))
-        s.read("README.md")
-        self.assertEqual(decision(s.call("Bash", commit("Update the readme"))), "pass")
+        s.read("src/export.py")
+        self.assertEqual(decision(s.call("Bash", commit("Update the export"))), "pass")
 
     def test_a_diff_read_before_the_pr_description_load_passes_the_pull_request(self) -> None:
         s = self.routed()
@@ -4842,19 +4846,15 @@ class CloseoutAtCommitTests(AdapterTestCase):
         s.say(DOC_SKIP)
         self.assertEqual(decision(s.call("mcp__github__push_files", tool_input)), "pass")
 
-    def test_an_unmet_commit_message_hold_comes_first_unchanged(self) -> None:
-        bare = self.fresh()
-        bare.prompt("Do the task.")
-        bare.load(ROUTER)
-        bare.say("goated-route: direct")
-        expected = reason(bare.call("Bash", commit("Add CSV export")))
-
+    def test_an_unmet_commit_hold_comes_first_with_the_closeout_beside_it(self) -> None:
+        # One held commit names everything it needs (Ticket 120, R4).
         s = self.routed()
         s.say(DESIGN_SKIP)
         s.call("Write", write("src/export.py"))
-        self.assertEqual(reason(s.call("Bash", commit("Add CSV export"))), expected)
+        held = reason(s.call("Bash", commit("Add CSV export")))
+        self.assertTrue(held.startswith("goated-hold: commit | strict\n"))
+        self.assertIn(f"\n\n{CLOSEOUT_HOLD}\n", held)
         s.load("commit-message")
-        self.assertEqual(hold_line(s.call("Bash", commit("Add CSV export"))), "goated-hold: commit | strict")
         s.run(DIFF)
         self.assertEqual(hold_line(s.call("Bash", commit("Add CSV export"))), CLOSEOUT_HOLD)
 

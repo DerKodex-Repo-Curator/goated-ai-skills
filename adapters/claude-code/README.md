@@ -212,7 +212,7 @@ read.
 | `router-first` | strict | An `Edit`, `Write`, `MultiEdit`, or `NotebookEdit`, a spawn, or a `Bash` or `PowerShell` command; a command made only of [plain reads](#plain-reads) passes, as Read and Grep do, and so does a write whose every file is a [scratch file](../../stack/enforcement-contract.md#project-folders-and-scratch-files) | A `Skill` load of `using-goated-ai-skills`; or the session's first prompt is a brief with a route line (see above), until a typed prompt opens a turn; or, in the brief's task, a `goated-route: continue` line in the turn |
 | `route-line` | strict | The first write or spawn after each typed prompt until the turn has a valid route line, in reply text or a call's line field (see above), and after each prompt from elsewhere except another session's message in a session with a task (see [User Overrides](#user-overrides)) | A valid route line appears in the turn |
 | `pipeline` | strict | Writes and spawns while a `requires:` skill has not loaded, or a brief-routed session's orientation is unmet while Claude Code can find `session-start-progressive-disclosure`; a spawn of a [read-only subagent](#plain-reads) passes | Each listed skill loads by the Skill tool, or orientation by that skill or three [whole reads](#whole-reads) by the Read tool |
-| `commit` | strict | A `git commit` in a `Bash` or `PowerShell` command, or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit`; the tool's `message` is the commit message | `commit-message` [counts as loaded](#loads), the message passes the [content check](#content-checks), and a [change read](#change-reads) follows the last change; then the [closeout](#closeout-at-commit) |
+| `commit` | strict | A `git commit` in a `Bash` or `PowerShell` command, or an MCP tool that records a commit, named `…__push_files`, `…__create_or_update_file`, `…__delete_file`, `…__git_commit`, `…__create_commit`, `…__commit_changes`, or `…__commit`; the tool's `message` is the commit message | `commit-message` [counts as loaded](#loads), the message passes the [content check](#content-checks), and a [change read](#change-reads) follows the last code change that is not comment-only; the [closeout](#closeout-at-commit) is judged beside it |
 | `pull-request` | strict | `gh pr create` or `new`, `glab mr create` or `new` in a shell command, or an MCP tool named `…__create_pull_request` or `…__create_merge_request` | `pr-description` [counts as loaded](#loads), and a [change read](#change-reads) |
 | `pr-review` | justified-skip | A pull request the `pull-request` gate holds, once it passes, when it is [large](#large-pull-requests); an MCP tool's `base` or `target_branch`, `head` or `source_branch`, and `owner` and `repo` inputs name what is measured | `standards-and-spec-review` [counts as loaded](#loads), and a [change read](#change-reads) |
 | `spawn` | strict | An `Agent` or `Task` call, or a `start_session` or `hand_off_to_session` call that carries a brief (see the Spawns bullet below), except a [read-only subagent](#plain-reads) | The skill loads, its template is [read whole](#whole-reads) by the Read tool, and the `prompt` or brief passes the [content check](#content-checks) |
@@ -220,11 +220,11 @@ read.
 | `design-reads` | justified-skip | A later write whose [signals](#design-references) select a reference not yet read | Each reference is [read whole](#whole-reads) by the Read tool |
 | `reference-reads` | justified-skip | A write tool's or shell command's write that fires a [registry signal](#registry-references) | Each named reference is [read whole](#whole-reads) by the Read tool |
 | `review-intake` | justified-skip | A code write once a [reviewer subagent](#reviewer-subagents) started by `Agent` or `Task` has reported | `receiving-code-review` [counts as loaded](#loads) |
-| `security` | justified-skip | A write tool's or shell command's write to a [security-sensitive path](../../stack/enforcement-contract.md#security-sensitive-paths) | `code-security-review` [counts as loaded](#loads) |
+| `security` | justified-skip | A write tool's or shell command's write to a [security-sensitive path](../../stack/enforcement-contract.md#security-sensitive-paths), never a test file | `code-security-review` [counts as loaded](#loads) |
 | `scripted-edit` | justified-skip | A shell command whose [inline script](#inline-scripts) writes code; the hold asks for the change to be made with `Edit`, `MultiEdit`, or `Write` | A skip line naming `software-design-principles`, or the typed override |
 | `conflict-resolution` | justified-skip | A [conflict](../../stack/enforcement-contract.md#conflicts) opened by an `Edit` or `MultiEdit` whose `old_string` holds a marker, a Read whose numbered lines show one, a `Bash` or `PowerShell` file printer (`cat`, `Get-Content`) or `git diff` whose output shows one, or a git command's result; a finished commit, by a shell `git commit` or a commit tool, ends it | `resolving-merge-conflicts` [counts as loaded](#loads) |
 | `repeated-failure` | justified-skip | A write once a check in a `Bash` or `PowerShell` command has [failed twice](../../stack/enforcement-contract.md#repeated-failures); a call held by the adapter or another hook, refused at a permission prompt, or interrupted never ran | `diagnose` [counts as loaded](#loads) |
-| `closeout` | justified-skip | A commit the `commit` gate lets through, or the `Stop` hook, in a turn that changed code, a security-sensitive file, or setup | Every item below is met or skipped |
+| `closeout` | justified-skip | A commit, or the `Stop` hook, in a turn that changed code, a security-sensitive file, or setup | Every item below is met or skipped |
 
 The contract's [Closeout Items](../../stack/enforcement-contract.md#closeout-items)
 table is the authority for each item; this one adds Claude Code's detail.
@@ -233,7 +233,7 @@ table is the authority for each item; this one adds Claude Code's detail.
 | --- | --- | --- | --- |
 | Proof | A change not already proved | A [check](../../stack/enforcement-contract.md#checks) in a `Bash` or `PowerShell` command after the last code change | `verification-before-completion` |
 | Unfinished work | The last check after the change failed | `handoff` counts as loaded | `handoff` |
-| Docs | A code file outside the tests changed | `doc-sync` counts as loaded, and a [change read](#change-reads) | `doc-sync` |
+| Docs | A code file outside the tests changed | `doc-sync` counts as loaded, and a [change read](#change-reads); or a doc changed after the last code change, then a change read, as the contract states | `doc-sync` |
 | Design red flags | As the contract states | `software-design-principles/references/red-flags.md` [read whole](#whole-reads) by the Read tool after the last code change that is not [comment-only](#comment-only-edits), then a [change read](#change-reads) | `software-design-principles` |
 | Review | The branch is [large](#large-branches) and the session was not started from a brief | A [reviewer subagent](#reviewer-subagents) started by `Agent` or `Task`, or `standards-and-spec-review` and a [change read](#change-reads) | `standards-and-spec-review` |
 | Verification | As the contract states | `verification-before-completion` counts as loaded | `verification-before-completion`, the Proof item's skip line, so one line answers both |
@@ -402,14 +402,16 @@ with whatever tools it lists, and is exempt too. The list is
 
 Agents commit before they report, so a commit meets the closeout first. A
 commit, as the `commit` gate sees one (a git commit in a shell command or an
-MCP commit tool), that the `commit` gate lets through is held while the turn
-has an unmet closeout item. The hold's first line is the closeout's,
+MCP commit tool), is held while the turn has an unmet closeout item. The
+hold's first line is the closeout's,
 `goated-hold: closeout | justified-skip`, its items are the closeout's
 texts, and each item accepts its usual skip line. It opens
 `Before committing in this turn`; for a shell commit it adds that the whole
 command was held, so a check chained before the commit in the same command
 has not run yet and does not count. An MCP commit tool has no command, so
-its hold leaves that out. An unmet `commit` hold comes first, unchanged.
+its hold leaves that out. An unmet `commit` hold comes first, in the same
+message, naming each of its own asks still unmet, so one held commit shows
+everything it needs.
 
 The `Stop` closeout stays as a backstop. A commit changes no file, so an
 item met before the commit stays met at `Stop`; a turn that never commits
@@ -620,8 +622,7 @@ A hook call from inside a subagent carries `agent_id`. There:
   count;
 - no override applies, because nobody types a subagent's prompts;
 - the closeout gate does not run when the subagent stops; the adapter
-  registers no `SubagentStop` hook. A commit the `commit` gate passes,
-  though, meets the closeout judged from the subagent's own turn: its
+  registers no `SubagentStop` hook. A commit, though, meets the closeout judged from the subagent's own turn: its
   changes, checks, loads, reads, and skip lines, as a commit's closeout
   holds the main agent (Ticket 098). The subagent was started from its
   parent's brief, so, as a briefed session, it meets no Review item, and it

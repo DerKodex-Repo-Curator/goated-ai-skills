@@ -68,26 +68,26 @@ Security-Sensitive Paths sections, and conformance scenarios under
 
 ## Acceptance Criteria
 
-- [ ] A commit with no `commit-message` load, no change read and an unmet
+- [x] A commit with no `commit-message` load, no change read and an unmet
       Proof item returns one message naming all three.
-- [ ] After a change read, a Markdown edit and a comment-only edit leave
+- [x] After a change read, a Markdown edit and a comment-only edit leave
       the commit unheld; a one-line code edit holds it.
-- [ ] A diff chained before the commit in one command still does not meet
+- [x] A diff chained before the commit in one command still does not meet
       the change read.
-- [ ] After a red-flags read, a 2-line replacement sent with 3 unchanged
+- [x] After a red-flags read, a 2-line replacement sent with 3 unchanged
       context lines needs only a change read; a 5-line addition needs the
       red-flags read again.
-- [ ] A turn that changes code, then a doc, then reads the change meets
+- [x] A turn that changes code, then a doc, then reads the change meets
       Docs with no load; with the doc changed before the code, it does
       not.
-- [ ] With `resolving-merge-conflicts` loaded, a commit ending a conflict
+- [x] With `resolving-merge-conflicts` loaded, a commit ending a conflict
       asks for the change read and Proof only; the same commit without the
       load, and the next ordinary commit, ask for the full closeout.
-- [ ] An edit to `tests/test_session_x.py` meets no security hold; an edit
+- [x] An edit to `tests/test_session_x.py` meets no security hold; an edit
       to `src/session.py` does.
-- [ ] The contract states each rule, and conformance scenarios cover each
+- [x] The contract states each rule, and conformance scenarios cover each
       hold, each way it clears, and a near miss.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 

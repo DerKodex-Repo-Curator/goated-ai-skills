@@ -1376,6 +1376,33 @@ scenarios:
       - call: {kind: skill_load, skill: using-goated-ai-skills}
       - call: {kind: shell_command, shell: powershell, command: "echo x > nul"}
 
+  - name: a test file named for sessions is not security-sensitive
+    covers:
+      - {gate: security, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the session timeout test.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call:
+          kind: file_write
+          path: tests/test_session_x.py
+          edits: [{removed: "assert ttl == 10", added: "assert ttl == 20"}]
+
+  - name: session code is security-sensitive
+    covers:
+      - {gate: security, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Fix the session timeout.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call:
+          kind: file_write
+          path: src/session.py
+          edits: [{removed: "ttl = 10", added: "ttl = 20"}]
+        expect:
+          decision: hold
+          holds: [{gate: security, kind: justified-skip}]
+
   - name: an edit inside an open merge conflict waits for the conflict skill
     covers:
       - {gate: conflict-resolution, case: holds}

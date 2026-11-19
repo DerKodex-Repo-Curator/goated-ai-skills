@@ -540,9 +540,9 @@ def check_action(call: Call, turn: Turn, overrides: dict,
     """Return every action hold this call meets, in the order the gates fire,
     one per gate; the call's own entry is not yet proof.
 
-    Each gate gives the answer it would give alone (Ticket 095). Only the
-    closeout at a commit waits for another hold: it is judged once the
-    `commit` gate passes the commit, so it may follow on the retry.
+    Each gate gives the answer it would give alone (Ticket 095), and the
+    closeout at a commit is judged beside the `commit` gate, so one held
+    commit names everything it still needs (spec R4).
 
     `project` says which files are the project's (see `find_project`): only files
     inside it meet the design and security gates, and only changes to them
@@ -551,8 +551,8 @@ def check_action(call: Call, turn: Turn, overrides: dict,
     of each subagent this turn spawned, as `check_closeout` takes them; it is
     called only when a commit or pull request needs its change read, since
     reading their transcripts takes time. `earlier` is what counts from
-    earlier turns until the next compaction. With `closeout`, a commit whose
-    own hold is met is held while the turn has unmet closeout items (Ticket 059),
+    earlier turns until the next compaction. With `closeout`, a commit is
+    held while the turn has unmet closeout items (Ticket 059),
     a subagent's own turn included (Ticket 098); without it, it is not. The
     `review-intake` gate reads the spawn templates `closeout` records, so
     without it, or in a subagent, which records none, it holds nothing.
@@ -589,7 +589,8 @@ def check_action(call: Call, turn: Turn, overrides: dict,
         if command.writes:
             holds.add(lambda: _conflict_hold(command.write_targets, call, proof))
         if command.commit:
-            holds.add(lambda: _commit_hold(command.commit_message, proof, changes) or at_commit())
+            holds.add(lambda: _commit_hold(command.commit_message, proof, changes))
+            holds.add(at_commit)
         if command.opens_pr:
             holds.add(lambda: _pr_hold(proof, changes))
             holds.add(lambda: _pr_review_hold(
@@ -599,7 +600,7 @@ def check_action(call: Call, turn: Turn, overrides: dict,
         inside = [t for t in command.write_targets
                   if _in_project(t, project, t not in command.unplaced_targets)]
         paths = [_norm(t) for t in inside]
-        holds.add(lambda: _security_hold(paths, proof))
+        holds.add(lambda: _security_hold(paths, proof, project))
         holds.add(lambda: next(filter(None, map(reviewed, paths)), None))
         # A script's write to a path built at run time is inside, and code (UNNAMED_FILES).
         scripted = [_norm(t) for t in inside if t in command.script_targets]
@@ -624,8 +625,8 @@ def check_action(call: Call, turn: Turn, overrides: dict,
             lambda: [(changed_lines(cwd, call.base, call.head, call.repository), None)],
             proof, changes, by_tool=True))
     elif call.kind == events.COMMIT:
-        holds.add(lambda: _commit_hold(call.message, proof, changes, by_tool=True)
-                  or at_commit(by_tool=True))
+        holds.add(lambda: _commit_hold(call.message, proof, changes, by_tool=True))
+        holds.add(lambda: at_commit(by_tool=True))
     elif call.kind == events.SPAWN:
         # A read-only agent's search brief needs no handoff template.
         if call.brief.strip() and not call.read_only:
@@ -639,7 +640,7 @@ def check_action(call: Call, turn: Turn, overrides: dict,
         lines = countable_lines(call) if call.id else None
         if _in_project(path, project):
             # A scratch file elsewhere is not the project's design or security.
-            holds.add(lambda: _security_hold([path], proof))
+            holds.add(lambda: _security_hold([path], proof, project))
             holds.add(lambda: reviewed(path))
             holds.add(lambda: _design_hold({path: _small_edit(call)}, call, proof,
                                            project, references, lines))
@@ -672,40 +673,58 @@ def _commit_hold(message: str | None, proof: _Proof, changes: Callable[[], "_Cha
                  by_tool: bool = False) -> Hold | None:
     """Hold a commit until `commit-message` loads, its inline message (`message`,
     if known) keeps the contract, and the change is read after the turn's last
-    project change, before or after the load; `by_tool`: an MCP tool records
-    it, not a git command."""
+    material change (`_Changes.last_material`), before or after the load;
+    `by_tool`: an MCP tool records it, not a git command. One hold names every
+    one of the three still unmet (spec R4); one alone keeps its own text."""
 
     supplied = proof.overrides.get("commit_message")
     if supplied and message is not None and (
         _subject(message) == _subject(supplied)
     ):
         return None  # The user typed this message (spec R8).
-    if not proof.loaded(COMMIT_SKILL):
-        return Hold(
-            "commit", STRICT,
-            f"Load the `{COMMIT_SKILL}` skill with {SKILL_TOOL}{proof.within} and draft "
-            f"the message with it, then run the commit again. {CHAINED_STEPS} This hold is "
-            "strict: a goated-skip line does not clear it. A commit message the user typed in "
-            "their prompt stands it down when the commit uses that message.",
-            short_form(f"`{COMMIT_SKILL}` has not loaded",
-                       "Load it, draft the message with it, and run the commit again. A "
-                       "commit message the user typed in their prompt stands it down when "
-                       "the commit uses that message."),
-        )
     if COMMIT_SKILL in proof.user_skips:
         return None
+    load = None if proof.loaded(COMMIT_SKILL) else _Ask(
+        f"Load the `{COMMIT_SKILL}` skill with {SKILL_TOOL}{proof.within} and draft the "
+        "message with it.",
+        f"`{COMMIT_SKILL}` has not loaded", "Load it and draft the message with it.")
     problems = contracts.commit_message_problems(message) if message is not None else []
-    if problems:
+    # No backticks: this ask is for a fix, not a load, and backticks name a skill to load.
+    contract = _Ask(f"The commit message breaks the {COMMIT_SKILL} contract: "
+                    + "; ".join(problems) + ". Fix the message.", "", "") if problems else None
+    current = changes()
+    read = _change_read_ask(current, by_tool, "committing it",
+                            "check that the message describes it and run the commit again",
+                            since=current.last_material)
+    asks = [ask for ask in (load, contract, read) if ask]
+    typed = ("A commit message the user typed in their prompt stands it down when the commit "
+             "uses that message.")
+    strict = "This hold is strict: a goated-skip line does not clear it."
+    if not asks:
+        return None
+    if asks == [contract]:
+        return Hold("commit", STRICT, contract.text.removesuffix(".")
+                    + " and run the commit again.")
+    if asks == [load]:
         return Hold(
             "commit", STRICT,
-            # No backticks: this hold asks for a fix, not a load, and backticks name a skill to load.
-            f"The commit message breaks the {COMMIT_SKILL} contract: "
-            + "; ".join(problems) + ". Fix the message and run the commit again.",
+            f"{load.text.removesuffix('.')}, then run the commit again. {CHAINED_STEPS} "
+            f"{strict} {typed}",
+            short_form(load.unmet, "Load it, draft the message with it, and run the commit "
+                                   f"again. {typed}"),
         )
-    return _change_read_hold(
-        "commit", COMMIT_SKILL, proof, changes(), by_tool,
-        "committing it", "check that the message describes it and run the commit again",
-    )
+    if asks == [read]:
+        return _change_read_hold("commit", COMMIT_SKILL, read)
+    # Several asks: each in turn, the rerun last, then the rules they share.
+    rerun = "" if read else " Then run the commit again."
+    reads_rule = f" {UNFINISHED_READ}" if read else ""
+    text = (" ".join(ask.text for ask in asks) + rerun + f" {CHAINED_STEPS}{reads_rule} "
+            f"{strict}" + (f" {typed}" if load else ""))
+    # A bad message has no short form: what to fix is in its text alone.
+    short = None if contract else short_form(
+        " and ".join(ask.unmet for ask in asks),
+        " ".join(ask.clear for ask in asks) + (f" {typed}" if load else ""))
+    return Hold("commit", STRICT, text, short)
 
 
 def _pr_hold(proof: _Proof, changes: Callable[[], "_Changes"],
@@ -713,10 +732,9 @@ def _pr_hold(proof: _Proof, changes: Callable[[], "_Changes"],
     if PR_SKILL in proof.user_skips:
         return None
     if proof.loaded(PR_SKILL):
-        return _change_read_hold(
-            "pull-request", PR_SKILL, proof, changes(), by_tool, "opening the pull request",
-            "check that the title and body describe it and open the pull request again",
-        )
+        return _change_read_hold("pull-request", PR_SKILL, _change_read_ask(
+            changes(), by_tool, "opening the pull request",
+            "check that the title and body describe it and open the pull request again"))
     return Hold(
         "pull-request", STRICT,
         f"Load the `{PR_SKILL}` skill with {SKILL_TOOL}{proof.within} and draft the "
@@ -744,10 +762,9 @@ def _pr_review_hold(sizes: Callable[[], Iterable[tuple[int | None, str | None]]]
         return None
     hold = None
     if proof.loaded(REVIEW_SKILL):
-        hold = _change_read_hold(
-            "pr-review", REVIEW_SKILL, proof, changes(), by_tool, "opening the pull request",
-            "review it and open the pull request again", review=True,
-        )
+        hold = _change_read_hold("pr-review", REVIEW_SKILL, _change_read_ask(
+            changes(), by_tool, "opening the pull request",
+            "review it and open the pull request again"), review=True)
         if hold is None:
             return None
     size, name = next(((size, name) for size, name in sizes()
@@ -1005,12 +1022,21 @@ def _names_repository(url: str, repository: str) -> bool:
     return path.endswith("/" + wanted) or path.endswith(":" + wanted)
 
 
-def _change_read_hold(gate: str, skill: str, proof: _Proof, changes: "_Changes", by_tool: bool,
-                      doing: str, then: str, review: bool = False) -> Hold | None:
-    """Hold a commit or pull request, whose skill has loaded, until a change read
-    follows the turn's last change to any project file, before or after the
-    load (Tickets 059 and 092). `review`: the hold asks for a review done with
-    `skill`, and it is justified-skip, so a skip line naming `skill` clears it.
+class _Ask(NamedTuple):
+    """One unmet ask of a hold that may name several (spec R4): its `text`
+    in full, without the rules the hold ends with, and `unmet` and `clear`
+    for its short form (`short_form`)."""
+
+    text: str
+    unmet: str
+    clear: str
+
+
+def _change_read_ask(changes: "_Changes", by_tool: bool, doing: str, then: str,
+                     since: int | None = None) -> _Ask | None:
+    """The change read a commit or pull request still needs, or None: a read
+    must follow call `since`, by default the turn's last change to any
+    project file, before or after the skill's load (Tickets 059 and 092).
 
     An MCP tool (`by_tool`) passes when the turn changed no project file: it
     carries the change in its own input, and outside a git checkout no diff
@@ -1018,31 +1044,44 @@ def _change_read_hold(gate: str, skill: str, proof: _Proof, changes: "_Changes",
     no way out.
     """
 
+    since = changes.last_change if since is None else since
     if by_tool and changes.last_change < 0:
         return None
-    if changes.read_after(changes.last_change):
+    if changes.read_after(since):
         return None
     how = CHANGE_READ if changes.paths else DIFF_ONLY_READ
-    after = ", after your last change" if changes.last_change >= 0 else ""
+    after = ", after your last change" if since >= 0 else ""
+    return _Ask(
+        f"Read the change before {doing}{after}: {how}. Then {then}.",
+        f"a change read{after}",
+        (f"Print the diff or {READ} a file you changed" if changes.paths
+         else f"Print the diff with a git diff or git show command (a {READ} cannot "
+              "count: this turn changed no file it can name)")
+        + f", then {then}. A --stat or --name-only listing does not count, nor "
+        "does a read chained in this command or made in parallel.",
+    )
+
+
+def _change_read_hold(gate: str, skill: str, ask: _Ask | None,
+                      review: bool = False) -> Hold | None:
+    """The hold for a change read `ask` (`_change_read_ask`), or None.
+    `review`: the hold asks for a review done with `skill`, and it is
+    justified-skip, so a skip line naming `skill` clears it."""
+
+    if ask is None:
+        return None
     # Not backticked: a reader of hold texts (contract, Hold Text) would take a
     # backticked skip line as an ask only a skip line answers, and count a read
     # that clears this hold as ignored.
     tail = (f"Or write a skip line, goated-skip: {skill}: <reason>, on its own line. "
             + unseen_line_advice("skip line", f"skip {skill}") if review
             else "This hold is strict: a goated-skip line does not clear it.")
-    short_tail = (f"Or write a skip line, goated-skip: {skill}: <reason>. "
+    short_tail = (f" Or write a skip line, goated-skip: {skill}: <reason>. "
                   + short_advice("skip line", f"skip {skill}") if review else "")
     return Hold(
         gate, JUSTIFIED_SKIP if review else STRICT,
-        f"Read the change before {doing}{after}: "
-        f"{how}. Then {then}. {CHAINED_STEPS} {UNFINISHED_READ} {tail}",
-        short_form(f"a change read{after}",
-                   (f"Print the diff or {READ} a file you changed" if changes.paths
-                    else f"Print the diff with a git diff or git show command (a {READ} cannot "
-                         "count: this turn changed no file it can name)")
-                   + f", then {then}. A --stat or --name-only listing does not count, nor "
-                   f"does a read chained in this command or made in parallel. {short_tail}"
-                   .rstrip()),
+        f"{ask.text} {CHAINED_STEPS} {UNFINISHED_READ} {tail}",
+        short_form(ask.unmet, f"{ask.clear}{short_tail}".rstrip()),
     )
 
 
@@ -1175,12 +1214,12 @@ def _reviewer_returned(call, proof: _Proof, spawn_templates: dict[str, list[str]
     )
 
 
-def _security_hold(paths: list[str], proof: _Proof) -> Hold | None:
+def _security_hold(paths: list[str], proof: _Proof, project: Project | None) -> Hold | None:
     """Hold a write to the project files `paths`, one call's, while any is a
-    security-sensitive surface, until `code-security-review` loads or is
-    skipped; one hold names every such file."""
+    security-sensitive surface (`sensitive_category`), until
+    `code-security-review` loads or is skipped; one hold names every such file."""
 
-    sensitive = [(_file_name(p), c) for p in paths if (c := security_category(p))]
+    sensitive = [(_file_name(p), c) for p in paths if (c := sensitive_category(p, project))]
     if not sensitive or proof.loaded_or_skipped(SECURITY_SKILL):
         return None
     surfaces = _listed([f"\"{name}\" ({category})" for name, category in sensitive])
@@ -1602,7 +1641,7 @@ def _reference_edit(path: str | None, write: Call | None, proof: _Proof,
 
     if path is None:
         return reference_reads.Edit(is_code=False, is_test=False, added_code=[], gates=gates)
-    category, cwd = security_category(path), project.cwd if project else None
+    category, cwd = sensitive_category(path, project), project.cwd if project else None
     added = design_reads.added_lines(path, write, cwd)
     return reference_reads.Edit(
         is_code=is_code(path), is_test=is_test(path, project),
@@ -1873,6 +1912,9 @@ def _folder_key(folder: str) -> str:
 
 # The closeout hold's gate name, in its `goated-hold:` line.
 CLOSEOUT_GATE = "closeout"
+# The items a commit ending a conflict does not ask for once `resolving-merge-conflicts`
+# has loaded (round 6, R8): the resolution joins two sides already written.
+CONFLICT_COMMIT_SPARED = frozenset({"Docs", "Design", "Security"})
 
 def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = (),
                    final_text: str = "", subagents: dict | None = None,
@@ -1923,7 +1965,11 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     subagent changed code, a sensitive file changed, or the branch is large.
     A `briefed` session, one whose first prompt was a brief from the session
     that started it, meets no Review item: that session reviews the work
-    (spec R10).
+    (spec R10). A doc changed after the last code change, with a change read
+    after it, meets Docs with no load (round 6, R7). A commit made while a
+    conflict is open in the turn (`_open_conflict`), with
+    `resolving-merge-conflicts` loaded, is not asked for Docs, Design or
+    Security (`CONFLICT_COMMIT_SPARED`, round 6, R8).
 
     `owed_reads` maps the call id of each write of the turn that landed past
     a read gate to the reads it owes (`OwedRead`), which the Reads item asks
@@ -1934,9 +1980,13 @@ def check_closeout(turn: Turn, overrides: dict, namespaces: tuple[str, ...] = ()
     changes = _Changes(turn, subagents or {}, project)
     branch_size = functools.cache(
         lambda: changed_lines(project.cwd if project else None, None, WORKING_TREE))
+    proof = _Proof(turn, overrides, namespaces, final_text, earlier, task_skips)
     items = _closeout_items(
-        changes, _Proof(turn, overrides, namespaces, final_text, earlier, task_skips),
-        subagents or {}, spawn_templates or {}, intensity, briefed, branch_size, owed_reads)
+        changes, proof, subagents or {}, spawn_templates or {}, intensity, briefed,
+        branch_size, owed_reads)
+    # A commit that ends a conflict the skill resolved asks for less (round 6, R8).
+    if at_commit and CONFLICT_SKILL in proof.loads and any(_open_conflict(turn)):
+        items = [item for item in items if item.label not in CONFLICT_COMMIT_SPARED]
     if not items:
         return None
     labels = [i.label for i in items]
@@ -2161,14 +2211,19 @@ def _code_items(changes: "_Changes", proof: _Proof) -> list[_Item]:
     non_test = any(
         not is_test(path, changes.project) for change in code for path in change.code_paths
     )
-    if non_test and not proof.skipped(DOC_SYNC_SKILL):
+    # A doc changed after the last code change, then read, meets Docs with no
+    # load (round 6, R7); one changed only before it does not.
+    later_docs = [index for index in changes.docs if index > last]
+    synced = bool(later_docs) and changes.read_after(later_docs[-1])
+    if non_test and not synced and not proof.skipped(DOC_SYNC_SKILL):
         loaded = proof.load_index(DOC_SYNC_SKILL)
         skip = f"`goated-skip: {DOC_SYNC_SKILL}: <reason>`"
         if loaded is None:
             items.append(_Item(
                 f"- Docs: code changed. Load `{DOC_SYNC_SKILL}`, then read the change itself "
-                f"and check whether durable docs now drift: {CHANGE_READ}. Or, if behavior "
-                f"and interfaces did not change, write {skip}.",
+                f"and check whether durable docs now drift: {CHANGE_READ}. A doc you change "
+                "after your last code change, with a change read after it, also meets this. "
+                f"Or, if behavior and interfaces did not change, write {skip}.",
                 f"- Docs: load `{DOC_SYNC_SKILL}` and read the change for docs drift, or "
                 f"write {skip}."))
         elif not changes.read_after(last):
@@ -2307,8 +2362,10 @@ def _red_flags_read(proof: _Proof, designed: list["_Change"]) -> int | None:
     first read after the last of them, or else the turn's last read before
     it when the changes after that read add fewer than `DESIGN_MIN_LINES`
     lines in total and those before it add at least that many, so the read
-    scanned a designed change (spec R8). A change whose added lines are
-    unknown, a shell write or a subagent's, counts as large."""
+    scanned a designed change (spec R8). Lines are counted as `new_lines`
+    counts them, so unchanged context lines sent with an edit do not count
+    (round 6, R6). A change whose added lines are unknown, a shell write or a
+    subagent's, counts as large."""
 
     last = max((c.index for c in designed), default=-1)
     after = proof.read_index(RED_FLAGS_REFERENCE, after=last)
@@ -2317,8 +2374,8 @@ def _red_flags_read(proof: _Proof, designed: list["_Change"]) -> int | None:
     before = proof.last_read_index(RED_FLAGS_REFERENCE, before=last)
     if before is None:
         return None
-    scanned = [c.added_lines for c in designed if c.index < before]
-    since = [c.added_lines for c in designed if c.index > before]
+    scanned = [c.new_lines for c in designed if c.index < before]
+    since = [c.new_lines for c in designed if c.index > before]
     if not _large(scanned) or _large(since):
         return None
     return before
@@ -2411,14 +2468,15 @@ class _Change:
     `comment_only` says it is an edit that changed only comments and
     docstrings (`design_reads.comment_only`). `by_subagent` says a spawned
     subagent made it. `added_lines` is how many lines an edit tool call
-    added (`countable_lines`), None when unknown."""
+    added (`countable_lines`), None when unknown; `new_lines` how many of
+    them its removed text did not hold (`new_lines`), None when unknown."""
 
     __slots__ = ("index", "paths", "code_paths", "proven", "comment_only", "by_subagent",
-                 "added_lines")
+                 "added_lines", "new_lines")
 
     def __init__(self, index: int, paths: list[str], proven: bool = False,
                  comment_only: bool = False, by_subagent: bool = False,
-                 added_lines: int | None = None) -> None:
+                 added_lines: int | None = None, new_lines: int | None = None) -> None:
         self.index = index
         self.paths = paths
         self.code_paths = [p for p in paths if _is_code_change(p)]
@@ -2426,6 +2484,7 @@ class _Change:
         self.comment_only = comment_only
         self.by_subagent = by_subagent
         self.added_lines = added_lines
+        self.new_lines = new_lines
 
     @property
     def short_comment(self) -> bool:
@@ -2441,7 +2500,10 @@ class _Changes:
     `code` lists the changes to code, in order; `sensitive` lists each change
     to a security-sensitive file as (call index, category), in order;
     `last_change` is the call index of the last change to any project file,
-    or -1; `paths` are the changed files a Read can name. Changes a spawned
+    or -1; `last_material` that of the last change to code that is not a
+    comment-only edit, or -1, which a commit's change read must follow
+    (spec R5); `docs` the call indexes of changes to a documentation file
+    (`is_doc`), in order; `paths` are the changed files a Read can name. Changes a spawned
     subagent made count as made at its spawn.
     """
 
@@ -2452,9 +2514,11 @@ class _Changes:
         self.code = [c for c in changes if c.code_paths]
         self.sensitive = [
             (c.index, category) for c in changes for path in c.paths
-            if (category := security_category(path)) is not None
+            if (category := sensitive_category(path, project)) is not None
         ]
         self.last_change = changes[-1].index if changes else -1
+        self.last_material = max((c.index for c in self.code if not c.comment_only), default=-1)
+        self.docs = [c.index for c in changes if any(map(is_doc, c.paths))]
         self.paths = [p for c in changes for p in c.paths if p != UNNAMED_FILES]
 
     def read_after(self, after: int, path: str | None = None) -> bool:
@@ -2512,7 +2576,8 @@ def _changes(turn: Turn, subagents: dict, project: Project | None):
             # Comments do not run, so a comment-only edit is already proved (Ticket 116).
             yield _Change(index, paths, comment_only or _proves_itself(call, project),
                           comment_only,
-                          added_lines=countable_lines(call) if edited else None)
+                          added_lines=countable_lines(call) if edited else None,
+                          new_lines=new_lines(call) if edited else None)
 
 
 def _changed_paths(call, project: Project | None) -> list[str]:
@@ -2872,6 +2937,14 @@ def is_code(path: str) -> bool:
     return dot > path.rfind("/") and path[dot:].lower() in CODE_EXTENSIONS
 
 
+def is_doc(path: str) -> bool:
+    """Whether `path` is a documentation file, by its extension
+    (`DOC_EXTENSIONS`); a dependency manifest such as `requirements.txt`,
+    which is security-sensitive, is not one."""
+
+    return path.lower().endswith(DOC_EXTENSIONS) and security_category(path) is None
+
+
 def security_category(path: str) -> str | None:
     if not path:
         return None
@@ -2883,6 +2956,15 @@ def security_category(path: str) -> str | None:
     return None
 
 
+def sensitive_category(path: str, project: Project | None) -> str | None:
+    """The security category of a project file at `path` (`security_category`),
+    or None for a test file (`is_test`), which is never security-sensitive
+    (round 6, R9): the `security` gate, the Security closeout item and the
+    `sensitive-category-count` signal all judge files by it."""
+
+    return None if is_test(path, project) else security_category(path)
+
+
 def countable_lines(write: Call) -> int | None:
     """The lines a file write adds, every line of each edit's added text, or
     None when they cannot be counted: an edit adds text it does not show.
@@ -2891,6 +2973,24 @@ def countable_lines(write: Call) -> int | None:
     if any(added is None for _, added in write.edits):
         return None
     return sum(len(added.split("\n")) for _, added in write.edits if added)
+
+
+def new_lines(write: Call) -> int | None:
+    """The lines a file write adds that the text it replaces did not hold:
+    each non-blank line of an edit's added text whose content, indentation
+    aside, is not a line of that edit's removed text, as the reference
+    signals count added code (`design_reads.added_lines`). Unchanged context
+    sent with an edit adds none. Text an edit replaces without saying what
+    (a whole-file write) counts as empty, so all its lines are new; None
+    when an edit does not show what it adds."""
+
+    if any(added is None for _, added in write.edits):
+        return None
+    total = 0
+    for removed, added in write.edits:
+        kept = {line.strip() for line in (removed or "").split("\n")}
+        total += sum(1 for line in added.split("\n") if line.strip() and line.strip() not in kept)
+    return total
 
 
 def _small_edit(write: Call) -> bool:

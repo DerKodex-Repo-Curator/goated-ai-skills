@@ -50,6 +50,74 @@ scenarios:
       - reply: "goated-route: direct"
       - call: {kind: shell_command, shell: posix, command: "git commit --dry-run -am \"Fix the export note\""}
 
+  - name: a held commit names its load, its change read and its closeout in one message
+    covers:
+      - {gate: commit, case: holds}
+      - {gate: commit, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Raise the export limit and commit it.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: &limit
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 1", added: "limit = 2"}]
+      - call: &commit_limit {kind: shell_command, shell: posix, command: "git commit -am \"Raise the export limit\""}
+        expect:
+          decision: hold
+          holds:
+            - {gate: commit, kind: strict}
+            - {gate: closeout, kind: justified-skip, items: [Proof, Docs]}
+      - call: {kind: skill_load, skill: commit-message}
+      - call: &diff_limit {kind: shell_command, shell: posix, command: git diff}
+        result: {ok: true, output: "-limit = 1\n+limit = 2"}
+      - reply: "goated-skip: verification-before-completion: no test suite covers this file\ngoated-skip: doc-sync: internal constant with no documented behavior"
+      - call: *commit_limit
+
+  - name: a doc edit and a comment-only edit after a change read keep the commit's read
+    covers:
+      - {gate: commit, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: "Raise the export limit, note it, and commit it."}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *limit
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *diff_limit
+      - reply: "goated-skip: verification-before-completion: no test suite covers this file\ngoated-skip: doc-sync: internal constant with no documented behavior"
+      - call:
+          kind: file_write
+          path: NOTES.md
+          edits: [{removed: "The limit is 1.", added: "The limit is 2."}]
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 2", added: "limit = 2  # rows per page"}]
+      - call: *commit_limit
+
+  - name: a code edit after a change read needs another, and a diff chained before the commit is not one
+    covers:
+      - {gate: commit, case: holds}
+      - {gate: commit, case: clears, way: proof}
+    steps:
+      - prompt: {type: prompt, author: person, text: Raise the export limit twice and commit it.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: *limit
+      - call: {kind: skill_load, skill: commit-message}
+      - call: *diff_limit
+      - reply: "goated-skip: verification-before-completion: no test suite covers this file\ngoated-skip: doc-sync: internal constant with no documented behavior"
+      - call:
+          kind: file_write
+          path: src/export.py
+          edits: [{removed: "limit = 2", added: "limit = 3"}]
+      - call: &chained_commit {kind: shell_command, shell: posix, command: "git diff && git commit -am \"Raise the export limit\""}
+        expect:
+          decision: hold
+          holds: [{gate: commit, kind: strict}]
+      - call: *diff_limit
+      - call: *chained_commit
+
   - name: a pull request waits for its skill and a read of the change
     covers:
       - {gate: pull-request, case: holds}
