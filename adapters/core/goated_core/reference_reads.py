@@ -57,6 +57,7 @@ class Pattern(NamedTuple):
 
     label: str
     regex: re.Pattern
+    # Also leaves out lines inside a multi-line string (`Edit.in_strings`).
     outside_strings: bool = False
 
     def token(self, code: str, extension: str = "") -> str | None:
@@ -71,14 +72,18 @@ class Pattern(NamedTuple):
 
 # The mock pattern matches at a word start, so `dispatch` holds no patch, and
 # `patch` only as a call or decorator (`patch(`, `@patch`, `mock.patch`,
-# `patch.object(`), since the bare word names a diff as often as a mock. The
-# wait pattern also matches inside a word (`asyncio.sleep`, `MAX_RETRIES`),
-# though `retrieve` holds no retry, and inside a string. A word that only
-# starts like one (`mocks`, `spyglass`) still selects, since a read once per
-# context window costs little.
+# `patch.object(`), since the bare word names a diff as often as a mock.
+# `monkeypatch` matches only as a patch of code, `monkeypatch.setattr(`,
+# `.delattr(` or `.context(` (whose `m.setattr(` patches through another
+# name), not as a fixture parameter or a patched environment (`setenv`,
+# `chdir`). The wait pattern also matches inside a word (`asyncio.sleep`,
+# `MAX_RETRIES`), though `retrieve` holds no retry, and inside a string. A
+# word that only starts like one (`mocks`, `spyglass`) still selects, since a
+# read once per context window costs little.
 PATTERNS = {
     "mock-or-patch": Pattern("a mock or patch", re.compile(
-        r"\b(?:[Mm]ock|[Ss]tub|[Ss]py|[Ff]ake|monkeypatch|sinon)"
+        r"\b(?:[Mm]ock|[Ss]tub|[Ss]py|[Ff]ake|sinon)"
+        r"|\bmonkeypatch\.(?:setattr|delattr|context)(?=\s*\()"
         r"|@patch\b|\bpatch(?:\.\w+)?(?=\s*\()|[a-z0-9_]Mock\b|\b(?:jest|vi)\.fn\b"
     ), outside_strings=True),
     "sleep-retry-or-timeout": Pattern("a sleep, retry, poll, or timeout", re.compile(
@@ -131,7 +136,9 @@ class Edit(NamedTuple):
     file. `added_code` is the code of each line the write adds
     (`design_reads.added_code`): the non-blank lines the text it replaces, or
     the file on disk for a Write, did not hold, indentation aside; empty when
-    unknown, as for a shell write. `new_file` says the write creates the file
+    unknown, as for a shell write. `in_strings` are the indices into
+    `added_code` of lines inside a string the write shows opening on an
+    earlier line (`design_reads.added_lines`). `new_file` says the write creates the file
     (`design_reads.creates_file`). `project_paths` are the file's paths below
     each project root that holds it, with `/` separators; empty when its place
     is unknown. `gates` names the gates whose condition holds at this write
@@ -146,6 +153,7 @@ class Edit(NamedTuple):
     gates: frozenset[str] = frozenset()
     categories: frozenset[str] = frozenset()
     new_file: bool = False
+    in_strings: frozenset[int] = frozenset()
 
 
 def load(path: Path | None) -> tuple[Reference, ...]:
@@ -246,7 +254,9 @@ def _edit_fires(signal: dict, edit: Edit) -> str | None:
         extension = next((posixpath.splitext(p)[1].lstrip(".").lower()
                           for p in edit.project_paths), "")
         token = pattern and next(
-            (token for code in edit.added_code if (token := pattern.token(code, extension))),
+            (token for index, code in enumerate(edit.added_code)
+             if not (pattern.outside_strings and index in edit.in_strings)
+             and (token := pattern.token(code, extension))),
             None)
         if token is None:
             return None

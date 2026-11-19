@@ -804,6 +804,57 @@ scenarios:
           path: tests/test_export.py
           edits: [{removed: "pass", added: "patch = load_diff()"}]
 
+  - name: a monkeypatch of code, or a fake in a string the edit does not show opening, waits for the mocking reference
+    covers:
+      - {gate: reference-reads, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Isolate the export test from the client.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: standard | requires: tdd"
+      - call: {kind: skill_load, skill: tdd}
+      - call:
+          kind: file_write
+          path: tests/test_export.py
+          edits: [{removed: "pass", added: "monkeypatch.setattr(export, \"client\", stub)"}]
+        expect:
+          decision: hold
+          holds: [{gate: reference-reads, kind: justified-skip}]
+      - call:
+          kind: file_write
+          path: tests/test_export.py
+          edits: [{removed: "pass", added: "with monkeypatch.context() as m:"}]
+        expect:
+          decision: hold
+          holds: [{gate: reference-reads, kind: justified-skip}]
+      - call:
+          kind: file_write
+          path: tests/test_export.py
+          edits: [{removed: "pass", added: "[providers.fake]\n\"\"\""}]
+        expect:
+          decision: hold
+          holds: [{gate: reference-reads, kind: justified-skip}]
+
+  - name: a patched environment, or a fake inside a multi-line string, selects no mocking reference
+    covers:
+      - {gate: reference-reads, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Point the export test at a fake provider config.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: standard | requires: tdd"
+      - call: {kind: skill_load, skill: tdd}
+      - call:
+          kind: file_write
+          path: tests/test_export.py
+          edits: [{removed: "pass", added: "def test_export(monkeypatch):\n    monkeypatch.setenv(\"EXPORT_MODE\", \"1\")"}]
+      - call:
+          kind: file_write
+          path: tests/test_export.py
+          edits: [{removed: "pass", added: "CONFIG = \"\"\"\n[providers.fake]\nfake = true\n\"\"\""}]
+      - call:
+          kind: file_write
+          path: tests/test_export.js
+          edits: [{removed: "pass", added: "const config = `\n[providers.fake]\n`;"}]
+
   - name: a comment-only edit adding nineteen lines is no substantial change
     covers:
       - {gate: design, case: near-miss}

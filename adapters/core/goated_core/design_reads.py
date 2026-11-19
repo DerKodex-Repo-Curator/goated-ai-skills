@@ -168,6 +168,23 @@ def added_code(path: str, edit: Call | None, cwd: str | None) -> list[str]:
     return _Added(edit, path, cwd).code
 
 
+class AddedLines(NamedTuple):
+    """What a file write adds, as the reference signals read it: `code` as
+    `added_code` gives it, and `in_strings`, the indices into `code` of the
+    lines inside a string the write shows opening on an earlier line
+    (`_read_lines`), whose words are text, not code."""
+
+    code: list[str]
+    in_strings: frozenset[int]
+
+
+def added_lines(path: str, edit: Call | None, cwd: str | None) -> AddedLines:
+    """`added_code`, with which of its lines are inside a multi-line string."""
+
+    added = _Added(edit, path, cwd)
+    return AddedLines(added.code, frozenset(added.in_strings))
+
+
 def reference_read(path: str) -> str | None:
     """The reference file a read of `path` read, such as `errors.md`, or None."""
 
@@ -193,8 +210,9 @@ def reads_in(calls) -> list[str]:
 class _Added:
     """What an edit adds, judged line by line against the text it replaces.
 
-    `lines` are the added lines as written; `code` the code part of each, with
-    comments and docstrings removed; `comment` whether any adds a comment or
+    `code` is the code part of each added line, with comments and docstrings
+    removed; `in_strings` the indices into `code` of lines inside a
+    multi-line string (`_read_lines`); `comment` whether any adds a comment or
     docstring; `definitions` the names of top-level definitions it adds, a
     definition whose name the old text already defined (a signature change)
     left out. Indentation alone does not make a line added. Text a write
@@ -204,23 +222,29 @@ class _Added:
 
     def __init__(self, edit: Call | None, path: str, cwd: str | None) -> None:
         self.code: list[str] = []
+        self.in_strings: list[int] = []
         self.comment = False
         self.definitions: list[str] = []
         if edit is None:
             return
+        extension = os.path.splitext(path)[1].lstrip(".").lower()
         on_disk = _disk_text(path, cwd) if edit.whole_file else None
         for removed, added in edit.edits:
             if added is not None:
-                self._add((on_disk if edit.whole_file else removed) or "", added)
+                self._add((on_disk if edit.whole_file else removed) or "", added, extension)
 
-    def _add(self, old: str, new: str) -> None:
+    def _add(self, old: str, new: str, extension: str) -> None:
         old_lines = old.split("\n")
         kept = {line.strip() for line in old_lines}
-        old_names = {_definition(part) for part in _code_parts(old_lines)} - {None}
+        old_names = {_definition(read.code)
+                     for read in _read_lines(old_lines, extension)} - {None}
         new_lines = new.split("\n")
-        for line, part in zip(new_lines, _code_parts(new_lines)):
+        for line, read in zip(new_lines, _read_lines(new_lines, extension)):
             if not line.strip() or line.strip() in kept:
                 continue
+            if read.in_string:
+                self.in_strings.append(len(self.code))
+            part = read.code
             self.code.append(part)
             self.comment = self.comment or not part.strip() or bool(TRAILING_COMMENT_RE.search(line))
             name = _definition(part)
@@ -367,28 +391,91 @@ def _signals(path: str, added: _Added, *, new_file: bool, is_code: bool, is_test
     return found
 
 
-def _code_parts(lines: list[str]) -> list[str]:
-    """Each line's code, without comments or docstrings: "" for a comment or
-    docstring line, the line up to a trailing comment otherwise."""
+class _Line(NamedTuple):
+    """One line as `_read_lines` reads it: its `code`, and whether it is
+    `in_string`, inside a string that opened on an earlier line."""
 
-    parts, closer = [], None
+    code: str
+    in_string: bool
+
+
+class _OpenString(NamedTuple):
+    """A string that spans lines: the `quote` that closes it, and the
+    `marker` that opens code inside it (None when nothing does)."""
+
+    quote: str
+    marker: str | None
+
+
+# Where a string that spans lines opens, by file extension: three quotes
+# (Python) or a backtick (a JavaScript template literal) right after an `=`,
+# a bracket, a `,` or `:`, or `return`/`yield`, as in `CONFIG = """` or
+# `dedent('''`. Three quotes opening a line start a docstring, and a quote
+# after other text may close a string that opened before the text shown, so
+# neither opens one.
+_AFTER_CODE = r"(?:[=(\[{,:]|\breturn|\byield)\s*"
+STRING_OPENER_RE = {
+    **{ext: re.compile(_AFTER_CODE + r"(?P<prefix>[rRbBuUfFtT]{0,2})(?P<quote>\"\"\"|''')")
+       for ext in ("py", "pyi")},
+    **{ext: re.compile(_AFTER_CODE + r"(?P<prefix>)(?P<quote>`)")
+       for ext in ("js", "jsx", "mjs", "cjs", "ts", "tsx")},
+}
+
+
+def _read_lines(lines: list[str], extension: str) -> list[_Line]:
+    """Each line's code, without comments or docstrings ("" for a comment or
+    docstring line, the line up to a trailing comment otherwise), and whether
+    it is inside a string the lines show opening (`STRING_OPENER_RE`, for a
+    file of `extension`). The line that closes such a string is not inside
+    it, nor is a line that may hold code in it (`{` in an `f` or `t`
+    string, `${` in a template literal). A line holding both such code and
+    the closing quote may hold a nested string, so no later line is read as
+    inside one."""
+
+    opener_re = STRING_OPENER_RE.get(extension)
+    read, closer, string = [], None, None
     for line in lines:
         text = line.strip()
+        if string is not None:
+            closes = string.quote in text
+            holds_code = string.marker is not None and string.marker in text
+            if closes and holds_code:
+                opener_re = None
+            read.append(_Line("" if text.startswith(COMMENT_LINE_PREFIXES)
+                              else INLINE_COMMENT_RE.sub("", line),
+                              not closes and not holds_code))
+            string = None if closes else string
+            continue
         if closer is not None:
-            parts.append("")
+            read.append(_Line("", False))
             if closer in text:
                 closer = None
             continue
         quote = next((q for q in DOCSTRING_QUOTES if text.startswith(q)), None)
         if quote is not None:
             closer = quote if text.count(quote) == 1 else None
-            parts.append("")
+            read.append(_Line("", False))
         elif text.startswith(COMMENT_LINE_PREFIXES):
             closer = "*/" if text.startswith("/*") and "*/" not in text else None
-            parts.append("")
+            read.append(_Line("", False))
         else:
-            parts.append(INLINE_COMMENT_RE.sub("", line))
-    return parts
+            read.append(_Line(INLINE_COMMENT_RE.sub("", line), False))
+            string = _opened_string(opener_re, line) if opener_re else None
+    return read
+
+
+def _opened_string(opener_re: re.Pattern, line: str) -> _OpenString | None:
+    """The string `line` leaves open, by `opener_re`, or None: one whose
+    closing quote is not later on the line."""
+
+    for match in opener_re.finditer(line):
+        quote = match.group("quote")
+        if quote not in line[match.end():]:
+            if quote == "`":
+                return _OpenString(quote, "${")
+            interpolates = any(letter in match.group("prefix") for letter in "fFtT")
+            return _OpenString(quote, "{" if interpolates else None)
+    return None
 
 
 def _definition(part: str) -> str | None:
