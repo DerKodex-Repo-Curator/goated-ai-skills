@@ -356,7 +356,8 @@ def note_finished_call(settings: Settings, situation: Situation, call: Call,
         return Decision()
     text = actions.closeout_note(
         current, call, overrides_for(state, current, prompt_key), settings.skill_namespaces,
-        situation.project, _since_compaction(state), _route_intensity(state))
+        situation.project, _since_compaction(state), _route_intensity(state),
+        _owed_reads(state, current.key), actions.TaskSkips(state.lasting_skip_keys()))
     if not text:
         return Decision()
     try:

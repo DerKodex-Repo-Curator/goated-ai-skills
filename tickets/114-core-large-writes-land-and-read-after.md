@@ -7,8 +7,10 @@
 ## Type
 
 AFK. Decision L, option 1 as narrowed at review: it keeps the `design`
-gate and holds writes whose lines cannot be counted (the maintainer
-chose and then confirmed it, 2026-11-18).
+gate's hold for the skill's load and holds writes whose lines cannot be
+counted (the maintainer chose and then confirmed it, 2026-11-18). At this
+ticket's review the maintainer chose to let a first substantial edit land
+too once the skill is loaded (2026-11-19: "Land it too").
 
 ## What To Build
 
@@ -28,16 +30,21 @@ the turn's end as the other items do. Its skip line names the skill whose
 references it asks for; a skip of it lasts as a skip of the gate it stands
 for does (round 4's R4). A write under thirty lines is held as today.
 
-The `design` gate does not change: `software-design-principles` still
-loads before the first substantial edit, and the reads `design` asks for
-with the load stay a hold.
+The `design` gate still holds until `software-design-principles` loads
+before the first substantial edit, and the reads it asks for with the
+load stay a hold. Once the skill counts as loaded, a first substantial
+edit of thirty or more counted lines, which `design` would hold for
+reads alone, lands and owes its reads like any other (decided at review,
+2026-11-19). A shell write counts only the lines it writes into the
+files the gate judges, and the Reads item's change read is of the landed
+file itself or a printed diff.
 
 **Notice kind.** `reads_owed` is new, not a reuse: `closeout_note` is once
 per turn after the first write, and `skip_carried` names a skip. So the
 event model's notice enum gains it and its version moves to 4, and the
 contract's Notices section lists it.
 
-**Skill texts.** `software-design-principles`'s step 4 ("Read now") and
+**Skill texts.** `software-design-principles`'s step 2 ("Read now") and
 `skills/README.md`'s description of registry reference signals say that,
 for a large edit already written, the reads may follow it before the
 closeout, and the edit is revised after them. Run the context comparison.
@@ -80,7 +87,8 @@ notice kinds follow the version bump.
       registry signal).
 - [ ] A 29-line edit, and a shell write whose text the command does not
       show, are held as today.
-- [ ] A large first edit with the skill not loaded still meets `design`.
+- [ ] A large first edit with the skill not loaded still meets `design`;
+      with the skill loaded it lands owing its reads.
 - [ ] The event model is at version 4 with `reads_owed`, and the contract
       states the rule, the item and the notice; conformance scenarios
       cover the hold, the landed write, each way the item clears, and the
@@ -108,5 +116,6 @@ notice kinds follow the version bump.
 ## Scope Exclusions
 
 - Announcing references before a write (option L2).
-- The `design` gate, and strict gates (`pipeline`, `commit`, `security`).
+- The `design` gate's hold for the skill's load, and strict gates
+  (`pipeline`, `commit`, `security`).
 - `scripted-edit`, whose script is short and steered to a file edit tool.

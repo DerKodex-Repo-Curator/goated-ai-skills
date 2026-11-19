@@ -203,10 +203,16 @@ reference, the diff read before each commit, `code-security-review`, and
   follows. It holds a commit and the turn's end, as the other items do.
   Its skip line names the skill whose references it asks for, and a skip
   of it lasts as round 4's R4 states for the gate it stands for.
-  - The `design` gate is unchanged: the skill still loads before the
-    first substantial edit (its workflow step 2), and the reads `design`
-    asks for alongside the load stay a hold.
-  - `software-design-principles`'s step 4 ("Read now") and
+  - The `design` gate still holds until the skill loads before the first
+    substantial edit (its workflow step 2). Once the skill counts as
+    loaded, a first substantial edit of thirty or more counted lines,
+    which `design` would hold for reads alone, lands too and owes its
+    reads (the maintainer's choice at review, 2026-11-19: "Land it too").
+  - A shell write counts only the lines it writes into the files the
+    gate judges; lines written elsewhere, such as a scratch file, do not
+    count. The Reads item's change read is of the landed file itself, or
+    a printed diff; a read of another changed file does not count.
+  - `software-design-principles`'s step 2 ("Read now") and
     `skills/README.md`'s description of registry reference signals change
     to say that, for a large edit already written, the reads may follow
     it, before the closeout, and the edit is revised after them. This is
@@ -306,7 +312,8 @@ change, as `AGENTS.md` requires.
       `Reads` item until the reference is read whole and a change read
       follows; a 29-line edit, and a shell write whose text it does not
       show, are held as today; the first substantial edit with the skill
-      not loaded still meets `design`. A scenario covers each and the
+      not loaded still meets `design`, and with it loaded a large one
+      lands. A scenario covers each and the
       item's skip line.
 - [ ] **AC8.** R6: in a test file with `tdd` loaded, `monkeypatch.setenv(`
       and a bare `monkeypatch` parameter select no mocking reference;
@@ -339,7 +346,7 @@ hook, and its translation tests show R3's section.
   `shell.py`, in its file printers, beside 108's change. No requirement
   changes the pull request reading.
 - Skill texts change only where a rule they state changes. R5 is such a
-  rule: it changes `software-design-principles`'s step 4.
+  rule: it changes `software-design-principles`'s step 2.
 
 ## Decisions
 
@@ -430,16 +437,20 @@ it is composed. The options differ in when the agent learns what it needs.
    states. Re-sent content costs in proportion to its size, so a short
    edit keeps the hold (cheap to send again) and a long one keeps its
    content. Review narrowed the option the maintainer chose in two ways:
-   - `design` keeps holding, since moving the skill's load past the code
-     goes against its workflow steps 2 and 4; the load is once per task
-     and usually comes before any large edit;
+   - `design` keeps holding for the skill's load, since moving the load
+     past the code goes against its workflow step 2; the load is once
+     per task and usually comes before any large edit;
    - a write whose lines cannot be counted is held, since letting it land
      would let a shell write showing no text skip both read gates,
      undoing Tickets 093 and 097.
 
+   At Ticket 114's review (2026-11-19) the maintainer chose to let a
+   first substantial edit land too once the skill is loaded, when
+   `design` would hold it for reads alone ("Land it too").
+
    Trade-off: for a large write the reads review the design instead of
    shaping it; the change read after them is where the agent revises, and
-   the skill's step 4 and the registry signals' description must say so.
+   the skill's step 2 and the registry signals' description must say so.
    A new closeout label (`Reads`), a new notice kind (`reads_owed`, event
    model version 4), and session state for what landed writes still
    need.

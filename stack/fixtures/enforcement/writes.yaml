@@ -223,7 +223,7 @@ scenarios:
       - call: {kind: file_read, path: config/export.json, whole: true}
       - turn_end: true
 
-  - name: a configuration write of twenty-nine lines is still held for its read
+  - name: a configuration write of twenty-nine counted lines, twenty-eight and a final line break, is still held for its read
     covers:
       - {gate: design-reads, case: holds}
     steps:
@@ -255,7 +255,7 @@ scenarios:
       - call: {kind: shell_command, shell: posix, command: "cat > config/export.json <<'EOF'\n{\n  \"key_00\": 0,\n  \"key_01\": 1,\n  \"key_02\": 2,\n  \"key_03\": 3,\n  \"key_04\": 4,\n  \"key_05\": 5,\n  \"key_06\": 6,\n  \"key_07\": 7,\n  \"key_08\": 8,\n  \"key_09\": 9,\n  \"key_10\": 10,\n  \"key_11\": 11,\n  \"key_12\": 12,\n  \"key_13\": 13,\n  \"key_14\": 14,\n  \"key_15\": 15,\n  \"key_16\": 16,\n  \"key_17\": 17,\n  \"key_18\": 18,\n  \"key_19\": 19,\n  \"key_20\": 20,\n  \"key_21\": 21,\n  \"key_22\": 22,\n  \"key_23\": 23,\n  \"key_24\": 24,\n  \"key_25\": 25,\n  \"key_26\": 26,\n  \"key_27\": 27,\n  \"key_28\": 28,\n  \"key_29\": 29,\n  \"key_30\": 30,\n  \"key_31\": 31,\n  \"key_32\": 32,\n  \"key_33\": 33,\n  \"key_34\": 34,\n  \"key_35\": 35,\n  \"key_36\": 36\n}\nEOF"}
         expect: {decision: allow, notices: [reads_owed]}
 
-  - name: a large first code change meets the design gate, loaded or not
+  - name: a large first code change meets the design gate until the skill loads, then lands owing its reads
     covers:
       - {gate: design, case: holds}
     steps:
@@ -272,9 +272,24 @@ scenarios:
           holds: [{gate: design, kind: justified-skip}]
       - call: {kind: skill_load, skill: software-design-principles}
       - call: *large_totals
+        expect: {decision: allow, notices: [reads_owed]}
+      - turn_end: true
         expect:
           decision: hold
-          holds: [{gate: design, kind: justified-skip}]
+          holds: [{gate: closeout, kind: justified-skip, items: [Reads, Proof, Docs, Design]}]
+
+  - name: lines a shell write puts into a file outside the project do not make it large
+    covers:
+      - {gate: design-reads, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Add the export settings.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: skill_load, skill: software-design-principles}
+      - call: {kind: shell_command, shell: posix, command: "cat > {outside}/notes.txt <<'EOF'\nnote 0\nnote 1\nnote 2\nnote 3\nnote 4\nnote 5\nnote 6\nnote 7\nnote 8\nnote 9\nnote 10\nnote 11\nnote 12\nnote 13\nnote 14\nnote 15\nnote 16\nnote 17\nnote 18\nnote 19\nnote 20\nnote 21\nnote 22\nnote 23\nnote 24\nnote 25\nnote 26\nnote 27\nnote 28\nnote 29\nnote 30\nnote 31\nnote 32\nnote 33\nnote 34\nnote 35\nnote 36\nnote 37\nnote 38\nnote 39\nEOF\ncat > config/export.json <<'EOF'\n{\n  \"limit\": 2,\n  \"format\": \"csv\",\n  \"header\": true,\n  \"quote\": \"minimal\"\n}\nEOF"}
+        expect:
+          decision: hold
+          holds: [{gate: design-reads, kind: justified-skip}]
 
   - name: configuration under a fixtures folder is test data the design reads do not judge
     covers:
@@ -843,7 +858,7 @@ scenarios:
       - reply: "goated-skip: tdd: these tests copy the shape of the import tests"
       - turn_end: true
 
-  - name: a test file of twenty-nine lines is still held for its read
+  - name: a test file of twenty-nine counted lines, twenty-eight and a final line break, is still held for its read
     covers:
       - {gate: reference-reads, case: holds}
     steps:

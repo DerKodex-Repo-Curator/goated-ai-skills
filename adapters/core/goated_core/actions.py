@@ -418,14 +418,15 @@ def _carried_notice(gate: str, carried: list[_Need], label: Callable[[str], str]
 
 
 def _lands(proof: "_Proof", gate: str, needs: list[_Need], lines: int | None,
-           label: Callable[[str, object], str]) -> bool:
+           label: Callable[[str, object], str], named: str | None = None) -> bool:
     """Whether a write `gate` would hold for `needs`, the reads it still
     lacks, lands instead (round 5, R5): it adds `lines`,
     `READS_LAND_MIN_LINES` or more, and the caller keeps the task's state. A
     write whose lines cannot be counted (None) is held, as a small one is,
     so a shell write showing no text cannot slip past. A landed write's
-    needs are owed, for the Reads closeout item, with one notice naming
-    each reference by `label(reference, detail)`."""
+    needs are owed under `gate`, as its lasting skips are keyed, for the
+    Reads closeout item, with one notice naming the gate as `named` (by
+    default `gate`) and each reference by `label(reference, detail)`."""
 
     if not proof.keeps_task or lines is None or lines < READS_LAND_MIN_LINES:
         return False
@@ -437,7 +438,7 @@ def _lands(proof: "_Proof", gate: str, needs: list[_Need], lines: int | None,
     references = ", ".join(unique(label(n.reference, n.detail) for n in needs))
     skip_lines = " or ".join(unique(f"`goated-skip: {n.skill}: <reason>`" for n in needs))
     task.owed_notices.append(
-        f"the {gate} gate let this {lines}-line write{target} land before a read of "
+        f"the {named or gate} gate let this {lines}-line write{target} land before a read of "
         f"{references}, since a write this long costs more to send again than to revise. "
         f"Read each {WHOLE_READ} before your final report, then read the change itself and "
         "revise it against them; the closeout's Reads item asks for both. If one does not "
@@ -609,7 +610,9 @@ def check_action(call: Call, turn: Turn, overrides: dict,
             # A write naming no project file (`git apply`, a scratch file, an
             # unknown folder) still meets the turn's gate signals (None).
             placed = [_norm(t) for t in inside if t not in command.unplaced_targets]
-            lines = _shell_written_lines(command) if call.id else None
+            judged = [t for t in inside
+                      if t not in command.unplaced_targets and t not in command.script_targets]
+            lines = _shell_written_lines(command, judged) if call.id else None
             holds.add(lambda: _design_hold(_shell_text_writes(command, project), None, proof,
                                            project, references, lines))
             holds.add(lambda: _reference_reads_hold(placed or [None], None, proof, project,
@@ -1391,9 +1394,10 @@ def _design_hold(writes: dict[str, bool], write: Call | None, proof: _Proof,
     selects nothing. One hold asks for what every file needs: `design` when
     any of them is the turn's first substantial code change.
 
-    A `design-reads` hold's write that adds `lines`, `READS_LAND_MIN_LINES`
-    or more, lands instead, owing its reads (`_lands`); a `design` hold
-    never does. `lines` is None when they cannot be counted.
+    Once the skill counts as loaded, a write that adds `lines`,
+    `READS_LAND_MIN_LINES` or more, lands instead, owing its reads
+    (`_lands`), whichever gate would hold it; a `design` hold asking for the
+    load never lands. `lines` is None when they cannot be counted.
     """
 
     if DESIGN_SKILL in proof.user_skips:
@@ -1422,13 +1426,16 @@ def _design_hold(writes: dict[str, bool], write: Call | None, proof: _Proof,
     # Unloaded, every judged write is substantial and held; loaded, only one with unread references.
     if loaded and not unread:
         return None
+    # Loaded, both gates ask only for reads, so a large write lands owing them;
+    # the two share their lasting skips, keyed as `design-reads`.
+    if loaded and _lands(proof, "design-reads", needs, lines,
+                         lambda name, why: f"`{design_reads.SKILL_REFERENCES}{name}` ({why})",
+                         named="design" if first else "design-reads"):
+        return None
     edit = "edit" if write is not None else "command"
     not_done = "This edit was not applied." if write is not None else \
         "This command was not run."
     if loaded and not first:
-        if _lands(proof, "design-reads", needs, lines,
-                  lambda name, why: f"`{design_reads.SKILL_REFERENCES}{name}` ({why})"):
-            return None
         names = _listed([f"\"{_file_name(p)}\"" for p in paths])
         return Hold(
             "design-reads", JUSTIFIED_SKIP,
@@ -1655,17 +1662,19 @@ def _shell_text_writes(command: shell.ShellCommand, project: Project | None) -> 
     return {path: lines is not None and lines < DESIGN_MIN_LINES for path, lines in shown.items()}
 
 
-def _shell_written_lines(command: shell.ShellCommand) -> int | None:
-    """The lines of new text `command` shows it writes, in all, as the read
-    gates count a shell write to let it land (round 5, R5); None when they
-    cannot be counted: it writes text it does not show, writes a file it
-    does not name, or changes a file without new text (a copy, move,
-    restore, or in-place edit), whose lines no command shows."""
+def _shell_written_lines(command: shell.ShellCommand, judged: list[str]) -> int | None:
+    """The lines of new text `command` shows it writes into `judged`, the
+    write targets the read gates judge, in all, as those gates count a shell
+    write to let it land (round 5, R5). Lines written anywhere else, such as
+    a scratch file, do not count. None when they cannot be counted: it
+    judges no named file, writes a file it does not name, writes text it
+    does not show into a judged file, or changes one without new text (a
+    copy, move, restore, or in-place edit), whose lines no command shows."""
 
-    shown = [lines for _, lines in command.text_writes]
+    shown = [lines for target, lines in command.text_writes if target in judged]
     texted = {target for target, _ in command.text_writes}
-    if (not shown or None in shown or command.unknown_writes
-            or any(target not in texted for target in command.write_targets)):
+    if (not judged or None in shown or command.unknown_writes
+            or any(target not in texted for target in judged)):
         return None
     return sum(shown)
 
@@ -1979,7 +1988,9 @@ def _closeout_items(changes: "_Changes", proof: _Proof, subagents: dict,
 def closeout_note(turn: Turn, call: Call, overrides: dict, namespaces: tuple[str, ...] = (),
                   project: Project | None = None,
                   earlier: SinceCompaction = SinceCompaction(),
-                  intensity: str | None = None) -> str:
+                  intensity: str | None = None,
+                  owed_reads: dict[str, list[OwedRead]] | None = None,
+                  task_skips: TaskSkips | None = None) -> str:
     """The early closeout note (Ticket 096) for `call`, a finished file edit
     of the main agent in `turn`, or "" when it changed no project code file
     or the turn's closeout would ask for nothing yet.
@@ -1989,16 +2000,17 @@ def closeout_note(turn: Turn, call: Call, overrides: dict, namespaces: tuple[str
     leaves out what it cannot tell cheaply: items only a git measure of the
     branch would bring (Review, a large branch's Verification) and the work
     of spawned subagents. `call` is added to `turn` when the transcript
-    does not show it yet.
+    does not show it yet. `owed_reads` and `task_skips` are as
+    `check_closeout` takes them, so the note names the Reads item too.
     """
 
     if not any(map(_is_code_change, _changed_paths(call, project))):
         return ""
     if not (call.id and any(c.id == call.id for c in turn.calls)):
         turn.calls.append(call)
-    proof = _Proof(turn, overrides, namespaces, "", earlier)
+    proof = _Proof(turn, overrides, namespaces, "", earlier, task_skips)
     items = _closeout_items(_Changes(turn, {}, project), proof, {}, {}, intensity,
-                            briefed=False, branch_size=lambda: None)
+                            briefed=False, branch_size=lambda: None, owed_reads=owed_reads)
     if not items:
         return ""
     *rest, last = [i.label for i in items]
@@ -2060,11 +2072,15 @@ def _reads_item(owed_reads: dict[str, list[OwedRead]], changes: "_Changes",
     skipped its skill, or a lasting skip covers it for that kind of file. A
     skip line naming its skill meets it too, and lasts as a skip line
     clearing the gate would (`TaskSkips.cleared`). Once the references are
-    read, a change read must follow the last of those reads; a write naming
-    no project file has no change to read."""
+    read, each landed file needs a change read of itself, or a printed diff,
+    after the last read of what it owes; a write naming no project file has
+    no change to read. Owed reads end with the turn, as the other items'
+    evidence does."""
 
-    task, unread, read_skills = proof.task_skips, {}, []
-    last_read = None
+    task, unread = proof.task_skips, {}
+    # Each landed file whose references were read: the last such read, and their skills.
+    last_reads: dict[str, int] = {}
+    read_skills: dict[str, list[str]] = {}
     for index, call in enumerate(proof.turn.calls):
         if not (call.ok and call.id in owed_reads):
             continue
@@ -2082,8 +2098,8 @@ def _reads_item(owed_reads: dict[str, list[OwedRead]], changes: "_Changes",
             if read is None:
                 unread.setdefault(reference, owed.skill)
             elif owed.path:
-                last_read = max(read, -1 if last_read is None else last_read)
-                read_skills.append(owed.skill)
+                last_reads[owed.path] = max(read, last_reads.get(owed.path, -1))
+                read_skills.setdefault(owed.path, []).append(owed.skill)
     skip_lines = lambda skills: " or ".join(
         f"`goated-skip: {skill}: <reason>`" for skill in dict.fromkeys(skills))
     if unread:
@@ -2093,12 +2109,16 @@ def _reads_item(owed_reads: dict[str, list[OwedRead]], changes: "_Changes",
             f"{WHOLE_READ}: {listed}. Then read the change itself and revise it against "
             f"them: {CHANGE_READ}. Or, if one does not apply, write {skips}.",
             f"- Reads: read {listed} whole, then the change, and revise it; or write {skips}.")
-    if last_read is not None and not changes.read_after(last_read):
-        skips = skip_lines(read_skills)
+    unshown = [path for path, last in last_reads.items() if not changes.read_after(last, path)]
+    if unshown:
+        files = _listed([f'"{_file_name(path)}"' for path in unshown])
+        skips = skip_lines(skill for path in unshown for skill in read_skills[path])
         return _Item(
-            "- Reads: after reading the references a landed write needed, read the change "
-            f"itself and revise it against them: {CHANGE_READ}. Or write {skips}.",
-            f"- Reads: read the change after the references and revise it, or write {skips}.")
+            f"- Reads: after reading the references the write to {files} needed, read that "
+            f"change itself and revise it against them: print its diff with a git diff or git "
+            f"show command, or {READ} the file it wrote. Or write {skips}.",
+            f"- Reads: read the change to {files} after the references and revise it, or "
+            f"write {skips}.")
     return None
 
 
@@ -2427,21 +2447,23 @@ class _Changes:
         self.last_change = changes[-1].index if changes else -1
         self.paths = [p for c in changes for p in c.paths if p != UNNAMED_FILES]
 
-    def read_after(self, after: int) -> bool:
+    def read_after(self, after: int, path: str | None = None) -> bool:
         """True when a finished call after call `after` printed the diff or read
-        a file the turn changed; the caller picks the change it must follow."""
+        a file the turn changed, or, given `path`, read that file; the caller
+        picks the change it must follow."""
 
+        paths = [path] if path else self.paths
         return any(
-            index > after and call.ok and self._shows_change(call)
+            index > after and call.ok and self._shows_change(call, paths)
             for index, call in enumerate(self.turn.calls)
         )
 
-    def _shows_change(self, call) -> bool:
+    @staticmethod
+    def _shows_change(call, paths: list[str]) -> bool:
         if call.kind == events.SHELL_COMMAND:
             return shell.analyze(call.command).prints_changes
         if call.kind == events.FILE_READ:
-            read = call.path
-            return any(_same_file(read, path) for path in self.paths)
+            return any(_same_file(call.path, path) for path in paths)
         return False
 
 
