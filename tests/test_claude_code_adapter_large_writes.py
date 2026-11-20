@@ -60,12 +60,12 @@ class LargeWriteTests(unittest.TestCase):
 
         unread = self.stop()
         self.assertEqual(unread.get("decision"), "block")
-        self.assertIn(f"- Reads: a write landed", unread["reason"])
+        self.assertIn("- Reads: read each", unread["reason"])
         self.assertIn(f"`{DESIGN}/references/decoupling.md`", unread["reason"])
 
         self.session.read(DECOUPLING)
         unrevised = self.stop()
-        self.assertIn("- Reads: after reading the references", unrevised.get("reason", ""))
+        self.assertIn("after reading the references it needed, and revise it", unrevised.get("reason", ""))
 
         self.session.read(SETTINGS)
         self.assertNotIn("decision", self.stop())

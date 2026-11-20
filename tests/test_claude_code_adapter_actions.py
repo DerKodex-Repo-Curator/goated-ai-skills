@@ -17,6 +17,7 @@ from pathlib import Path
 
 from claude_code_adapter_support import (
     BRIEF,
+    REPO_ROOT,
     ROUTER,
     SPAWN_BRIEF_PATH,
     Session,
@@ -627,7 +628,7 @@ class PullRequestReviewTests(AdapterTestCase):
 
         held = s.call("Bash", {"command": "gh pr create -B small --fill && gh pr create -B main --fill"})
         self.assertEqual(hold_line(held), "goated-hold: pr-review | justified-skip")
-        self.assertIn("Pull request 2 of 2 in this command, into main, has 450 changed lines",
+        self.assertIn("pull request 2 of 2 in this command, into main, has 450 changed lines",
                       reason(held))
 
     def test_a_branch_name_in_the_hold_is_never_backticked(self) -> None:
@@ -642,7 +643,7 @@ class PullRequestReviewTests(AdapterTestCase):
 
     def test_one_pull_request_keeps_its_hold_text(self) -> None:
         held = self.fresh_described().call("Bash", {"command": "gh pr create -B main --fill"})
-        self.assertIn("This pull request has 450 changed lines", reason(held))
+        self.assertIn("this pull request has 450 changed lines", reason(held))
 
     def test_other_forge_commands_open_no_pull_request(self) -> None:
         # A value that spells a verb is still a value: `-R create` names a repository.
@@ -705,6 +706,17 @@ class SpawnBriefTests(AdapterTestCase):
         self.assertEqual(decision(s.call("Agent", {"prompt": BRIEF})), "deny")
         s.read(SPAWN_BRIEF_PATH)
         self.assertEqual(decision(s.call("Agent", {"prompt": BRIEF})), "pass")
+        self.assertEqual(decision(s.call("Agent", {"prompt": BRIEF})), "pass")
+
+    def test_the_template_offers_checks_and_shared_with_lines_a_brief_may_leave_out(self) -> None:
+        template = (REPO_ROOT / "skills" / "agent-workflows" / "handoff" / "references"
+                    / "spawn-brief.md").read_text(encoding="utf-8")
+        self.assertIn("- Shared with:", template)
+        self.assertIn("- Checks:", template)
+        self.assertNotIn("Shared with", BRIEF)
+        self.assertNotIn("Checks", BRIEF)
+        s = self.routed()
+        s.brief_with_handoff()
         self.assertEqual(decision(s.call("Agent", {"prompt": BRIEF})), "pass")
 
     def test_a_brief_missing_a_required_section_is_held(self) -> None:
@@ -2749,7 +2761,7 @@ class RepeatedFailureTests(AdapterTestCase):
                 held = s.call("Edit", FIX)
                 self.assertEqual(hold_line(held),
                                  "goated-hold: repeated-failure | justified-skip")
-                self.assertIn('The check "pytest -q" has failed', reason(held))
+                self.assertIn('the check "pytest -q" has failed', reason(held))
 
     def test_the_hold_shows_the_check_without_its_cd(self) -> None:
         folder = "build/" + "a-very-long-folder-name/" * 4
@@ -2764,7 +2776,7 @@ class RepeatedFailureTests(AdapterTestCase):
                 held = s.call("Edit", FIX)
                 self.assertEqual(hold_line(held),
                                  "goated-hold: repeated-failure | justified-skip")
-                self.assertIn('The check "pytest -q" has failed', reason(held))
+                self.assertIn('the check "pytest -q" has failed', reason(held))
 
     def test_checks_run_from_different_folders_are_different_checks(self) -> None:
         # Near miss: the cd's folder stays part of the check, and so do its counts.
@@ -4142,7 +4154,8 @@ class ReviewRegressionTests(AdapterTestCase):
         s.run("pytest -q")
         s.load("doc-sync")
         s.run("git diff")
-        self.assertIn("- Verification: a subagent changed code", stop(s)["reason"])  # Ticket 069.
+        self.assertIn("- Verification: load `verification-before-completion` and follow it, since a subagent "
+                      "changed code", stop(s)["reason"])  # Ticket 069.
         s.load("verification-before-completion")
         self.assertEqual(stop(s), {})
 
@@ -4374,8 +4387,8 @@ class DesignRedFlagsItemTests(AdapterTestCase):
         self.assertNotIn("file#id", held["reason"])
         s.read(RED_FLAGS)
         # The item's second ask is new to the turn, so it comes in full (Ticket 095).
-        self.assertIn("- Design: after reading the red flags and after your last code change, "
-                      "read the change itself", stop(s)["reason"])
+        self.assertIn("- Design: read the change itself after reading the red flags and after your "
+                      "last code change, and scan it", stop(s)["reason"])
         s.run(DIFF)
         self.assertEqual(stop(s), {})
 

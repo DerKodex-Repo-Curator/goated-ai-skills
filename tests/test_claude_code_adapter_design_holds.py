@@ -92,7 +92,7 @@ class DesignGateTests(DesignTestCase):
             s.read(REFERENCES + name)
         held = s.call("Edit", edit("src/export.py", DEFINITION))
         self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
-        self.assertIn(f"load `{DESIGN}`", reason(held))
+        self.assertIn(f"Load `{DESIGN}`", reason(held))
 
     def test_an_unread_reference_is_owed_asking_for_the_read_and_no_line(self) -> None:
         s = self.routed()

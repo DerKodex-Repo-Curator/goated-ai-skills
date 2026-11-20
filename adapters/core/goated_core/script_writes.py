@@ -18,7 +18,7 @@ import ast
 import re
 import warnings
 from collections import Counter
-from typing import NamedTuple
+from typing import Callable, NamedTuple
 
 # The interpreters whose inline code is read, by command name, with its language.
 LANGUAGES = {
@@ -167,7 +167,9 @@ def writes(language: str, code: str, expanded: bool = False) -> tuple[list[str],
 
     code = _resolve_aliases(language, code)
     shell_may_rebind = expanded and _SHELL_EXPANDS_RE.search(code)
-    bindings = {} if shell_may_rebind or _DYNAMIC_NAMES_RE.search(code) else _bindings(language, code)
+    names_unread = shell_may_rebind or _DYNAMIC_NAMES_RE.search(code)
+    bindings = {} if names_unread else _bindings(language, code)
+    temp = _TempPaths(language, {} if names_unread else _temp_names(language, code), expanded)
     file_systems = _fs_names(code) if language == "js" else frozenset()
     found: list[tuple[int, list[str], bool]] = []
     for call in WRITE_CALLS.get(language, ()):
@@ -178,7 +180,7 @@ def writes(language: str, code: str, expanded: bool = False) -> tuple[list[str],
             if parsed is None:
                 continue
             files, unnamed = _call_writes(call, language, code, match.start(), bindings,
-                                          *parsed)
+                                          temp, *parsed)
             if expanded and any(map(_SHELL_EXPANDS_RE.search, files)):
                 files, unnamed = [f for f in files if not _SHELL_EXPANDS_RE.search(f)], True
             if files or unnamed:
@@ -189,7 +191,7 @@ def writes(language: str, code: str, expanded: bool = False) -> tuple[list[str],
 
 _SHELL_EXPANDS_RE = re.compile(r"[$`]")
 # The modules whose write calls the Python table names, as an import may rename them.
-_PY_MODULES = r"(?:os|shutil|io|codecs|pathlib|gzip|bz2|lzma)"
+_PY_MODULES = r"(?:os|shutil|io|codecs|pathlib|gzip|bz2|lzma|tempfile)"
 _PY_IMPORT_AS_RE = re.compile(rf"\bimport\s+({_PY_MODULES})\s+as\s+(\w+)")
 _PY_FROM_IMPORT_RE = re.compile(rf"\bfrom\s+({_PY_MODULES})\s+import\s+\(?([\w \t,]+)\)?")
 _FS = r"""['"`](?:node:)?fs(?:/promises)?['"`]"""
@@ -302,11 +304,12 @@ def _fs_receiver(code: str, start: int, file_systems: frozenset[str]) -> bool:
 
 
 def _call_writes(call: _Call, language: str, code: str, start: int,
-                 bindings: dict[str, tuple[int, str]], positional: list[str],
-                 keywords: dict[str, str]) -> tuple[list[str], bool]:
+                 bindings: dict[str, tuple[int, str]], temp: "_TempPaths",
+                 positional: list[str], keywords: dict[str, str]) -> tuple[list[str], bool]:
     """The literal files one matched call at `start` writes, a name bound
     before it (`bindings`, see `_bindings`) read as its literal, and whether
-    it writes an unnamed one."""
+    it writes an unnamed one. A path built from the system temp folder
+    (`temp`) is outside the project, so it is neither."""
 
     def argument(index: int) -> str | None:
         if index < len(positional):
@@ -339,7 +342,7 @@ def _call_writes(call: _Call, language: str, code: str, start: int,
         literal = _literal(text, language) or _bound(text, bindings, start)
         if literal:
             files.append(literal)
-        else:
+        elif not temp.built_from(text, start):
             unnamed = True
     return files, unnamed
 
@@ -380,7 +383,10 @@ def _path_receiver(code: str, start: int, language: str) -> str | None:
     if i < 0 or not _PATH_RECEIVER_RE.search(code[:i]):
         return None
     parsed = _arguments(code, i, language)
-    return parsed[0][0] if parsed and len(parsed[0]) == 1 else ""
+    if not parsed:
+        return ""
+    # Several parts join into one path, which only a temp-folder start can place.
+    return parsed[0][0] if len(parsed[0]) == 1 else f"Path({', '.join(parsed[0])})"
 
 
 def _literal(text: str, language: str) -> str | None:
@@ -410,6 +416,69 @@ def _bound(text: str, bindings: dict[str, tuple[int, str]], start: int) -> str |
     return binding[1] if binding and binding[0] <= start else None
 
 
+# What a path built from the system temp folder starts with (round 6, R12):
+# Python's `tempfile` folders and files, and in both languages the temp
+# folder's environment variables; in JavaScript also `os.tmpdir()` and
+# Deno's temp makers. A trailing `\b` or `(` keeps `tempfile.gettempdirx` out.
+_TEMP_VARIABLE = r"(?:TEMP|TMP|TMPDIR)"
+_TEMP_START_RE = {
+    "python": re.compile(
+        r"tempfile\s*\.\s*(?:gettempdirb?|mkdtemp|mkstemp|mktemp|TemporaryDirectory"
+        r"|NamedTemporaryFile)\b"
+        # A `.get` or `getenv` with a default may fall back to a project folder.
+        rf"|os\s*\.\s*(?:environ\s*\[\s*(['\"]){_TEMP_VARIABLE}\1"
+        rf"|(?:environ\s*\.\s*get|getenv)\s*\(\s*(['\"]){_TEMP_VARIABLE}\2\s*\))"),
+    "js": re.compile(
+        r"os\s*\.\s*tmpdir\s*\("
+        rf"|process\s*\.\s*env\s*(?:\.\s*{_TEMP_VARIABLE}(?![\w$])"
+        rf"|\[\s*(['\"`]){_TEMP_VARIABLE}\1\s*\])"
+        r"|Deno\s*\.\s*makeTemp(?:Dir|File)(?:Sync)?\s*\("
+        rf"|Deno\s*\.\s*env\s*\.\s*get\s*\(\s*(['\"]){_TEMP_VARIABLE}\2"),
+}
+# What may wrap a path's first part: a join, a path constructor, a string
+# conversion, an f-string or template opening on a placeholder, or `await`.
+_PATH_WRAPPER_RE = {
+    "python": re.compile(
+        r"(?:os\s*\.\s*path\s*\.\s*join|(?:pathlib\s*\.\s*)?(?:Pure(?:Posix|Windows)?)?Path"
+        r"|str)\s*\(\s*|[fF][rR]?(['\"])\{\s*"),
+    "js": re.compile(r"(?:path\s*\.\s*(?:join|resolve)|String)\s*\(\s*|`\$\{\s*|await\s+"),
+}
+_NAME_START_RE = re.compile(r"[A-Za-z_$][\w$]*")
+
+
+class _TempPaths:
+    """Reads whether a write call's path text is built from the system temp
+    folder, so the write is outside the project (round 6, R12): its first
+    part, inside any joins or path constructors (`_PATH_WRAPPER_RE`), is a
+    temp-folder call or variable (`_TEMP_START_RE`) or a name in `names`,
+    each bound only to such a path before the call (`_temp_names`). A path
+    holding `..` may climb out, and in code the shell may have expanded
+    (`expanded`) a `$` or backtick may hide one, so neither counts. Perl and
+    Ruby paths are never read as temp."""
+
+    def __init__(self, language: str, names: dict[str, int], expanded: bool) -> None:
+        self.language = language
+        self.names = names
+        self.expanded = expanded
+
+    def built_from(self, text: str, start: int) -> bool:
+        """Whether the path `text`, given to a call at `start`, starts in the temp folder."""
+
+        starts = _TEMP_START_RE.get(self.language)
+        text = text.strip()
+        if starts is None or ".." in text or (self.expanded and _SHELL_EXPANDS_RE.search(text)):
+            return False
+        wrapper = _PATH_WRAPPER_RE[self.language]
+        while found := wrapper.match(text):
+            text = text[found.end():]
+        if starts.match(text):
+            return True
+        name = _NAME_START_RE.match(text)
+        rest = text[name.end():].lstrip()[:1] if name else "."
+        return (name is not None and self.names.get(name[0], start + 1) <= start
+                and rest in ("", ",", ")", "+", "/", "}"))
+
+
 # Code that can bind a name without spelling the binding (`exec("p = …")`,
 # `globals()["p"] = …`, `globalThis.p = …`, `from m import *`, a JS `with`
 # block), so no name in it is read as its literal.
@@ -436,18 +505,99 @@ def _bindings(language: str, code: str) -> dict[str, tuple[int, str]]:
     return {}
 
 
-def _python_bindings(code: str) -> dict[str, tuple[int, str]]:
-    """`_bindings` for Python, read from its syntax tree; code that does not
-    parse binds nothing."""
+def _temp_names(language: str, code: str) -> dict[str, int]:
+    """Each Python name `code` binds exactly once, by an assignment or a
+    `with` target, to a path `_TempPaths` reads as built from the temp
+    folder, with the offset where that binding ends: `d = tempfile.mkdtemp()`,
+    `with tempfile.TemporaryDirectory() as d`, and `p = d + "/x"` after such
+    a `d`. JavaScript names are not read, so there the temp folder must be
+    spelled in the call."""
+
+    tree = _python_tree(code) if language == "python" else None
+    if tree is None:
+        return {}
+    bound, offset = _binding_counts(tree), _offsets(code)
+    candidates = []  # (name, the bound value's source, where the binding ends)
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)):
+            name, value, binding = node.targets[0].id, node.value, node
+        elif isinstance(node, ast.withitem) and isinstance(node.optional_vars, ast.Name):
+            name, value, binding = node.optional_vars.id, node.context_expr, node.optional_vars
+        else:
+            continue
+        if bound[name] != 1 or isinstance(value, ast.Constant):
+            continue  # A literal is `_python_bindings`' to read.
+        begins, ends, end = offset(value, start=True), offset(value), offset(binding)
+        if None not in (begins, ends, end):
+            candidates.append((name, code[begins:ends], end))
+    names: dict[str, int] = {}
+    grew = True
+    while grew:  # A name bound to a path from another temp name joins once that one has.
+        grew = False
+        for name, source, end in candidates:
+            if name not in names and _TempPaths(language, names, False).built_from(source, end):
+                names[name], grew = end, True
+    return names
+
+
+def _python_tree(code: str) -> ast.Module | None:
+    """`code`'s syntax tree, or None when it does not parse."""
 
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")  # An odd escape warns, and stderr is the hook's.
-            tree = ast.parse(code)
+            return ast.parse(code)
     except Exception:  # SyntaxError, ValueError, RecursionError, MemoryError: read nothing.
+        return None
+
+
+def _offsets(code: str) -> Callable[..., int | None]:
+    """A function giving the offset in `code` where a node ends, or with
+    `start` where it begins, or None when the tree does not say. The tree's
+    column counts UTF-8 bytes, not characters, and one character is at most
+    four bytes, so only that much of the line is encoded."""
+
+    lines = [0] + [m.end() for m in re.finditer(r"\r\n|\r|\n", code)]
+
+    def offset(node: ast.AST, start: bool = False) -> int | None:
+        number = getattr(node, "lineno" if start else "end_lineno", None)
+        column = getattr(node, "col_offset" if start else "end_col_offset", None)
+        if number is None or column is None:
+            return None
+        line = lines[number - 1]
+        return line + len(code[line:line + 4 * column].encode("utf-8")[:column]
+                          .decode("utf-8", errors="ignore"))
+    return offset
+
+
+def _python_bindings(code: str) -> dict[str, tuple[int, str]]:
+    """`_bindings` for Python, read from its syntax tree; code that does not
+    parse binds nothing."""
+
+    tree = _python_tree(code)
+    if tree is None:
         return {}
-    # Every binding of each name, anywhere: an assignment, `+=`, `del`, a loop
-    # or `with` target, a parameter, an import, a def, class, `except` or match name.
+    bound, offset = _binding_counts(tree), _offsets(code)
+    found = {}
+    for statement in tree.body:
+        if not (isinstance(statement, ast.Assign) and len(statement.targets) == 1
+                and isinstance(statement.targets[0], ast.Name)
+                and isinstance(statement.value, ast.Constant)
+                and isinstance(statement.value.value, str) and statement.value.value):
+            continue
+        name = statement.targets[0].id
+        ends = offset(statement)
+        if bound[name] == 1 and ends is not None:
+            found[name] = (ends, statement.value.value)
+    return found
+
+
+def _binding_counts(tree: ast.Module) -> Counter[str]:
+    """How often each name is bound anywhere in `tree`: an assignment, `+=`,
+    `del`, a loop or `with` target, a parameter, an import, a def, class,
+    `except` or match name."""
+
     bound: Counter[str] = Counter()
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
@@ -461,22 +611,7 @@ def _python_bindings(code: str) -> dict[str, tuple[int, str]]:
         else:
             bound.update(v for v in (getattr(node, "name", None), getattr(node, "rest", None))
                          if isinstance(v, str))
-    lines = [0] + [m.end() for m in re.finditer(r"\r\n|\r|\n", code)]
-    found = {}
-    for statement in tree.body:
-        if not (isinstance(statement, ast.Assign) and len(statement.targets) == 1
-                and isinstance(statement.targets[0], ast.Name)
-                and isinstance(statement.value, ast.Constant)
-                and isinstance(statement.value.value, str) and statement.value.value):
-            continue
-        name = statement.targets[0].id
-        if bound[name] == 1 and statement.end_lineno is not None:
-            line = lines[statement.end_lineno - 1]
-            # The column counts UTF-8 bytes, not characters.
-            column = len(code[line:].encode("utf-8")[: statement.end_col_offset or 0]
-                         .decode("utf-8", errors="ignore"))
-            found[name] = (line + column, statement.value.value)
-    return found
+    return bound
 
 
 _JS_BINDING_RE = re.compile(r"(?<![\w$.])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=(?![=>])")

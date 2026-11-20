@@ -455,7 +455,18 @@ class ShortFormKeepsTheAskTests(SessionCase):
         second = reason(s.call("Edit", edit))
         self.assertIn("Still unmet", second)
         self.assertIn("do not match the grammar", second)
-        self.assertIn("`goated-route: standard requires tdd`", second)
+        self.assertIn("`goated-route: standard requires tdd` (the pipe separator is required)",
+                      second)
+
+    def test_a_route_line_with_trailing_text_is_quoted_with_its_reason(self) -> None:
+        folder = self.root / "trailing"
+        folder.mkdir()
+        s = Session(folder)
+        s.prompt("Add CSV export.")
+        s.load(ROUTER)
+        s.call("Bash", {"command": "true", "description": "goated-route: direct, then the tests"})
+        held = reason(s.call("Edit", {"file_path": "notes.md", "old_string": "a", "new_string": "b"}))
+        self.assertIn("`goated-route: direct, then the tests` (nothing may follow the line)", held)
 
     def test_a_closeout_item_first_shown_at_stop_is_full(self) -> None:
         # Items met at a commit's closeout are short later; an item new at Stop is full.

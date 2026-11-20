@@ -330,6 +330,25 @@ class Session:
             self._tool_result(tool_id, held or "ok", is_error=bool(held))
         return outputs
 
+    def in_order(self, calls: list[tuple[str, dict]]) -> list[dict]:
+        """Judge calls made in one assistant message as Claude Code judges a
+        message's writes (`docs/reference/carrier-probe-2026-11-19.md`): one
+        at a time, in message order, the first before the message is
+        recorded and each later one with every call of the message already
+        in the transcript."""
+
+        ids = [self._new_id() for _ in calls]
+        outputs = []
+        for index, (tool_id, (tool, tool_input)) in enumerate(zip(ids, calls)):
+            outputs.append(parse(self.hook(
+                "PreToolUse", tool_name=tool, tool_input=tool_input, tool_use_id=tool_id)))
+            if index == 0:
+                self._tool_uses([(i, t, ti) for i, (t, ti) in zip(ids, calls)])
+        for tool_id, output in zip(ids, outputs):
+            held = reason(output)
+            self._tool_result(tool_id, held or "ok", is_error=bool(held))
+        return outputs
+
     def _tool_result(
         self, tool_use_id: str, content: str, *, is_error: bool = False, extra=None
     ) -> None:

@@ -2,8 +2,9 @@
 
 `report(entries, project=..., adapter=..., skipped=...)` counts what the
 entries of `usage_log.read_log` hold: skill loads by skill and cause, holds
-by gate with what became of them, closeout items, route lines by form,
-reference reads, and the projects by key with their sessions. A project
+by gate with what became of them, held files by gate and class, closeout
+items, notices by kind, route lines by form, reference reads, and the
+projects by key with their sessions. A project
 key or an adapter name keeps only that project's or adapter's entries.
 `skipped` is how many lines the reader passed over; an entry whose fields
 cannot be counted, such as a closeout item with no label, adds to it.
@@ -42,10 +43,12 @@ def report(entries: list[dict], project: str | None = None, adapter: str | None 
     routes: Counter = Counter()
     refs: Counter = Counter()
     whole: Counter = Counter()
+    held_files: Counter = Counter()  # (gate, file class)
+    notices: Counter = Counter()
     for e in kept:
         projects[e.get("project") or "(none)"].add((e.get("adapter"), e.get("session")))
         try:
-            _count(e, loads, holds, outcomes, items, routes, refs, whole)
+            _count(e, loads, holds, outcomes, items, routes, refs, whole, held_files, notices)
         except (KeyError, TypeError, AttributeError):
             skipped += 1
 
@@ -68,14 +71,19 @@ def report(entries: list[dict], project: str | None = None, adapter: str | None 
                     [[gate, holds[gate], *(outcomes[gate][o] for o in OUTCOMES)]
                      for gate in sorted(set(holds) | set(outcomes),
                                         key=lambda g: (-holds[g], g))])
+    lines += _table("Held files", ["gate", "file class", "holds"],
+                    [[gate, file_class, n] for (gate, file_class), n
+                     in sorted(held_files.items(), key=lambda row: (-row[1], row[0]))])
     lines += _table("Closeout items", ["item", "asked"], _counted(items))
+    lines += _table("Notices", ["kind", "notices"], _counted(notices))
     lines += _table("Route lines", ["form", "lines"], _counted(routes))
     lines += _table("Reference reads", ["reference", "reads", "whole by a file read"],
                     [[name, n, whole[name]] for name, n in _counted(refs)])
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _count(e: dict, loads, holds, outcomes, items, routes, refs, whole) -> None:
+def _count(e: dict, loads, holds, outcomes, items, routes, refs, whole, held_files,
+           notices) -> None:
     """Add entry `e` to the tables; raises KeyError or TypeError for fields
     it cannot count, before changing any table."""
 
@@ -85,8 +93,12 @@ def _count(e: dict, loads, holds, outcomes, items, routes, refs, whole) -> None:
     elif kind == "hold":
         labels = [str(item["label"]) for item in e.get("items", [])]
         holds[str(e["gate"])] += 1
+        if "file_class" in e:
+            held_files[(str(e["gate"]), str(e["file_class"]))] += 1
         for label in labels:
             items[label] += 1
+    elif kind == "notice":
+        notices[str(e["kind"])] += 1
     elif kind == "outcome":
         outcomes[str(e["gate"])][str(e["outcome"])] += 1
     elif kind == "route":

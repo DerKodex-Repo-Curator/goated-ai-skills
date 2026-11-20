@@ -83,26 +83,26 @@ entry is unchanged because no reference file is added or renamed.
 
 ## Acceptance Criteria
 
-- [ ] Each hold text in the adapter's text fixture opens with an
+- [x] Each hold text in the adapter's text fixture opens with an
       imperative action, and each closeout item opens with one after its
       label.
-- [ ] A route line with trailing text is quoted with the reason it does
+- [x] A route line with trailing text is quoted with the reason it does
       not match.
-- [ ] A held read-only-looking command names the part that made it a
+- [x] A held read-only-looking command names the part that made it a
       write.
-- [ ] A hold on a file edit carries the sentence about calls that may have
+- [x] A hold on a file edit carries the sentence about calls that may have
       landed.
-- [ ] An inline script writing under the system temp folder meets no
+- [x] An inline script writing under the system temp folder meets no
       `scripted-edit` hold; the same script writing a run-time path inside
       the project does.
-- [ ] A log written by a held edit carries a file class and no path, and a
+- [x] A log written by a held edit carries a file class and no path, and a
       notice entry by kind; the usage report shows both; the log's schema
       validates.
-- [ ] The template carries both lines, and the `spawn` gate passes a brief
+- [x] The template carries both lines, and the `spawn` gate passes a brief
       without them.
-- [ ] The contract states each rule, and conformance scenarios cover the
+- [x] The contract states each rule, and conformance scenarios cover the
       changed holds and a near miss.
-- [ ] The repo checks in `AGENTS.md` pass.
+- [x] The repo checks in `AGENTS.md` pass.
 
 ## Expected Proof
 

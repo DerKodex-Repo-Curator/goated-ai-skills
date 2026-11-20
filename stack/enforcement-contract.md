@@ -124,6 +124,16 @@ Where a line counts:
 - only in its own turn, and only for the agent that wrote it;
 - outside fenced blocks, as a whole line. The last route line wins.
 
+A harness may judge the calls of one message one at a time, in order, each
+with the calls before it already recorded; Claude Code did so for writes,
+and commands that write, in one probe run per shape
+(`docs/reference/carrier-probe-2026-11-19.md`), while it judged read-only
+calls all at once. There a line in an earlier call's `line_text` counts for
+a later write of the same message, since it counts from its call on. This is
+no new rule: hold text says a route or skip line may ride on a call earlier
+in the same message when the held call is a write, or in an earlier
+message, and never promises that it will (round 6, R11).
+
 No line is ever read from a prompt, so a line quoted in a prompt counts for
 nothing, and no override is ever read from a call or a reply.
 
@@ -319,6 +329,14 @@ goated-hold: <gate> | <kind>
   its own, with one clearing section that says where a line goes and lists
   each hold's typed override once. A message with one such hold keeps that
   advice in the hold.
+- Each hold's text opens with its clearing action, an imperative such as
+  "Load", "Read", or "Write"; conditions and caveats follow (round 6, R11).
+  A closeout item opens with its action after its `- <Label>: `, and a
+  short form with its action after `Still unmet: <what is missing>.`; the
+  hold line and the closeout's opening line stay as they are.
+- A hold on a file write (`file_write`) ends, on a line of its own before
+  anything the adapter adds, by saying that other calls of the same message
+  may have landed, so the file is read before the edit is sent again.
 - The text is guidance and may change between releases. It backticks each
   skill it asks for by its bare name, and no other bare word; a file is
   quoted by its path. In the `spawn` hold the two skills are alternatives;
@@ -589,7 +607,9 @@ the path can be read, with symbolic links and junctions resolved too
 
 A shell write whose files the command does not name (`git apply`, `patch`, a
 download without an output name, a .NET call) counts as a change to
-non-test code, wherever it runs.
+non-test code, wherever it runs. An inline script's write whose path is
+built from the system temp folder is outside, as
+[Inline Scripts](#inline-scripts) says (round 6, R12).
 
 A **scratch file** is outside the project by these rules, inside no git
 checkout (no folder at or above it holds a `.git` file or folder), outside
@@ -1145,7 +1165,34 @@ the file's name. A name an import gives a listed module or function is
 followed: `import shutil as s` then `s.move(…)`, `from os import remove`
 then `remove(…)`, `from pathlib import Path as P`, and
 `const {writeFileSync: w} = require('fs')` or
-`import {rmSync as r} from 'fs'`. A script in which no write call is found
+`import {rmSync as r} from 'fs'`.
+
+A write call whose path is built from the system temp folder is outside the
+project (round 6, R12), so it is neither a named file nor an unnamed write
+(`_TempPaths` in `script_writes.py`). Its path's first part, inside any
+joins, path constructors, string conversions, or an f-string or template
+opening on a placeholder (`os.path.join(…)`, `Path(…)`, `str(…)`,
+`f'{…}'`, `path.join(…)`, `` `${…}` ``, `await`), must be one of:
+
+- in Python, a `tempfile` call (`gettempdir`, `gettempdirb`, `mkdtemp`,
+  `mkstemp`, `mktemp`, `TemporaryDirectory`, `NamedTemporaryFile`), also
+  as a name imported from `tempfile`, or `os.environ[…]`, `os.environ.get(…)`
+  or `os.getenv(…)` of `TEMP`, `TMP`, or `TMPDIR`, the last two with no
+  default, which may be a project folder; or a name bound exactly
+  once, by an assignment or a `with` target and before the call, to such a
+  path (`d = tempfile.mkdtemp()`, `with tempfile.TemporaryDirectory() as d`,
+  then `p = d + "/x"`);
+- in JavaScript, `os.tmpdir()`, `process.env` of `TEMP`, `TMP`, or `TMPDIR`,
+  `Deno.makeTempDir` or `makeTempFile` and their `Sync` forms, or
+  `Deno.env.get(…)` of those variables; a JavaScript name is not read.
+
+A path holding `..` may climb out of the temp folder, and in code the shell
+may have expanded, a `$` or backtick may hide one, so either stays an
+unnamed write; so does a path whose first part is anything else, such as
+`os.path.join(ROOT, tempfile.gettempdir())`. Perl and Ruby paths are never
+read as temp. The temp folder is taken as the system's: a command that
+points `TEMP`, `TMP`, or `TMPDIR` into the project first
+(`TMPDIR=src python - …`) is not seen, a gap of this lexical reading. A script in which no write call is found
 is not a write, so `python -c "print(1)"` and a script that opens files only
 to read them pass. Inline code is never a check; `python -m pytest` still
 is.
@@ -1760,3 +1807,18 @@ The [Hold Messages](#hold-messages) rules, as the core's text meets them
   next turn starts full again.
 - Both Design red-flags texts repeat the question `red-flags.md` ends with;
   no hold reads an answer.
+- The `route-line` hold quotes each line of the turn that does not match
+  the grammar with why, in the words of the marker fixtures' `why`
+  (`markers.malformed_reason`): a whole route line with more text after it
+  is "nothing may follow the line", and with only punctuation after it "no
+  trailing punctuation".
+- A routing hold on a shell command whose every simple command is named as
+  a [plain read](#plain-reads) (a read command, `cd`, or `git`) but which is
+  none names the first part that made it none, such as the redirect into a
+  file, a background job, a refused argument, or a wrapper before the
+  command (`shell.ShellCommand.write_part`). A posix redirect into `nul`
+  gives its own note instead.
+- When a write of the turn landed owing reads, the `commit` hold's change
+  read asks for the owed references first and the change after them, since
+  the Reads item counts only a read of the file made after them; one read
+  in that order meets both.

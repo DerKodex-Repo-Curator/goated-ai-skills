@@ -88,9 +88,12 @@ and translator. It passes every scenario in the repo's tests.
 
 The core appends what each event showed to a local usage log, so a session
 in any harness leaves the same record (Ticket 082): each hold with its gate,
-kind and what it asks for, what became of it, each skill load with its
-cause, each route and skip line, each reference read, and code changes and
-turn ends. Each entry carries the log's version, the session id, a project
+kind and what it asks for, and the class of the file it was about (code,
+test, docs, configuration, or other), what became of it, each notice by its
+kind, each skill load with its cause, each route and skip line, each
+reference read, and code changes and turn ends. Each entry carries the
+log's version (2 since round 6, which added notices and file classes;
+readers take version 1 too), the session id, a project
 key and the adapter's name. It holds what the
 [skill-usage mod](claude-code/skill-usage/README.md) stores and nothing
 more: no prompt text, hold text, file content or project path. The format,
@@ -127,8 +130,9 @@ JSON Lines of one entry each, is
 - **The report.** `python <goated-root>/adapters/core/goated_usage_report.py
   [--log PATH] [--project KEY] [--project-folder PATH] [--adapter NAME]`
   prints a Markdown summary: the projects by key with their sessions, loads
-  by skill and cause, holds by gate and outcome, closeout items, route
-  lines, reference reads, and how many lines were skipped.
+  by skill and cause, holds by gate and outcome, held files by gate and
+  class, closeout items, notices by kind, route lines, reference reads, and
+  how many lines were skipped.
   `--project-folder` finds a folder's key with the log's salt. A log with an
   entry of a version it does not know is refused: the reason goes to
   standard error and the command exits 1.

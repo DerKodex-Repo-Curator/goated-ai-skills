@@ -10,8 +10,11 @@ import type { AllTime, CloseoutItem, HoldKind, UsageEvent } from '../types'
 import { addSession, summarize } from './classify'
 import { ROUTE_LINE } from './holds'
 
-/** The log version this reader knows; an entry of any other is refused, not guessed at. */
-export const LOG_VERSION = 1
+/**
+ * The log versions this reader knows; an entry of any other is refused, not guessed at. Version 2 adds `notice`
+ * entries and a hold's `file_class`, which this mod does not count, so a version 1 entry means the same.
+ */
+export const LOG_VERSIONS: readonly number[] = [1, 2]
 /** The adapter whose sessions this mod hears for itself: its log entries are left to the mod's own reading. */
 export const OWN_ADAPTER = 'claude-code'
 
@@ -24,6 +27,7 @@ type Entry = { log: number; t: number; adapter: string; session: string; project
 const NEEDS: Readonly<Record<string, readonly string[]>> = {
   prompt: ['named'], override: ['phrases'], load: ['skill', 'cause'], hold: ['gate', 'kind', 'named'], outcome: ['gate', 'outcome'],
   skip: ['skill', 'reason'], route: ['form'], ref: ['skill', 'file'], skill_read: ['skills'], file_read: ['file'], change: [], turn_end: [], compaction: [],
+  notice: ['kind'],
 }
 
 /**
@@ -45,7 +49,7 @@ export function usageLogPlace(where: { configured: string; isWindows: boolean; l
 /**
  * The sessions a log's text holds, each as the events the mod makes, in the log's order, and how many lines were
  * `skipped` as no entry: not JSON, not an object, or missing a field its type needs, such as a line a crashed writer
- * cut short. An entry of a version other than `LOG_VERSION` refuses the whole log, with a message saying which line.
+ * cut short. An entry of a version not in `LOG_VERSIONS` refuses the whole log, with a message saying which line.
  */
 export function readUsageLog(text: string): { sessions: LoggedSession[]; skipped: number } | { refused: string } {
   const sessions = new Map<string, LoggedSession>()
@@ -59,7 +63,7 @@ export function readUsageLog(text: string): { sessions: LoggedSession[]; skipped
       entry = null
     }
     const e = (typeof entry === 'object' && entry !== null && !Array.isArray(entry) ? entry : {}) as Partial<Entry>
-    if (Number.isInteger(e.log) && e.log !== LOG_VERSION) return { refused: `line ${index + 1} of the usage log is of log version ${e.log}, which the mod does not know (it knows version ${LOG_VERSION})` }
+    if (Number.isInteger(e.log) && !LOG_VERSIONS.includes(e.log as number)) return { refused: `line ${index + 1} of the usage log is of log version ${e.log}, which the mod does not know (it knows versions ${LOG_VERSIONS.join(' and ')})` }
     if (!isComplete(e)) {
       skipped += 1
       continue
@@ -72,10 +76,10 @@ export function readUsageLog(text: string): { sessions: LoggedSession[]; skipped
   return { sessions: [...sessions.values()], skipped }
 }
 
-/** Whether `e` is an entry of this version with every field its type needs. */
+/** Whether `e` is an entry of a known version with every field its type needs. */
 function isComplete(e: Partial<Entry>): e is Entry {
   const needs = typeof e.type === 'string' ? NEEDS[e.type] : undefined
-  return e.log === LOG_VERSION && needs !== undefined && typeof e.t === 'number' && typeof e.adapter === 'string' && typeof e.session === 'string' && needs.every(field => field in e)
+  return LOG_VERSIONS.includes(e.log as number) && needs !== undefined && typeof e.t === 'number' && typeof e.adapter === 'string' && typeof e.session === 'string' && needs.every(field => field in e)
 }
 
 /**
@@ -130,7 +134,8 @@ function eventsOf(e: Entry): UsageEvent[] {
     case 'compaction':
       return [{ kind: 'compact', t }]
     default:
-      // `outcome` is the core's own settlement; a type a later minor change adds is not counted here.
+      // `outcome` is the core's own settlement, and a `notice` adds nothing the mod counts; a type a later minor
+      // change adds is not counted here.
       return []
   }
 }

@@ -150,6 +150,62 @@ class OnceBoundHoldTests(ScriptTestCase):
         self.assertIn("\"app.py\"", reason(s.call("Bash", {"command": code})))
 
 
+class TempFolderPathTests(unittest.TestCase):
+    """A path built from the system temp folder is outside the project, so it
+    is neither a named file nor an unnamed write (round 6, R12)."""
+
+    def test_a_python_path_from_the_temp_folder_writes_no_project_file(self) -> None:
+        for lines in (
+            ("import os, tempfile", "open(os.path.join(tempfile.gettempdir(), 'x.txt'), 'w')"),
+            ("import tempfile", "d = tempfile.mkdtemp()", "p = d + '/x.txt'", "open(p, 'w')"),
+            ("import os, tempfile", "with tempfile.TemporaryDirectory() as d:",
+             "    open(os.path.join(d, 'x.txt'), 'w')"),
+            ("import os", "open(os.path.join(os.environ['TEMP'], 'x.txt'), 'w')"),
+            ("import os", "open(os.getenv('TMPDIR') + '/x.txt', 'w')"),
+            ("from tempfile import gettempdir", "from pathlib import Path",
+             "Path(gettempdir(), 'x.txt').write_text('1')"),
+            ("import tempfile", "open(f'{tempfile.gettempdir()}/x.txt', 'w')"),
+        ):
+            with self.subTest(lines=lines):
+                self.assertEqual(read(heredoc(*lines)), ([], False))
+
+    def test_a_javascript_path_from_the_temp_folder_writes_no_project_file(self) -> None:
+        for code in ("fs.writeFileSync(path.join(os.tmpdir(), 'x.txt'), '1')",
+                     "fs.writeFileSync(`${os.tmpdir()}/x.txt`, '1')",
+                     "fs.writeFileSync(process.env.TMPDIR + '/x.txt', '1')"):
+            with self.subTest(code=code):
+                self.assertEqual(read(f"node - <<'EOF'\n{code}\nEOF"), ([], False))
+
+    def test_a_temp_path_that_may_leave_the_temp_folder_stays_unnamed(self) -> None:
+        for lines in (
+            ("import os, tempfile",
+             "open(os.path.join(tempfile.gettempdir(), '..', 'src', 'app.py'), 'w')"),
+            ("import os, tempfile", "open(os.path.join(ROOT, tempfile.gettempdir()), 'w')"),
+            ("import tempfile", "d = tempfile.mkdtemp()", "d = ROOT", "open(d + '/x', 'w')"),
+            ("import os", "open(os.path.join(os.environ['HOME'], 'x.txt'), 'w')"),
+            # A default for an unset variable may be a project folder.
+            ("import os", "open(os.path.join(os.environ.get('TMPDIR', '.'), 'x.txt'), 'w')"),
+            ("import os", "open(os.getenv('TMP', ROOT) + '/x.txt', 'w')"),
+        ):
+            with self.subTest(lines=lines):
+                self.assertEqual(read(heredoc(*lines)), ([], True))
+
+    def test_shell_text_in_an_expanded_temp_path_stays_unnamed(self) -> None:
+        command = "python -c \"import os, tempfile; open(os.path.join(tempfile.gettempdir(), '$F'), 'w')\""
+        self.assertEqual(read(command), ([], True))
+
+
+class TempFolderHoldTests(ScriptTestCase):
+    def test_a_script_writing_under_the_temp_folder_meets_no_scripted_edit_hold(self) -> None:
+        s = self.routed()
+        temp = heredoc("import os, tempfile",
+                       "open(os.path.join(tempfile.gettempdir(), 'out.txt'), 'w').write('1')")
+        self.assertEqual(decision(s.call("Bash", {"command": temp})), "pass")
+        # Near miss: the same script writing a run-time path inside the project is held.
+        inside = heredoc("import os", "open(os.path.join(ROOT, 'out.txt'), 'w').write('1')")
+        self.assertEqual(hold_line(s.call("Bash", {"command": inside})), SCRIPTED)
+
+
 class UnnamedWriteAfterACdTests(ScriptTestCase):
     """An unnamed write is inside the project wherever the command runs: a
     script reaches project files from any folder (Ticket 097 review)."""

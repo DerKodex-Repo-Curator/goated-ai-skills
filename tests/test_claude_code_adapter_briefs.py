@@ -169,7 +169,7 @@ class BriefOrientationTests(BriefTestCase):
 
         held = s.call("Edit", EDIT)
         self.assertEqual(hold_line(held), "goated-hold: pipeline | strict")
-        self.assertIn("The current route requires `tdd` before", reason(held))
+        self.assertIn("Load `tdd` with the Skill tool and follow each: the current route requires them before", reason(held))
         self.assertIn("If one does not apply", reason(held))
         self.assertNotIn(f"`{ORIENTATION}`", reason(held))
         self.assertNotIn("started from a brief", reason(held))
@@ -178,7 +178,7 @@ class BriefOrientationTests(BriefTestCase):
         s = self.brief("goated-route: standard | requires: tdd")
 
         text = reason(s.call("Edit", EDIT))
-        self.assertIn("The current route requires `tdd` before", text)
+        self.assertIn("Load `tdd` with the Skill tool and follow each: the current route requires them before", text)
         self.assertIn(f"A session started from a brief loads `{ORIENTATION}`", text)
         self.assertIn("If a route skill does not apply", text)
 
@@ -186,7 +186,7 @@ class BriefOrientationTests(BriefTestCase):
         s = self.brief(f"goated-route: standard | requires: {ORIENTATION}, tdd")
 
         text = reason(s.call("Edit", EDIT))
-        self.assertIn("The current route requires `tdd` before", text)
+        self.assertIn("Load `tdd` with the Skill tool and follow each: the current route requires them before", text)
         self.assertEqual(text.count(f"`{ORIENTATION}`"), 1)
 
     def test_a_direct_brief_is_not_held_for_orientation(self) -> None:

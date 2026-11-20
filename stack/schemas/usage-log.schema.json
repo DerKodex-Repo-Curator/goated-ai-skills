@@ -7,8 +7,8 @@
   "required": ["log", "t", "adapter", "session", "project", "type"],
   "properties": {
     "log": {
-      "description": "The log's version: a whole number every change of an entry's meaning bumps.",
-      "const": 1
+      "description": "The log's version: a whole number every change of an entry's meaning bumps. Version 2 (round 6, R15) adds `notice` entries and a hold's `file_class`; a version 1 entry means the same in version 2, so readers take both.",
+      "enum": [1, 2]
     },
     "t": {"description": "When the core wrote the entry, in seconds since the Unix epoch.", "type": "number"},
     "adapter": {
@@ -25,7 +25,7 @@
     "agent": {"description": "The subagent acting, absent for the main agent.", "type": "string", "minLength": 1},
     "type": {
       "enum": ["prompt", "override", "load", "hold", "outcome", "skip", "route", "ref", "skill_read",
-               "file_read", "change", "turn_end", "compaction"]
+               "file_read", "change", "turn_end", "compaction", "notice"]
     }
   },
   "allOf": [
@@ -39,6 +39,7 @@
     {"if": {"properties": {"type": {"const": "ref"}}}, "then": {"$ref": "#/$defs/ref"}},
     {"if": {"properties": {"type": {"const": "skill_read"}}}, "then": {"$ref": "#/$defs/skill_read"}},
     {"if": {"properties": {"type": {"const": "file_read"}}}, "then": {"$ref": "#/$defs/file_read"}},
+    {"if": {"properties": {"type": {"const": "notice"}}}, "then": {"$ref": "#/$defs/notice"}},
     {"if": {"properties": {"type": {"enum": ["change", "turn_end", "compaction"]}}}, "then": {"$ref": "#/$defs/bare"}}
   ],
   "$defs": {
@@ -75,7 +76,7 @@
       "unevaluatedProperties": false
     },
     "hold": {
-      "description": "A hold the core showed, as what it asks for, read from its text the way the skill-usage mod reads it; the text is not kept. `named`: the skills it backticks alone or offers as a skip line, in order (the router for `router-first`; none for `route-line`, which asks for a route line). `skip_only`: those it offers only as a skip line, which no load answers. `refs`: the references a `design` or `design-reads` hold (by file name) or a `reference-reads` hold (by path under the skill) asks to read. `items`: a closeout's items, each with the skill its line names. `brief_added`: the orientation skill a pipeline hold asks for because the session started from a brief. `stop`: it held a turn's end, not a call.",
+      "description": "A hold the core showed, as what it asks for, read from its text the way the skill-usage mod reads it; the text is not kept. `named`: the skills it backticks alone or offers as a skip line, in order (the router for `router-first`; none for `route-line`, which asks for a route line). `skip_only`: those it offers only as a skip line, which no load answers. `refs`: the references a `design` or `design-reads` hold (by file name) or a `reference-reads` hold (by path under the skill) asks to read. `items`: a closeout's items, each with the skill its line names. `brief_added`: the orientation skill a pipeline hold asks for because the session started from a brief. `stop`: it held a turn's end, not a call. `file_class` (version 2): the class of the file the held call writes, a file write's file or the first file a shell command names as written, never its path: `test` (by its place in the project), `code`, `docs`, `configuration`, or `other`; absent for a call that names no file it writes, such as a commit, a spawn, or a turn's end.",
       "required": ["gate", "kind", "named"],
       "properties": {
         "gate": {"type": "string", "minLength": 1},
@@ -93,7 +94,8 @@
           }
         },
         "brief_added": {"$ref": "#/$defs/skills"},
-        "stop": {"const": true}
+        "stop": {"const": true},
+        "file_class": {"enum": ["code", "test", "docs", "configuration", "other"]}
       },
       "$ref": "#/$defs/common",
       "unevaluatedProperties": false
@@ -152,6 +154,13 @@
       "description": "A main-agent file read finished ok. `file` is a digest of the path, never the path: the first 16 hex digits of the SHA-256 digest of the log's salt and the path in comparable form (slashes forward and lowercased for a Windows path, `.` and `..` collapsed), so distinct files can be counted but a guessed path cannot be checked without the salt. None is written when the salt cannot be read.",
       "required": ["file"],
       "properties": {"file": {"type": "string", "pattern": "^[0-9a-f]{16}$"}},
+      "$ref": "#/$defs/common",
+      "unevaluatedProperties": false
+    },
+    "notice": {
+      "description": "Version 2: a notice the event carried, by its kind alone, never its text: a kind of the event model's notices, such as `reads_owed`, `skip_carried`, `route_continued`, `override_recorded`, `closeout_note`, `session_notice`, or `warning`. A warning that the log itself could not be written is not logged.",
+      "required": ["kind"],
+      "properties": {"kind": {"type": "string", "pattern": "^[a-z]+(?:_[a-z]+)*$"}},
       "$ref": "#/$defs/common",
       "unevaluatedProperties": false
     },

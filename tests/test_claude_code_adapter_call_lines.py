@@ -200,13 +200,41 @@ class DescribedToolTests(CallLineTestCase):
 
 
 class SameMessageCallTests(CallLineTestCase):
-    def test_a_line_in_a_sibling_call_of_the_same_message_is_not_seen_yet(self) -> None:
+    """The carrier probe found that Claude Code judges one message's writes
+    one at a time, in order, each with the calls before it in the transcript
+    (`docs/reference/carrier-probe-2026-11-19.md`)."""
+
+    def test_a_line_on_a_shell_call_earlier_in_the_message_covers_a_later_write(self) -> None:
         s = self.started()
 
-        outputs = s.parallel([("Bash", described("git status", "goated-route: direct")), ("Edit", EDIT)])
-        self.assertEqual([decision(o) for o in outputs], ["pass", "deny"])
-        self.assertIn("an earlier message", reason(outputs[1]))
-        self.assertEqual(decision(s.call("Edit", EDIT)), "pass")
+        outputs = s.in_order([("Bash", described("git status", "goated-route: direct")),
+                              ("Edit", EDIT)])
+        self.assertEqual([decision(o) for o in outputs], ["pass", "pass"])
+
+    def test_the_advice_says_a_line_may_ride_earlier_in_the_same_message(self) -> None:
+        s = self.started()
+
+        held = reason(s.call("Edit", EDIT))
+        self.assertIn("earlier in the same message, when the held call is a write, or in an "
+                      "earlier message", held)
+        self.assertNotIn("not seen yet", held)
+        self.assertIn("command true, earlier in the same message or in an earlier message",
+                      held)
+
+
+class HeldEditTests(CallLineTestCase):
+    """A hold on a file edit says the message's other calls may have landed
+    (round 6, R11)."""
+
+    LANDED = "Other calls of this message may have landed, so read the file before sending "
+
+    def test_a_held_file_edit_says_to_read_the_file_before_sending_it_again(self) -> None:
+        self.assertIn(self.LANDED, reason(self.started().call("Edit", EDIT)))
+
+    def test_a_held_command_does_not(self) -> None:
+        held = reason(self.started().call("Bash", {"command": "touch notes.md"}))
+        self.assertTrue(held.startswith("goated-hold: route-line"))
+        self.assertNotIn(self.LANDED, held)
 
 
 class MissingCallIdTests(CallLineTestCase):

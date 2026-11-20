@@ -201,7 +201,9 @@ they name, overrides, and turn ends. Its entries are the facts this mod
 stores, so `hooks/usage-log.ts` turns each into the event the mod would have
 made of the same moment, and the hold settlement counts them as it counts
 what the mod hears. The core's own `outcome` entries are left aside: the
-mod settles each hold by the rules above.
+mod settles each hold by the rules above. The mod reads log versions 1 and
+2; it counts none of version 2's additions, `notice` entries and a hold's
+`file_class`, which the core's report shows instead.
 
 At each session start the mod reads the log, from the `usageLogPath` option
 (the `skill-usage.usageLogPath` row of Claude Code's settings menu, or

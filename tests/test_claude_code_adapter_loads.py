@@ -146,8 +146,8 @@ class LoadsCountInLaterTurnsTests(LoadsTestCase):
 
         # Near miss: the change read is still per turn, but no load is asked for.
         held = stop(s)
-        self.assertIn("- Docs: after your last code change", held["reason"])
-        self.assertNotIn("Load `doc-sync`", held["reason"])
+        self.assertIn("- Docs: read the change itself after your last code change", held["reason"])
+        self.assertNotIn("load `doc-sync`", held["reason"])
 
         s.run("git diff")
         self.assertEqual(stop(s), {})
@@ -236,7 +236,7 @@ class ResetsAskForTheLoadAgainTests(LoadsTestCase):
                 self.reset(s, how)
                 held = s.call("Edit", code_edit("src/export.py", 6))
                 self.assertEqual(hold_line(held), "goated-hold: design | justified-skip")
-                self.assertIn(f"load `{DESIGN}`", reason(held))
+                self.assertIn(f"Load `{DESIGN}`", reason(held))
 
     def test_docs_item(self) -> None:
         for how in RESETS:
@@ -247,7 +247,7 @@ class ResetsAskForTheLoadAgainTests(LoadsTestCase):
                 s.call("Edit", code_edit("src/export.py", 6))
                 s.run("pytest -q")
                 s.run("git diff")
-                self.assertIn("Load `doc-sync`", stop(s)["reason"])
+                self.assertIn("- Docs: load `doc-sync`", stop(s)["reason"])
 
     def test_spawn_template_read(self) -> None:
         for how in RESETS:
@@ -257,7 +257,7 @@ class ResetsAskForTheLoadAgainTests(LoadsTestCase):
                 self.reset(s, how)
                 held = s.spawn("a1", BRIEF)
                 self.assertEqual(hold_line(held), "goated-hold: spawn | strict")
-                self.assertIn("load `handoff`", reason(held))
+                self.assertIn("Load `handoff`", reason(held))
 
 
 class CompactionBoundaryTests(LoadsTestCase):
@@ -467,7 +467,7 @@ class SpawnTemplateTests(LoadsTestCase):
 
         held = s.spawn("a1", BRIEF)
         self.assertIn("spawn-brief.md", reason(held))
-        self.assertNotIn("load `handoff`", reason(held))
+        self.assertNotIn("Load `handoff`", reason(held))
 
 
 class SubagentTests(LoadsTestCase):

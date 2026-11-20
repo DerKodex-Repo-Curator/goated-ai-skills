@@ -488,7 +488,8 @@ Claude Code can say:
   `conflict-resolution`, `repeated-failure`, `pr-review`) says that a line in reply text may not be
   seen (see [Known Limits](#known-limits)), and to put the line in the held
   call's description, or in the description or Skill `args` of a call made
-  in an earlier message of the turn, and make the call again. It then says
+  earlier in the same message, when the held call is a write, or in an
+  earlier message of the turn, and make the call again. It then says
   the user can type the matching override. It names those fields without
   backticks, since the mod would read a backticked bare word as a skill.
   That advice is given in full on only one such hold of a turn, holds on
@@ -993,12 +994,19 @@ of the call's prompt, which is normally already there.
   brings, so the closeout may still ask for one of those. The note comes
   once per turn: a turn a subagent's report reopens (see
   [Subagents](#subagents)) gets no second note.
-- The hook sees nothing of the assistant message that makes the call it
+- The hook may see nothing of the assistant message that makes the call it
   judges. In an interactive session Claude Code records that message only
-  after the hook returns, so a route line or skip line written in the same
-  message, and sibling calls made alongside it (a Skill load included), do not
-  count yet. Only the judged call's own input is seen: a line in its
-  `description` counts for it, and a line in a sibling call does not. When
+  after the hook returns, so a route line or skip line in the message's text
+  may not count yet. Calls of one message are another matter: a carrier
+  probe (`docs/reference/carrier-probe-2026-11-19.md`, one run per shape on
+  Claude Code 2.1.325) found that Claude Code judges a message's writes, and
+  commands that write, one at a time in message order, each with the calls
+  before it already in the transcript, while it judges read-only calls all
+  at once. So a line on a call earlier in the same message, such as a Bash
+  call's description, may count for a later write in it; the holds say it
+  may, never that it will, since the order is the harness's behavior, not a
+  documented promise. Read-only calls of one message see none of each
+  other. When
   the hook input has no `tool_use_id`, the judged call is taken to be the
   newest recorded call without a result if its name and input match, so its
   line is counted once.
@@ -1008,8 +1016,9 @@ of the call's prompt, which is normally already there.
   cannot bring it back. The holds a line can clear therefore point to the
   call fields the adapter also reads (see [What It Holds](#what-it-holds)).
   Edit and Write calls have no `description`, so a line for one of them goes
-  in a call made in an earlier message of the turn, such as the Skill call
-  that loads a required skill. If the line is still not seen, the holds
+  in a call made earlier in the same message or in an earlier message of the
+  turn, such as a Bash call with the command `true` or the Skill call that
+  loads a required skill. If the line is still not seen, the holds
   point the user to the typed override: `skip routing`, or `skip <skill>` for a skip line.
 - A brief's route line is recognized only in the shape current desktop-app
   builds record (see [What It Holds](#what-it-holds)). Older builds recorded

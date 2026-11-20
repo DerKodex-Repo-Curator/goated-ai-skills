@@ -314,9 +314,9 @@ test('lines of the log that are no entry are skipped, and the pane and the repor
 
 test('a log of a version the mod does not know is refused with its reason, and the rest of the start still runs', async ($, on) => {
   mock.env(on, { HOME: '/home/dev' })
-  const later = `${PI_LOG}${JSON.stringify({ log: 2, t: 1, adapter: 'pi-agent', session: 's', project: null, type: 'prompt' })}\n`
+  const later = `${PI_LOG}${JSON.stringify({ log: 3, t: 1, adapter: 'pi-agent', session: 's', project: null, type: 'prompt' })}\n`
   const { report, error } = await seen($, world(on, withLog(later)))
-  expect(String(error)).toContain('the GOATED usage log was not read: line 26 of the usage log is of log version 2')
+  expect(String(error)).toContain(`the GOATED usage log was not read: line ${USAGE_LOG_SESSION.log.length + 1} of the usage log is of log version 3`)
   expect(report).toContain('# Skill usage: 1 session')
   expect(report).toContain('## Declared references')
 })

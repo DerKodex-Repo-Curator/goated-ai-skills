@@ -316,6 +316,11 @@ class ShellCommand:
     `redirects_into_nul` says it is a posix command that redirects into
     `nul` (any case), which there writes a file named `nul` rather than
     discarding the output (Ticket 104); that file is in the facts above.
+    `write_part` is, for a command that looks like a plain read, since each
+    simple command in it is named as one (`READ_ONLY_COMMANDS`, `cd`, or
+    `git`), but is not one, the first part that made it no plain read, in
+    words a hold can quote, such as `the redirect into "b.txt"` (round 6,
+    R11); else None.
     """
 
     __slots__ = (
@@ -324,7 +329,7 @@ class ShellCommand:
         "non_check_writes", "unchecked_targets", "unchecked_unknown_writes", "prints_changes",
         "installs_globally", "install_folders", "read_only", "only_reads_and_writes_files",
         "script_targets", "script_unknown_writes", "text_writes", "redirects_into_nul",
-        "shown_files", "whole_prints", "file_prints", "shows_git_diff",
+        "shown_files", "whole_prints", "file_prints", "shows_git_diff", "write_part",
     )
 
     def __init__(self) -> None:
@@ -352,6 +357,7 @@ class ShellCommand:
         self.whole_prints: list[str] = []
         self.file_prints: list[str] = []
         self.shows_git_diff = False
+        self.write_part: str | None = None
 
     @property
     def opens_pr(self) -> bool:
@@ -401,6 +407,9 @@ def analyze(command: str, shell: str = POSIX) -> ShellCommand:
         and not NOT_PLAINLY_SPELLED_RE.search(_outside_quoted_arguments(command))
         and all(_reads_only(segment, index == 0, shell) for index, segment in enumerate(segments))
     ) or (shell == POWERSHELL and command.strip().lower() == POWERSHELL_NO_OP)
+    if not result.read_only and segments and all(
+            _resolve(segment.words)[0] in READ_COMMAND_NAMES for segment in segments):
+        result.write_part = _write_part(command, segments, shell)
     result.only_reads_and_writes_files = (
         bool(segments) and not result.unknown_writes and not NOT_PLAINLY_SPELLED_RE.search(command)
         and all(_reads_only(segment, index == 0, shell) or _works_on_files_only(segment, shell)
@@ -849,6 +858,50 @@ def _reads_only(segment: "_Segment", first: bool, shell: str, writes_output: boo
     ):
         return False
     return not any(_refused_argument(name, arg) for arg in args)
+
+
+# The command names a plain read may have, for `ShellCommand.write_part`.
+READ_COMMAND_NAMES = READ_ONLY_COMMANDS | {"cd", "git"}
+
+
+def _write_part(command: str, segments: list["_Segment"], shell: str) -> str | None:
+    """The first part of `command` that makes it no plain read, tested in the
+    order `_reads_only` and `analyze` test it, in words a hold quotes; None
+    when no single part can be named."""
+
+    spelled = NOT_PLAINLY_SPELLED_RE.search(_outside_quoted_arguments(command))
+    if spelled:
+        # A backtick is named, not quoted: a reader of hold texts pairs backticks.
+        text = "a backtick" if spelled[0] == "`" else f'the text "{spelled[0]}"'
+        return f"{text}, which this reading cannot follow as the shell does"
+    for index, segment in enumerate(segments):
+        if _reads_only(segment, index == 0, shell):
+            continue
+        name, original, args = _resolve(segment.words)
+        if segment.words[:1] != [original]:
+            return f'"{segment.words[0]}" before the command'
+        if original.lower() != name:
+            return f'the command written as "{original}"'
+        if segment.after == "&":
+            return "the background job (&)"
+        if segment.nested or segment.after not in READ_ONLY_ENDS:
+            return "a group or substitution"
+        if segment.heredocs:
+            return "a heredoc"
+        if segment.redirects:
+            target = next((t for t in segment.redirects if t != BASH_NULL_DEVICE),
+                          segment.redirects[0])
+            return f'the redirect into "{target}"'
+        if name == "cd":
+            return "a cd after the first command" if index else "a cd to a path it cannot read"
+        if name == "git":
+            return f'"{" ".join(["git", *args])}"'
+        if name == "uniq":
+            return "a second file named to uniq, which it writes"
+        refused = next((arg for arg in args if _refused_argument(name, arg)), None)
+        if refused is not None:
+            return f'the argument "{refused}"'
+    return None
 
 
 def _refused_argument(name: str, arg: str) -> bool:

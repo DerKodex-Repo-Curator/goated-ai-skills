@@ -257,16 +257,18 @@ def judge_call(settings: Settings, situation: Situation, call: Call,
             state.record_owed_reads(current.key, call.id, task_skips.owed)
     settled += friction.observe(state, current, friction.action_of(call), holds)
     shown = gates.shown_holds(holds, lambda purpose: _claim_turn(
-        store, situation.session_id, current.key, purpose), call=True)
-    log = _logged(settings, situation, lambda r: (r.turns(turns, pending=call),
-                                                  r.outcomes(settled), r.holds(shown)))
+        store, situation.session_id, current.key, purpose), call=call)
     # A held call did not go through, so no lasting skip let it through, and it owes nothing.
     notices = [] if holds else (
         [Notice(SKIP_CARRIED, text) for text in task_skips.notices]
         + [Notice(READS_OWED, text) for text in task_skips.owed_notices])
     notices += _warnings(state_warning, _save(store, situation.session_id, state),
-                         _unread_warning(unread), *registry_warnings, log)
-    return Decision(shown, notices, state.shell)
+                         _unread_warning(unread), *registry_warnings)
+    held_class = actions.file_class(call, situation.project) if holds else None
+    log = _logged(settings, situation, lambda r: (
+        r.turns(turns, pending=call), r.outcomes(settled), r.holds(shown, file_class=held_class),
+        r.notices(_kinds(notices))))
+    return Decision(shown, notices + _warnings(log), state.shell)
 
 
 def _owed_reads(state: SessionState, turn: str) -> dict[str, list[actions.OwedRead]]:
@@ -296,8 +298,10 @@ def _judge_subagent_call(settings: Settings, situation: Situation, call: Call,
     )
     store = settings.store()
     shown = gates.shown_holds(holds, lambda purpose: _claim_turn(
-        store, situation.session_id, turns[-1].key, purpose, situation.agent_id), call=True)
-    log = _logged(settings, situation, lambda r: (r.turns(turns, pending=call), r.holds(shown)))
+        store, situation.session_id, turns[-1].key, purpose, situation.agent_id), call=call)
+    held_class = actions.file_class(call, situation.project) if holds else None
+    log = _logged(settings, situation, lambda r: (
+        r.turns(turns, pending=call), r.holds(shown, file_class=held_class)))
     return Decision(shown, _warnings(log), gates.last_shell(turns))
 
 
@@ -343,16 +347,19 @@ def judge_turn_end(settings: Settings, situation: Situation, read: TurnReader,
     shown = gates.shown_holds(holds, lambda purpose: _claim_turn(
         store, situation.session_id, current.key, purpose))
 
+    notices = _warnings(state_warning, _save(store, situation.session_id, state),
+                        _unread_warning(unread))
+
     def log_turn_end(recorder: usage_log_module.Recorder) -> None:
         recorder.turns(turns, final_text)
         recorder.outcomes(settled)
         recorder.holds(shown, stop=True)
+        recorder.notices(_kinds(notices))
         if not shown:
             recorder.turn_end()
 
-    notices = _warnings(state_warning, _save(store, situation.session_id, state),
-                        _unread_warning(unread), _logged(settings, situation, log_turn_end))
-    return Decision(shown, notices, state.shell)
+    return Decision(shown, notices + _warnings(_logged(settings, situation, log_turn_end)),
+                    state.shell)
 
 
 def note_finished_call(settings: Settings, situation: Situation, call: Call,
@@ -398,7 +405,10 @@ def note_finished_call(settings: Settings, situation: Situation, call: Call,
         claimed = store.claim_turn(situation.session_id, current.key, CLOSEOUT_NOTE)
     except (OSError, StateUnsafe):
         claimed = False  # The note is advice: without a marker it could repeat, so none.
-    return Decision([], [Notice(CLOSEOUT_NOTE_KIND, text)] if claimed else [], state.shell)
+    if not claimed:
+        return Decision([], [], state.shell)
+    log = _logged(settings, situation, lambda r: r.notices([CLOSEOUT_NOTE_KIND]))
+    return Decision([], [Notice(CLOSEOUT_NOTE_KIND, text), *_warnings(log)], state.shell)
 
 
 @_one_hook_at_a_time
@@ -442,14 +452,6 @@ def record_prompt(settings: Settings, situation: Situation, typed_text: str | No
     else:
         found = parse_overrides("")
 
-    def log_prompt(recorder: usage_log_module.Recorder) -> None:
-        # What the last turn did after its last event, then this prompt.
-        if turns:
-            recorder.turns(turns)
-        recorder.outcomes(settled)
-        if typed_text is not None:
-            recorder.prompt(typed_text, found["phrases"])
-
     continued = None
     if typed_text is not None:
         # Only from a turn already seen, as the next judged call folds: with
@@ -474,9 +476,19 @@ def record_prompt(settings: Settings, situation: Situation, typed_text: str | No
         notices.append(Notice(ROUTE_CONTINUED, continued))
     if typed_text is not None and friction.claim_retrospective_notice(state):
         notices.append(Notice(SESSION_NOTICE, RETROSPECTIVE_NOTICE.format(count=state.friction)))
-    notices += _warnings(state_warning, _save(store, situation.session_id, state),
-                         _logged(settings, situation, log_prompt))
-    return Decision([], notices, state.shell)
+    notices += _warnings(state_warning, _save(store, situation.session_id, state))
+
+    def log_prompt(recorder: usage_log_module.Recorder) -> None:
+        # What the last turn did after its last event, then this prompt and its notices.
+        if turns:
+            recorder.turns(turns)
+        recorder.outcomes(settled)
+        if typed_text is not None:
+            recorder.prompt(typed_text, found["phrases"])
+        recorder.notices(_kinds(notices))
+
+    return Decision([], notices + _warnings(_logged(settings, situation, log_prompt)),
+                    state.shell)
 
 
 @_one_hook_at_a_time
@@ -514,10 +526,16 @@ def start_session(settings: Settings, situation: Situation, source: str,
     if not state.policy_notice_shown:
         state.policy_notice_shown = True
         notices = [Notice(SESSION_NOTICE, text) for text in first_notices()]
-    log = (_logged(settings, situation, lambda r: r.compaction())
-           if source == AFTER_COMPACTION else None)
-    notices += _warnings(state_warning, _save(store, situation.session_id, state), log)
-    return Decision([], notices, state.shell)
+    notices += _warnings(state_warning, _save(store, situation.session_id, state))
+
+    def log_start(recorder: usage_log_module.Recorder) -> None:
+        if source == AFTER_COMPACTION:
+            recorder.compaction()
+        recorder.notices(_kinds(notices))
+
+    log = (_logged(settings, situation, log_start)
+           if source == AFTER_COMPACTION or notices else None)
+    return Decision([], notices + _warnings(log), state.shell)
 
 
 # Helpers ------------------------------------------------------------------
@@ -546,6 +564,12 @@ def _settle(state: SessionState, turns: list[Turn],
             settings: Settings) -> list[tuple[str, str]]:
     return friction.settle(state, turns,
                            lambda raw: gates.goated_skill_name(raw, settings.skill_namespaces))
+
+
+def _kinds(notices: list[Notice]) -> list[str]:
+    """The kinds of `notices`, in order, as the usage log keeps them (round 6, R15)."""
+
+    return [notice.kind for notice in notices]
 
 
 def _logged(settings: Settings, situation: Situation,

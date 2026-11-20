@@ -40,7 +40,7 @@ import os
 import re
 from typing import Callable, NamedTuple
 
-from . import contracts, design_reads, events, reference_reads, shell, wording
+from . import contracts, design_reads, events, markers, reference_reads, shell, wording
 from .events import Call, Turn
 from .state import SessionState, Task
 from .wording import NO_RANGE, READ, SKILL_TOOL, short_advice, unseen_line_advice
@@ -179,7 +179,14 @@ def message(shown: list[Shown]) -> str:
     return "\n\n".join(f"{hold.line()}\n{hold.text}" for hold in shown)
 
 
-def shown_holds(holds: list[Hold], claim: Callable[[str], bool], call: bool = False) -> list[Shown]:
+# Ends a held file edit's message: the harness may run the other calls of its
+# message, so the file may have changed (round 6, R11).
+EDIT_HELD = ("Other calls of this message may have landed, so read the file before sending "
+             "the edit again.")
+
+
+def shown_holds(holds: list[Hold], claim: Callable[[str], bool],
+                call: Call | None = None) -> list[Shown]:
     """How `holds`, every hold one call or turn end meets, in the order the
     gates fire, are shown in one message (Ticket 095): each with its own text,
     whose harness wording is still in `wording` slots.
@@ -199,10 +206,11 @@ def shown_holds(holds: list[Hold], claim: Callable[[str], bool], call: bool = Fa
     given once per message: in the first hold that holds it, its later
     copies shortened.
 
-    `call`: the holds are a call's. When a hold a line can clear holds it,
-    the last hold's text ends with the carrier slot, after any clearing
-    section, where the harness names a call that can carry the line if this
-    call has no field for one.
+    `call`: the held call, None at a turn's end. When a hold a line can clear
+    holds it, the last hold's text ends with the carrier slot, after any
+    clearing section, where the harness names a call that can carry the line
+    if this call has no field for one. A held file edit's last text ends,
+    before that slot, with `EDIT_HELD` on its own line.
     """
 
     line_clears = any(_full_advice(hold.instruction) for hold in holds)
@@ -218,7 +226,9 @@ def shown_holds(holds: list[Hold], claim: Callable[[str], bool], call: bool = Fa
                             + texts[i][found.end():])
     for full, again in _SHARED_TEXTS:
         texts = _once(texts, full, again)
-    if line_clears and call and texts:
+    if call is not None and call.kind == events.FILE_WRITE and texts:
+        texts[-1] += f"\n{EDIT_HELD}"
+    if line_clears and call is not None and texts:
         texts[-1] += f"\n{wording.CARRIER}"
     return [Shown(hold.gate, hold.kind, text) for hold, text in zip(holds, texts)]
 
@@ -470,13 +480,19 @@ def check_routing(
     """The routing holds that apply to this main-agent call, in order, as
     `_routing_holds` judges them. When the call is a posix command that
     redirects into nul (`shell.ShellCommand.redirects_into_nul`), the last
-    hold's full and short texts end with `POSIX_NUL_NOTE`."""
+    hold's full and short texts end with `POSIX_NUL_NOTE`; for another
+    command that looks like a plain read, with the part that made it none
+    (`shell.ShellCommand.write_part`)."""
 
     holds = _routing_holds(state, call, turn, overrides, orientation_installed, writes_scratch,
                            context_docs)
-    if (holds and call.kind == events.SHELL_COMMAND
-            and shell.analyze(call.command, call.shell).redirects_into_nul):
-        holds[-1] = holds[-1].with_note(POSIX_NUL_NOTE)
+    if holds and call.kind == events.SHELL_COMMAND:
+        command = shell.analyze(call.command, call.shell)
+        if command.redirects_into_nul:
+            holds[-1] = holds[-1].with_note(POSIX_NUL_NOTE)
+        elif command.write_part:
+            holds[-1] = holds[-1].with_note(
+                f"This command is no plain read because of {command.write_part}.")
     return holds
 
 
@@ -533,9 +549,9 @@ def _routing_holds(
         return holds + [Hold(
             "route-line",
             STRICT,
+            "Write the route line the router selects for this task: "
             "`goated-route: continue` was written, but the adapter's saved state for "
-            "this session was missing or reset, so it cannot tell which task "
-            "continues. Write the route line the router selects for this task.",
+            "this session was missing or reset, so it cannot tell which task continues.",
         )]
     task = state.task
     if not routed or task is None or task.route["form"] != "route":
@@ -561,16 +577,21 @@ def _routing_holds(
     parts, missing = [], []
     if route_skills:
         names = ", ".join(f"`{skill}`" for skill in route_skills)
-        parts.append(f"The current route requires {names} before the first write or spawn.")
+        parts.append(f"Load {names} with {SKILL_TOOL} and follow each: the current route "
+                     "requires them before the first write or spawn.")
         missing.append(f"load {names}")
     if orient:
+        # Backticked once, in the sentence a reader of hold texts takes for the
+        # skill the brief added.
+        how = ("Load the orientation skill too" if route_skills
+               else f"Load the orientation skill with {SKILL_TOOL} and follow it")
         parts.append(
-            f"A session started from a brief loads `{ORIENTATION_SKILL}` before its "
-            "first write or spawn when its route is standard or full, or orients by "
-            f"finishing {READ} calls of three distinct files, each read whole {NO_RANGE}, "
-            "or reads of five distinct project files, whole or in part, such as the "
-            "sources its brief names. A finished shell command that prints a file counts "
-            "as a read of it: cat or Get-Content with no range and no pipe as a whole "
+            f"{how}, or orient by finishing {READ} calls of three distinct files, each read "
+            f"whole {NO_RANGE}, or reads of five distinct project files, whole or in part, "
+            "such as the sources the brief names. A session started from a brief loads "
+            f"`{ORIENTATION_SKILL}` before its first write or spawn when its route is "
+            "standard or full, or orients so. A finished shell command that prints a file "
+            "counts as a read of it: cat or Get-Content with no range and no pipe as a whole "
             "one, head, tail, sed -n, or a ranged Get-Content as one in part. A search "
             "such as grep never counts."
         )
@@ -584,8 +605,7 @@ def _routing_holds(
                        "five distinct project files, whole or in part, or shell commands "
                        "that print them")
     parts.append(
-        f"Load each with {SKILL_TOOL} and follow it. A load counts until the next "
-        "compaction, in this turn or an earlier one"
+        "A load counts until the next compaction, in this turn or an earlier one"
         + (", and so does a read." if orient else ".")
     )
     if route_skills:
@@ -722,15 +742,16 @@ def _route_line_texts(turn: Turn) -> tuple[str, ShortForm]:
     forms = ("`goated-route: direct`, `goated-route: <intensity> | requires: <skills>`, "
              "or `goated-route: continue`")
     text = (
-        "Before the first write or spawn after a user prompt, end routing with a "
-        f"route line on its own line, as the router's output contract defines: {forms} "
+        "End routing with a route line on its own line before the first write or spawn "
+        f"after a user prompt, as the router's output contract defines: {forms} "
         "when this prompt continues the current task "
         "or, in a session with no task yet, work begun elsewhere. "
         + unseen_line_advice("route line", "skip routing")
     )
     short = f"Write one of {forms}. " + short_advice("route line", "skip routing")
     if turn.malformed:
-        quoted = "; ".join(f"`{line}`" for line in turn.malformed)
+        quoted = "; ".join(f"`{line}` ({markers.malformed_reason(line)})"
+                           for line in turn.malformed)
         malformed = f" These lines in this turn do not match the grammar: {quoted}."
         text += malformed
         short += malformed

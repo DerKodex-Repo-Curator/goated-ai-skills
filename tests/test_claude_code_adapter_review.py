@@ -296,8 +296,8 @@ class CodeOnlySizeTests(ReviewTestCase):
                 self.assertEqual("- Review:" in held, large)
                 self.assertEqual("- Verification:" in held, large)
                 if large:
-                    self.assertIn("- Review: this branch's work is 400 changed lines of non-test code", held)
-                    self.assertIn("- Verification: this branch's work is 400 changed lines of non-test code", held)
+                    self.assertIn("since this branch's work is 400 changed lines of non-test code", held)
+                    self.assertIn("claiming it is done, since this branch's work is 400 changed lines of non-test code", held)
 
     def test_pr_review_counts_only_non_test_code(self) -> None:
         for code, held in ((300, False), (400, True)):
@@ -489,7 +489,7 @@ class BriefedSessionReviewTests(ReviewTestCase):
         s.run("pytest -q")
         s.say(DOC_SKIP)
         held = stop(s)["reason"]
-        self.assertIn("- Verification: this branch's work is", held)  # Measured as large.
+        self.assertIn("done, since this branch's work is", held)  # Measured as large.
         return held
 
     def test_a_briefed_session_meets_no_review_item_in_any_turn(self) -> None:
