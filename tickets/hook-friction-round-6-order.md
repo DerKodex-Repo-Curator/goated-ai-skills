@@ -26,8 +26,8 @@ phased inside it, for one agent each.
    - Overlaps: the closeout items with 118 (the Reads item only).
    - Enables: one message per held commit, and commit and closeout asks
      that fire where they can find something.
-4. `tickets/121-hold-text-small-fixes-and-log-detail.md`
-   - Status: Ready. Decisions Z, Y2 and Y4.
+4. `tickets/archive/121-hold-text-small-fixes-and-log-detail.md`
+   - Status: Completed, merged and archived on 2026-11-20. Decisions Z, Y2 and Y4.
    - Blocked by: `118`, `119` and `120` (ordering: hold and notice text).
    - Enables: holds that open with their clearing action, temp paths
      outside the project, log detail, and the spawn brief's two lines.
@@ -42,9 +42,8 @@ gets its own spec.
 
 ## Ready Frontier
 
-Wave 20 (118, 119 and 120) is merged and archived (2026-11-19).
-
-- `tickets/121-hold-text-small-fixes-and-log-detail.md`
+Wave 20 (118, 119 and 120) is merged and archived (2026-11-19), and wave
+21 (121) on 2026-11-20. Round 6 is complete; no ticket is ready.
 
 ## Coverage
 

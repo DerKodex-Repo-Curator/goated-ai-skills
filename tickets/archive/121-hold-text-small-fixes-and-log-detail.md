@@ -127,3 +127,23 @@ is ready.
 - Accepting trailing text after a route line.
 - A dedicated tool or field for route and skip lines.
 - Matching the skill-usage pane's keys to the log's.
+
+## Closeout
+
+Completed, merged and archived on 2026-11-20.
+
+- Merged as `c6d55b9` (`d57a47b`).
+- Maintainer decisions Z, Y2 and Y4, and the two additions of 2026-11-19.
+  At implementation the maintainer chose that the usage log goes to
+  version 2 and the skill-usage mod's log reader accepts versions 1 and 2,
+  counting no notice or file class, so the pane keeps reading the log.
+- Implementer decisions: a short form opens with its action after
+  `Still unmet: <what>.`, as a closeout item does after its label; a temp
+  variable read with `.get` or `getenv` counts as temp only with no
+  default; JavaScript names bound to a temp path are not read; a held
+  call's file class is that of the first file it writes.
+- Accepted gaps, stated in the contract: a command that points `TEMP`,
+  `TMP` or `TMPDIR` into the project is not seen; `(Path(tmp) / "x")`
+  as a receiver stays an unnamed write, so it is held.
+- Reviewed by the implementer with `standards-and-spec-review`; no
+  separate reviewer agent. Installed skill copies synced after the merge.

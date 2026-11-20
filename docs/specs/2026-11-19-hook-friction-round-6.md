@@ -2,7 +2,7 @@
 
 ## Status
 
-Ticket Ready, 2026-11-19, sliced into Tickets 118 to 121
+Delivered, 2026-11-20: Tickets 118 to 121 are merged and archived
 ([order](../../tickets/hook-friction-round-6-order.md)); the maintainer has
 yet to read the whole text. The maintainer chose an option for every
 decision on 2026-11-19 ([Decisions](#decisions)); four of them reverse or reopen choices kept in
