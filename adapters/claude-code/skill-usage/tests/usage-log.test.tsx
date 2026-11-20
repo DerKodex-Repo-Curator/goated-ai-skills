@@ -52,8 +52,8 @@ test('the mod counts a recorded session the same from the log as from what it he
 })
 
 test('a log with an entry of an unknown version is refused, naming the line and the version', async () => {
-  const later = `${USAGE_LOG_SESSION.logText}${JSON.stringify({ log: 2, t: 99, adapter: 'pi', session: 's', project: null, type: 'prompt' })}\n`
-  expect(readUsageLog(later)).toEqual({ refused: `line ${USAGE_LOG_SESSION.log.length + 1} of the usage log is of log version 2, which the mod does not know (it knows version 1)` })
+  const later = `${USAGE_LOG_SESSION.logText}${JSON.stringify({ log: 3, t: 99, adapter: 'pi', session: 's', project: null, type: 'prompt' })}\n`
+  expect(readUsageLog(later)).toEqual({ refused: `line ${USAGE_LOG_SESSION.log.length + 1} of the usage log is of log version 3, which the mod does not know (it knows versions 1 and 2)` })
 })
 
 test('lines that are no entry are skipped and counted, and the rest still counts', async () => {

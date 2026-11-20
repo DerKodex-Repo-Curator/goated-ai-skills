@@ -262,7 +262,11 @@ def _advice(full: bool, line: str, which: str, overrides: str) -> str:
     reply text may never be seen (README "Known Limits"), so the advice
     points to the fields of a call `LINE_FIELDS` names, then to the user's
     way out. It names those fields without backticks, since the skill-usage
-    mod reads every backticked bare word in a hold as a skill."""
+    mod reads every backticked bare word in a hold as a skill. Claude Code
+    judged one message's writes in order, each seeing the calls before it,
+    in one probe run per shape (`docs/reference/carrier-probe-2026-11-19.md`),
+    so the advice says a line may ride earlier in the same message, and
+    promises no more."""
 
     if not full:
         return (
@@ -275,10 +279,10 @@ def _advice(full: bool, line: str, which: str, overrides: str) -> str:
         "after this check, and can store the text of a message that makes a tool call "
         "as a summary that drops the line. A line in the description field of a shell "
         "or agent call, or in a Skill call's args, is read as written and counts from "
-        f"that call on. Put {which} {line} on its own line there, in this call's description "
-        "if it has one or else in a call made in an earlier message of this turn (a call "
-        "in the same message is not seen yet), and make the call again. If that is held "
-        f"again, tell the user they can type {overrides} in their prompt."
+        f"that call on. Put {which} {line} on its own line there: in this call's description "
+        "if it has one, or else in a call made earlier in the same message, when the held "
+        "call is a write, or in an earlier message of this turn. Then make the call again. "
+        f"If that is held again, tell the user they can type {overrides} in their prompt."
     )
 
 
@@ -289,5 +293,5 @@ def _carrier(tool: str) -> str:
 
     command = shell.POWERSHELL_NO_OP if tool == "PowerShell" else "true"
     return (f"This call has no field for a line: put it on its own line in the description "
-            f"of a {tool} call with the command {command}, then make this call again in a "
-            "later message.")
+            f"of a {tool} call with the command {command}, earlier in the same message or in "
+            "an earlier message, then make this call again.")

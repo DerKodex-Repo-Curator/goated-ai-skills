@@ -1424,6 +1424,28 @@ scenarios:
           decision: hold
           holds: [{gate: scripted-edit, kind: justified-skip}]
 
+  - name: an inline script writing under the system temp folder is not held
+    covers:
+      - {gate: scripted-edit, case: near-miss}
+    steps:
+      - prompt: {type: prompt, author: person, text: Save the export sample to a temp file.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: shell_command, shell: posix, command: "python - <<'EOF'\nimport os, tempfile\nopen(os.path.join(tempfile.gettempdir(), 'sample.csv'), 'w').write('a')\nEOF"}
+      - call: {kind: shell_command, shell: posix, command: "node -e \"fs.writeFileSync(path.join(os.tmpdir(), 'sample.csv'), 'a')\""}
+
+  - name: the same script writing a run-time path inside the project is held
+    covers:
+      - {gate: scripted-edit, case: holds}
+    steps:
+      - prompt: {type: prompt, author: person, text: Save the export sample.}
+      - call: {kind: skill_load, skill: using-goated-ai-skills}
+      - reply: "goated-route: direct"
+      - call: {kind: shell_command, shell: posix, command: "python - <<'EOF'\nimport os\nopen(os.path.join(ROOT, 'sample.csv'), 'w').write('a')\nEOF"}
+        expect:
+          decision: hold
+          holds: [{gate: scripted-edit, kind: justified-skip}]
+
   - name: a posix redirect into nul writes a file named nul
     covers:
       - {gate: route-line, case: holds}

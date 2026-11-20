@@ -51,9 +51,50 @@ class NullDeviceHoldTests(unittest.TestCase):
         self.assertTrue(reason(held).startswith("goated-hold: route-line"))
         self.assertIn("/dev/null", reason(held))
 
+    def test_the_nul_note_stands_for_the_part_that_made_a_write(self) -> None:
+        held = reason(self.session.call("Bash", {"command": "echo x > nul"}))
+        self.assertNotIn("no plain read because of", held)
+
     def test_the_same_redirect_in_powershell_is_no_write(self) -> None:
         passed = self.session.call("PowerShell", {"command": "echo x > nul"})
         self.assertEqual(decision(passed), "pass")
+
+
+class ReadLookingWriteTests(unittest.TestCase):
+    """A command made of read commands that is still held names what made it
+    no plain read (round 6, R11)."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.session = Session(Path(self._tmp.name))
+        self.session.prompt("Look at the notes.")
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_a_held_read_looking_command_names_the_part_that_made_it_a_write(self) -> None:
+        for command, part in (
+            ("cat notes.md > copy.md", 'the redirect into "copy.md"'),
+            ("grep -n x notes.md &", "the background job (&)"),
+            ("find . -name '*.md' -delete", 'the argument "-delete"'),
+            ("sudo cat notes.md", '"sudo" before the command'),
+            ("git branch -D old", '"git branch -D old"'),
+        ):
+            with self.subTest(command=command):
+                held = reason(self.session.call("Bash", {"command": command}))
+                self.assertIn(f"because of {part}", held)
+
+    def test_a_command_that_does_not_look_like_a_read_names_no_part(self) -> None:
+        held = reason(self.session.call("Bash", {"command": "python build.py"}))
+        self.assertTrue(held.startswith("goated-hold: router-first"))
+        self.assertNotIn("because of", held)
+
+    def test_the_part_is_read_from_the_shell_analysis(self) -> None:
+        self.assertEqual(shell.analyze("ls; cat a > b").write_part, 'the redirect into "b"')
+        self.assertIsNone(shell.analyze("cat a").write_part)
+        self.assertIsNone(shell.analyze("make > log").write_part)
+        self.assertEqual(shell.analyze("echo `date`").write_part,
+                         "a backtick, which this reading cannot follow as the shell does")
 
 
 if __name__ == "__main__":

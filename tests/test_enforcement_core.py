@@ -188,8 +188,9 @@ class ClearingSectionTests(unittest.TestCase):
 
     @staticmethod
     def shown(holds, claim) -> str:
-        from goated_core import gates, wording
-        return wording.neutral(gates.message(gates.shown_holds(holds, claim, call=True)))
+        from goated_core import events, gates, wording
+        held = events.Call(events.SHELL_COMMAND, command="touch notes.md")
+        return wording.neutral(gates.message(gates.shown_holds(holds, claim, call=held)))
 
     @staticmethod
     def holds():

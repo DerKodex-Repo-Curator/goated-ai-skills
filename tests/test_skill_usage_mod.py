@@ -447,6 +447,25 @@ class SkillUsageModFixtureTests(unittest.TestCase):
                     self.assertIn("description field of a shell or agent call, or in a Skill call's args", texts[key])
                 self.assertIn(f"`{way_out}`", texts[key])
 
+    def test_each_hold_and_closeout_item_opens_with_its_clearing_action(self) -> None:
+        # Round 6, R11: the action first, conditions and caveats after. A hold line, a closeout
+        # item's `- <Label>:`, the closeout's opening line, and a short form's
+        # `Still unmet: <what>.` are labels the contract fixes, so the action follows them.
+        imperatives = {"Load", "Read", "Write", "Run", "Fix", "Add", "Name", "Make", "Put", "End"}
+        for key, text in _adapter_texts().items():
+            if not text.startswith("goated-hold: "):
+                continue
+            for block in re.split(r"\n\n(?=goated-hold: )", text):
+                hold_line, body = block.split("\n", 1)
+                if " closeout " in hold_line:
+                    openings = [line.split(": ", 1)[1] for line in body.splitlines()
+                                if line.startswith("- ")]
+                else:
+                    openings = [re.sub(r"^Still unmet: .*?\. (?=[A-Z])", "", body)]
+                for opening in openings:
+                    with self.subTest(key=key, opening=opening[:60]):
+                        self.assertIn(opening.split()[0].capitalize().rstrip(","), imperatives)
+
     def test_holds_backtick_only_skill_names(self) -> None:
         # The mod reads every bare backticked name in a hold as a skill it asks for (README "Hold messages"),
         # so a backticked file name, such as a security hold's `credentials`, would read as a phantom skill.

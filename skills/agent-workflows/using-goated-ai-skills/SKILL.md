@@ -160,9 +160,9 @@ End routing with one route line, on its own line, outside code blocks:
 
 Use lowercase keywords and installed skill names, list each skill once, and
 add no trailing text. A checkpoint changing the required skills writes a new
-route line; the last one wins. Write it, where the framework reads it, in
-a message or a call's description or skill arguments, at or before the first
-call it covers.
+route line; the last one wins. Write it in a message, call description, or
+skill arguments the framework reads, by the first call it covers, or for a
+write on an earlier call of its message.
 
 ## Delegation
 

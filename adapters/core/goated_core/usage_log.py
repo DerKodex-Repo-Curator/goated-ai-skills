@@ -5,8 +5,9 @@ The format is `stack/schemas/usage-log.schema.json`: JSON Lines, one entry
 per line, each carrying the log's version (`LOG_VERSION`), the time, the
 adapter's name, the session id, the project key and, for a subagent, its
 id. The entries are what the skill-usage mod stores and nothing more: a
-person's prompt only as the skills it names, a hold only as its gate, kind
-and what it asks for, skip reasons masked and cut as the mod keeps them,
+person's prompt only as the skills it names, a hold only as its gate, kind,
+what it asks for and the class of the file it was about, a notice only as
+its kind, skip reasons masked and cut as the mod keeps them,
 installed skills' files as paths within the skill, and other files read
 only as digests salted with the log's salt. No prompt text, hold text, file
 content or project path is written.
@@ -43,7 +44,10 @@ from .state import (
     StateUnsafe, _safe_name, _write_json, default_root, ensure_private_directory,
 )
 
-LOG_VERSION = 1
+# Version 2 (round 6, R15) adds `notice` entries and a hold's `file_class`;
+# a version 1 entry means the same, so both read.
+LOG_VERSION = 2
+READ_VERSIONS = (1, 2)
 LOG_ENV = "GOATED_USAGE_LOG"
 # The value of `GOATED_USAGE_LOG` (or `--usage-log`) that keeps no log.
 OFF = "off"
@@ -57,7 +61,7 @@ _NEEDS = {"prompt": ("named",), "override": ("phrases",), "load": ("skill", "cau
           "hold": ("gate", "kind", "named"), "outcome": ("gate", "outcome"),
           "skip": ("skill", "reason"), "route": ("form",), "ref": ("skill", "file"),
           "skill_read": ("skills",), "file_read": ("file",), "change": (), "turn_end": (),
-          "compaction": ()}
+          "compaction": (), "notice": ("kind",)}
 
 # Why a skill loaded, in the order the mod judges it (`hooks/classify.ts`):
 # a person's typed command, a subagent's own choice, the person's prompt
@@ -155,9 +159,9 @@ def path_from_environment(named: str | None = None, default: bool = True) -> Pat
 def read_log(path: Path) -> LogReading:
     """The log at `path`, oldest first; no entries when there is no log.
 
-    An entry of a version other than `LOG_VERSION` is refused, not guessed
+    An entry of a version not in `READ_VERSIONS` is refused, not guessed
     at: it raises `LogUnreadable`, which names its line. A line that is no
-    entry of this version (not JSON, not an object, or missing a field its
+    entry of those versions (not JSON, not an object, or missing a field its
     type needs) is passed over and counted, so one bad line never hides the
     rest. A log that cannot be read raises `LogUnreadable` too."""
 
@@ -178,11 +182,13 @@ def read_log(path: Path) -> LogReading:
         except (ValueError, RecursionError):
             entry = None
         version = entry.get("log") if isinstance(entry, dict) else None
-        if isinstance(version, int) and not isinstance(version, bool) and version != LOG_VERSION:
+        known = isinstance(version, int) and not isinstance(version, bool)
+        if known and version not in READ_VERSIONS:
             raise LogUnreadable(
                 f"line {number} of the usage log at {path} is of log version {version}, "
-                f"which this reader does not know (it knows version {LOG_VERSION})")
-        if version == LOG_VERSION and _complete(entry):
+                f"which this reader does not know (it knows versions "
+                f"{' and '.join(map(str, READ_VERSIONS))})")
+        if known and _complete(entry):
             entries.append(entry)
         else:
             skipped += 1
@@ -234,11 +240,18 @@ class Recorder:
 
         self._steps.append(lambda w: [w.add("outcome", gate=g, outcome=o) for g, o in settled])
 
-    def holds(self, shown: list, stop: bool = False) -> None:
+    def holds(self, shown: list, stop: bool = False, file_class: str | None = None) -> None:
         """Each hold of `shown` (`gates.Shown`, as the core gives it), as what
-        it asks for; `stop`: they held a turn's end, not a call."""
+        it asks for; `stop`: they held a turn's end, not a call; `file_class`:
+        the class of the file the held call writes (`actions.file_class`), or
+        None for a call that names none."""
 
-        self._steps.append(lambda w: w.holds(shown, stop))
+        self._steps.append(lambda w: w.holds(shown, stop, file_class))
+
+    def notices(self, kinds: list[str]) -> None:
+        """Each notice the event carried, by its kind alone, never its text."""
+
+        self._steps.append(lambda w: [w.add("notice", kind=kind) for kind in kinds])
 
     def prompt(self, typed_text: str | None, phrases: list[str]) -> None:
         """A prompt that opens a turn, as the skills its typed text names
@@ -344,12 +357,14 @@ class _Writing:
 
     # What the event showed ----------------------------------------------
 
-    def holds(self, shown: list, stop: bool) -> None:
+    def holds(self, shown: list, stop: bool, file_class: str | None) -> None:
         for hold in shown:
             text = wording.neutral(hold.text)
             entry = {"gate": hold.gate, "kind": hold.kind, **asks_of(hold.gate, text)}
             if stop:
                 entry["stop"] = True
+            if file_class:
+                entry["file_class"] = file_class
             self.add("hold", **entry)
             self.cursor["asked"] = sorted({*self.cursor["asked"], *entry["named"]})
 

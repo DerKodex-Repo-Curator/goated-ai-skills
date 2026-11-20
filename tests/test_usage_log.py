@@ -91,8 +91,9 @@ class CoreLogTests(unittest.TestCase):
         self.assertEqual(without(entries, "project"), [
             {**common, "type": "prompt", "named": []},
             {**common, "type": "hold", "gate": "router-first", "kind": "strict",
-             "named": [ROUTER]},
-            {**common, "type": "hold", "gate": "route-line", "kind": "strict", "named": []},
+             "named": [ROUTER], "file_class": "code"},
+            {**common, "type": "hold", "gate": "route-line", "kind": "strict", "named": [],
+             "file_class": "code"},
             {**common, "type": "load", "skill": ROUTER, "cause": "hold"},
             {**common, "type": "route", "form": "direct"},
             {**common, "type": "outcome", "gate": "router-first", "outcome": "answered"},
@@ -118,7 +119,8 @@ class CoreLogTests(unittest.TestCase):
         ]}
         entries = core_log(self.root, scenario, self.log_path)
         second = [e["type"] for e in entries][[e["type"] for e in entries].index("prompt", 1):]
-        self.assertEqual(second, ["prompt", "load", "route", "skip"])
+        # The typed prompt continues the routed task, so it carries that notice, by kind.
+        self.assertEqual(second, ["prompt", "notice", "load", "route", "skip"])
         load = next(e for e in entries if e["type"] == "load" and e["skill"] == "tdd")
         self.assertEqual(load["cause"], "named")
         skip = next(e for e in entries if e["type"] == "skip")
@@ -194,17 +196,73 @@ class CoreLogTests(unittest.TestCase):
                 self.assertEqual(usage_log.stored_reason(reason), kept)
 
     def test_a_log_of_an_unknown_version_is_refused_with_a_clear_message(self) -> None:
-        core_log(self.root, ROUTED_EDIT, self.log_path)
-        self.assertTrue(usage_log.read_log(self.log_path).entries)  # Near miss: version 1 reads.
+        written = len(core_log(self.root, ROUTED_EDIT, self.log_path))
+        # Near miss: an entry of version 1, written before notices and file classes, still reads.
+        older = {"log": 1, "t": 1.0, "adapter": "x", "session": "s", "project": None,
+                 "type": "prompt", "named": []}
         with self.log_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps({"log": 2, "type": "prompt"}) + "\n")
-        with self.assertRaisesRegex(usage_log.LogUnreadable,
-                                    r"line 8 .* log version 2, which this reader does not know"):
+            handle.write(json.dumps(older) + "\n")
+        self.assertIn(older, usage_log.read_log(self.log_path).entries)
+        with self.log_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"log": 3, "type": "prompt"}) + "\n")
+        with self.assertRaisesRegex(
+                usage_log.LogUnreadable,
+                rf"line {written + 2} .* log version 3, which this reader does not know"):
             usage_log.read_log(self.log_path).entries
         done = report_command("--log", str(self.log_path))
         self.assertEqual(done.returncode, 1)
-        self.assertIn("log version 2", done.stderr)
+        self.assertIn("log version 3", done.stderr)
         self.assertEqual(done.stdout, "")
+
+    def test_notices_are_logged_by_kind_and_held_files_by_class_never_by_path(self) -> None:
+        test_edit = {"kind": "file_write", "path": "tests/test_export.py",
+                     "edits": [{"removed": "x = 1", "added": "x = 2"}]}
+        doc_edit = {"kind": "file_write", "path": "docs/export.md",
+                    "edits": [{"removed": "old", "added": "new"}]}
+        both = [{"gate": "router-first", "kind": "strict"}, {"gate": "route-line", "kind": "strict"}]
+        scenario = {"name": "classes and notices", "steps": [
+            {"prompt": {"type": "prompt", "author": "person", "text": "Fix the export test."}},
+            {"call": test_edit, "expect": {"decision": "hold", "holds": both}},
+            {"call": doc_edit, "expect": {"decision": "hold", "holds": both}},
+            {"call": {"kind": "shell_command", "shell": "posix", "command": "git commit -m x"},
+             "expect": {"decision": "hold", "holds": [{"gate": "router-first", "kind": "strict"},
+                                                      {"gate": "commit", "kind": "strict"}]}},
+            {"call": {"kind": "skill_load", "skill": ROUTER}},
+            {"reply": "goated-route: direct"},
+            {"call": test_edit},
+            {"prompt": {"type": "prompt", "author": "person", "text": "Go on with the export."},
+             "expect": {"decision": "allow", "holds": [], "notices": ["route_continued"]}},
+        ]}
+        entries = core_log(self.root, scenario, self.log_path)
+        holds = [(e["gate"], e.get("file_class")) for e in entries if e["type"] == "hold"]
+        self.assertEqual(holds, [("router-first", "test"), ("route-line", "test"),
+                                 ("router-first", "docs"), ("route-line", "docs"),
+                                 ("router-first", None), ("commit", None)])
+        notices = [e for e in entries if e["type"] == "notice"]
+        self.assertIn("route_continued", [e["kind"] for e in notices])
+        common = {"log", "t", "adapter", "session", "project", "type"}
+        self.assertTrue(all(set(e) - common == {"kind"} for e in notices))
+        text = self.log_path.read_text(encoding="utf-8")
+        self.assertNotIn("test_export", text)
+        self.assertNotIn("export.md", text)
+        done = report_command("--log", str(self.log_path))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("| route_continued | 1 |", done.stdout)
+        self.assertIn("| router-first | test | 1 |", done.stdout)
+        self.assertIn("| route-line | docs | 1 |", done.stdout)
+
+    def test_a_held_file_is_classed_as_code_test_docs_configuration_or_other(self) -> None:
+        from goated_core import actions, events
+        for path, expected in (("src/export.py", "code"), ("tests/test_export.py", "test"),
+                               ("docs/guide.md", "docs"), ("config/settings.yaml", "configuration"),
+                               ("pyproject.toml", "configuration"), ("assets/logo.png", "other")):
+            with self.subTest(path=path):
+                call = events.Call(events.FILE_WRITE, path=path)
+                self.assertEqual(actions.file_class(call, None), expected)
+        command = events.Call(events.SHELL_COMMAND, command="echo x > notes.md")
+        self.assertEqual(actions.file_class(command, None), "docs")
+        self.assertIsNone(actions.file_class(
+            events.Call(events.SHELL_COMMAND, command="git commit -m x"), None))
 
     def test_lines_that_are_no_entry_are_skipped_and_counted_not_fatal(self) -> None:
         core_log(self.root, ROUTED_EDIT, self.log_path)
@@ -311,7 +369,14 @@ class CoreLogTests(unittest.TestCase):
         self.assertEqual({e["type"] for e in entries} - {"prompt", "hold", "load", "route",
                                                           "outcome", "override", "skip", "ref",
                                                           "skill_read", "file_read", "change",
-                                                          "turn_end"}, set())
+                                                          "turn_end", "notice"}, set())
+        self.assertTrue(any(e["type"] == "notice" for e in entries))
+        self.assertTrue(any("file_class" in e for e in entries if e["type"] == "hold"))
+        # Near miss: a file class outside the five, or a notice with its text, is no entry.
+        held = next(e for e in entries if "file_class" in e)
+        self.assertTrue(list(validator.iter_errors({**held, "file_class": "src/export.py"})))
+        notice = next((e for e in entries if e["type"] == "notice"), {})
+        self.assertTrue(list(validator.iter_errors({**notice, "text": "Recorded."})))
         for entry in entries:
             with self.subTest(entry=entry["type"]):
                 self.assertEqual([e.message for e in validator.iter_errors(entry)], [])

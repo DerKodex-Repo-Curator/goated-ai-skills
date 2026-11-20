@@ -44,7 +44,7 @@ export const USAGE_LOG_SESSION = {
             {
               "type": "tool_result",
               "tool_use_id": "toolu_0001",
-              "content": "PreToolUse:Edit hook error: goated-hold: router-first | strict\nLoad the `using-goated-ai-skills` skill with the Skill tool before the first write, spawn, or command of a task, and follow the route it selects. Reads stay free, and so does a shell command made only of read-only commands, such as cat, grep, ls, git diff, or git branch, perhaps after a leading cd, with no output redirect but 2>/dev/null. If that skill is not installed, tell the user: they can type `skip routing` in their prompt to proceed without it.\n\ngoated-hold: route-line | strict\nBefore the first write or spawn after a user prompt, end routing with a route line on its own line, as the router's output contract defines: `goated-route: direct`, `goated-route: <intensity> | requires: <skills>`, or `goated-route: continue` when this prompt continues the current task or, in a session with no task yet, work begun elsewhere. A route line in reply text may not be seen: Claude Code records a message only after this check, and can store the text of a message that makes a tool call as a summary that drops the line. A line in the description field of a shell or agent call, or in a Skill call's args, is read as written and counts from that call on. Put the route line on its own line there, in this call's description if it has one or else in a call made in an earlier message of this turn (a call in the same message is not seen yet), and make the call again. If that is held again, tell the user they can type `skip routing` in their prompt.\nThis call has no field for a line: put it on its own line in the description of a Bash call with the command true, then make this call again in a later message.",
+              "content": "PreToolUse:Edit hook error: goated-hold: router-first | strict\nLoad the `using-goated-ai-skills` skill with the Skill tool before the first write, spawn, or command of a task, and follow the route it selects. Reads stay free, and so does a shell command made only of read-only commands, such as cat, grep, ls, git diff, or git branch, perhaps after a leading cd, with no output redirect but 2>/dev/null. If that skill is not installed, tell the user: they can type `skip routing` in their prompt to proceed without it.\n\ngoated-hold: route-line | strict\nEnd routing with a route line on its own line before the first write or spawn after a user prompt, as the router's output contract defines: `goated-route: direct`, `goated-route: <intensity> | requires: <skills>`, or `goated-route: continue` when this prompt continues the current task or, in a session with no task yet, work begun elsewhere. A route line in reply text may not be seen: Claude Code records a message only after this check, and can store the text of a message that makes a tool call as a summary that drops the line. A line in the description field of a shell or agent call, or in a Skill call's args, is read as written and counts from that call on. Put the route line on its own line there: in this call's description if it has one, or else in a call made earlier in the same message, when the held call is a write, or in an earlier message of this turn. Then make the call again. If that is held again, tell the user they can type `skip routing` in their prompt.\nOther calls of this message may have landed, so read the file before sending the edit again.\nThis call has no field for a line: put it on its own line in the description of a Bash call with the command true, earlier in the same message or in an earlier message, then make this call again.",
               "is_error": true
             }
           ]
@@ -123,7 +123,7 @@ export const USAGE_LOG_SESSION = {
             {
               "type": "tool_result",
               "tool_use_id": "toolu_0003",
-              "content": "PreToolUse:Edit hook error: goated-hold: pipeline | strict\nThe current route requires `tdd`, `doc-sync` before the first write or spawn. Load each with the Skill tool and follow it. A load counts until the next compaction, in this turn or an earlier one. If one does not apply, write a corrected route line without it; the last route line wins. Put the route line on its own line in a shell or agent call's description or a Skill call's args, as this turn's first such hold explained, or tell the user they can type `skip routing` in their prompt.\nThis call has no field for a line: put it on its own line in the description of a Bash call with the command true, then make this call again in a later message.",
+              "content": "PreToolUse:Edit hook error: goated-hold: pipeline | strict\nLoad `tdd`, `doc-sync` with the Skill tool and follow each: the current route requires them before the first write or spawn. A load counts until the next compaction, in this turn or an earlier one. If one does not apply, write a corrected route line without it; the last route line wins. Put the route line on its own line in a shell or agent call's description or a Skill call's args, as this turn's first such hold explained, or tell the user they can type `skip routing` in their prompt.\nOther calls of this message may have landed, so read the file before sending the edit again.\nThis call has no field for a line: put it on its own line in the description of a Bash call with the command true, earlier in the same message or in an earlier message, then make this call again.",
               "is_error": true
             }
           ]
@@ -267,7 +267,7 @@ export const USAGE_LOG_SESSION = {
           "content": [
             {
               "type": "text",
-              "text": "<system-reminder>\nStop hook blocking error from command: \"python /tools/goated-adapter/goated_hook.py\": goated-hold: closeout | justified-skip\nBefore finishing this turn, which changed code:\n- Proof: no test, lint, build, or check command ran in the foreground after the last code change. Run the relevant check in the foreground, or, if none can run, write `goated-skip: verification-before-completion: <reason>` and tell the user it is unverified. If you cannot check yet because you are waiting on another session's result, on the user, or on a check running in the background, write `goated-skip: verification-before-completion: <what it waits for>`.\n- Docs: after your last code change, read the change itself and check whether durable docs now drift: print its diff with a git diff or git show command, or Read a file you changed; a listing of names or counts, such as --stat or --name-only, does not count. Or write `goated-skip: doc-sync: <reason>`.\nA skip line must name the skill and give a reason of three or more words.\n</system-reminder>"
+              "text": "<system-reminder>\nStop hook blocking error from command: \"python /tools/goated-adapter/goated_hook.py\": goated-hold: closeout | justified-skip\nBefore finishing this turn, which changed code:\n- Proof: run the relevant check in the foreground, since no test, lint, build, or check command ran in the foreground after the last code change. If none can run, write `goated-skip: verification-before-completion: <reason>` and tell the user it is unverified. If you cannot check yet because you are waiting on another session's result, on the user, or on a check running in the background, write `goated-skip: verification-before-completion: <what it waits for>`.\n- Docs: read the change itself after your last code change and check whether durable docs now drift: print its diff with a git diff or git show command, or Read a file you changed; a listing of names or counts, such as --stat or --name-only, does not count. Or write `goated-skip: doc-sync: <reason>`.\nA skip line must name the skill and give a reason of three or more words.\n</system-reminder>"
             }
           ]
         }
@@ -334,7 +334,7 @@ export const USAGE_LOG_SESSION = {
   ],
   "log": [
     {
-      "log": 1,
+      "log": 2,
       "t": 1.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -345,7 +345,7 @@ export const USAGE_LOG_SESSION = {
       ]
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 2.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -355,10 +355,11 @@ export const USAGE_LOG_SESSION = {
       "kind": "strict",
       "named": [
         "using-goated-ai-skills"
-      ]
+      ],
+      "file_class": "code"
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 3.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -366,10 +367,11 @@ export const USAGE_LOG_SESSION = {
       "type": "hold",
       "gate": "route-line",
       "kind": "strict",
-      "named": []
+      "named": [],
+      "file_class": "code"
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 4.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -379,7 +381,7 @@ export const USAGE_LOG_SESSION = {
       "cause": "hold"
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 5.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -393,7 +395,7 @@ export const USAGE_LOG_SESSION = {
       ]
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 6.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -403,7 +405,7 @@ export const USAGE_LOG_SESSION = {
       "outcome": "answered"
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 7.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -413,7 +415,7 @@ export const USAGE_LOG_SESSION = {
       "outcome": "answered"
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 8.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -424,10 +426,11 @@ export const USAGE_LOG_SESSION = {
       "named": [
         "tdd",
         "doc-sync"
-      ]
+      ],
+      "file_class": "code"
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 9.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -437,7 +440,7 @@ export const USAGE_LOG_SESSION = {
       "cause": "named"
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 10.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -447,7 +450,7 @@ export const USAGE_LOG_SESSION = {
       "cause": "hold"
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 11.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -456,7 +459,7 @@ export const USAGE_LOG_SESSION = {
       "file": "7535372f6f825dd4"
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 12.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -467,7 +470,7 @@ export const USAGE_LOG_SESSION = {
       ]
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 13.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -478,7 +481,7 @@ export const USAGE_LOG_SESSION = {
       "read_tool": true
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 14.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -488,7 +491,7 @@ export const USAGE_LOG_SESSION = {
       "outcome": "answered"
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 15.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -496,7 +499,7 @@ export const USAGE_LOG_SESSION = {
       "type": "change"
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 16.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -525,7 +528,7 @@ export const USAGE_LOG_SESSION = {
       "stop": true
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 17.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -535,7 +538,7 @@ export const USAGE_LOG_SESSION = {
       "reason": "the change has no test yet and the next turn adds one"
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 18.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -545,7 +548,7 @@ export const USAGE_LOG_SESSION = {
       "reason": "one constant changes with no design in it"
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 19.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -555,7 +558,7 @@ export const USAGE_LOG_SESSION = {
       "reason": "no durable docs describe the export limit"
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 20.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -565,7 +568,7 @@ export const USAGE_LOG_SESSION = {
       "outcome": "declined"
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 21.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -573,7 +576,7 @@ export const USAGE_LOG_SESSION = {
       "type": "turn_end"
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 22.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -582,7 +585,7 @@ export const USAGE_LOG_SESSION = {
       "named": []
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 23.0,
       "adapter": "claude-code",
       "session": "recorded-session",
@@ -593,8 +596,26 @@ export const USAGE_LOG_SESSION = {
       ]
     },
     {
-      "log": 1,
+      "log": 2,
       "t": 24.0,
+      "adapter": "claude-code",
+      "session": "recorded-session",
+      "project": "0123456789",
+      "type": "notice",
+      "kind": "override_recorded"
+    },
+    {
+      "log": 2,
+      "t": 25.0,
+      "adapter": "claude-code",
+      "session": "recorded-session",
+      "project": "0123456789",
+      "type": "notice",
+      "kind": "route_continued"
+    },
+    {
+      "log": 2,
+      "t": 26.0,
       "adapter": "claude-code",
       "session": "recorded-session",
       "project": "0123456789",
@@ -602,15 +623,15 @@ export const USAGE_LOG_SESSION = {
       "form": "direct"
     },
     {
-      "log": 1,
-      "t": 25.0,
+      "log": 2,
+      "t": 27.0,
       "adapter": "claude-code",
       "session": "recorded-session",
       "project": "0123456789",
       "type": "turn_end"
     }
   ],
-  "logText": "{\"log\": 1, \"t\": 1.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"prompt\", \"named\": [\"tdd\"]}\n{\"log\": 1, \"t\": 2.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"hold\", \"gate\": \"router-first\", \"kind\": \"strict\", \"named\": [\"using-goated-ai-skills\"]}\n{\"log\": 1, \"t\": 3.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"hold\", \"gate\": \"route-line\", \"kind\": \"strict\", \"named\": []}\n{\"log\": 1, \"t\": 4.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"load\", \"skill\": \"using-goated-ai-skills\", \"cause\": \"hold\"}\n{\"log\": 1, \"t\": 5.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"route\", \"form\": \"route\", \"intensity\": \"standard\", \"requires\": [\"tdd\", \"doc-sync\"]}\n{\"log\": 1, \"t\": 6.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"outcome\", \"gate\": \"router-first\", \"outcome\": \"answered\"}\n{\"log\": 1, \"t\": 7.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"outcome\", \"gate\": \"route-line\", \"outcome\": \"answered\"}\n{\"log\": 1, \"t\": 8.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"hold\", \"gate\": \"pipeline\", \"kind\": \"strict\", \"named\": [\"tdd\", \"doc-sync\"]}\n{\"log\": 1, \"t\": 9.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"load\", \"skill\": \"tdd\", \"cause\": \"named\"}\n{\"log\": 1, \"t\": 10.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"load\", \"skill\": \"doc-sync\", \"cause\": \"hold\"}\n{\"log\": 1, \"t\": 11.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"file_read\", \"file\": \"7535372f6f825dd4\"}\n{\"log\": 1, \"t\": 12.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"skill_read\", \"skills\": [\"tdd\"]}\n{\"log\": 1, \"t\": 13.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"ref\", \"skill\": \"tdd\", \"file\": \"references/test-design.md\", \"read_tool\": true}\n{\"log\": 1, \"t\": 14.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"outcome\", \"gate\": \"pipeline\", \"outcome\": \"answered\"}\n{\"log\": 1, \"t\": 15.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"change\"}\n{\"log\": 1, \"t\": 16.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"hold\", \"gate\": \"closeout\", \"kind\": \"justified-skip\", \"named\": [\"verification-before-completion\", \"doc-sync\"], \"skip_only\": [\"verification-before-completion\", \"doc-sync\"], \"items\": [{\"label\": \"Proof\", \"skill\": \"verification-before-completion\"}, {\"label\": \"Docs\", \"skill\": \"doc-sync\"}], \"stop\": true}\n{\"log\": 1, \"t\": 17.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"skip\", \"skill\": \"verification-before-completion\", \"reason\": \"the change has no test yet and the next turn adds one\"}\n{\"log\": 1, \"t\": 18.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"skip\", \"skill\": \"software-design-principles\", \"reason\": \"one constant changes with no design in it\"}\n{\"log\": 1, \"t\": 19.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"skip\", \"skill\": \"doc-sync\", \"reason\": \"no durable docs describe the export limit\"}\n{\"log\": 1, \"t\": 20.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"outcome\", \"gate\": \"closeout\", \"outcome\": \"declined\"}\n{\"log\": 1, \"t\": 21.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"turn_end\"}\n{\"log\": 1, \"t\": 22.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"prompt\", \"named\": []}\n{\"log\": 1, \"t\": 23.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"override\", \"phrases\": [\"skip routing\"]}\n{\"log\": 1, \"t\": 24.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"route\", \"form\": \"direct\"}\n{\"log\": 1, \"t\": 25.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"turn_end\"}\n",
+  "logText": "{\"log\": 2, \"t\": 1.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"prompt\", \"named\": [\"tdd\"]}\n{\"log\": 2, \"t\": 2.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"hold\", \"gate\": \"router-first\", \"kind\": \"strict\", \"named\": [\"using-goated-ai-skills\"], \"file_class\": \"code\"}\n{\"log\": 2, \"t\": 3.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"hold\", \"gate\": \"route-line\", \"kind\": \"strict\", \"named\": [], \"file_class\": \"code\"}\n{\"log\": 2, \"t\": 4.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"load\", \"skill\": \"using-goated-ai-skills\", \"cause\": \"hold\"}\n{\"log\": 2, \"t\": 5.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"route\", \"form\": \"route\", \"intensity\": \"standard\", \"requires\": [\"tdd\", \"doc-sync\"]}\n{\"log\": 2, \"t\": 6.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"outcome\", \"gate\": \"router-first\", \"outcome\": \"answered\"}\n{\"log\": 2, \"t\": 7.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"outcome\", \"gate\": \"route-line\", \"outcome\": \"answered\"}\n{\"log\": 2, \"t\": 8.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"hold\", \"gate\": \"pipeline\", \"kind\": \"strict\", \"named\": [\"tdd\", \"doc-sync\"], \"file_class\": \"code\"}\n{\"log\": 2, \"t\": 9.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"load\", \"skill\": \"tdd\", \"cause\": \"named\"}\n{\"log\": 2, \"t\": 10.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"load\", \"skill\": \"doc-sync\", \"cause\": \"hold\"}\n{\"log\": 2, \"t\": 11.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"file_read\", \"file\": \"7535372f6f825dd4\"}\n{\"log\": 2, \"t\": 12.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"skill_read\", \"skills\": [\"tdd\"]}\n{\"log\": 2, \"t\": 13.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"ref\", \"skill\": \"tdd\", \"file\": \"references/test-design.md\", \"read_tool\": true}\n{\"log\": 2, \"t\": 14.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"outcome\", \"gate\": \"pipeline\", \"outcome\": \"answered\"}\n{\"log\": 2, \"t\": 15.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"change\"}\n{\"log\": 2, \"t\": 16.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"hold\", \"gate\": \"closeout\", \"kind\": \"justified-skip\", \"named\": [\"verification-before-completion\", \"doc-sync\"], \"skip_only\": [\"verification-before-completion\", \"doc-sync\"], \"items\": [{\"label\": \"Proof\", \"skill\": \"verification-before-completion\"}, {\"label\": \"Docs\", \"skill\": \"doc-sync\"}], \"stop\": true}\n{\"log\": 2, \"t\": 17.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"skip\", \"skill\": \"verification-before-completion\", \"reason\": \"the change has no test yet and the next turn adds one\"}\n{\"log\": 2, \"t\": 18.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"skip\", \"skill\": \"software-design-principles\", \"reason\": \"one constant changes with no design in it\"}\n{\"log\": 2, \"t\": 19.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"skip\", \"skill\": \"doc-sync\", \"reason\": \"no durable docs describe the export limit\"}\n{\"log\": 2, \"t\": 20.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"outcome\", \"gate\": \"closeout\", \"outcome\": \"declined\"}\n{\"log\": 2, \"t\": 21.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"turn_end\"}\n{\"log\": 2, \"t\": 22.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"prompt\", \"named\": []}\n{\"log\": 2, \"t\": 23.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"override\", \"phrases\": [\"skip routing\"]}\n{\"log\": 2, \"t\": 24.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"notice\", \"kind\": \"override_recorded\"}\n{\"log\": 2, \"t\": 25.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"notice\", \"kind\": \"route_continued\"}\n{\"log\": 2, \"t\": 26.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"route\", \"form\": \"direct\"}\n{\"log\": 2, \"t\": 27.0, \"adapter\": \"claude-code\", \"session\": \"recorded-session\", \"project\": \"0123456789\", \"type\": \"turn_end\"}\n",
   "reasonCases": [
     [
       "see `src/export.py` first",

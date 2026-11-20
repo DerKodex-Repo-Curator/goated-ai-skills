@@ -36,7 +36,7 @@ class ShellWriteDesignTests(DesignTestCase):
 
         held = s.run(heredoc("src/export.py", 6))
         self.assertEqual(hold_line(held), DESIGN_HOLD)
-        self.assertIn(f"load `{DESIGN}`", reason(held))
+        self.assertIn(f"Load `{DESIGN}`", reason(held))
         self.assertIn("This command was not run.", reason(held))
 
         s.load(DESIGN)

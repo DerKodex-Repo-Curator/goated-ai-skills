@@ -51,11 +51,13 @@ write ownership and review statuses. Use this template for everything else.
 - Work in: <files, directories, or area>
 - May change: <write scope, or "read only">
 - Must not touch: <areas other agents or the main agent own>
+- Shared with: <other agents or sessions that may change the same files, or "none">
 - Others may be editing elsewhere: do not revert changes you did not make.
 
 ## Done Means
 
 - <Observable result: a passing check, a file that exists, a question answered.>
+- Checks: <what the agent runs before reporting; what you run after merging its work>
 
 ## Already Settled
 
@@ -86,7 +88,8 @@ goated-skills: <skill>, <skill>
 <Route line, when you routed the task.>
 ```
 
-Drop sections that carry nothing for this task, but keep the skills line.
+Drop sections and lines that carry nothing for this task, such as Shared
+with when no other agent works nearby, but keep the skills line.
 Keep the brief short enough that the agent reads all of it before acting.
 
 ## After Sending

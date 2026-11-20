@@ -59,7 +59,7 @@ class ReadsOwedTests(unittest.TestCase):
         references = owed_names(self.session.call("Edit", PUBLIC_FUNCTION))
         held = self.stop()
         self.assertEqual(held.get("decision"), "block")
-        self.assertIn("- Reads: a write landed", held["reason"])
+        self.assertIn("- Reads: read each", held["reason"])
         for name in references:
             self.session.read(f"{REFERENCES}/{name}")
         self.session.read(SOURCE)
@@ -74,6 +74,21 @@ class ReadsOwedTests(unittest.TestCase):
         self.assertIn("- Reads:", reason(held))
         self.session.say(SKIP_LINE)
         self.assertNotIn("- Reads:", reason(self.session.call("Bash", commit)))
+
+    def test_a_commit_owing_reads_asks_for_the_references_before_the_change_read(self) -> None:
+        self.session.call("Edit", PUBLIC_FUNCTION)
+        self.session.load("commit-message")
+        held = reason(self.session.call("Bash", {"command": 'git commit -am "Add the total"'}))
+        self.assertIn("Read the references this turn's writes owe first, if any is still "
+                      "unread, then the change before committing it", held)
+
+    def test_a_commit_owing_nothing_asks_only_for_the_change_read(self) -> None:
+        self.session.say(SKIP_LINE)
+        self.session.call("Edit", PUBLIC_FUNCTION)
+        self.session.load("commit-message")
+        held = reason(self.session.call("Bash", {"command": 'git commit -am "Add the total"'}))
+        self.assertIn("Read the change before committing it", held)
+        self.assertNotIn("writes owe first", held)
 
     def test_four_edits_sent_in_one_message_all_land(self) -> None:
         edits = [("Edit", {"file_path": SOURCE, "old_string": "def rows():\n",

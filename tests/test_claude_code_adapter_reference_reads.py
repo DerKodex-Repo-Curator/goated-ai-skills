@@ -744,7 +744,7 @@ class TicketTemplates(ReferenceReadsTestCase):
         # A short shell write still meets the hold (Ticket 118).
         s = self.first_turn("spec-to-tickets")
         held = s.call("Bash", {"command": "cp draft.md tickets/080-export.md"})
-        self.assertIn('This write to "080-export.md" needs', reason(held))
+        self.assertIn('this write to "080-export.md" needs', reason(held))
         self.assertIn("This write was not applied.", reason(held))
 
     def test_the_notice_names_the_write(self) -> None:
@@ -835,7 +835,7 @@ class RootCauseTracing(ReferenceReadsTestCase):
                 if call[0] == "Bash":
                     # A shell write showing no text cannot land owing its reads.
                     self.assertHeldFor(output, "diagnose/references/root-cause-tracing.md")
-                    self.assertTrue(reason(output).split("\n")[1].startswith("This write needs"),
+                    self.assertTrue(reason(output).split("\n")[1].startswith("Read each skill reference this write needs"),
                                     reason(output))
                 else:
                     self.assertOwes(output, "diagnose/references/root-cause-tracing.md")

@@ -69,6 +69,89 @@ def parse_skip_line(line: str) -> dict | None:
     return {"skill": skill, "reason": reason}
 
 
+ROUTE_KEYWORDS = ("direct", "continue")
+INTENSITIES = ("lightweight", "standard", "full")
+PUNCTUATION_ONLY = re.compile(r"^[.,;:!?]+$")
+REQUIRES_LIST = re.compile(r"\|[ \t]+requires:(.*)$")
+
+
+def malformed_reason(line: str) -> str:
+    """Why `line`, a candidate route or skip line that does not parse, breaks
+    the grammar, in the words of the marker fixtures' `why`; for a whole
+    route line with text after it, "nothing may follow the line". A hold
+    quotes it beside the line (round 6, R11)."""
+
+    if line.lower().startswith("goated-skip:"):
+        return _skip_line_reason(line)
+    if not line.startswith("goated-route:"):
+        return "the prefix is lowercase"
+    body = line[len("goated-route:"):]
+    if not body[:1].isspace():
+        return "whitespace is required after the colon"
+    words = body.split()
+    first = words[0] if words else ""
+    if first.lower() in ROUTE_KEYWORDS + INTENSITIES and first != first.lower():
+        return "keywords are lowercase"
+    if first in ROUTE_KEYWORDS and body.lstrip()[len(first):].lstrip().startswith("|"):
+        return f"{first} takes no skill list"
+    if first in INTENSITIES:
+        requires = REQUIRES_LIST.search(body)
+        if requires is None:
+            return ("the pipe separator is required" if "requires" in body
+                    else "an intensity needs a requires list")
+        skills = requires.group(1).strip()
+        if not skills:
+            return "the requires list is non-empty"
+        if skills.endswith(","):
+            return "no trailing comma"
+        listed = [skill.strip() for skill in skills.split(",")]
+        if any(skill != skill.lower() for skill in listed):
+            return "skill names are lowercase kebab-case"
+        if len(set(listed)) != len(listed):
+            return "the requires list has no duplicates"
+        if any(re.fullmatch(f"{SKILL}(?:[ \t]+{SKILL})+", skill) for skill in listed):
+            return "skills are comma-separated"
+    elif first not in ROUTE_KEYWORDS and re.fullmatch(r"[a-z]+", first) and "|" in body:
+        return "intensity is lightweight, standard, or full"
+    return _trailing_reason(line)
+
+
+def _trailing_reason(line: str) -> str:
+    """The reason for a route line that holds a whole route line followed by
+    more text, or else the plain one."""
+
+    for end in range(len(line) - 1, len("goated-route:"), -1):
+        if parse_route_line(line[:end].rstrip()) is not None:
+            rest = line[end:].strip()
+            return ("no trailing punctuation" if PUNCTUATION_ONLY.match(rest)
+                    else "nothing may follow the line")
+    return "it does not match the grammar"
+
+
+def _skip_line_reason(line: str) -> str:
+    """Why the skip line `line` does not parse."""
+
+    if not line.startswith("goated-skip:"):
+        return "the prefix is lowercase"
+    body = line[len("goated-skip:"):]
+    if not body[:1].isspace():
+        return "whitespace is required after the prefix colon"
+    skill, colon, reason = body.strip().partition(":")
+    if not colon:
+        return "a reason is required"
+    if "," in skill:
+        return "one skill per skip line"
+    if not re.fullmatch(SKILL, skill):
+        return "skill names are lowercase kebab-case"
+    if not reason.strip():
+        return "the reason is non-empty"
+    if not reason[:1].isspace():
+        return "whitespace is required after the skill colon"
+    if len(reason.split()) < MIN_REASON_WORDS:
+        return "the reason has at least three words"  # MIN_REASON_WORDS
+    return "it does not match the grammar"
+
+
 def parse_reply(text: str) -> ReplyMarkers:
     """Collect the markers in a whole reply, ignoring fenced code blocks."""
 

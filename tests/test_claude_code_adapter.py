@@ -1688,6 +1688,22 @@ class MarkerAgreementTests(unittest.TestCase):
                 reply["identifier"],
             )
 
+    def test_each_malformed_line_is_given_the_fixtures_reason(self) -> None:
+        from goated_core import markers
+
+        data = yaml.safe_load(MARKER_FIXTURES.read_text(encoding="utf-8"))
+        for section in ("route_lines", "skip_lines"):
+            for case in data[section]["invalid"]:
+                self.assertEqual(markers.malformed_reason(case["line"]), case["why"],
+                                 case["line"])
+
+    def test_text_after_a_whole_route_line_is_named_as_trailing(self) -> None:
+        from goated_core import markers
+
+        for line in ("goated-route: direct, then the tests",
+                     "goated-route: standard | requires: tdd (for the parser)"):
+            self.assertEqual(markers.malformed_reason(line), "nothing may follow the line", line)
+
 
 class RecordedSessionTests(unittest.TestCase):
     """Run the installed command on a recorded transcript and hook inputs."""

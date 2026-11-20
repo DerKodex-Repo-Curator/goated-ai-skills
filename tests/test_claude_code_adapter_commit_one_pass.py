@@ -163,7 +163,7 @@ class DesignFollowUpTests(SessionCase):
                             CONTEXT + "total_3 = 3\ntotal_4 = 4"))
         s.run("pytest -q")
         held = stop(s)
-        self.assertIn("- Design: after reading the red flags", held)
+        self.assertIn("- Design: read the change itself after reading the red flags", held)
         self.assertNotIn("red-flags.md", held)
         s.run(DIFF)
         self.assertEqual(stop(s), "")
